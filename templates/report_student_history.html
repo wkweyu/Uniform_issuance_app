@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto p-6 bg-white rounded shadow">
+    <h2 class="text-2xl font-bold mb-4">Issuance History for Admission No: {{ admno }}</h2>
+
+    {% if records %}
+    <table class="w-full border-collapse border">
+        <thead>
+            <tr class="bg-gray-100">
+                <th class="border p-2">Receipt No</th>
+                <th class="border p-2">Item</th>
+                <th class="border p-2">Qty</th>
+                <th class="border p-2">Price</th>
+                <th class="border p-2">Total</th>
+                <th class="border p-2">Year</th>
+                <th class="border p-2">Term</th>
+                <th class="border p-2">Date Issued</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for rec in records %}
+            <tr>
+                <td class="border p-2">{{ rec.receipt_no }}</td>
+                <td class="border p-2">{{ rec.item_name }}</td>
+                <td class="border p-2">{{ rec.quantity }}</td>
+                <td class="border p-2">KES {{ "%.2f"|format(rec.price) }}</td>
+                <td class="border p-2">KES {{ "%.2f"|format(rec.total) }}</td>
+                <td class="border p-2">{{ rec.yr }}</td>
+                <td class="border p-2">{{ rec.term }}</td>
+                <td class="border p-2">{{ rec.issued_on.strftime('%d-%m-%Y') }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="text-gray-600">No issuance records found for this admission number.</p>
+    {% endif %}
+
+    <div class="mt-6">
+        <a href="{{ url_for('reports_dashboard') }}" class="text-blue-600 hover:underline">← Back to Reports Dashboard</a>
+    </div>
+</div>
+{% endblock %}

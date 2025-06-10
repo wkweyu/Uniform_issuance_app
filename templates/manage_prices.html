@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto p-6 bg-white rounded shadow">
+  <h2 class="text-2xl font-bold mb-6">Manage Uniform Prices</h2>
+
+  <form method="POST">
+    <div class="overflow-x-auto">
+      <table class="w-full border-collapse border text-sm">
+        <thead class="bg-gray-100">
+          <tr>
+            <th class="border p-2 text-left">Item</th>
+            {% for group in class_groups %}
+            <th class="border p-2 text-right">{{ group }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in uniform_items %}
+          <tr class="hover:bg-gray-50">
+            <td class="border p-2 font-medium">{{ item }}</td>
+            {% for group in class_groups %}
+            <td class="border p-2">
+              <input type="number" step="0.01" min="0"
+                     name="price_{{ item }}_{{ group }}"
+                     value="{{ prices.get((item, group), '') }}"
+                     class="w-24 border border-gray-300 rounded px-2 py-1 text-right">
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="flex justify-end mt-6">
+      <button type="submit"
+              class="px-6 py-3 bg-green-600 text-white rounded hover:bg-green-700">
+        Save Prices
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

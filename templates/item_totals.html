@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h2 class="text-2xl font-bold mb-4">Item Issuance Totals Report</h2>
+
+<table class="w-full border">
+    <thead>
+        <tr class="border-b bg-gray-200">
+            <th class="text-left p-2">Item</th>
+            <th class="text-right p-2">Total Quantity Issued</th>
+            <th class="text-right p-2">Total Value (KES)</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in results %}
+        <tr class="border-b">
+            <td class="p-2">{{ row.item_name }}</td>
+            <td class="text-right p-2">{{ row.total_quantity }}</td>
+            <td class="text-right p-2">{{ "%.2f"|format(row.total_value) }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

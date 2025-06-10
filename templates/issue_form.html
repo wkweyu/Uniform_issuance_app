@@ -1,0 +1,168 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+  <h2 class="text-2xl font-bold mb-6 text-gray-800">
+    Issuing Uniform for {{ student_name }} ({{ class_name }})
+  </h2>
+
+  <form id="issuanceForm">
+    <input type="hidden" name="admno" value="{{ admno }}">
+    <input type="hidden" name="student_name" value="{{ student_name }}">
+    <input type="hidden" name="class_name" value="{{ class_name }}">
+    <input type="hidden" name="year" value="{{ year }}">
+    <input type="hidden" name="term" value="{{ term }}">
+
+    <div class="bg-white shadow rounded-lg p-6 mb-6 overflow-x-auto">
+      <table class="w-full border">
+        <thead>
+          <tr class="border-b">
+            <th class="text-left p-2 font-semibold text-gray-600">Item</th>
+            <th class="text-right p-2 font-semibold text-gray-600">Price (KES)</th>
+            <th class="text-right p-2 font-semibold text-gray-600">Quantity</th>
+            <th class="text-right p-2 font-semibold text-gray-600">Total (KES)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in items %}
+          <tr class="border-b hover:bg-gray-50">
+            <td class="p-2 text-gray-700">{{ item.item_name }}</td>
+            <td class="text-right p-2 text-gray-700">{{ "%.2f"|format(item.price) }}</td>
+            <td class="text-right p-2">
+              <input type="number"
+                name="quantity_{{ item.item_name }}"
+                data-price="{{ item.price }}"
+                value="0" min="0"
+                class="w-20 px-2 py-1 border border-gray-300 rounded quantity-input text-right focus:ring-2 focus:ring-blue-300">
+            </td>
+            <td class="text-right p-2 total-cell text-gray-700">0.00</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="text-right text-lg font-semibold text-gray-800 mb-6">
+      Grand Total: KES <span id="grandTotal">0.00</span>
+    </div>
+
+    <div class="flex justify-end">
+      <button type="button" onclick="validateAndSubmit()"
+        class="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none">
+        Submit & Print Receipt
+      </button>
+    </div>
+  </form>
+</div>
+
+<!-- Confirmation Modal -->
+<div id="confirmModal"
+  class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black bg-opacity-50 transition-opacity duration-300">
+  <div class="bg-white rounded-lg p-6 w-full max-w-md">
+    <h3 class="text-lg font-medium mb-4 text-gray-800">Confirm Uniform Issuance</h3>
+    <p class="mb-6 text-gray-600">Are you sure you want to issue these items? This will charge the student's account.</p>
+    <div class="flex justify-end space-x-3 mt-4">
+      <button onclick="closeModal()"
+        class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">Cancel</button>
+      <button onclick="submitIssuance()"
+        class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function updateTotals() {
+  let grandTotal = 0;
+  document.querySelectorAll("tr").forEach(function (row) {
+    let qtyInput = row.querySelector(".quantity-input");
+    let totalCell = row.querySelector(".total-cell");
+
+    if (qtyInput && totalCell) {
+      let price = parseFloat(qtyInput.getAttribute("data-price"));
+      let quantity = parseInt(qtyInput.value) || 0;
+      let lineTotal = price * quantity;
+
+      totalCell.innerText = lineTotal.toFixed(2);
+      grandTotal += lineTotal;
+    }
+  });
+  document.getElementById("grandTotal").innerText = grandTotal.toFixed(2);
+}
+
+// Attach event listeners
+document.querySelectorAll(".quantity-input").forEach(function (input) {
+  input.addEventListener("input", updateTotals);
+});
+
+function validateAndSubmit() {
+  const form = document.getElementById('issuanceForm');
+  let hasItems = false;
+
+  document.querySelectorAll(".quantity-input").forEach(input => {
+    if (parseInt(input.value) > 0) hasItems = true;
+  });
+
+  if (!hasItems) {
+    alert('Please select at least one item to issue');
+    return;
+  }
+
+  document.getElementById('confirmModal').classList.remove('hidden');
+}
+
+function closeModal() {
+  document.getElementById('confirmModal').classList.add('hidden');
+}
+
+function submitIssuance() {
+  closeModal();
+
+  const form = document.getElementById('issuanceForm');
+  const formData = new FormData(form);
+
+  const items = [];
+  document.querySelectorAll(".quantity-input").forEach(input => {
+    const quantity = parseInt(input.value);
+    if (quantity > 0) {
+      items.push({
+        item_name: input.name.replace('quantity_', ''),
+        price: parseFloat(input.dataset.price),
+        quantity: quantity
+      });
+    }
+  });
+
+  const payload = {
+    admno: formData.get('admno'),
+    student_name: formData.get('student_name'),
+    class_name: formData.get('class_name'),
+    year: parseInt(formData.get('year')),
+    term: parseInt(formData.get('term')),
+    items: items
+  };
+
+  fetch("{{ url_for('submit_issuance') }}", {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+    .then(response => {
+      if (!response.ok) return response.json().then(err => Promise.reject(err));
+      return response.json();
+    })
+    .then(data => {
+      if (data.success) {
+        const url = `{{ url_for('print_receipt') }}?admno=${data.admno}&year=${data.year}&term=${data.term}&receipt_no=${data.receipt_no}`;
+        window.open(url, '_blank');
+        window.location.href = "{{ url_for('issue_uniform') }}";
+      } else {
+        alert('Error: ' + data.message);
+      }
+    })
+    .catch(error => {
+      console.error('Error:', error);
+      alert('Failed to submit uniform issuance. Please try again.');
+    });
+}
+</script>
+{% endblock %}

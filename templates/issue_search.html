@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <h2 class="text-xl mb-4">Search Student for Uniform Issuance</h2>
+    
+    {% if get_flashed_messages() %}
+        <div class="mb-4 p-3 bg-red-100 border border-red-300 rounded text-red-700">
+            {% for message in get_flashed_messages() %}
+                <p>{{ message }}</p>
+            {% endfor %}
+        </div>
+    {% endif %}
+    
+    <form method="POST" action="{{ url_for('issue_uniform') }}" class="flex gap-4">
+        <input type="text" name="admno" placeholder="Enter Admission Number" required 
+               class="border p-2 rounded flex-grow">
+        <button type="submit" class="bg-blue-500 text-white p-2 rounded hover:bg-blue-600">
+            Search
+        </button>
+    </form>
+{% endblock %}

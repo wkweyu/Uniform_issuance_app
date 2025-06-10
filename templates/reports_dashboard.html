@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto p-6">
+  <h2 class="text-3xl font-bold mb-6 text-gray-800">Reports Dashboard</h2>
+
+  <!-- Report Links as Cards -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
+    <a href="{{ url_for('issued_summary') }}" class="block p-6 bg-white border border-gray-200 rounded-lg shadow hover:bg-gray-50 transition">
+      <h3 class="text-lg font-semibold text-gray-800">Issued Summary Report</h3>
+      <p class="text-sm text-gray-500 mt-2">View total issued quantities and value by item over a date range.</p>
+    </a>
+
+    <a href="{{ url_for('item_totals') }}" class="block p-6 bg-white border border-gray-200 rounded-lg shadow hover:bg-gray-50 transition">
+      <h3 class="text-lg font-semibold text-gray-800">Item Totals Report</h3>
+      <p class="text-sm text-gray-500 mt-2">See cumulative totals issued for each uniform item.</p>
+    </a>
+
+    <a href="{{ url_for('receipts_register') }}" class="block p-6 bg-white border border-gray-200 rounded-lg shadow hover:bg-gray-50 transition">
+      <h3 class="text-lg font-semibold text-gray-800">Receipts Register</h3>
+      <p class="text-sm text-gray-500 mt-2">Browse, filter, print, and cancel uniform issuance receipts.</p>
+    </a>
+
+    <a href="{{ url_for('student_search') }}" class="block p-6 bg-white border border-gray-200 rounded-lg shadow hover:bg-gray-50 transition">
+      <h3 class="text-lg font-semibold text-gray-800">Student Issuance History</h3>
+      <p class="text-sm text-gray-500 mt-2">Search by admission number and view a student's issuance record.</p>
+    </a>
+  </div>
+
+  <!-- Optional Chart Slot -->
+  <div class="bg-white border border-gray-200 rounded-lg shadow p-6">
+    <h3 class="text-lg font-semibold text-gray-800 mb-4">Quick Overview</h3>
+    <canvas id="reportChart" height="120"></canvas>
+  </div>
+</div>
+
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const ctx = document.getElementById('reportChart').getContext('2d');
+const reportChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+        labels: ['Tracksuits', 'T-Shirts', 'Sweaters', 'Cardigans'],
+        datasets: [{
+            label: 'Issued Quantity',
+            data: [40, 35, 60, 30],
+            backgroundColor: '#3b82f6'
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: { display: false },
+            title: { display: false }
+        },
+        scales: {
+            y: { beginAtZero: true }
+        }
+    }
+});
+</script>
+{% endblock %}

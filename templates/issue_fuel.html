@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto p-6 bg-white rounded shadow">
+  <h2 class="text-2xl font-bold mb-6">Issue Fuel Voucher</h2>
+
+  <form method="POST" class="space-y-4">
+
+    <div>
+      <label class="block mb-1 font-medium">Bus:</label>
+      <select name="bus_id" id="busSelect" required class="w-full border px-3 py-2 rounded" onchange="populateDriver()">
+        <option value="">-- Select Bus --</option>
+        {% for bus in buses %}
+          <option value="{{ bus.id }}" data-driver="{{ bus.driver_name }}">{{ bus.reg_no }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label class="block mb-1 font-medium">Driver Name:</label>
+      <input type="text" id="driverField" class="w-full border px-3 py-2 rounded bg-gray-100" disabled>
+    </div>
+
+    <div>
+      <label class="block mb-1 font-medium">Remarks (optional):</label>
+      <textarea name="remarks" class="w-full border px-3 py-2 rounded"></textarea>
+    </div>
+
+    <div class="flex justify-end">
+      <button type="submit" class="px-6 py-3 bg-blue-600 text-white rounded hover:bg-blue-700">
+        Issue Voucher
+      </button>
+    </div>
+  </form>
+</div>
+
+<script>
+function populateDriver() {
+  const busSelect = document.getElementById('busSelect');
+  const selectedOption = busSelect.options[busSelect.selectedIndex];
+  const driverField = document.getElementById('driverField');
+  driverField.value = selectedOption.getAttribute('data-driver') || '';
+}
+</script>
+{% endblock %}

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Uniform Issuance Form</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+        }
+    </style>
+</head>
+<body class="p-8 text-gray-900">
+    <div class="max-w-2xl mx-auto">
+        <h1 class="text-3xl font-bold mb-2 text-center">Uniform Issuance Form</h1>
+        <p class="text-center mb-8 text-sm text-gray-600">Year: {{ yr }} | Term: {{ term }}</p>
+
+        <div class="mb-4">
+            <p><span class="font-semibold">Adm No:</span> {{ admno }}</p>
+            <p><span class="font-semibold">Class:</span> {{ class_name }}</p>
+        </div>
+
+        <table class="w-full border-collapse border border-gray-400 mb-6">
+            <thead class="bg-gray-100">
+                <tr>
+                    <th class="border border-gray-400 px-4 py-2 text-left">Item</th>
+                    <th class="border border-gray-400 px-4 py-2 text-right">Price (KES)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in items %}
+                <tr>
+                    <td class="border border-gray-400 px-4 py-2">{{ item.item_name }}</td>
+                    <td class="border border-gray-400 px-4 py-2 text-right">{{ item.price }}</td>
+                </tr>
+                {% endfor %}
+                <tr class="font-semibold bg-gray-50">
+                    <td class="border border-gray-400 px-4 py-2 text-right">Total</td>
+                    <td class="border border-gray-400 px-4 py-2 text-right">KES {{ total }}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="mt-8">
+            <p><span class="font-semibold">Issued by:</span> ________________________</p>
+            <p class="mt-4"><span class="font-semibold">Date:</span> ________________________</p>
+        </div>
+    </div>
+</body>
+</html>

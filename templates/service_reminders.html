@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto p-6 bg-white rounded shadow">
+  <h2 class="text-2xl font-bold mb-6">🔔 Upcoming Service Reminders</h2>
+
+  {% if reminders %}
+  <table class="w-full border-collapse text-sm">
+    <thead class="bg-gray-100">
+      <tr>
+        <th class="border p-2">Reg No</th>
+        <th class="border p-2">Last Service Date</th>
+        <th class="border p-2">Mileage at Service</th>
+        <th class="border p-2">Next Service Mileage</th>
+        <th class="border p-2">Current Mileage</th>
+        <th class="border p-2">Days Since Service</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in reminders %}
+      <tr class="hover:bg-gray-50">
+        <td class="border p-2">{{ r.reg_no }}</td>
+        <td class="border p-2">{{ r.last_service_date.strftime('%d-%m-%Y') }}</td>
+        <td class="border p-2 text-right">{{ r.mileage_at_service }}</td>
+        <td class="border p-2 text-right">{{ r.next_service_mileage }}</td>
+        <td class="border p-2 text-right">{{ r.current_mileage }}</td>
+        <td class="border p-2 text-right">{{ r.days_since_service }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-gray-500">No upcoming service reminders.</p>
+  {% endif %}
+
+  <div class="mt-6">
+    <a href="{{ url_for('fleet_dashboard') }}" class="text-blue-600 hover:underline">← Back to Fleet Dashboard</a>
+  </div>
+</div>
+{% endblock %}

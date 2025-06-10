@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto p-6">
+  <h2 class="text-3xl font-bold mb-6 text-gray-800">🎽 Uniform Management Dashboard</h2>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+    <!-- Issuance Management -->
+    <div class="border border-gray-300 rounded-lg p-4 bg-white shadow hover:shadow-md transition">
+      <h3 class="text-xl font-semibold mb-3">🎒 Issuance</h3>
+      <ul class="space-y-2 text-blue-700">
+        <li><a href="{{ url_for('issue_uniform') }}" class="hover:underline">+ Issue Uniform</a></li>
+      </ul>
+    </div>
+
+    <!-- Price Management -->
+    <div class="border border-gray-300 rounded-lg p-4 bg-white shadow hover:shadow-md transition">
+      <h3 class="text-xl font-semibold mb-3">💰 Pricing</h3>
+      <ul class="space-y-2 text-blue-700">
+        <li><a href="{{ url_for('manage_prices') }}" class="hover:underline">📄 Manage Uniform Prices</a></li>
+      </ul>
+    </div>
+
+    <!-- Reports -->
+    <div class="border border-gray-300 rounded-lg p-4 bg-white shadow hover:shadow-md transition">
+      <h3 class="text-xl font-semibold mb-3">📊 Reports</h3>
+      <ul class="space-y-2 text-blue-700">
+        <li><a href="{{ url_for('reports_dashboard') }}" class="hover:underline">📑 Issuance Reports Dashboard</a></li>
+      </ul>
+    </div>
+
+  </div>
+
+  <div class="mt-8">
+    <a href="{{ url_for('index') }}" class="text-blue-600 hover:underline">← Back to Home</a>
+  </div>
+</div>
+{% endblock %}

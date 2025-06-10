@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-xl mx-auto p-6 bg-white rounded shadow">
+  <h2 class="text-2xl font-bold mb-6">📝 Edit Bus Details</h2>
+
+  <form method="POST" class="space-y-4">
+
+    <div>
+      <label class="block text-sm font-medium">Reg Number:</label>
+      <input type="text" name="reg_no" value="{{ bus.reg_no }}" required 
+             class="w-full border px-3 py-2 rounded" placeholder="KDG 123A">
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium">Make/Model:</label>
+      <input type="text" name="make" value="{{ bus.make }}" 
+             class="w-full border px-3 py-2 rounded" placeholder="Isuzu NQR">
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium">Capacity:</label>
+      <input type="number" name="capacity" value="{{ bus.capacity }}" min="1"
+             class="w-full border px-3 py-2 rounded" placeholder="45">
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium">Driver:</label>
+      <input type="text" name="driver_name" value="{{ bus.driver_name }}"
+             class="w-full border px-3 py-2 rounded" placeholder="John Doe">
+    </div>
+
+    <div class="flex justify-between mt-6">
+      <a href="{{ url_for('manage_buses') }}" class="px-4 py-2 bg-gray-300 text-gray-800 rounded hover:bg-gray-400">← Cancel</a>
+      <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Update</button>
+    </div>
+
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Uniform Issuance Receipt</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .letterhead { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }
+        .letterhead h2 { margin: 0; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        table, th, td { border: 1px solid #000; }
+        th, td { padding: 8px; text-align: left; }
+        .total { font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="letterhead">
+    <h2>Mother Kevin Comprehensive School - Bungoma</h2>
+    <p>P.O. Box 1769-50200 Bungoma | Tel: +254 780 579 967</p>
+</div>
+
+<h3 style="text-align:center;">UNIFORM ISSUANCE RECEIPT</h3>
+
+<p><strong>Receipt No:</strong> {{ receipt_no }}</p>
+<p><strong>Admission No:</strong> {{ admno }}</p>
+<p><strong>Name:</strong> {{ student_name }}</p>
+<p><strong>Class:</strong> {{ class_name }}</p>
+<p><strong>Year:</strong> {{ year }} &nbsp; <strong>Term:</strong> {{ term }}</p>
+
+<table>
+    <thead>
+        <tr>
+            <th>Item</th>
+            <th>Quantity</th>
+            <th>Unit Price (KES)</th>
+            <th>Total (KES)</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for item in issued_items %}
+        <tr>
+            <td>{{ item[0] }}</td>
+            <td>{{ item[1] }}</td>
+            <td>{{ "{:,.2f}".format(item[2]) }}</td>
+            <td>{{ "{:,.2f}".format(item[3]) }}</td>
+        </tr>
+        {% endfor %}
+        <tr>
+            <td colspan="3" class="total">Grand Total</td>
+            <td class="total">{{ "{:,.2f}".format(total_amount) }}</td>
+        </tr>
+    </tbody>
+</table>
+
+<p style="margin-top: 40px;">Issued by: _________________________</p>
+<p>Received by: ________________________</p>
+
+<script>
+    window.onload = function() {
+    window.print();
+
+    // After print dialog closes, redirect to issue page
+    window.onafterprint = function(){
+        window.close();
+        //window.location.href = "/issue_uniform";
+    };
+}
+
+</script>
+
+</body>
+</html>

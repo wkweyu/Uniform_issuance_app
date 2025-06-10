@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto p-6 bg-white rounded-lg shadow-md">
+  <h2 class="text-3xl font-bold mb-6 text-gray-800">Item Totals Report</h2>
+
+  <div class="overflow-x-auto">
+    <table class="w-full border border-gray-300 rounded-lg overflow-hidden">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="border px-4 py-2 text-left">Item</th>
+          <th class="border px-4 py-2 text-right">Total Quantity Issued</th>
+          <th class="border px-4 py-2 text-right">Total Value (KES)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in totals %}
+        <tr class="hover:bg-gray-50">
+          <td class="border px-4 py-2">{{ item.item_name }}</td>
+          <td class="border px-4 py-2 text-right">{{ item.total_issued }}</td>
+          <td class="border px-4 py-2 text-right">KES {{ "%.2f"|format(item.total_value) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="mt-8">
+    <a href="{{ url_for('reports_dashboard') }}" class="text-blue-600 hover:underline">&larr; Back to Reports Dashboard</a>
+  </div>
+</div>
+{% endblock %}

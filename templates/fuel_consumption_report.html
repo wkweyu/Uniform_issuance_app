@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="max-w-6xl mx-auto p-6 bg-white rounded shadow">
+  <h2 class="text-3xl font-bold mb-6">🚍 Cumulative Fuel Consumption Report</h2>
+
+  <div class="overflow-x-auto">
+    <table class="w-full border-collapse border text-sm">
+      <thead class="bg-gray-100">
+        <tr>
+          <th class="border p-2">Bus Reg No</th>
+          <th class="border p-2 text-right">No. of Vouchers</th>
+          <th class="border p-2 text-right">Total Litres</th>
+          <th class="border p-2 text-right">Total Cost (KES)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in report %}
+        <tr class="hover:bg-gray-50">
+          <td class="border p-2">{{ r.reg_no }}</td>
+          <td class="border p-2 text-right">{{ r.vouchers_issued }}</td>
+          <td class="border p-2 text-right">{{ "%.2f"|format(r.total_litres) }}</td>
+          <td class="border p-2 text-right">KES {{ "%.2f"|format(r.total_amount) }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="4" class="border p-4 text-center text-gray-500">No fuel records found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="mt-6">
+    <button onclick="window.print()" class="px-4 py-2 bg-blue-600 text-white rounded">Print</button>
+  </div>
+
+  <div class="mt-6">
+    <a href="{{ url_for('fleet_dashboard') }}" class="text-blue-600 hover:underline">← Back to Fleet Dashboard</a>
+  </div>
+</div>
+{% endblock %}

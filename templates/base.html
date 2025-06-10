@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>School Management ERP</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+
+  <style>
+    @media print {
+      .no-print { display: none !important; }
+      .print-only { display: block !important; }
+      body { background: #fff; margin: 0; padding: 0; }
+      main, header, footer { box-shadow: none; padding: 0; margin: 0; }
+    }
+  </style>
+</head>
+
+<body class="bg-gray-50 min-h-screen text-gray-800">
+
+  <!-- App Header -->
+  <header class="bg-blue-800 text-white shadow no-print">
+    <div class="max-w-7xl mx-auto flex justify-between items-center p-4">
+      <h1 class="text-2xl font-bold">🏫 School Management ERP</h1>
+      <nav class="space-x-4 text-sm">
+        <a href="{{ url_for('index') }}" class="hover:underline">Home</a>
+        <a href="{{ url_for('uniform_dashboard') }}" class="hover:underline">Uniform Dashboard</a>
+        <a href="{{ url_for('fleet_dashboard') }}" class="hover:underline">Fleet Dashboard</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Flash Messages -->
+  <div class="max-w-7xl mx-auto mt-4 px-4 no-print">
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="p-4 mb-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-900 rounded">
+          {% for message in messages %}
+            <p>{{ message|safe }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+  </div>
+
+  <!-- Main Content -->
+  <main class="max-w-7xl mx-auto p-6 bg-white shadow rounded-lg mt-4 print-area">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Footer -->
+  <footer class="text-center text-sm text-gray-500 py-4 no-print">
+    &copy; {{ datetime.utcnow().year }} Mother Kevin Comprehensive School. All rights reserved.
+  </footer>
+
+</body>
+</html>

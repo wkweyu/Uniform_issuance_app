@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="max-w-7xl mx-auto p-6 bg-white rounded shadow">
+  <h2 class="text-2xl font-bold mb-6">🛠️ Service Register</h2>
+
+  <table class="w-full border-collapse text-sm">
+    <thead class="bg-gray-100">
+      <tr>
+        <th class="border p-2">Reg No</th>
+        <th class="border p-2">Date</th>
+        <th class="border p-2">Type</th>
+        <th class="border p-2">Description</th>
+        <th class="border p-2">Mileage</th>
+        <th class="border p-2">Cost</th>
+        <th class="border p-2">Garage</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in services %}
+      <tr>
+        <td class="border p-2">{{ s.reg_no }}</td>
+        <td class="border p-2">{{ s.service_date.strftime('%d-%m-%Y') }}</td>
+        <td class="border p-2">{{ s.service_type }}</td>
+        <td class="border p-2">{{ s.description }}</td>
+        <td class="border p-2">{{ s.mileage_at_service }}</td>
+        <td class="border p-2">KES {{ "%.2f"|format(s.cost or 0) }}</td>
+        <td class="border p-2">{{ s.garage_name }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

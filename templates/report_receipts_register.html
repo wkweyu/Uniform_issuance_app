@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto p-6">
+  <h2 class="text-3xl font-bold mb-6 text-gray-800">Receipts Register</h2>
+
+  <!-- Filter form -->
+  <form method="get" class="flex flex-wrap gap-4 mb-8">
+    <input type="text" name="admno" placeholder="Admission No" value="{{ filters.admno or '' }}" class="px-4 py-2 border border-gray-300 rounded w-40">
+    <input type="text" name="receipt_no" placeholder="Receipt No" value="{{ filters.receipt_no or '' }}" class="px-4 py-2 border border-gray-300 rounded w-40">
+    <input type="date" name="from_date" value="{{ filters.from_date or '' }}" class="px-4 py-2 border border-gray-300 rounded">
+    <input type="date" name="to_date" value="{{ filters.to_date or '' }}" class="px-4 py-2 border border-gray-300 rounded">
+    <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">Filter</button>
+  </form>
+
+  <div class="overflow-x-auto">
+    <table class="w-full border border-gray-300 rounded-lg overflow-hidden">
+      <thead class="bg-gray-100">
+        <tr>
+          <th class="border px-3 py-2 text-left">Receipt No</th>
+          <th class="border px-3 py-2 text-left">AdmNo</th>
+          <th class="border px-3 py-2 text-left">Student</th>
+          <th class="border px-3 py-2 text-left">Class</th>
+          <th class="border px-3 py-2 text-right">Amount</th>
+          <th class="border px-3 py-2 text-center">Issued On</th>
+          <th class="border px-3 py-2 text-center">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set grand_total = 0 %}
+        {% for receipt in records %}
+        {% set grand_total = grand_total + receipt.total_amount %}
+        <tr class="{% if loop.index is even %}bg-gray-50{% endif %} hover:bg-gray-100">
+          <td class="border px-3 py-2">{{ receipt.receipt_no }}</td>
+          <td class="border px-3 py-2">{{ receipt.AdmNo }}</td>
+          <td class="border px-3 py-2">{{ receipt.student_name }}</td>
+          <td class="border px-3 py-2">{{ receipt.class_name }}</td>
+          <td class="border px-3 py-2 text-right">KES {{ "%.2f"|format(receipt.total_amount) }}</td>
+          <td class="border px-3 py-2 text-center">{{ receipt.issued_on.strftime('%d-%m-%Y') }}</td>
+          <td class="border px-3 py-2 text-center space-x-2">
+            <a href="{{ url_for('print_receipt', admno=receipt.AdmNo, year=receipt.yr, term=receipt.term, receipt_no=receipt.receipt_no) }}" target="_blank"
+               class="inline-block px-3 py-1 text-sm text-blue-600 border border-blue-600 rounded hover:bg-blue-600 hover:text-white transition">Print</a>
+            <button onclick="confirmCancel('{{ receipt.receipt_no }}')" 
+                    class="inline-block px-3 py-1 text-sm text-red-600 border border-red-600 rounded hover:bg-red-600 hover:text-white transition">Cancel</button>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="text-center border py-4 text-gray-500">No receipts found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% if records %}
+      <tfoot class="bg-gray-100 font-semibold">
+        <tr>
+          <td colspan="4" class="border px-3 py-2 text-right">Grand Total:</td>
+          <td class="border px-3 py-2 text-right">KES {{ "%.2f"|format(grand_total) }}</td>
+          <td colspan="2" class="border"></td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+
+<script>
+function confirmCancel(receiptNo) {
+    if (confirm(`Are you sure you want to cancel receipt ${receiptNo}? This action is irreversible.`)) {
+        fetch(`/cancel_receipt/${receiptNo}`, { method: 'POST' })
+        .then(res => res.json())
+        .then(data => {
+            alert(data.message);
+            if (data.success) window.location.reload();
+        })
+        .catch(err => {
+            alert('Error cancelling receipt.');
+            console.error(err);
+        });
+    }
+}
+</script>
+{% endblock %}

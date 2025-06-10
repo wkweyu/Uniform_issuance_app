@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="max-w-6xl mx-auto p-6">
+  <h2 class="text-2xl font-bold mb-6">Oil / Fuel Records Register</h2>
+
+  <div class="overflow-x-auto">
+    <table class="w-full border border-gray-300 rounded">
+      <thead class="bg-gray-100 text-sm">
+        <tr>
+          <th class="border px-3 py-2">Date</th>
+          <th class="border px-3 py-2">Bus</th>
+          <th class="border px-3 py-2">Description</th>
+          <th class="border px-3 py-2 text-right">Litres</th>
+          <th class="border px-3 py-2 text-right">Unit Price (KES)</th>
+          <th class="border px-3 py-2 text-right">Total (KES)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set grand_total = 0 %}
+        {% for rec in records %}
+        <tr class="hover:bg-gray-50">
+          <td class="border px-3 py-1">{{ rec.date.strftime('%d-%m-%Y') }}</td>
+          <td class="border px-3 py-1">{{ rec.registration_no }}</td>
+          <td class="border px-3 py-1">{{ rec.description }}</td>
+          <td class="border px-3 py-1 text-right">{{ "%.2f"|format(rec.litres) }}</td>
+          <td class="border px-3 py-1 text-right">{{ "%.2f"|format(rec.unit_price) }}</td>
+          <td class="border px-3 py-1 text-right">KES {{ "%.2f"|format(rec.total_amount) }}</td>
+          {% set grand_total = grand_total + rec.total_amount %}
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" class="text-center py-4 text-gray-500">No records found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot class="font-semibold bg-gray-100">
+        <tr>
+          <td colspan="5" class="text-right px-3 py-2">Grand Total:</td>
+          <td class="text-right px-3 py-2">KES {{ "%.2f"|format(grand_total) }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <div class="mt-6 text-right">
+    <button onclick="window.print()" class="px-5 py-2 bg-blue-600 text-white rounded no-print hover:bg-blue-700">Print Report</button>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-xl mx-auto p-6 bg-white rounded shadow">
+  <h2 class="text-2xl font-bold mb-6">🛠️ Record Bus Service</h2>
+
+  <form method="POST" class="space-y-4">
+
+    <div>
+      <label class="block text-sm font-medium">Bus:</label>
+      <select name="bus_id" required class="w-full border px-3 py-2 rounded">
+        <option value="">-- Select Bus --</option>
+        {% for bus in buses %}
+          <option value="{{ bus.id }}">{{ bus.reg_no }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium">Service Date:</label>
+      <input type="date" name="service_date" required class="w-full border px-3 py-2 rounded">
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium">Service Type:</label>
+      <input type="text" name="service_type" placeholder="Oil Change, Major Service..." required class="w-full border px-3 py-2 rounded">
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium">Description (optional):</label>
+      <textarea name="description" class="w-full border px-3 py-2 rounded"></textarea>
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium">Cost (KES):</label>
+      <input type="number" step="0.01" name="cost" class="w-full border px-3 py-2 rounded">
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium">Garage Name:</label>
+      <input type="text" name="garage_name" class="w-full border px-3 py-2 rounded">
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium">Mileage at Service:</label>
+      <input type="number" name="mileage_at_service" class="w-full border px-3 py-2 rounded">
+    </div>
+
+    <div class="flex justify-end">
+      <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save Service</button>
+    </div>
+
+  </form>
+</div>
+{% endblock %}
