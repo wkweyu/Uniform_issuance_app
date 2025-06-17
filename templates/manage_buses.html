@@ -1,6 +1,4 @@
-{% extends 'base.html' %}
-
-{% block content %}
+{% extends 'base.html' %} {% block content %}
 <div class="max-w-6xl mx-auto p-6 bg-white rounded shadow">
   <h2 class="text-2xl font-bold mb-6">🚌 Manage School Buses</h2>
 
@@ -8,26 +6,64 @@
   <form method="POST" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
     <div>
       <label class="block text-sm font-medium">Reg Number:</label>
-      <input type="text" name="reg_no" required class="w-full border px-3 py-2 rounded" placeholder="KDG 123A">
+      <input
+        type="text"
+        name="reg_no"
+        oninput="this.value = this.value.toUpperCase()"
+        required
+        class="w-full border px-3 py-2 rounded"
+        placeholder="KDG 123A"
+      />
     </div>
 
     <div>
       <label class="block text-sm font-medium">Make/Model:</label>
-      <input type="text" name="make" class="w-full border px-3 py-2 rounded" placeholder="Isuzu NQR">
+      <input
+        type="text"
+        name="make"
+        oninput="this.value = this.value.toUpperCase()"
+        class="w-full border px-3 py-2 rounded"
+        placeholder="Isuzu NQR"
+      />
     </div>
 
     <div>
       <label class="block text-sm font-medium">Capacity:</label>
-      <input type="number" name="capacity" min="1" class="w-full border px-3 py-2 rounded" placeholder="45">
+      <input
+        type="number"
+        name="capacity"
+        min="1"
+        class="w-full border px-3 py-2 rounded"
+        placeholder="45"
+      />
     </div>
 
     <div>
       <label class="block text-sm font-medium">Driver:</label>
-      <input type="text" name="driver_name" class="w-full border px-3 py-2 rounded" placeholder="John Doe">
+      <input
+        type="text"
+        name="driver_name"
+        oninput="this.value = this.value.toUpperCase()"
+        class="w-full border px-3 py-2 rounded"
+        placeholder="John Doe"
+      />
+    </div>
+    <div class="mb-4">
+      <label class="block text-sm mb-1">Initial Odometer Reading (KM):</label>
+      <input
+        type="number"
+        name="current_mileage"
+        value="0"
+        required
+        class="border px-3 py-2 rounded w-full"
+      />
     </div>
 
     <div class="col-span-1 md:col-span-4 flex justify-end">
-      <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+      <button
+        type="submit"
+        class="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+      >
         + Add Bus
       </button>
     </div>
@@ -42,6 +78,7 @@
         <th class="border p-2">Make</th>
         <th class="border p-2">Capacity</th>
         <th class="border p-2">Driver</th>
+        <th class="border p-2">Odometer (KM)</th>
         <th class="border p-2 text-center">Actions</th>
       </tr>
     </thead>
@@ -53,11 +90,22 @@
         <td class="border p-2">{{ bus.make or 'N/A' }}</td>
         <td class="border p-2 text-center">{{ bus.capacity or 'N/A' }}</td>
         <td class="border p-2">{{ bus.driver_name or 'N/A' }}</td>
+        <td class="border p-2">{{ bus.current_mileage }}</td>
         <td class="border p-2 text-center space-x-2">
-          <a href="{{ url_for('edit_bus', bus_id=bus.id) }}" class="text-blue-600 hover:underline">Edit</a>
-          <form method="POST" action="{{ url_for('delete_bus', bus_id=bus.id) }}" class="inline"
-            onsubmit="return confirm('Delete this bus?');">
-            <button type="submit" class="text-red-600 hover:underline">Delete</button>
+          <a
+            href="{{ url_for('edit_bus', bus_id=bus.id) }}"
+            class="text-blue-600 hover:underline"
+            >Edit</a
+          >
+          <form
+            method="POST"
+            action="{{ url_for('delete_bus', bus_id=bus.id) }}"
+            class="inline"
+            onsubmit="return confirm('Delete this bus?');"
+          >
+            <button type="submit" class="text-red-600 hover:underline">
+              Delete
+            </button>
           </form>
         </td>
       </tr>
@@ -66,7 +114,11 @@
   </table>
 
   <div class="mt-6">
-    <a href="{{ url_for('fleet_dashboard') }}" class="text-blue-600 hover:underline">← Back to Fleet Dashboard</a>
+    <a
+      href="{{ url_for('fleet_dashboard') }}"
+      class="text-blue-600 hover:underline"
+      >← Back to Fleet Dashboard</a
+    >
   </div>
 </div>
 {% endblock %}

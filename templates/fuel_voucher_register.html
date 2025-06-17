@@ -1,23 +1,59 @@
-{% extends 'base.html' %}
-
-{% block content %}
+{% extends 'base.html' %} {% block content %}
 <div class="max-w-7xl mx-auto p-6 bg-white shadow rounded-lg print-area">
   <h2 class="text-2xl font-bold mb-4 no-print">🚍 Fuel Voucher Register</h2>
 
   <form method="POST" class="flex flex-wrap gap-3 mb-6 no-print">
-    <input type="text" name="registration_no" placeholder="Reg No" value="{{ filters.registration_no or '' }}" class="border px-3 py-2 rounded w-40">
-    <input type="text" name="driver_name" placeholder="Driver" value="{{ filters.driver_name or '' }}" class="border px-3 py-2 rounded w-40">
-    <input type="text" name="voucher_no" placeholder="Voucher No" value="{{ filters.voucher_no or '' }}" class="border px-3 py-2 rounded w-40">
-    <input type="date" name="date_from" value="{{ date_from }}" class="border px-3 py-2 rounded">
-    <input type="date" name="date_to" value="{{ date_to }}" class="border px-3 py-2 rounded">
-    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded">Filter</button>
+    <input
+      type="text"
+      name="registration_no"
+      placeholder="Reg No"
+      value="{{ filters.registration_no or '' }}"
+      class="border px-3 py-2 rounded w-40"
+    />
+    <input
+      type="text"
+      name="driver_name"
+      placeholder="Driver"
+      value="{{ filters.driver_name or '' }}"
+      class="border px-3 py-2 rounded w-40"
+    />
+    <input
+      type="text"
+      name="voucher_no"
+      placeholder="Voucher No"
+      value="{{ filters.voucher_no or '' }}"
+      class="border px-3 py-2 rounded w-40"
+    />
+    <input
+      type="date"
+      name="date_from"
+      value="{{ date_from }}"
+      class="border px-3 py-2 rounded"
+    />
+    <input
+      type="date"
+      name="date_to"
+      value="{{ date_to }}"
+      class="border px-3 py-2 rounded"
+    />
+    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded">
+      Filter
+    </button>
     {% if vouchers %}
-    <button type="button" onclick="window.print()" class="px-4 py-2 bg-green-600 text-white rounded no-print">🖨️ Print</button>
+    <button
+      type="button"
+      onclick="window.print()"
+      class="px-4 py-2 bg-green-600 text-white rounded no-print"
+    >
+      🖨️ Print
+    </button>
     {% endif %}
   </form>
 
   {% if vouchers %}
-  <div class="text-center font-bold text-lg mb-4 print-only">🚍 Fuel Voucher Register</div>
+  <div class="text-center font-bold text-lg mb-4 print-only">
+    🚍 Fuel Voucher Register
+  </div>
 
   <table class="w-full border-collapse border text-sm">
     <thead class="bg-gray-100">
@@ -29,6 +65,7 @@
         <th class="border p-2 text-right">Litres</th>
         <th class="border p-2 text-right">Total (KES)</th>
         <th class="border p-2 no-print">Actions</th>
+        <th class="border p-2 no-print">Invoiced</th>
       </tr>
     </thead>
     <tbody>
@@ -38,17 +75,37 @@
         <td class="border p-2">{{ v.issued_on.strftime('%d-%m-%Y') }}</td>
         <td class="border p-2">{{ v.reg_no }}</td>
         <td class="border p-2">{{ v.driver_name }}</td>
-        <td class="border p-2 text-right">{{ "%.2f"|format(v.litres or 0) }}</td>
-        <td class="border p-2 text-right">KES {{ "%.2f"|format(v.total_cost or 0) }}</td>
+        <td class="border p-2 text-right">
+          {{ "%.2f"|format(v.litres or 0) }}
+        </td>
+        <td class="border p-2 text-right">
+          KES {{ "%.2f"|format(v.total_cost or 0) }}
+        </td>
         <td class="border p-2 no-print">
-          <a href="{{ url_for('print_voucher', voucher_no=v.voucher_no) }}" target="_blank" class="text-blue-600 hover:underline">Print</a>
+          <a
+            href="{{ url_for('print_voucher', voucher_no=v.voucher_no) }}"
+            target="_blank"
+            class="text-blue-600 hover:underline"
+            >Print</a
+          >
+        </td>
+        <td class="border p-2 no-print">
+          {{ v.invoiced }} {% if v.invoiced == 'No' %} |
+          <a
+            href="{{ url_for('record_fuel_invoice') }}?voucher_id={{ v.id }}"
+            class="text-blue-600 underline"
+            >Record Invoice</a
+          >
+          {% endif %}
         </td>
       </tr>
       {% endfor %}
       <tr class="font-semibold bg-gray-50">
         <td colspan="4" class="border p-2 text-right">Totals:</td>
         <td class="border p-2 text-right">{{ "%.2f"|format(total_litres) }}</td>
-        <td class="border p-2 text-right">KES {{ "%.2f"|format(total_cost) }}</td>
+        <td class="border p-2 text-right">
+          KES {{ "%.2f"|format(total_cost) }}
+        </td>
         <td class="border p-2 no-print"></td>
       </tr>
     </tbody>
@@ -58,7 +115,11 @@
   {% endif %}
 
   <div class="mt-6 no-print">
-    <a href="{{ url_for('fleet_dashboard') }}" class="text-blue-600 hover:underline">← Back to Fleet Dashboard</a>
+    <a
+      href="{{ url_for('fleet_dashboard') }}"
+      class="text-blue-600 hover:underline"
+      >← Back to Fleet Dashboard</a
+    >
   </div>
 </div>
 {% endblock %}

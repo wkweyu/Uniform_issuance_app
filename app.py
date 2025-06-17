@@ -4,7 +4,7 @@ from datetime import datetime,timedelta
 from decimal import Decimal
 
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static')
 app.secret_key = 'your_secret_key'
 app.jinja_env.globals['datetime'] = datetime
 
@@ -709,10 +709,11 @@ def manage_buses():
     cursor = connection.cursor()
 
     if request.method == 'POST':
-        reg_no = request.form.get('reg_no')
+        reg_no = request.form.get('reg_no').upper()
         make = request.form.get('make')
         capacity = request.form.get('capacity')
         driver = request.form.get('driver_name')
+        current_mileage = request.form.get('current_mileage')
 
         # Check if reg_no already exists
         cursor.execute("SELECT COUNT(*) AS count FROM buses WHERE reg_no = %s", (reg_no,))
@@ -722,9 +723,9 @@ def manage_buses():
             flash(f'A bus with registration number {reg_no} already exists.', 'error')
         else:
             cursor.execute("""
-                INSERT INTO buses (reg_no, make, capacity, driver_name)
-                VALUES (%s, %s, %s, %s)
-            """, (reg_no, make, capacity, driver))
+                INSERT INTO buses (reg_no, make, capacity, driver_name,current_mileage)
+                VALUES (%s, %s, %s, %s,%s)
+            """, (reg_no, make, capacity, driver,current_mileage))
             connection.commit()
             flash('Bus added successfully.', 'success')
 
@@ -748,6 +749,7 @@ def edit_bus(bus_id):
         make = request.form.get('make')
         capacity = request.form.get('capacity')
         driver = request.form.get('driver_name')
+        current_mileage = request.form.get('current_mileage')
 
         # Validate required fields
         if not reg_no:
@@ -766,9 +768,9 @@ def edit_bus(bus_id):
         else:
             cursor.execute("""
                 UPDATE buses 
-                SET reg_no=%s, make=%s, capacity=%s, driver_name=%s 
+                SET reg_no=%s, make=%s, capacity=%s, driver_name=%s,current_mileage=%s 
                 WHERE id=%s
-            """, (reg_no, make, capacity, driver, bus_id))
+            """, (reg_no, make, capacity, driver,current_mileage, bus_id))
             connection.commit()
             flash('Bus details updated successfully.', 'success')
             return redirect(url_for('manage_buses'))
@@ -898,15 +900,19 @@ def voucher_register():
 
     query = """
         SELECT 
+            fv.id,
             fv.voucher_no, 
             fv.issued_on, 
             fv.litres, 
             fv.total_cost, 
             b.reg_no, 
-            b.driver_name
+            b.driver_name,
+            CASE WHEN fi.id IS NOT NULL THEN 'Yes' ELSE 'No' END AS invoiced
         FROM fuel_vouchers fv
         JOIN buses b ON fv.bus_id = b.id
+        LEFT JOIN fuel_invoices fi ON fv.id = fi.voucher_id
         WHERE fv.issued_on BETWEEN %s AND %s
+
     """
     params = [date_from, to_datetime]
 
@@ -969,7 +975,35 @@ def record_fuel_invoice():
         amount_paid = float(request.form.get('amount_paid'))
         petrol_station = request.form.get('petrol_station')
         odometer_reading = request.form.get('odometer_reading')
+        if not odometer_reading or not odometer_reading.isdigit():
+            flash("Please enter a valid numeric odometer reading.", "error")
+        return redirect(request.url)
+        odometer_reading = int(odometer_reading)
+
         remarks = request.form.get('remarks')
+       ##### 
+        # Get bus_id for this voucher
+        cursor.execute("SELECT bus_id FROM fuel_vouchers WHERE id=%s", (voucher_id,))
+        bus_row = cursor.fetchone()
+        if not bus_row:
+            flash("Invalid voucher selected.", "error")
+            return redirect(request.url)
+        bus_id = bus_row['bus_id']
+
+        # Get latest odometer for this bus
+        cursor.execute("""
+            SELECT MAX(fi.odometer_reading) AS last_odometer
+            FROM fuel_invoices fi
+            JOIN fuel_vouchers fv ON fi.voucher_id = fv.id
+            WHERE fv.bus_id = %s
+        """, (bus_id,))
+        last_odometer = cursor.fetchone()['last_odometer'] or 0
+
+        # Check odometer consistency
+        if odometer_reading < last_odometer:
+            flash(f"Odometer reading must be greater than the last recorded value: {last_odometer} KM.", 'error')
+            return redirect(request.url)
+#######
 
         cursor.execute("""
             INSERT INTO fuel_invoices (voucher_id, date, actual_litres, amount_paid, petrol_station, odometer_reading, remarks)
@@ -994,29 +1028,41 @@ def record_fuel_invoice():
     connection.close()
     return render_template('record_fuel_invoice.html', vouchers=vouchers)
 #Fuel consumption report
-@app.route('/fleet/fuel_consumption_report')
+@app.route('/fuel/consumption_report', methods=['GET', 'POST'])
 def fuel_consumption_report():
     connection = get_db_connection()
     cursor = connection.cursor()
 
-    # Fetch cumulative fuel data per bus
+    today = datetime.now().strftime('%Y-%m-%d')
+    from_date = to_date = today
+
+    if request.method == 'POST':
+        from_date = request.form.get('from_date') or today
+        to_date = request.form.get('to_date') or today
+
+    # Fetch cumulative actual fuel consumption from invoices only
     cursor.execute("""
         SELECT 
             b.reg_no,
-            COUNT(fv.id) AS vouchers_issued,
-            IFNULL(SUM(fi.actual_litres), 0) AS total_litres,
-            IFNULL(SUM(fi.amount_paid), 0) AS total_amount
-        FROM buses b
-        LEFT JOIN fuel_vouchers fv ON b.id = fv.bus_id
-        LEFT JOIN fuel_invoices fi ON fv.id = fi.voucher_id
-        WHERE b.active = 1
-        GROUP BY b.id
+            COUNT(fi.id) AS vouchers_issued,
+            SUM(fi.actual_litres) AS total_litres,
+            SUM(fi.amount_paid) AS total_amount
+        FROM fuel_invoices fi
+        JOIN fuel_vouchers fv ON fi.voucher_id = fv.id
+        JOIN buses b ON fv.bus_id = b.id
+        WHERE fi.date BETWEEN %s AND %s
+        GROUP BY b.reg_no
         ORDER BY b.reg_no
-    """)
-    report = cursor.fetchall()
+    """, (from_date, to_date))
 
+    report = cursor.fetchall()
     connection.close()
-    return render_template('fuel_consumption_report.html', report=report)
+
+    return render_template("fuel_consumption_report.html",
+                           report=report,
+                           from_date=from_date,
+                           to_date=to_date)
+
 
 @app.route('/fleet/get_driver/<int:bus_id>')
 def get_driver(bus_id):
@@ -1156,22 +1202,20 @@ def fuel_efficiency_report():
     cursor = connection.cursor()
 
     date_from = request.form.get('date_from') or '2024-01-01'
-    date_to = request.form.get('date_to') or datetime.now().strftime('%Y-%m-%d'
-
-    )
+    date_to = request.form.get('date_to') or datetime.now().strftime('%Y-%m-%d')
 
     query = """
         SELECT 
             b.reg_no,
-            SUM(fv.litres) AS total_litres,
-            MAX(fv.closing_mileage) - MIN(fv.opening_mileage) AS distance_covered,
-            (MAX(fv.closing_mileage) - MIN(fv.opening_mileage)) / SUM(fv.litres) AS km_per_litre
-        FROM fuel_vouchers fv
+            SUM(fi.actual_litres) AS total_litres,
+            (MAX(fi.odometer_reading) - MIN(fi.odometer_reading)) AS distance_covered,
+            (MAX(fi.odometer_reading) - MIN(fi.odometer_reading)) / SUM(fi.actual_litres) AS km_per_litre
+        FROM fuel_invoices fi
+        JOIN fuel_vouchers fv ON fi.voucher_id = fv.id
         JOIN buses b ON fv.bus_id = b.id
-        WHERE fv.issued_on BETWEEN %s AND %s
-        GROUP BY b.id
-        HAVING distance_covered > 0 AND total_litres > 0
-        ORDER BY km_per_litre ASC
+        WHERE fi.date BETWEEN %s AND %s
+        GROUP BY b.reg_no
+        ORDER BY b.reg_no
     """
     cursor.execute(query, (date_from, date_to))
     records = cursor.fetchall()
@@ -1181,6 +1225,32 @@ def fuel_efficiency_report():
                            records=records,
                            date_from=date_from,
                            date_to=date_to)
+
+
+@app.route("/test-css")
+def test_css():
+    return "<link rel='stylesheet' href='/static/css/tailwind.min.css'>Test Page"
+
+@app.route('/fleet/fuel_consumption_chart')
+def fuel_consumption_chart():
+    connection = get_db_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        SELECT b.reg_no, SUM(fi.actual_litres) AS total_litres
+        FROM fuel_invoices fi
+        JOIN fuel_vouchers fv ON fi.voucher_id = fv.id
+        JOIN buses b ON fv.bus_id = b.id
+        GROUP BY b.reg_no
+        ORDER BY b.reg_no
+    """)
+    data = cursor.fetchall()
+    connection.close()
+
+    labels = [row['reg_no'] for row in data]
+    litres = [float(row['total_litres']) for row in data]
+
+    return render_template('fuel_consumption_chart.html', labels=labels, litres=litres)
 
 
 

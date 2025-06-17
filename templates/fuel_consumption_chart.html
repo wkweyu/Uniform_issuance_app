@@ -1,0 +1,36 @@
+{% extends 'base.html' %} {% block content %}
+<div class="max-w-5xl mx-auto p-6 bg-white rounded shadow">
+  <h2 class="text-2xl font-bold mb-4">🚍 Fuel Consumption Summary (Litres)</h2>
+
+  <canvas id="fuelChart" class="mb-6"></canvas>
+
+  <a
+    href="{{ url_for('fleet_dashboard') }}"
+    class="text-blue-600 hover:underline"
+    >← Back to Fleet Dashboard</a
+  >
+</div>
+
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+  const ctx = document.getElementById('fuelChart').getContext('2d');
+  const fuelChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+          labels: {{ labels|tojson }},
+          datasets: [{
+              label: 'Total Fuel (Litres)',
+              data: {{ litres|tojson }},
+              backgroundColor: '#3B82F6'
+          }]
+      },
+      options: {
+          scales: {
+              y: { beginAtZero: true }
+          }
+      }
+  });
+</script>
+{% endblock %}

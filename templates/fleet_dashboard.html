@@ -1,51 +1,124 @@
-{% extends 'base.html' %}
-
-{% block content %}
+{% extends 'base.html' %} {% block content %}
 <div class="max-w-5xl mx-auto p-6">
-  <h2 class="text-3xl font-bold mb-6 text-gray-800">🚍 Fleet Management Dashboard</h2>
+  <h2 class="text-3xl font-bold mb-6 text-gray-800">
+    🚍 Fleet Management Dashboard
+  </h2>
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-
     <!-- Fuel Management -->
-    <div class="border border-gray-300 rounded-lg p-4 bg-white shadow hover:shadow-md transition">
+    <div
+      class="border border-gray-300 rounded-lg p-4 bg-white shadow hover:shadow-md transition"
+    >
       <h3 class="text-xl font-semibold mb-3">⛽ Fuel Management</h3>
       <ul class="space-y-2 text-blue-700">
-        <li><a href="{{ url_for('issue_fuel') }}" class="hover:underline">+ Issue Fuel Voucher</a></li>
-        <li><a href="{{ url_for('record_fuel_invoice') }}" class="hover:underline">📝 Record Fuel Invoice</a></li>
-        <li><a href="{{ url_for('voucher_register') }}" class="hover:underline">📄 Voucher Register</a></li>
-        <li><a href="{{ url_for('fuel_consumption_report') }}" class="hover:underline">📊 Fuel Consumption Report</a></li>
-        <li><a href="{{ url_for('fuel_consumption_efficiency') }}" class="hover:underline">📊 Fuel Efficiency (L/km)</a></li>
-        <li><a href="{{ url_for('fuel_expenses_report') }}" class="hover:underline">💰 Fuel Expenses Report</a></li>
-        <li><a href="{{ url_for('fuel_efficiency_report') }}" class="hover:underline">📊 Fuel Efficiency (KM/L)</a></li>
-
-
+        <li>
+          <a href="{{ url_for('issue_fuel') }}" class="hover:underline"
+            >+ Issue Fuel Voucher</a
+          >
+        </li>
+        <li>
+          <a href="{{ url_for('record_fuel_invoice') }}" class="hover:underline"
+            >📝 Record Fuel Invoice</a
+          >
+        </li>
+        <li>
+          <a href="{{ url_for('voucher_register') }}" class="hover:underline"
+            >📄 Voucher Register</a
+          >
+        </li>
+        <li>
+          <a
+            href="{{ url_for('fuel_consumption_report') }}"
+            class="hover:underline"
+            >📊 Fuel Consumption Report</a
+          >
+        </li>
+        <li>
+          <a
+            href="{{ url_for('fuel_consumption_efficiency') }}"
+            class="hover:underline"
+            >📊 Fuel Efficiency (L/km)</a
+          >
+        </li>
+        <li>
+          <a
+            href="{{ url_for('fuel_expenses_report') }}"
+            class="hover:underline"
+            >💰 Fuel Expenses Report</a
+          >
+        </li>
+        <li>
+          <a
+            href="{{ url_for('fuel_efficiency_report') }}"
+            class="hover:underline"
+            >📊 Fuel Efficiency (KM/L)</a
+          >
+        </li>
+        <li>
+          <a
+            href="{{ url_for('fuel_consumption_chart') }}"
+            class="hover:underline"
+            >📊 Fuel Consumption Chart</a
+          >
+        </li>
       </ul>
     </div>
 
     <!-- Service & Oils -->
-    <div class="border border-gray-300 rounded-lg p-4 bg-white shadow hover:shadow-md transition">
+    <div
+      class="border border-gray-300 rounded-lg p-4 bg-white shadow hover:shadow-md transition"
+    >
       <h3 class="text-xl font-semibold mb-3">🛠️ Service & Oils</h3>
       <ul class="space-y-2 text-blue-700">
-        <li><a href="{{ url_for('record_service') }}" class="hover:underline">+ Record Service</a></li>
-        <li><a href="{{ url_for('service_register') }}" class="hover:underline">📄 Service Register</a></li>
-        <li><a href="{{ url_for('oil_register') }}" class="hover:underline">🛢️ Oil Register</a></li>
-        <li><a href="{{ url_for('service_reminders') }}" class="hover:underline">🔔 Service Reminders</a></li>
-        <li><a href="{{ url_for('service_costs_report') }}" class="hover:underline">💰 Service Costs Summary</a></li>
+        <li>
+          <a href="{{ url_for('record_service') }}" class="hover:underline"
+            >+ Record Service</a
+          >
+        </li>
+        <li>
+          <a href="{{ url_for('service_register') }}" class="hover:underline"
+            >📄 Service Register</a
+          >
+        </li>
+        <li>
+          <a href="{{ url_for('oil_register') }}" class="hover:underline"
+            >🛢️ Oil Register</a
+          >
+        </li>
+        <li>
+          <a href="{{ url_for('service_reminders') }}" class="hover:underline"
+            >🔔 Service Reminders</a
+          >
+        </li>
+        <li>
+          <a
+            href="{{ url_for('service_costs_report') }}"
+            class="hover:underline"
+            >💰 Service Costs Summary</a
+          >
+        </li>
       </ul>
     </div>
 
     <!-- Bus Management -->
-    <div class="border border-gray-300 rounded-lg p-4 bg-white shadow hover:shadow-md transition">
+    <div
+      class="border border-gray-300 rounded-lg p-4 bg-white shadow hover:shadow-md transition"
+    >
       <h3 class="text-xl font-semibold mb-3">🚌 Bus Management</h3>
       <ul class="space-y-2 text-blue-700">
-        <li><a href="{{ url_for('manage_buses') }}" class="hover:underline">📝 Manage Buses</a></li>
+        <li>
+          <a href="{{ url_for('manage_buses') }}" class="hover:underline"
+            >📝 Manage Buses</a
+          >
+        </li>
       </ul>
     </div>
-
   </div>
 
   <div class="mt-8">
-    <a href="{{ url_for('index') }}" class="text-blue-600 hover:underline">← Back to Home</a>
+    <a href="{{ url_for('index') }}" class="text-blue-600 hover:underline"
+      >← Back to Home</a
+    >
   </div>
 </div>
 {% endblock %}
