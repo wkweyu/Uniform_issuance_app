@@ -72,18 +72,25 @@
         <th class="border p-2 no-print">Invoiced</th>
       </tr>
     </thead>
+    <!-- In the table body section -->
     <tbody>
       {% for v in vouchers %}
       <tr class="hover:bg-gray-50">
         <td class="border p-2">{{ v.voucher_no }}</td>
         <td class="border p-2">{{ v.issued_on.strftime('%d-%m-%Y') }}</td>
         <td class="border p-2">{{ v.reg_no }}</td>
-        <td class="border p-2">{{ v.driver_name }}</td>
-        <td class="border p-2 text-right">
-          {{ "%.2f"|format(v.litres or 0) }}
+        <td class="border p-2">{{ v.driver_name or 'UNKNOWN' }}</td>
+        <td
+          class="border p-2 text-right {{ 'text-gray-400' if v.invoiced == 'No' else '' }}"
+        >
+          {% if v.invoiced == 'Yes' %} {{ v.litres|currency }} {% else %}
+          Pending {% endif %}
         </td>
-        <td class="border p-2 text-right">
-          KES {{ "%.2f"|format(v.total_cost or 0) }}
+        <td
+          class="border p-2 text-right {{ 'text-gray-400' if v.invoiced == 'No' else '' }}"
+        >
+          {% if v.invoiced == 'Yes' %} KES {{ v.total_cost|currency }} {% else
+          %} Pending {% endif %}
         </td>
         <td class="border p-2 no-print">
           <a
@@ -105,12 +112,10 @@
       </tr>
       {% endfor %}
       <tr class="font-semibold bg-gray-50">
-        <td colspan="4" class="border p-2 text-right">Totals:</td>
-        <td class="border p-2 text-right">{{ "%.2f"|format(total_litres) }}</td>
-        <td class="border p-2 text-right">
-          KES {{ "%.2f"|format(total_cost) }}
-        </td>
-        <td class="border p-2 no-print"></td>
+        <td colspan="4" class="border p-2 text-right">Grand Total:</td>
+        <td class="border p-2 text-right">{{ total_litres|currency }}</td>
+        <td class="border p-2 text-right">KES {{ total_cost|currency }}</td>
+        <td colspan="2" class="border p-2 no-print"></td>
       </tr>
     </tbody>
   </table>

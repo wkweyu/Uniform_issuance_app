@@ -1,0 +1,139 @@
+{% extends 'base_report.html' %} {% block content %}
+
+<h2 class="text-2xl font-bold mb-6">🚌 Bus Statement — {{ reg_no }}</h2>
+
+<!-- Filter Form -->
+<form method="GET" class="flex items-center gap-4 mb-6">
+  <input type="hidden" name="bus_id" value="{{ request.args.get('bus_id') }}" />
+
+  <div>
+    <label class="block text-sm mb-1">From:</label>
+    <input
+      type="date"
+      name="from_date"
+      value="{{ from_date }}"
+      class="border px-3 py-2 rounded"
+    />
+  </div>
+  <div>
+    <label class="block text-sm mb-1">To:</label>
+    <input
+      type="date"
+      name="to_date"
+      value="{{ to_date }}"
+      class="border px-3 py-2 rounded"
+    />
+  </div>
+  <div class="pt-5">
+    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded">
+      Filter
+    </button>
+  </div>
+</form>
+
+{% set ns = namespace(total_litres=0, total_fuel_amount=0, total_service_cost=0)
+%}
+
+<h3 class="text-lg font-semibold mb-3">⛽ Fuel Invoices</h3>
+<table class="w-full border-collapse border text-sm mb-6">
+  <thead class="bg-gray-100">
+    <tr>
+      <th class="border p-2">Date</th>
+      <th class="border p-2 text-right">Litres</th>
+      <th class="border p-2 text-right">Amount (KES)</th>
+      <th class="border p-2">Station</th>
+      <th class="border p-2 text-right">Odometer (KM)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for record in fuel_records %}
+    <tr>
+      <td class="border p-2">{{ record.date }}</td>
+      <td class="border p-2 text-right">
+        {{ "{:,.2f}".format(record.actual_litres or 0) }}
+      </td>
+      <td class="border p-2 text-right">
+        {{ "{:,.2f}".format(record.amount_paid or 0) }}
+      </td>
+      <td class="border p-2">{{ record.petrol_station }}</td>
+      <td class="border p-2 text-right">
+        {{ "{:,}".format(record.odometer_reading or 0) }}
+      </td>
+    </tr>
+    {% set ns.total_litres = ns.total_litres + (record.actual_litres or 0) %} {%
+    set ns.total_fuel_amount = ns.total_fuel_amount + (record.amount_paid or 0)
+    %} {% else %}
+    <tr>
+      <td colspan="5" class="border p-4 text-center text-gray-500">
+        No fuel invoices found.
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr class="bg-gray-100 font-semibold">
+      <td class="border p-2 text-right">Totals:</td>
+      <td class="border p-2 text-right">
+        {{ "{:,.2f}".format(ns.total_litres) }}
+      </td>
+      <td class="border p-2 text-right">
+        {{ "{:,.2f}".format(ns.total_fuel_amount) }}
+      </td>
+      <td colspan="2" class="border p-2"></td>
+    </tr>
+  </tfoot>
+</table>
+
+<h3 class="text-lg font-semibold mb-3">🛠️ Service Records</h3>
+<table class="w-full border-collapse border text-sm mb-6">
+  <thead class="bg-gray-100">
+    <tr>
+      <th class="border p-2">Date</th>
+      <th class="border p-2">Type</th>
+      <th class="border p-2">Description</th>
+      <th class="border p-2 text-right">Cost (KES)</th>
+      <th class="border p-2">Garage</th>
+      <th class="border p-2 text-right">Mileage (KM)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for service in service_records %}
+    <tr>
+      <td class="border p-2">{{ service.service_date }}</td>
+      <td class="border p-2">{{ service.service_type }}</td>
+      <td class="border p-2">{{ service.description }}</td>
+      <td class="border p-2 text-right">
+        {{ "{:,.2f}".format(service.cost or 0) }}
+      </td>
+      <td class="border p-2">{{ service.garage_name }}</td>
+      <td class="border p-2 text-right">
+        {{ "{:,}".format(service.mileage_at_service or 0) }}
+      </td>
+    </tr>
+    {% set ns.total_service_cost = ns.total_service_cost + (service.cost or 0)
+    %} {% else %}
+    <tr>
+      <td colspan="6" class="border p-4 text-center text-gray-500">
+        No service records found.
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr class="bg-gray-100 font-semibold">
+      <td class="border p-2 text-right" colspan="3">Total Service Cost:</td>
+      <td class="border p-2 text-right">
+        {{ "{:,.2f}".format(ns.total_service_cost) }}
+      </td>
+      <td colspan="2" class="border p-2"></td>
+    </tr>
+  </tfoot>
+</table>
+
+{% if fuel_records or service_records %}
+<hr class="my-6" />
+<div class="text-right text-lg font-bold">
+  🚍 Grand Total (Fuel + Service): KES {{ "{:,.2f}".format(ns.total_fuel_amount
+  + ns.total_service_cost) }}
+</div>
+{% endif %} {% endblock %}

@@ -680,6 +680,8 @@ def show_routes():
 """**************************************************************************************************************
                                                    FLEET MANAGEMENT
 ****************************************************************************************************************"""
+#record service
+
 @app.route('/fleet/record_service', methods=['GET', 'POST'])
 def record_service():
     connection = get_db_connection()
@@ -692,28 +694,55 @@ def record_service():
         description = request.form.get('description')
         cost = request.form.get('cost')
         garage_name = request.form.get('garage_name')
-        mileage_at_service = request.form.get('mileage_at_service')
+        mileage = int(request.form.get('mileage_at_service'))
 
+        # Get current mileage
+        cursor.execute("SELECT current_mileage FROM buses WHERE id=%s", (bus_id,))
+        bus = cursor.fetchone()
+        if not bus:
+            flash("Invalid bus selected.", "error")
+            return redirect(request.url)
+
+        current_mileage = bus['current_mileage']
+
+        if mileage < current_mileage:
+            flash(f"Service mileage ({mileage} KM) cannot be less than the current mileage ({current_mileage} KM).", "error")
+            return redirect(request.url)
+
+        # Insert service record
         cursor.execute("""
-            INSERT INTO service_records 
-            (bus_id, service_date, service_type, description, cost, garage_name, mileage_at_service)
+            INSERT INTO service_records (bus_id, service_date, service_type, description, cost, garage_name, mileage_at_service)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, (bus_id, service_date, service_type, description, cost, garage_name, mileage_at_service))
+        """, (bus_id, service_date, service_type, description, cost, garage_name, mileage))
+
+        # Update bus current mileage
+        cursor.execute("UPDATE buses SET current_mileage=%s WHERE id=%s", (mileage, bus_id))
 
         connection.commit()
         connection.close()
-        flash('Service record saved successfully.', 'success')
-        return redirect(url_for('record_service'))
 
-    cursor.execute("SELECT id, reg_no FROM buses WHERE active=1")
+        flash("Service record saved successfully.", "success")
+        return redirect(url_for('service_register'))
+
+    # Load buses for dropdown
+    cursor.execute("SELECT id, reg_no FROM buses WHERE active=1 ORDER BY reg_no")
     buses = cursor.fetchall()
     connection.close()
 
     return render_template('record_service.html', buses=buses)
 
-@app.route('/fleet')
+#Fleet dashboard
+@app.route('/fleet/fleet_dashboard')
 def fleet_dashboard():
-    return render_template('fleet_dashboard.html')
+    connection = get_db_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("SELECT id, reg_no FROM buses WHERE active=1 ORDER BY reg_no")
+    buses = cursor.fetchall()
+    connection.close()
+
+    return render_template('fleet_dashboard.html', buses=buses)
+
 
 #Buses creation
 
@@ -892,6 +921,7 @@ def generate_voucher_no():
     connection.close()
     return new_voucher_no
 #Fuel voucher register
+
 @app.route("/fuel/voucher_register", methods=['GET', 'POST'])
 def voucher_register():
     connection = get_db_connection()
@@ -899,33 +929,21 @@ def voucher_register():
     vouchers = []
     total_litres = 0
     total_cost = 0
-    #today = datetime.now().strftime('%Y-%m-%d')
 
-    #date_from = date_to = today
-
-# Get current date and first day of month
+    # Get current date and first day of month
     today = datetime.now().date()
     first_of_month = today.replace(day=1)
     
-    # Handle date parameter
-    if request.method == 'POST':
-        # Use form dates if submitted, otherwise default to current month
-        date_from = request.form.get('date_from') or str(first_of_month)
-        to_date = request.form.get('to_date') or str(today)
-    else:
-        # Default to current month when first loading the page
-        date_from = str(first_of_month)
-        to_date = str(today)
-
-    print(f"DEBUG: Querying from {date_from} to {to_date}")
-
-
+    # Handle date parameters
     if request.method == 'POST':
         filters['reg_no'] = request.form.get('reg_no')
         filters['driver_name'] = request.form.get('driver_name')
         filters['voucher_no'] = request.form.get('voucher_no')
-        date_from = request.form.get('date_from') or today
-        to_date = request.form.get('to_date') or today
+        date_from = request.form.get('date_from') or str(first_of_month)
+        to_date = request.form.get('to_date') or str(today)
+    else:
+        date_from = str(first_of_month)
+        to_date = str(today)
 
     to_datetime = f"{to_date} 23:59:59"
 
@@ -934,8 +952,8 @@ def voucher_register():
             fv.id,
             fv.voucher_no, 
             fv.issued_on, 
-            fv.litres, 
-            fv.total_cost, 
+            COALESCE(fi.actual_litres, fv.litres, 0) AS litres,
+            COALESCE(fi.amount_paid, fv.total_cost, 0) AS total_cost,
             b.reg_no, 
             b.driver_name,
             CASE WHEN fi.id IS NOT NULL THEN 'Yes' ELSE 'No' END AS invoiced
@@ -943,7 +961,6 @@ def voucher_register():
         JOIN buses b ON fv.bus_id = b.id
         LEFT JOIN fuel_invoices fi ON fv.id = fi.voucher_id
         WHERE fv.issued_on BETWEEN %s AND %s
-
     """
     params = [date_from, to_datetime]
 
@@ -963,24 +980,22 @@ def voucher_register():
         cursor.execute(query, params)
         vouchers = cursor.fetchall()
 
-        # Safe total calculations
-        total_litres = sum((v['litres'] or 0) for v in vouchers)
-        total_cost = sum((v['total_cost'] or 0) for v in vouchers)
+        # Calculate totals using the same COALESCE logic
+        total_litres = sum(float(v['litres'] or 0) for v in vouchers)
+        total_cost = sum(float(v['total_cost'] or 0) for v in vouchers)
 
     connection.close()
 
     return render_template("fuel_voucher_register.html",
-                           vouchers=vouchers,
-                           filters=filters,
-                           date_from=date_from,
-                           to_date=to_date,
-                           total_litres=total_litres,
-                           total_cost=total_cost,
-                           report_title="Fuel Voucher Register",
-                           current_date=datetime.now().strftime("%d-%m-%Y %H:%M"),
-                           date_range=f"{date_from} to {to_date}"
-                           )
-
+                         vouchers=vouchers,
+                         filters=filters,
+                         date_from=date_from,
+                         to_date=to_date,
+                         total_litres=total_litres,
+                         total_cost=total_cost,
+                         report_title="Fuel Voucher Register",
+                         current_date=datetime.now().strftime("%d-%m-%Y %H:%M"),
+                         date_range=f"{date_from} to {to_date}")
 
 #Oil records register
 @app.route("/oil/register")
@@ -998,6 +1013,7 @@ def oil_register():
 
     return render_template("oil_register.html", records=records)
 #Record fuel invoice
+
 @app.route('/fleet/record_fuel_invoice', methods=['GET', 'POST'])
 def record_fuel_invoice():
     connection = get_db_connection()
@@ -1010,60 +1026,79 @@ def record_fuel_invoice():
         amount_paid = float(request.form.get('amount_paid'))
         petrol_station = request.form.get('petrol_station')
         odometer_reading = request.form.get('odometer_reading')
-        if not odometer_reading or not odometer_reading.isdigit():
-            flash("Please enter a valid numeric odometer reading.", "error")
+        remarks = request.form.get('remarks', '')
+
+        try:
+            connection.begin()
+
+            # 1. Get bus_id and validate voucher
+            cursor.execute("SELECT bus_id FROM fuel_vouchers WHERE id=%s", (voucher_id,))
+            bus_row = cursor.fetchone()
+            if not bus_row:
+                flash("Invalid voucher selected.", "error")
+                return redirect(request.url)
+            bus_id = bus_row['bus_id']
+
+            # 2. Validate odometer reading
+            cursor.execute("""
+                SELECT MAX(fi.odometer_reading) AS last_odometer
+                FROM fuel_invoices fi
+                JOIN fuel_vouchers fv ON fi.voucher_id = fv.id
+                WHERE fv.bus_id = %s
+            """, (bus_id,))
+            last_odometer = cursor.fetchone()['last_odometer'] or 0
+
+            if odometer_reading and odometer_reading.isdigit():
+                odometer_reading = int(odometer_reading)
+                if odometer_reading < last_odometer:
+                    flash(f"Odometer reading must be greater than the last recorded value: {last_odometer} KM.", 'error')
+                    return redirect(request.url)
+            else:
+                flash("Please enter a valid numeric odometer reading.", "error")
+                return redirect(request.url)
+
+            # 3. Record the invoice
+            cursor.execute("""
+                INSERT INTO fuel_invoices 
+                (voucher_id, date, actual_litres, amount_paid, petrol_station, odometer_reading, remarks)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (voucher_id, date, actual_litres, amount_paid, petrol_station, odometer_reading, remarks))
+
+            # 4. Update the voucher (removed last_updated column)
+            cursor.execute("""
+                UPDATE fuel_vouchers 
+                SET litres = %s, 
+                    total_cost = %s
+                WHERE id = %s
+            """, (actual_litres, amount_paid, voucher_id))
+
+            connection.commit()
+            flash('Fuel invoice recorded and voucher updated successfully!', 'success')
+            return redirect(url_for('voucher_register'))
+
+        except Exception as e:
+            connection.rollback()
+            flash(f'Error recording invoice: {str(e)}', 'error')
             return redirect(request.url)
-        odometer_reading = int(odometer_reading)
+        finally:
+            connection.close()
 
-        remarks = request.form.get('remarks')
-       ##### 
-        # Get bus_id for this voucher
-        cursor.execute("SELECT bus_id FROM fuel_vouchers WHERE id=%s", (voucher_id,))
-        bus_row = cursor.fetchone()
-        if not bus_row:
-            flash("Invalid voucher selected.", "error")
-            return redirect(request.url)
-        bus_id = bus_row['bus_id']
-
-        # Get latest odometer for this bus
-        cursor.execute("""
-            SELECT MAX(fi.odometer_reading) AS last_odometer
-            FROM fuel_invoices fi
-            JOIN fuel_vouchers fv ON fi.voucher_id = fv.id
-            WHERE fv.bus_id = %s
-        """, (bus_id,))
-        last_odometer = cursor.fetchone()['last_odometer'] or 0
-
-        # Check odometer consistency
-        if odometer_reading < last_odometer:
-            flash(f"Odometer reading must be greater than the last recorded value: {last_odometer} KM.", 'error')
-            return redirect(request.url)
-#######
-
-        cursor.execute("""
-            INSERT INTO fuel_invoices (voucher_id, date, actual_litres, amount_paid, petrol_station, odometer_reading, remarks)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, (voucher_id, date, actual_litres, amount_paid, petrol_station, odometer_reading, remarks))
-
-        connection.commit()
-        connection.close()
-
-        flash('Fuel invoice recorded successfully.', 'success')
-        return redirect(url_for('record_fuel_invoice'))
-
-    # Fetch open vouchers for dropdown
+    # GET request handling remains the same
     cursor.execute("""
         SELECT fv.id, fv.voucher_no, b.reg_no 
         FROM fuel_vouchers fv
         JOIN buses b ON fv.bus_id = b.id
+        WHERE NOT EXISTS (
+            SELECT 1 FROM fuel_invoices WHERE voucher_id = fv.id
+        )
         ORDER BY fv.issued_on DESC
     """)
     vouchers = cursor.fetchall()
-
     connection.close()
+    
     return render_template('record_fuel_invoice.html', vouchers=vouchers)
-#Fuel consumption report
 
+#Fuel consumption report
 @app.route('/fleet/fuel_consumption_report', methods=['GET', 'POST'])
 def fuel_consumption_report():
     connection = get_db_connection()
@@ -1275,7 +1310,8 @@ def fuel_consumption_efficiency():
         date_from=date_from,
         date_to=date_to,
         current_date=datetime.now().strftime("%d-%m-%Y %H:%M"),
-        date_range=f"{date_from} to {date_to}",
+        date_range=f"{
+        date_from} to {date_to}",
         back_url=url_for('fleet_dashboard')
     )
 
@@ -1423,6 +1459,94 @@ def fuel_expenses_report():
         date_from=date_from,
         date_to=date_to
     )
+#Get invoices
+@app.route('/fleet/fuel_invoices/<reg_no>/<from_date>/<to_date>')
+def get_fuel_invoices(reg_no, from_date, to_date):
+    connection = get_db_connection()
+    cursor = connection.cursor()
+
+    query = """
+        SELECT 
+            fi.date, 
+            fi.actual_litres, 
+            fi.amount_paid, 
+            fi.petrol_station, 
+            fi.odometer_reading
+        FROM fuel_invoices fi
+        JOIN fuel_vouchers fv ON fi.voucher_id = fv.id
+        JOIN buses b ON fv.bus_id = b.id
+        WHERE b.reg_no = %s AND fi.date BETWEEN %s AND %s
+        ORDER BY fi.date ASC
+    """
+    cursor.execute(query, (reg_no, from_date, to_date))
+    invoices = cursor.fetchall()
+    connection.close()
+
+    return jsonify(invoices)
+
+#Bus statement
+@app.route('/fleet/bus_statement')
+def bus_statement():
+    bus_id = request.args.get('bus_id')
+    if not bus_id:
+        flash("Please select a bus.", "error")
+        return redirect(url_for('fleet_dashboard'))
+
+    connection = get_db_connection()
+    cursor = connection.cursor()
+
+# Get current date and first day of month
+    today = datetime.now().date()
+    first_of_month = today.replace(day=1)
+    
+    # Handle date parameter
+    from_date = request.args.get('from_date') or str(first_of_month)
+    to_date = request.args.get('to_date') or str(today)
+
+
+    print(f"DEBUG: Querying from {from_date} to {to_date}")
+
+
+    # Fetch bus info
+    cursor.execute("SELECT reg_no FROM buses WHERE id=%s", (bus_id,))
+    bus = cursor.fetchone()
+    if not bus:
+        flash("Bus not found.", "error")
+        return redirect(url_for('fleet_dashboard'))
+
+    reg_no = bus['reg_no']
+
+    # Fetch fuel invoices
+    cursor.execute("""
+    SELECT fi.date, fi.actual_litres, fi.amount_paid, fi.petrol_station, fi.odometer_reading
+    FROM fuel_invoices fi
+    JOIN fuel_vouchers fv ON fi.voucher_id = fv.id
+    WHERE fv.bus_id = %s
+      AND fi.date BETWEEN %s AND %s
+    ORDER BY fi.date ASC
+""", (bus_id, from_date, to_date))
+    fuel_records = cursor.fetchall()
+
+    # Fetch service records
+    cursor.execute("""
+    SELECT service_date, service_type, description, cost, garage_name, mileage_at_service
+    FROM service_records
+    WHERE bus_id = %s
+      AND service_date BETWEEN %s AND %s
+    ORDER BY service_date ASC
+""", (bus_id, from_date, to_date))
+
+    service_records = cursor.fetchall()
+
+    connection.close()
+
+    return render_template('bus_statement.html',
+                           reg_no=reg_no,
+                           fuel_records=fuel_records,
+                           service_records=service_records,
+                           from_date=from_date,
+                           to_date=to_date)
+
 
 @app.route('/debug/templates')
 def debug_templates():

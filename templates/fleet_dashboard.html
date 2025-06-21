@@ -40,20 +40,6 @@
             >📊 Fuel Efficiency (L/km)</a
           >
         </li>
-        <!--li>
-          <a
-            href="{{ url_for('fuel_expenses_report') }}"
-            class="hover:underline"
-            >💰 Fuel Expenses Report</a
-          >
-        </li>
-        <li>
-          <a
-            href="{{ url_for('fuel_efficiency_report') }}"
-            class="hover:underline"
-            >📊 Fuel Efficiency (KM/L)</a
-          >
-        </li-->
         <li>
           <a
             href="{{ url_for('fuel_consumption_chart') }}"
@@ -112,6 +98,41 @@
           >
         </li>
       </ul>
+    </div>
+
+    <!-- Bus Statement Report -->
+    <div
+      class="border border-gray-300 rounded-lg p-4 bg-white shadow hover:shadow-md transition"
+    >
+      <h3 class="text-xl font-semibold mb-3">📑 Bus Statements</h3>
+      <form
+        method="GET"
+        action="{{ url_for('bus_statement') }}"
+        class="space-y-4"
+      >
+        <div>
+          <label class="block text-sm font-medium mb-1">Select Bus:</label>
+          <select
+            name="bus_id"
+            required
+            class="border px-3 py-2 rounded w-full"
+          >
+            <option value="">-- Choose Bus --</option>
+            {% for bus in buses %}
+            <option value="{{ bus.id }}">{{ bus.reg_no }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <button
+            type="submit"
+            class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 w-full"
+          >
+            📄 View Statement
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 

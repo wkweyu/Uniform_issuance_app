@@ -44,8 +44,7 @@
       </thead>
       <tbody>
         {% for r in report %}
-        <tr class="hover:bg-gray-50">
-          <td class="border p-2">{{ r.reg_no }}</td>
+          <td class="border p-2 text-right">{{ r.reg_no }}</td>
           <td class="border p-2 text-right">{{ r.vouchers_issued }}</td>
           <td class="border p-2 text-right">
             {{ "%.2f"|format(r.total_litres|float) }}
@@ -53,7 +52,19 @@
           <td class="border p-2 text-right">
             KES {{ "{:,.2f}".format(r.total_amount|float) }}
           </td>
+          <td class="border p-2 text-center no-print">
+            <button 
+              class="px-3 py-1 bg-blue-600 text-white rounded text-xs"
+              onclick="toggleInvoices('{{ r.reg_no }}')"
+            >View Invoices</button>
+          </td>
         </tr>
+        <!-- Placeholder for invoice details -->
+<tr id="invoices-{{ r.reg_no }}" class="hidden">
+  <td colspan="5" class="border p-3 bg-gray-50">
+    <div id="details-{{ r.reg_no }}">Loading invoices…</div>
+  </td>
+</tr>
         {% endfor %}
         <tr class="bg-gray-50 font-semibold">
           <td class="border p-2">Grand Total</td>
@@ -71,4 +82,48 @@
     </table>
   </div>
 </div>
+<script>
+  function toggleInvoices(regNo) {
+    const row = document.getElementById('invoices-' + regNo);
+    const detailsDiv = document.getElementById('details-' + regNo);
+  
+    if (row.classList.contains('hidden')) {
+      // Fetch only if empty
+      if (detailsDiv.innerHTML === 'Loading invoices…') {
+        const fromDate = "{{ from_date }}";
+        const toDate = "{{ to_date }}";
+  
+        fetch(`/fleet/fuel_invoices/${regNo}/${fromDate}/${toDate}`)
+          .then(response => response.json())
+          .then(data => {
+            if (data.length > 0) {
+              let html = '<table class="w-full border-collapse border text-sm mt-2">';
+              html += '<thead><tr class="bg-gray-100">';
+              html += '<th class="border p-1">Date</th><th class="border p-1 text-right">Litres</th><th class="border p-1 text-right">Amount (KES)</th><th class="border p-1">Station</th><th class="border p-1">Remarks</th>';
+              html += '</tr></thead><tbody>';
+  
+              data.forEach(item => {
+                html += `<tr>
+                    <td class="border p-1">${item.date}</td>
+                    <td class="border p-1 text-right">${item.actual_litres}</td>
+                    <td class="border p-1 text-right">KES ${item.amount_paid}</td>
+                    <td class="border p-1">${item.petrol_station}</td>
+                    <td class="border p-1">${item.remarks}</td>
+                  </tr>`;
+              });
+  
+              html += '</tbody></table>';
+              detailsDiv.innerHTML = html;
+            } else {
+              detailsDiv.innerHTML = '<p class="text-sm text-gray-600">No invoices found for this period.</p>';
+            }
+          });
+      }
+      row.classList.remove('hidden');
+    } else {
+      row.classList.add('hidden');
+    }
+  }
+  </script>
+  
 {% endblock %}
