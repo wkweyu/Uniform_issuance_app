@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Fuel Invoice {{ invoice.voucher_no }}</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+      rel="stylesheet"
+    />
+    <style>
+      @media print {
+        .no-print {
+          display: none !important;
+        }
+        body {
+          background: #fff;
+          margin: 0;
+          padding: 0;
+          font-size: 12px;
+        }
+        .voucher-card {
+          box-shadow: none !important;
+          border: none !important;
+          width: 148mm;
+          height: 210mm;
+          padding: 10mm;
+        }
+        .print-header {
+          margin-bottom: 20px;
+          text-align: center;
+        }
+      }
+    </style>
+  </head>
+
+  <body class="p-6 bg-gray-50">
+    <div
+      class="max-w-lg mx-auto bg-white border border-gray-300 rounded-lg p-6 voucher-card"
+    >
+      <!-- Letterhead -->
+      <div class="print-header">
+        <h1 class="text-xl font-bold uppercase">
+          Mother Kevin Comprehensive School
+        </h1>
+        <p class="text-sm">
+          P.O. Box 12345-00100 Nairobi, Kenya | Tel: +254 700 000 000
+        </p>
+        <h2 class="text-lg font-semibold mt-3 underline">Fuel Invoice</h2>
+      </div>
+
+      <!-- Invoice info -->
+      <table class="w-full text-sm mb-4 border border-gray-300">
+        <tbody>
+          <tr class="border border-gray-300">
+            <td class="p-2 font-semibold w-1/3">Voucher No:</td>
+            <td class="p-2">{{ invoice.voucher_no }}</td>
+          </tr>
+          <tr class="border border-gray-300">
+            <td class="p-2 font-semibold">Invoice Date:</td>
+            <td class="p-2">{{ invoice.date.strftime('%d-%m-%Y') }}</td>
+          </tr>
+          <tr class="border border-gray-300">
+            <td class="p-2 font-semibold">Bus Reg No:</td>
+            <td class="p-2">{{ invoice.reg_no }}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- Fuel details -->
+      <table class="w-full text-sm mb-4 border border-gray-300">
+        <thead class="bg-gray-100">
+          <tr>
+            <th class="border border-gray-300 p-2">Petrol Station</th>
+            <th class="border border-gray-300 p-2">Litres</th>
+            <th class="border border-gray-300 p-2">Total (KES)</th>
+            <th class="border border-gray-300 p-2">Odometer</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="border border-gray-300 p-2">
+              {{ invoice.petrol_station }}
+            </td>
+            <td class="border border-gray-300 p-2 text-right">
+              {{ "{:,.2f}".format(invoice.actual_litres or 0) }}
+            </td>
+            <td class="border border-gray-300 p-2 text-right">
+              KES {{ "{:,.2f}".format(invoice.amount_paid or 0) }}
+            </td>
+            <td class="border border-gray-300 p-2 text-right">
+              {{ "{:,}".format(invoice.odometer_reading or 0) }}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- Remarks -->
+      <div class="mb-4 text-sm">
+        <span class="font-semibold">Remarks:</span>
+        <p class="border border-gray-300 p-3 mt-1 h-16">
+          {{ invoice.remarks or 'None' }}
+        </p>
+      </div>
+
+      <!-- Signature & Stamp -->
+      <div class="flex justify-between mt-6 text-sm">
+        <div class="w-1/2 pr-2">
+          <span class="font-semibold">Authorized By:</span><br /><br />
+          ___________________________<br />
+          <span class="text-xs text-gray-600">Signature / Name</span>
+        </div>
+        <div class="w-1/2 pl-2 text-center">
+          <span class="font-semibold">Official Stamp</span><br /><br />
+          <div class="border border-gray-400 h-24 w-24 mx-auto"></div>
+        </div>
+      </div>
+
+      <div class="text-center text-xs text-gray-500 mt-6">
+        --- End of Invoice ---
+      </div>
+    </div>
+
+    <div class="text-center mt-6 no-print">
+      <button
+        onclick="window.print()"
+        class="px-5 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+      >
+        Print Invoice
+      </button>
+    </div>
+  </body>
+</html>

@@ -92,7 +92,7 @@
           {% if v.invoiced == 'Yes' %} KES {{ v.total_cost|currency }} {% else
           %} Pending {% endif %}
         </td>
-        <td class="border p-2 no-print">
+        <!--td class="border p-2 no-print">
           <a
             href="{{ url_for('print_voucher', voucher_no=v.voucher_no) }}"
             target="_blank"
@@ -107,6 +107,50 @@
             class="text-blue-600 underline"
             >Record Invoice</a
           >
+          {% endif %}
+        </td-->
+
+        <td class="border p-2 no-print">
+          {% if v.invoiced == 'No' %}
+          <a
+            href="{{ url_for('print_voucher', voucher_no=v.voucher_no) }}"
+            target="_blank"
+            class="text-green-700 hover:underline"
+            >Print Voucher</a
+          >
+          |
+          <a
+            href="{{ url_for('record_fuel_invoice') }}?voucher_id={{ v.id }}"
+            class="text-blue-600 underline"
+            >Record Invoice</a
+          >
+          {% else %}
+          <a
+            href="{{ url_for('print_invoice', voucher_id=v.id) }}"
+            target="_blank"
+            class="text-green-700 hover:underline"
+            >Print Invoice</a
+          >
+          |
+          <a
+            href="{{ url_for('edit_invoice', voucher_id=v.id) }}"
+            class="text-yellow-600 hover:underline"
+            >Edit</a
+          >
+          |
+          <form
+            method="POST"
+            action="{{ url_for('delete_invoice', voucher_id=v.id) }}"
+            class="inline"
+            onsubmit="return confirm('Delete this invoice?');"
+          >
+            <button
+              type="submit"
+              class="text-red-600 underline bg-transparent border-none"
+            >
+              Delete
+            </button>
+          </form>
           {% endif %}
         </td>
       </tr>

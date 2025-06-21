@@ -1,30 +1,61 @@
-{% extends 'base.html' %}
-{% block content %}
+{% extends 'base.html' %} {% block content %}
 <div class="max-w-7xl mx-auto p-6 bg-white rounded shadow">
   <h2 class="text-2xl font-bold mb-6">🛠️ Service Register</h2>
 
-  <table class="w-full border-collapse text-sm">
+  <table class="w-full border-collapse border text-sm">
     <thead class="bg-gray-100">
       <tr>
-        <th class="border p-2">Reg No</th>
         <th class="border p-2">Date</th>
+        <th class="border p-2">Bus</th>
         <th class="border p-2">Type</th>
         <th class="border p-2">Description</th>
-        <th class="border p-2">Mileage</th>
-        <th class="border p-2">Cost</th>
+        <th class="border p-2 text-right">Cost (KES)</th>
         <th class="border p-2">Garage</th>
+        <th class="border p-2 text-right">Mileage (KM)</th>
+        <th class="border p-2 no-print">Actions</th>
       </tr>
     </thead>
     <tbody>
       {% for s in services %}
       <tr>
+        <td class="border p-2">{{ s.service_date }}</td>
         <td class="border p-2">{{ s.reg_no }}</td>
-        <td class="border p-2">{{ s.service_date.strftime('%d-%m-%Y') }}</td>
         <td class="border p-2">{{ s.service_type }}</td>
         <td class="border p-2">{{ s.description }}</td>
-        <td class="border p-2">{{ s.mileage_at_service }}</td>
-        <td class="border p-2">KES {{ "%.2f"|format(s.cost or 0) }}</td>
+        <td class="border p-2 text-right">
+          {{ "{:,.2f}".format(s.cost or 0) }}
+        </td>
         <td class="border p-2">{{ s.garage_name }}</td>
+        <td class="border p-2 text-right">
+          {{ "{:,}".format(s.mileage_at_service or 0) }}
+        </td>
+        <td class="border p-2 no-print">
+          <a
+            href="{{ url_for('edit_service', service_id=s.id) }}"
+            class="text-blue-600 hover:underline"
+            >Edit</a
+          >
+          |
+          <form
+            method="POST"
+            action="{{ url_for('delete_service', service_id=s.id) }}"
+            class="inline"
+            onsubmit="return confirm('Delete this service record?');"
+          >
+            <button
+              type="submit"
+              class="text-red-600 underline bg-transparent border-none"
+            >
+              Delete
+            </button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="8" class="border p-4 text-center text-gray-500">
+          No service records found.
+        </td>
       </tr>
       {% endfor %}
     </tbody>

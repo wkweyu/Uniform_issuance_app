@@ -1,0 +1,86 @@
+{% extends 'base.html' %} {% block content %}
+<div class="max-w-xl mx-auto p-6 bg-white shadow rounded">
+  <h2 class="text-2xl font-bold mb-4">📝 Edit Fuel Invoice</h2>
+
+  <form method="POST" class="space-y-4">
+    <div>
+      <label class="block mb-1 text-sm">Date:</label>
+      <input
+        type="date"
+        name="date"
+        value="{{ invoice.date.strftime('%Y-%m-%d') }}"
+        required
+        class="border px-3 py-2 rounded w-full"
+      />
+    </div>
+
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="block mb-1 text-sm">Litres:</label>
+        <input
+          type="number"
+          step="0.01"
+          name="actual_litres"
+          value="{{ invoice.actual_litres }}"
+          required
+          class="border px-3 py-2 rounded w-full"
+        />
+      </div>
+      <div>
+        <label class="block mb-1 text-sm">Amount (KES):</label>
+        <input
+          type="number"
+          step="0.01"
+          name="amount_paid"
+          value="{{ invoice.amount_paid }}"
+          required
+          class="border px-3 py-2 rounded w-full"
+        />
+      </div>
+    </div>
+
+    <div>
+      <label class="block mb-1 text-sm">Petrol Station:</label>
+      <input
+        type="text"
+        name="petrol_station"
+        value="{{ invoice.petrol_station }}"
+        required
+        class="border px-3 py-2 rounded w-full"
+      />
+    </div>
+
+    <div>
+      <label class="block mb-1 text-sm">Odometer (KM):</label>
+      <input
+        type="number"
+        name="odometer_reading"
+        value="{{ invoice.odometer_reading }}"
+        required
+        class="border px-3 py-2 rounded w-full"
+      />
+    </div>
+
+    <div>
+      <label class="block mb-1 text-sm">Remarks:</label>
+      <textarea name="remarks" class="border px-3 py-2 rounded w-full">
+{{ invoice.remarks }}</textarea
+      >
+    </div>
+
+    <div class="flex justify-between">
+      <a
+        href="{{ url_for('voucher_register') }}"
+        class="px-4 py-2 bg-gray-300 rounded"
+        >Cancel</a
+      >
+      <button
+        type="submit"
+        class="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+      >
+        Save Changes
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

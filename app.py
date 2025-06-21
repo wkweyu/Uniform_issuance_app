@@ -1118,7 +1118,7 @@ def fuel_consumption_report():
         from_date = str(first_of_month)
         to_date = str(today)
 
-    print(f"DEBUG: Querying from {from_date} to {to_date}")
+   
 
     cursor.execute("""
         SELECT 
@@ -1248,7 +1248,7 @@ def fuel_consumption_efficiency():
         date_from = str(first_of_month)
         date_to = str(today)
 
-    print(f"DEBUG: Querying from {date_from} to {date_to}")
+   
 
 
     # Fetch all fuel invoices sorted by bus and date
@@ -1336,7 +1336,7 @@ def fuel_efficiency_report():
         date_from = str(first_of_month)
         date_to = str(today)
 
-    print(f"DEBUG: Querying from {date_from} to {date_to}")
+   
 
 
 
@@ -1504,7 +1504,7 @@ def bus_statement():
     to_date = request.args.get('to_date') or str(today)
 
 
-    print(f"DEBUG: Querying from {from_date} to {to_date}")
+    
 
 
     # Fetch bus info
@@ -1546,6 +1546,137 @@ def bus_statement():
                            service_records=service_records,
                            from_date=from_date,
                            to_date=to_date)
+
+#Edit Invoice
+@app.route('/fleet/edit_invoice/<int:voucher_id>', methods=['GET', 'POST'])
+def edit_invoice(voucher_id):
+    connection = get_db_connection()
+    cursor = connection.cursor()
+
+    # Fetch existing invoice
+    cursor.execute("""
+        SELECT fi.*, b.reg_no, fv.voucher_no
+        FROM fuel_invoices fi
+        JOIN fuel_vouchers fv ON fi.voucher_id = fv.id
+        JOIN buses b ON fv.bus_id = b.id
+        WHERE fv.id = %s
+        ORDER BY fi.date DESC
+        LIMIT 1
+    """, (voucher_id,))
+    invoice = cursor.fetchone()
+
+    if not invoice:
+        flash("No existing invoice found for this voucher.", "error")
+        return redirect(url_for('voucher_register'))
+
+    if request.method == 'POST':
+        date = request.form.get('date')
+        actual_litres = float(request.form.get('actual_litres'))
+        amount_paid = float(request.form.get('amount_paid'))
+        petrol_station = request.form.get('petrol_station')
+        odometer_reading = int(request.form.get('odometer_reading'))
+        remarks = request.form.get('remarks')
+
+        cursor.execute("""
+            UPDATE fuel_invoices
+            SET date=%s, actual_litres=%s, amount_paid=%s, petrol_station=%s, odometer_reading=%s, remarks=%s
+            WHERE id=%s
+        """, (date, actual_litres, amount_paid, petrol_station, odometer_reading, remarks, invoice['id']))
+
+        connection.commit()
+        connection.close()
+
+        flash("Invoice updated successfully.", "success")
+        return redirect(url_for('voucher_register'))
+
+    connection.close()
+    return render_template('edit_invoice.html', invoice=invoice)
+#Print Invoice
+
+@app.route('/fleet/print_invoice/<int:voucher_id>')
+def print_invoice(voucher_id):
+    connection = get_db_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        SELECT fi.*, b.reg_no, fv.voucher_no
+        FROM fuel_invoices fi
+        JOIN fuel_vouchers fv ON fi.voucher_id = fv.id
+        JOIN buses b ON fv.bus_id = b.id
+        WHERE fv.id = %s
+    """, (voucher_id,))
+    invoice = cursor.fetchone()
+    connection.close()
+
+    if not invoice:
+        flash("Invoice not found.", "error")
+        return redirect(url_for('voucher_register'))
+
+    return render_template('print_invoice.html', invoice=invoice)
+
+#Delete invoice
+
+@app.route('/fleet/delete_invoice/<int:voucher_id>', methods=['POST'])
+def delete_invoice(voucher_id):
+    connection = get_db_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("DELETE FROM fuel_invoices WHERE voucher_id = %s", (voucher_id,))
+    connection.commit()
+    connection.close()
+
+    flash("Invoice deleted successfully.", "success")
+    return redirect(url_for('voucher_register'))
+
+# Edit Service Record
+@app.route('/fleet/edit_service/<int:service_id>', methods=['GET', 'POST'])
+def edit_service(service_id):
+    connection = get_db_connection()
+    cursor = connection.cursor()
+
+    # Fetch the service record
+    cursor.execute("SELECT * FROM service_records WHERE id = %s", (service_id,))
+    service = cursor.fetchone()
+    if not service:
+        flash("Service record not found.", "error")
+        return redirect(url_for('service_register'))
+
+    if request.method == 'POST':
+        service_date = request.form.get('service_date')
+        service_type = request.form.get('service_type')
+        description = request.form.get('description')
+        cost = float(request.form.get('cost') or 0)
+        garage_name = request.form.get('garage_name')
+        mileage = int(request.form.get('mileage_at_service') or 0)
+
+        cursor.execute("""
+            UPDATE service_records
+            SET service_date=%s, service_type=%s, description=%s, cost=%s, garage_name=%s, mileage_at_service=%s
+            WHERE id=%s
+        """, (service_date, service_type, description, cost, garage_name, mileage, service_id))
+
+        connection.commit()
+        connection.close()
+
+        flash("Service record updated successfully.", "success")
+        return redirect(url_for('service_register'))
+
+    connection.close()
+    return render_template('edit_service.html', service=service)
+
+
+# Delete Service Record
+@app.route('/fleet/delete_service/<int:service_id>', methods=['POST'])
+def delete_service(service_id):
+    connection = get_db_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("DELETE FROM service_records WHERE id = %s", (service_id,))
+    connection.commit()
+    connection.close()
+
+    flash("Service record deleted.", "success")
+    return redirect(url_for('service_register'))
 
 
 @app.route('/debug/templates')

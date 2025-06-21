@@ -1,0 +1,76 @@
+{% extends 'base.html' %} {% block content %}
+
+<div class="max-w-xl mx-auto p-6 bg-white rounded shadow">
+  <h2 class="text-2xl font-bold mb-4">🛠️ Edit Service Record</h2>
+
+  <form method="POST" class="space-y-4">
+    <div>
+      <label class="block">Date:</label>
+      <input
+        type="date"
+        name="service_date"
+        value="{{ service.service_date.strftime('%Y-%m-%d') }}"
+        required
+        class="border px-3 py-2 rounded w-full"
+      />
+    </div>
+    <div>
+      <label class="block">Type:</label>
+      <input
+        type="text"
+        name="service_type"
+        value="{{ service.service_type }}"
+        required
+        class="border px-3 py-2 rounded w-full"
+      />
+    </div>
+    <div>
+      <label class="block">Description:</label>
+      <textarea
+        name="description"
+        required
+        class="border px-3 py-2 rounded w-full"
+      >
+{{ service.description }}</textarea
+      >
+    </div>
+    <div>
+      <label class="block">Cost (KES):</label>
+      <input
+        type="number"
+        step="0.01"
+        name="cost"
+        value="{{ service.cost }}"
+        class="border px-3 py-2 rounded w-full"
+      />
+    </div>
+    <div>
+      <label class="block">Garage:</label>
+      <input
+        type="text"
+        name="garage_name"
+        value="{{ service.garage_name }}"
+        class="border px-3 py-2 rounded w-full"
+      />
+    </div>
+    <div>
+      <label class="block">Mileage (KM):</label>
+      <input
+        type="number"
+        name="mileage_at_service"
+        value="{{ service.mileage_at_service }}"
+        class="border px-3 py-2 rounded w-full"
+      />
+    </div>
+    <button type="submit" class="px-5 py-2 bg-blue-600 text-white rounded">
+      Save Changes
+    </button>
+    <a
+      href="{{ url_for('service_register') }}"
+      class="ml-4 text-blue-600 hover:underline"
+      >Cancel</a
+    >
+  </form>
+</div>
+
+{% endblock %}
