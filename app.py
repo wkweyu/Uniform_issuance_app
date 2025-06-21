@@ -99,7 +99,54 @@ def generate_receipt_number(year):
 # Home page
 @app.route('/')
 def index():
-    return render_template('index.html')
+    connection = get_db_connection()
+    cursor = connection.cursor()
+
+    # Active buses
+    cursor.execute("SELECT COUNT(*) AS count FROM buses WHERE active=1")
+    active_buses = cursor.fetchone()['count']
+
+    # Today's fuel vouchers
+    cursor.execute("SELECT COUNT(*) AS count FROM fuel_vouchers WHERE DATE(issued_on) = CURDATE()")
+    vouchers_today = cursor.fetchone()['count']
+
+    # Get current term_number and year from uniform_term_dates
+    cursor.execute("""
+        SELECT term_number, year 
+        FROM uniform_term_dates 
+        WHERE CURDATE() BETWEEN start_date AND end_date
+        LIMIT 1
+    """)
+    term_info = cursor.fetchone()
+
+    if term_info:
+        term_number = term_info['term_number']
+        year = term_info['year']
+    else:
+        term_number = None
+        year = None
+
+    # Pending uniform invoices for this term (if any)
+    if term_info:
+        cursor.execute("""
+            SELECT COUNT(*) AS count 
+            FROM uniform_receipts 
+            WHERE term=%s AND yr=%s
+        """, (term_number, year))
+        uniform_issued = cursor.fetchone()['count']
+    else:
+        uniform_issued = 0
+
+    connection.close()
+
+    return render_template('index.html',
+                           active_buses=active_buses,
+                           vouchers_today=vouchers_today,
+                           uniform_issued=uniform_issued,
+                           term_number=term_number,
+                           year=year)
+
+
 
 # Uniform issuance form
 @app.route('/issue_uniform', methods=['GET', 'POST'])

@@ -1,4 +1,73 @@
-{% extends 'base.html' %} {% block content %}
-<a href="{{ url_for('issue_uniform') }}" class="text-blue-600 underline"></a>
-<a href="{{ url_for('manage_prices') }}" class="text-blue-600 underline"></a>
+{% extends 'base.html' %} {% block content %} {% if term_number and year %}
+<div class="p-3 mb-4 bg-yellow-100 border-l-4 border-yellow-600 rounded">
+  📌 <strong>Current Term:</strong> Term {{ term_number }} - {{ year }}
+</div>
+{% else %}
+<div class="p-3 mb-4 bg-red-100 border-l-4 border-red-600 rounded">
+  ⚠️ <strong>No Active Academic Term found!</strong>
+</div>
+{% endif %}
+
+<div class="max-w-6xl mx-auto p-6">
+  <h2 class="text-3xl font-bold mb-6">
+    📊 Welcome to {{ system_name or 'Integrated' }} Dashboard
+  </h2>
+
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <div class="p-4 bg-white shadow rounded">
+      <h3 class="text-lg font-semibold">🚌 Active Buses</h3>
+      <p class="text-3xl mt-2">{{ active_buses }}</p>
+    </div>
+    <div class="p-4 bg-white shadow rounded">
+      <h3 class="text-lg font-semibold">⛽ Vouchers Today</h3>
+      <p class="text-3xl mt-2">{{ vouchers_today }}</p>
+    </div>
+    <div class="p-4 bg-white shadow rounded">
+      <h3 class="text-lg font-semibold">👕 Uniform Receipts (This Term)</h3>
+      <p class="text-3xl mt-2">{{ uniform_issued }}</p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div class="border p-4 rounded bg-white shadow">
+      <h3 class="text-lg font-semibold mb-3">Fleet Quick Links</h3>
+      <ul class="space-y-2">
+        <li>
+          <a
+            href="{{ url_for('fleet_dashboard') }}"
+            class="text-blue-700 hover:underline"
+            >🚍 Fleet Dashboard</a
+          >
+        </li>
+        <li>
+          <a
+            href="{{ url_for('issue_fuel') }}"
+            class="text-blue-700 hover:underline"
+            >+ Issue Fuel Voucher</a
+          >
+        </li>
+      </ul>
+    </div>
+
+    <div class="border p-4 rounded bg-white shadow">
+      <h3 class="text-lg font-semibold mb-3">Uniform Quick Links</h3>
+      <ul class="space-y-2">
+        <li>
+          <a
+            href="{{ url_for('uniform_dashboard') }}"
+            class="text-blue-700 hover:underline"
+            >👕 Uniform Dashboard</a
+          >
+        </li>
+        <li>
+          <a
+            href="{{ url_for('manage_prices') }}"
+            class="text-blue-700 hover:underline"
+            >💰 Manage Prices</a
+          >
+        </li>
+      </ul>
+    </div>
+  </div>
+</div>
 {% endblock %}
