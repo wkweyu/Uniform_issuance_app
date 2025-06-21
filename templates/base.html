@@ -4,22 +4,24 @@
     <meta charset="UTF-8" />
     <title>School Management ERP</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Local Tailwind CSS -->
     <link
-      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
-      rel="stylesheet"
-    />
-    <!--link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/tailwind.min.css') }}"
-    /-->
+    />
+    <!-- (Fallback CDN link-->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+      onerror="console.error('Failed to load local Tailwind')"
+    />
 
+    <!-- Consistent Print Styling -->
     <style>
       @media print {
         .no-print {
           display: none !important;
-        }
-        .print-only {
-          display: block !important;
         }
         body {
           background: #fff;
@@ -32,6 +34,16 @@
           box-shadow: none;
           padding: 0;
           margin: 0;
+        }
+        table,
+        th,
+        td {
+          border: 1px solid #000;
+          border-collapse: collapse;
+        }
+        th,
+        td {
+          padding: 6px;
         }
       }
     </style>

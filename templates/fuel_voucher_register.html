@@ -1,13 +1,13 @@
-{% extends 'base.html' %} {% block content %}
-<div class="max-w-7xl mx-auto p-6 bg-white shadow rounded-lg print-area">
-  <h2 class="text-2xl font-bold mb-4 no-print">🚍 Fuel Voucher Register</h2>
+{% extends 'base_report.html' %} {% block content %}
+<div class="max-w-6xl mx-auto p-6 bg-white shadow rounded shadow">
+  <h2 class="text-2xl font-bold mb-6 no-print">🚍 Fuel Voucher Register</h2>
 
   <form method="POST" class="flex flex-wrap gap-3 mb-6 no-print">
     <input
       type="text"
       name="registration_no"
       placeholder="Reg No"
-      value="{{ filters.registration_no or '' }}"
+      value="{{ filters.reg_no or '' }}"
       class="border px-3 py-2 rounded w-40"
     />
     <input
@@ -24,18 +24,25 @@
       value="{{ filters.voucher_no or '' }}"
       class="border px-3 py-2 rounded w-40"
     />
-    <input
-      type="date"
-      name="date_from"
-      value="{{ date_from }}"
-      class="border px-3 py-2 rounded"
-    />
-    <input
-      type="date"
-      name="date_to"
-      value="{{ date_to }}"
-      class="border px-3 py-2 rounded"
-    />
+    <div>
+      <label class="block text-sm mb-1">From:</label>
+      <input
+        type="date"
+        name="date_from"
+        value="{{ date_from }}"
+        class="border px-3 py-2 rounded"
+      />
+    </div>
+    <div>
+      <label class="block text-sm mb-1">To:</label>
+      <input
+        type="date"
+        name="date_to"
+        value="{{ date_to }}"
+        class="border px-3 py-2 rounded"
+      />
+    </div>
+
     <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded">
       Filter
     </button>
@@ -51,9 +58,6 @@
   </form>
 
   {% if vouchers %}
-  <div class="text-center font-bold text-lg mb-4 print-only">
-    🚍 Fuel Voucher Register
-  </div>
 
   <table class="w-full border-collapse border text-sm">
     <thead class="bg-gray-100">
@@ -113,13 +117,5 @@
   {% else %}
   <p class="text-gray-500">No vouchers found for the selected criteria.</p>
   {% endif %}
-
-  <div class="mt-6 no-print">
-    <a
-      href="{{ url_for('fleet_dashboard') }}"
-      class="text-blue-600 hover:underline"
-      >← Back to Fleet Dashboard</a
-    >
-  </div>
 </div>
 {% endblock %}

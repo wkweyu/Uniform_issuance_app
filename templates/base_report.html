@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>{{ title or 'Report' }}</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/tailwind.min.css') }}"
+    />
+    <style>
+      @media print {
+        @page {
+          size: A4;
+          margin: 15mm;
+        }
+        .avoid-page-break {
+          page-break-inside: avoid;
+        }
+        .force-page-break {
+          page-break-after: always;
+        }
+        .no-page-break {
+          page-break-after: avoid;
+        }
+        .print-table {
+          width: 100%;
+          table-layout: fixed;
+        }
+        .print-table td,
+        .print-table th {
+          word-wrap: break-word;
+        }
+        .no-print {
+          display: none !important;
+        }
+        .print-only {
+          display: block !important;
+        }
+        body {
+          background: #fff;
+          font-size: 12pt;
+          color: #000;
+          line-height: 1.4;
+          height: auto !important;
+          overflow: visible !important;
+        }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          page-break-inside: avoid;
+        }
+        th,
+        td {
+          border: 1px solid #000;
+          padding: 6px;
+          text-align: left;
+        }
+        thead {
+          display: table-header-group;
+        }
+        tr {
+          page-break-inside: avoid;
+        }
+        h1,
+        h2,
+        h3 {
+          page-break-after: avoid;
+        }
+        .print-page {
+          page-break-after: always;
+          height: 277mm; /* A4 height minus margins */
+        }
+        .print-page:last-child {
+          page-break-after: auto;
+        }
+      }
+      @media screen {
+        .print-only {
+          display: none;
+        }
+        body {
+          background-color: #f8fafc;
+        }
+      }
+    </style>
+  </head>
+
+  <body class="p-8 bg-white">
+    <!-- Print Letterhead -->
+    <div class="text-center mb-6 print-only">
+      <div class="mb-2">
+        <img
+          src="{{ url_for('static', filename='images/school_logo.png') }}"
+          alt="School Logo"
+          style="height: 80px; display: inline-block"
+        />
+      </div>
+      <h1 class="text-2xl font-bold">Mother Kevin Comprehensive School</h1>
+      <p>P.O. Box 12345 - 50200, Bungoma, Kenya</p>
+      <p>Tel: +254 700 000 000 | Email: info@motherkevin.edu</p>
+      <hr class="my-4 border-t-2 border-gray-400" />
+      <h2 class="text-xl font-semibold">{{ report_title }}</h2>
+      <p class="text-sm">Generated on: {{ current_date }}</p>
+      {% if date_range %}
+      <p class="text-sm">Period: {{ date_range }}</p>
+      {% endif %}
+    </div>
+
+    <!-- On-screen Heading -->
+    <div class="text-center mb-6 no-print">
+      <h2 class="text-3xl font-bold">{{ report_title }}</h2>
+      <p class="text-sm text-gray-600">Generated on: {{ current_date }}</p>
+      {% if date_range %}
+      <p class="text-sm text-gray-600">Period: {{ date_range }}</p>
+      {% endif %}
+    </div>
+
+    <!-- Main content block -->
+    {% block content %}{% endblock %}
+
+    <!-- Print footer -->
+    <div class="mt-8 print-only text-xs text-center">
+      <hr class="my-2 border-t border-gray-400" />
+      <p>Computer generated report - No signature required</p>
+      <p>Page <span class="page-number"></span></p>
+    </div>
+
+    <!-- Print button for screen -->
+    <div class="mt-6 no-print">
+      <button
+        onclick="window.print()"
+        class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+      >
+        Print Report
+      </button>
+      <a
+        href="{{ back_url or url_for('fleet_dashboard') }}"
+        class="ml-4 px-4 py-2 bg-gray-300 text-gray-800 rounded hover:bg-gray-400"
+      >
+        Back
+      </a>
+    </div>
+
+    <script>
+      // Replace the existing script with this improved version
+      document.addEventListener("DOMContentLoaded", function () {
+        if (window.location.search.includes("print=1")) {
+          window.print();
+        }
+
+        // Improved page number calculation
+        const updatePageNumbers = () => {
+          const pageNumbers = document.querySelectorAll(".page-number");
+          if (pageNumbers.length > 0) {
+            // Use fixed page height for consistent calculation
+            const pageHeight = 1122; // A4 height in pixels at 96dpi
+            const bodyHeight = document.body.scrollHeight;
+            const totalPages = Math.max(1, Math.ceil(bodyHeight / pageHeight));
+
+            pageNumbers.forEach((el) => {
+              el.textContent = `Page ${
+                window.pageNumber || 1
+              } of ${totalPages}`;
+            });
+          }
+        };
+
+        // Update on both print and regular view
+        window.matchMedia("print").addListener(updatePageNumbers);
+        updatePageNumbers();
+
+        // Initial update
+        setTimeout(updatePageNumbers, 100);
+      });
+    </script>
+  </body>
+</html>

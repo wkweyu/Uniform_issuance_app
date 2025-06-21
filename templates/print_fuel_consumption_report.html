@@ -1,0 +1,35 @@
+{% extends 'base_report.html' %} {% block content %}
+<h2 class="text-xl font-bold mb-4">🚍 {{ report_title }}</h2>
+<p class="text-sm mb-2">Period: {{ from_date }} to {{ to_date }}</p>
+
+<table class="w-full border-collapse border text-sm mt-4">
+  <thead>
+    <tr class="bg-gray-100">
+      <th class="border p-2">Bus Reg No</th>
+      <th class="border p-2 text-right">No. of Vouchers</th>
+      <th class="border p-2 text-right">Total Litres</th>
+      <th class="border p-2 text-right">Total Cost (KES)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in report %}
+    <tr>
+      <td class="border p-2">{{ r.reg_no }}</td>
+      <td class="border p-2 text-right">{{ r.vouchers_issued }}</td>
+      <td class="border p-2 text-right">
+        {{ "%.2f"|format(r.total_litres or 0) }}
+      </td>
+      <td class="border p-2 text-right">
+        KES {{ "%.2f"|format(r.total_amount or 0) }}
+      </td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="4" class="border p-4 text-center text-gray-500">
+        No records found for this period.
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

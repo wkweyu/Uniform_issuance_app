@@ -1,18 +1,32 @@
-{% extends 'base.html' %}
-{% block content %}
+{% extends 'base.html' %} {% block content %}
 <div class="max-w-6xl mx-auto p-6 bg-white rounded shadow">
   <h2 class="text-2xl font-bold mb-6">⛽ Fuel Expenses Report</h2>
 
   <form method="POST" class="mb-4 flex gap-4 items-end">
     <div>
       <label class="text-sm">From:</label>
-      <input type="date" name="date_from" value="{{ date_from }}" class="border px-3 py-2 rounded">
+      <input
+        type="date"
+        name="date_from"
+        value="{{ date_from }}"
+        class="border px-3 py-2 rounded"
+      />
     </div>
     <div>
       <label class="text-sm">To:</label>
-      <input type="date" name="date_to" value="{{ date_to }}" class="border px-3 py-2 rounded">
+      <input
+        type="date"
+        name="date_to"
+        value="{{ date_to }}"
+        class="border px-3 py-2 rounded"
+      />
     </div>
-    <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Filter</button>
+    <button
+      type="submit"
+      class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+    >
+      Filter
+    </button>
   </form>
 
   <table class="w-full border-collapse text-sm">
@@ -28,14 +42,20 @@
       <tr class="hover:bg-gray-50">
         <td class="border p-2">{{ exp.reg_no }}</td>
         <td class="border p-2 text-center">{{ exp.voucher_count }}</td>
-        <td class="border p-2 text-right">KES {{ "%.2f"|format(exp.total_expense or 0) }}</td>
+        <td class="border p-2 text-right">
+          KES {{ "%.2f"|format(exp.total_expense or 0) }}
+        </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 
   <div class="mt-6">
-    <a href="{{ url_for('fleet_dashboard') }}" class="text-blue-600 hover:underline">← Back to Fleet Dashboard</a>
+    <a
+      href="{{ url_for('fleet_dashboard') }}"
+      class="text-blue-600 hover:underline"
+      >← Back to Fleet Dashboard</a
+    >
   </div>
 </div>
 {% endblock %}

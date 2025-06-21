@@ -1,5 +1,6 @@
-{% extends 'base.html' %} {% block content %}
-<div class="max-w-6xl mx-auto p-6 bg-white rounded shadow">
+{% extends 'base_report.html' %} {% block title %}Fuel Expenses Report{%
+endblock %} {% block content %}
+<div class="max-w-6xl mx-auto p-6 bg-white shadow rounded shadow">
   <h2 class="text-2xl font-bold mb-6">
     ⛽ Fuel Efficiency Report (KM per Litre)
   </h2>
@@ -51,21 +52,14 @@
         <td class="border p-2 text-right">
           {{ "%.2f"|format(r.total_litres or 0) }}
         </td>
-        <td class="border p-2 text-right">{{ r.distance_covered or 0 }}</td>
+        <td class="border p-2 text-right">{{ r.total_distance }}</td>
         <td class="border p-2 text-right">
-          {{ "%.2f"|format(r.km_per_litre or 0) }}
+          {% if r.consumption != 'N/A' %} {{ "%.2f"|format(r.consumption) }} {%
+          else %} N/A {% endif %}
         </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
-
-  <div class="mt-6">
-    <a
-      href="{{ url_for('fleet_dashboard') }}"
-      class="text-blue-600 hover:underline"
-      >← Back to Fleet Dashboard</a
-    >
-  </div>
 </div>
 {% endblock %}

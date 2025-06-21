@@ -5,6 +5,20 @@ from decimal import Decimal
 
 
 app = Flask(__name__, static_folder='static')
+def format_currency(value):
+    try:
+        # Handle None or empty values
+        if value is None:
+            return "0.00"
+        # Convert to float first to handle string inputs
+        num = float(value)
+        # Format with thousand separators and 2 decimal places
+        return "{:,.2f}".format(num)
+    except (ValueError, TypeError):
+        return "0.00"
+
+# Register the filter with Jinja
+app.jinja_env.filters['currency'] = format_currency
 app.secret_key = 'your_secret_key'
 app.jinja_env.globals['datetime'] = datetime
 
@@ -71,7 +85,8 @@ def generate_receipt_number(year):
             last_number = int(last_receipt['receipt_no'].split('-')[1])
             next_number = last_number + 1
         except (IndexError, ValueError):
-            next_number = 1  # Fallback to 1 if unexpected format
+            next_number = 1  
+# Fallback to 1 if unexpected format
     else:
         next_number = 1
 
@@ -80,7 +95,6 @@ def generate_receipt_number(year):
 
     connection.close()
     return new_receipt_no
-
 
 # Home page
 @app.route('/')
@@ -885,18 +899,35 @@ def voucher_register():
     vouchers = []
     total_litres = 0
     total_cost = 0
-    today = datetime.now().strftime('%Y-%m-%d')
+    #today = datetime.now().strftime('%Y-%m-%d')
 
-    date_from = date_to = today
+    #date_from = date_to = today
+
+# Get current date and first day of month
+    today = datetime.now().date()
+    first_of_month = today.replace(day=1)
+    
+    # Handle date parameter
+    if request.method == 'POST':
+        # Use form dates if submitted, otherwise default to current month
+        date_from = request.form.get('date_from') or str(first_of_month)
+        to_date = request.form.get('to_date') or str(today)
+    else:
+        # Default to current month when first loading the page
+        date_from = str(first_of_month)
+        to_date = str(today)
+
+    print(f"DEBUG: Querying from {date_from} to {to_date}")
+
 
     if request.method == 'POST':
         filters['reg_no'] = request.form.get('reg_no')
         filters['driver_name'] = request.form.get('driver_name')
         filters['voucher_no'] = request.form.get('voucher_no')
         date_from = request.form.get('date_from') or today
-        date_to = request.form.get('date_to') or today
+        to_date = request.form.get('to_date') or today
 
-    to_datetime = f"{date_to} 23:59:59"
+    to_datetime = f"{to_date} 23:59:59"
 
     query = """
         SELECT 
@@ -942,9 +973,13 @@ def voucher_register():
                            vouchers=vouchers,
                            filters=filters,
                            date_from=date_from,
-                           date_to=date_to,
+                           to_date=to_date,
                            total_litres=total_litres,
-                           total_cost=total_cost)
+                           total_cost=total_cost,
+                           report_title="Fuel Voucher Register",
+                           current_date=datetime.now().strftime("%d-%m-%Y %H:%M"),
+                           date_range=f"{date_from} to {to_date}"
+                           )
 
 
 #Oil records register
@@ -977,7 +1012,7 @@ def record_fuel_invoice():
         odometer_reading = request.form.get('odometer_reading')
         if not odometer_reading or not odometer_reading.isdigit():
             flash("Please enter a valid numeric odometer reading.", "error")
-        return redirect(request.url)
+            return redirect(request.url)
         odometer_reading = int(odometer_reading)
 
         remarks = request.form.get('remarks')
@@ -1028,42 +1063,61 @@ def record_fuel_invoice():
     connection.close()
     return render_template('record_fuel_invoice.html', vouchers=vouchers)
 #Fuel consumption report
-@app.route('/fuel/consumption_report', methods=['GET', 'POST'])
+
+@app.route('/fleet/fuel_consumption_report', methods=['GET', 'POST'])
 def fuel_consumption_report():
     connection = get_db_connection()
     cursor = connection.cursor()
 
-    today = datetime.now().strftime('%Y-%m-%d')
-    from_date = to_date = today
-
+    # Get current date and first day of month
+    today = datetime.now().date()
+    first_of_month = today.replace(day=1)
+    
+    # Handle date parameter
     if request.method == 'POST':
-        from_date = request.form.get('from_date') or today
-        to_date = request.form.get('to_date') or today
+        # Use form dates if submitted, otherwise default to current month
+        from_date = request.form.get('from_date') or str(first_of_month)
+        to_date = request.form.get('to_date') or str(today)
+    else:
+        # Default to current month when first loading the page
+        from_date = str(first_of_month)
+        to_date = str(today)
 
-    # Fetch cumulative actual fuel consumption from invoices only
+    print(f"DEBUG: Querying from {from_date} to {to_date}")
+
     cursor.execute("""
         SELECT 
             b.reg_no,
-            COUNT(fi.id) AS vouchers_issued,
-            SUM(fi.actual_litres) AS total_litres,
-            SUM(fi.amount_paid) AS total_amount
-        FROM fuel_invoices fi
-        JOIN fuel_vouchers fv ON fi.voucher_id = fv.id
-        JOIN buses b ON fv.bus_id = b.id
-        WHERE fi.date BETWEEN %s AND %s
-        GROUP BY b.reg_no
+            COUNT(fv.id) AS vouchers_issued,
+            IFNULL(SUM(fi.actual_litres),0) AS total_litres,
+            IFNULL(SUM(fi.amount_paid),0) AS total_amount
+        FROM buses b
+        LEFT JOIN fuel_vouchers fv ON b.id = fv.bus_id
+        LEFT JOIN fuel_invoices fi ON fv.id = fi.voucher_id
+        WHERE fv.issued_on BETWEEN %s AND %s
+        GROUP BY b.id
         ORDER BY b.reg_no
-    """, (from_date, to_date))
+    """, (from_date, f"{to_date} 23:59:59"))
 
     report = cursor.fetchall()
     connection.close()
 
-    return render_template("fuel_consumption_report.html",
-                           report=report,
-                           from_date=from_date,
-                           to_date=to_date)
+    # Calculate grand totals
+    grand_total_litres = sum(float(item['total_litres']) for item in report)
+    grand_total_amount = sum(float(item['total_amount']) for item in report)
 
-
+    return render_template(
+        'fuel_consumption_report.html',
+        report=report,
+        from_date=from_date,
+        to_date=to_date,
+        grand_total_litres=grand_total_litres,
+        grand_total_amount=grand_total_amount,
+        report_title="Cumulative Fuel Consumption Report",
+        current_date=datetime.now().strftime("%d-%m-%Y %H:%M"),
+        date_range=f"{from_date} to {to_date}",
+        back_url=url_for('fleet_dashboard')
+    )
 @app.route('/fleet/get_driver/<int:bus_id>')
 def get_driver(bus_id):
     connection = get_db_connection()
@@ -1145,64 +1199,113 @@ def fuel_consumption_efficiency():
     connection = get_db_connection()
     cursor = connection.cursor()
 
+# Get current date and first day of month
+    today = datetime.now().date()
+    first_of_month = today.replace(day=1)
+    
+    # Handle date parameter
+    if request.method == 'POST':
+        # Use form dates if submitted, otherwise default to current month
+        date_from = request.form.get('date_from') or str(first_of_month)
+        date_to = request.form.get('date_to') or str(today)
+    else:
+        # Default to current month when first loading the page
+        date_from = str(first_of_month)
+        date_to = str(today)
+
+    print(f"DEBUG: Querying from {date_from} to {date_to}")
+
+
+    # Fetch all fuel invoices sorted by bus and date
     cursor.execute("""
         SELECT 
             b.reg_no,
-            b.current_mileage,
-            IFNULL(SUM(fi.actual_litres), 0) AS total_litres,
-            IFNULL(SUM(fi.odometer_reading), 0) AS total_km
-        FROM buses b
-        LEFT JOIN fuel_vouchers fv ON b.id = fv.bus_id
-        LEFT JOIN fuel_invoices fi ON fv.id = fi.voucher_id
+            fi.date,
+            fi.actual_litres,
+            fi.odometer_reading
+        FROM fuel_invoices fi
+        JOIN fuel_vouchers fv ON fi.voucher_id = fv.id
+        JOIN buses b ON fv.bus_id = b.id
         WHERE b.active = 1
-        GROUP BY b.id
-        ORDER BY b.reg_no
+        ORDER BY b.reg_no, fi.date ASC
     """)
 
     records = cursor.fetchall()
-    connection.close()
 
-    # Calculate L/km (avoid division by zero)
-    for rec in records:
-        if rec['total_km'] and rec['total_km'] > 0:
-            rec['consumption'] = round(rec['total_litres'] / rec['total_km'], 3)
+    report = {}
+    for row in records:
+        reg_no = row['reg_no']
+        litres = float(row['actual_litres'] or 0)
+        odometer = int(row['odometer_reading'] or 0)
+
+        if reg_no not in report:
+            report[reg_no] = {
+                'total_litres': 0.0,
+                'total_distance': 0,
+                'last_odometer': None
+            }
+
+        if report[reg_no]['last_odometer'] is not None:
+            distance = odometer - report[reg_no]['last_odometer']
+            if distance > 0:
+                report[reg_no]['total_distance'] += distance
+
+        report[reg_no]['total_litres'] += litres
+        report[reg_no]['last_odometer'] = odometer
+
+    final_report = []
+    for reg_no, data in report.items():
+        if data['total_litres'] > 0:
+            consumption = round(data['total_distance'] / data['total_litres'], 2)
         else:
-            rec['consumption'] = 'N/A'
-
-    return render_template('fuel_efficiency_report.html', records=records)
-
-@app.route('/fleet/fuel_expenses_report', methods=['GET', 'POST'])
-def fuel_expenses_report():
-    connection = get_db_connection()
-    cursor = connection.cursor()
-
-    date_from = request.form.get('date_from') or '2024-01-01'
-    date_to = request.form.get('date_to') or datetime.now().strftime('%Y-%m-%d')
-
-    query = """
-        SELECT 
-            b.reg_no,
-            SUM(fv.total_cost) AS total_expense,
-            COUNT(fv.id) AS voucher_count
-        FROM fuel_vouchers fv
-        JOIN buses b ON fv.bus_id = b.id
-        WHERE fv.issued_on BETWEEN %s AND %s
-        GROUP BY b.id
-        ORDER BY b.reg_no
-    """
-    cursor.execute(query, (date_from, f"{date_to} 23:59:59"))
-    expenses = cursor.fetchall()
+            consumption = 'N/A'
+        final_report.append({
+            'reg_no': reg_no,
+            'total_litres': data['total_litres'],
+            'total_distance': data['total_distance'],
+            'consumption': consumption
+        })
 
     connection.close()
-    return render_template('fuel_expenses_report.html', expenses=expenses, date_from=date_from, date_to=date_to)
+
+    return render_template(
+        'fuel_efficiency_report.html', 
+        records=final_report,
+        report_title="Fuel Efficiency Report (KM/Litre)",
+        date_from=date_from,
+        date_to=date_to,
+        current_date=datetime.now().strftime("%d-%m-%Y %H:%M"),
+        date_range=f"{date_from} to {date_to}",
+        back_url=url_for('fleet_dashboard')
+    )
+
+
 
 @app.route('/fleet/fuel_efficiency_report', methods=['GET', 'POST'])
 def fuel_efficiency_report():
     connection = get_db_connection()
     cursor = connection.cursor()
 
-    date_from = request.form.get('date_from') or '2024-01-01'
-    date_to = request.form.get('date_to') or datetime.now().strftime('%Y-%m-%d')
+# Get current date and first day of month
+    today = datetime.now().date()
+    first_of_month = today.replace(day=1)
+    
+    # Handle date parameter
+    if request.method == 'POST':
+        # Use form dates if submitted, otherwise default to current month
+        date_from = request.form.get('date_from') or str(first_of_month)
+        date_to = request.form.get('date_to') or str(today)
+    else:
+        # Default to current month when first loading the page
+        date_from = str(first_of_month)
+        date_to = str(today)
+
+    print(f"DEBUG: Querying from {date_from} to {date_to}")
+
+
+
+    #date_from = request.form.get('date_from') or '2024-01-01'
+    #date_to = request.form.get('date_to') or datetime.now().strftime('%Y-%m-%d')
 
     query = """
         SELECT 
@@ -1224,7 +1327,9 @@ def fuel_efficiency_report():
     return render_template('fuel_efficiency_report.html',
                            records=records,
                            date_from=date_from,
-                           date_to=date_to)
+                           date_to=date_to
+                           )
+    
 
 
 @app.route("/test-css")
@@ -1252,8 +1357,88 @@ def fuel_consumption_chart():
 
     return render_template('fuel_consumption_chart.html', labels=labels, litres=litres)
 
+@app.route('/fleet/print_fuel_consumption_report')
+def print_fuel_consumption_report():
+    from_date = request.args.get('from_date') or '2024-01-01'
+    to_date = request.args.get('to_date') or datetime.now().strftime('%Y-%m-%d')
+
+    connection = get_db_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        SELECT 
+            b.reg_no,
+            COUNT(fv.id) AS vouchers_issued,
+            IFNULL(SUM(fi.actual_litres),0) AS total_litres,
+            IFNULL(SUM(fi.amount_paid),0) AS total_amount
+        FROM buses b
+        LEFT JOIN fuel_vouchers fv ON b.id = fv.bus_id
+        LEFT JOIN fuel_invoices fi ON fv.id = fi.voucher_id
+        WHERE fv.issued_on BETWEEN %s AND %s
+        GROUP BY b.id
+        ORDER BY b.reg_no
+    """, (from_date, f"{to_date} 23:59:59"))
+
+    report = cursor.fetchall()
+    connection.close()
+
+    return render_template(
+        'print_fuel_consumption_report.html',
+        report=report,
+        from_date=from_date,
+        to_date=to_date,
+        report_title="Cumulative Fuel Consumption Report",
+        current_date=datetime.now().strftime("%d-%m-%Y"),
+        back_url=url_for('fuel_consumption_report')
+    )
 
 
+@app.route('/fleet/fuel_expenses_report', methods=['GET', 'POST'])
+def fuel_expenses_report():
+    connection = get_db_connection()
+    cursor = connection.cursor()
+
+    date_from = request.form.get('date_from') or '2024-01-01'
+    date_to = request.form.get('date_to') or datetime.now().strftime('%Y-%m-%d')
+
+    query = """
+        SELECT 
+            b.reg_no,
+            COUNT(fv.id) AS vouchers_issued,
+            IFNULL(SUM(fv.total_cost), 0) AS total_expense
+        FROM fuel_vouchers fv
+        JOIN buses b ON fv.bus_id = b.id
+        WHERE fv.issued_on BETWEEN %s AND %s
+        GROUP BY b.id
+        ORDER BY b.reg_no
+    """
+    cursor.execute(query, (date_from, f"{date_to} 23:59:59"))
+    expenses = cursor.fetchall()
+
+    connection.close()
+
+    return render_template(
+        'fuel_expenses_report.html',
+        expenses=expenses,
+        date_from=date_from,
+        date_to=date_to
+    )
+
+@app.route('/debug/templates')
+def debug_templates():
+    try:
+        from flask import render_template
+        # Test rendering the template directly
+        return render_template('fuel_consumption_report.html',
+                            report=[],
+                            from_date='2025-01-01',
+                            to_date='2025-12-31',
+                            report_title="Test",
+                            current_date="01-01-2025",
+                            date_range="Test Range",
+                            back_url="#")
+    except Exception as e:
+        return f"Template error: {str(e)}", 500
 
 
 

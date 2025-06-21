@@ -1,8 +1,9 @@
-{% extends 'base.html' %} {% block content %}
+{% extends 'base_report.html' %} {% block content %}
 <div class="max-w-6xl mx-auto p-6 bg-white rounded shadow">
-  <h2 class="text-3xl font-bold mb-6">🚍 Cumulative Fuel Consumption Report</h2>
+  <h2 class="text-2xl font-bold mb-6">⛽ Cumulative Fuel Consumption</h2>
 
-  <form method="POST" class="flex items-center space-x-4 mb-6">
+  <!-- Filter Form (no-print ensures it doesn't appear in print) -->
+  <form method="POST" class="flex items-center space-x-4 mb-6 no-print">
     <div>
       <label class="block text-sm mb-1">From:</label>
       <input
@@ -30,13 +31,14 @@
     </div>
   </form>
 
+  <!-- Report Table -->
   <div class="overflow-x-auto">
     <table class="w-full border-collapse border text-sm">
       <thead class="bg-gray-100">
         <tr>
           <th class="border p-2">Bus Reg No</th>
-          <th class="border p-2 text-right">No. of Vouchers</th>
-          <th class="border p-2 text-right">Total Litres</th>
+          <th class="border p-2 text-right">Vouchers</th>
+          <th class="border p-2 text-right">Litres</th>
           <th class="border p-2 text-right">Total Cost (KES)</th>
         </tr>
       </thead>
@@ -46,38 +48,27 @@
           <td class="border p-2">{{ r.reg_no }}</td>
           <td class="border p-2 text-right">{{ r.vouchers_issued }}</td>
           <td class="border p-2 text-right">
-            {{ "%.2f"|format(r.total_litres) }}
+            {{ "%.2f"|format(r.total_litres|float) }}
           </td>
           <td class="border p-2 text-right">
-            KES {{ "%.2f"|format(r.total_amount) }}
-          </td>
-        </tr>
-        {% else %}
-        <tr>
-          <td colspan="4" class="border p-4 text-center text-gray-500">
-            No fuel records found.
+            KES {{ "{:,.2f}".format(r.total_amount|float) }}
           </td>
         </tr>
         {% endfor %}
+        <tr class="bg-gray-50 font-semibold">
+          <td class="border p-2">Grand Total</td>
+          <td class="border p-2 text-right">
+            {{ report|sum(attribute='vouchers_issued') }}
+          </td>
+          <td class="border p-2 text-right">
+            {{ "%.2f"|format(report|sum(attribute='total_litres')) }}
+          </td>
+          <td class="border p-2 text-right">
+            KES {{ "{:,.2f}".format(report|sum(attribute='total_amount')) }}
+          </td>
+        </tr>
       </tbody>
     </table>
-  </div>
-
-  <div class="mt-6">
-    <button
-      onclick="window.print()"
-      class="px-4 py-2 bg-blue-600 text-white rounded"
-    >
-      Print
-    </button>
-  </div>
-
-  <div class="mt-6">
-    <a
-      href="{{ url_for('fleet_dashboard') }}"
-      class="text-blue-600 hover:underline"
-      >← Back to Fleet Dashboard</a
-    >
   </div>
 </div>
 {% endblock %}
