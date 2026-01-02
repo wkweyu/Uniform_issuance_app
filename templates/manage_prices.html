@@ -21,10 +21,15 @@
             <td class="border p-2 font-medium">{{ item }}</td>
             {% for group in class_groups %}
             <td class="border p-2">
-              <input type="number" step="0.01" min="0"
-                     name="price_{{ item }}_{{ group }}"
-                     value="{{ prices.get((item, group), '') }}"
-                     class="w-24 border border-gray-300 rounded px-2 py-1 text-right">
+              <input type="number"
+                step="0.01"
+                min="0"
+                inputmode="decimal"
+                placeholder="0.00"
+                name="price_{{ item }}_{{ group }}"
+                value="{{ prices.get((item, group), '') }}"
+                class="w-24 border border-gray-300 rounded px-2 py-1 text-right">
+
             </td>
             {% endfor %}
           </tr>

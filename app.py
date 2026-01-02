@@ -457,14 +457,25 @@ def manage_prices():
         for item in uniform_items:
             for group in class_groups:
                 price = request.form.get(f'price_{item}_{group}')
-                if price is not None:
-                    cursor.execute("""
-                        INSERT INTO uniform_prices (item_name, class_group, price)
-                        VALUES (%s, %s, %s)
-                        ON DUPLICATE KEY UPDATE price = VALUES(price)
-                    """, (item, group, price))
+
+                # 🚫 Skip empty or missing values
+                if not price or price.strip() == "":
+                    continue
+
+                try:
+                    price = Decimal(price)
+                except:
+                    flash(f"Invalid price for {item} ({group})", "error")
+                    continue
+
+                cursor.execute("""
+                    INSERT INTO uniform_prices (item_name, class_group, price)
+                    VALUES (%s, %s, %s)
+                    ON DUPLICATE KEY UPDATE price = VALUES(price)
+                """, (item, group, price))
+
         connection.commit()
-        flash("Prices updated successfully.")
+        flash("Prices updated successfully.", "success")
         return redirect(url_for('manage_prices'))
 
     # Fetch existing prices
