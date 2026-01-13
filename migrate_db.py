@@ -3,7 +3,11 @@ import pymysql
 def migrate_db():
     connection = pymysql.connect(
         host='localhost',
+<<<<<<< HEAD
         user='root',
+=======
+        user='schooluser',
+>>>>>>> 1b584a9 (class module)
         password='jbs',
         database='schoolmngt',
         autocommit=True

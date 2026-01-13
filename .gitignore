@@ -1,3 +1,9 @@
 node_modules/
 .env
 dist/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so

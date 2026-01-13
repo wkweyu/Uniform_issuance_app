@@ -1,0 +1,452 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-800">User Management</h1>
+            <p class="text-gray-600">Manage system users and permissions</p>
+        </div>
+        <div class="flex space-x-3">
+            <a href="{{ url_for('admin_settings') }}" class="text-blue-600 hover:text-blue-800 px-4 py-2 border rounded">
+                <i class="fas fa-arrow-left"></i> Back to Settings
+            </a>
+            <a href="{{ url_for('user_activity_log') }}" class="text-green-600 hover:text-green-800 px-4 py-2 border rounded">
+                <i class="fas fa-history"></i> Activity Log
+            </a>
+        </div>
+    </div>
+    
+    <!-- Statistics Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white rounded-lg shadow p-4">
+            <div class="flex items-center">
+                <div class="bg-blue-100 p-3 rounded-full">
+                    <i class="fas fa-users text-blue-600"></i>
+                </div>
+                <div class="ml-4">
+                    <p class="text-sm text-gray-500">Total Users</p>
+                    <p class="text-2xl font-bold">{{ stats.total_users }}</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-lg shadow p-4">
+            <div class="flex items-center">
+                <div class="bg-green-100 p-3 rounded-full">
+                    <i class="fas fa-user-check text-green-600"></i>
+                </div>
+                <div class="ml-4">
+                    <p class="text-sm text-gray-500">Active Users</p>
+                    <p class="text-2xl font-bold">{{ stats.active_count }}</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-lg shadow p-4">
+            <div class="flex items-center">
+                <div class="bg-red-100 p-3 rounded-full">
+                    <i class="fas fa-user-shield text-red-600"></i>
+                </div>
+                <div class="ml-4">
+                    <p class="text-sm text-gray-500">Administrators</p>
+                    <p class="text-2xl font-bold">{{ stats.admin_count }}</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-lg shadow p-4">
+            <div class="flex items-center">
+                <div class="bg-purple-100 p-3 rounded-full">
+                    <i class="fas fa-user-tie text-purple-600"></i>
+                </div>
+                <div class="ml-4">
+                    <p class="text-sm text-gray-500">Staff Users</p>
+                    <p class="text-2xl font-bold">{{ stats.staff_count }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Two Column Layout -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Left Column: Create User Form -->
+        <div class="lg:col-span-1">
+            <div class="bg-white rounded-lg shadow-md p-6 sticky top-6">
+                <h2 class="text-xl font-semibold mb-4">Create New User</h2>
+                <form method="POST">
+                    <input type="hidden" name="action" value="create">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Username *</label>
+                            <input type="text" name="username" required 
+                                   class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                   placeholder="e.g., john.doe">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Staff ID</label>
+                            <input type="text" name="staff_id" 
+                                   class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                   placeholder="e.g., STF001">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Password *</label>
+                            <input type="password" name="password" required 
+                                   class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                   placeholder="Minimum 6 characters">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Confirm Password *</label>
+                            <input type="password" name="confirm_password" required 
+                                   class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        
+                        <div class="space-y-2">
+                            <label class="flex items-center">
+                                <input type="checkbox" name="is_admin" value="1" class="rounded border-gray-300 text-blue-600">
+                                <span class="ml-2 text-sm text-gray-700">
+                                    <i class="fas fa-user-shield mr-1"></i> Administrator Access
+                                </span>
+                            </label>
+                            
+                            <label class="flex items-center">
+                                <input type="checkbox" name="is_active" value="1" checked class="rounded border-gray-300 text-blue-600">
+                                <span class="ml-2 text-sm text-gray-700">
+                                    <i class="fas fa-user-check mr-1"></i> Active Account
+                                </span>
+                            </label>
+                        </div>
+                        
+                        <button type="submit" class="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 mt-4">
+                            <i class="fas fa-user-plus mr-2"></i> Create User
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Right Column: Users List -->
+        <div class="lg:col-span-2">
+            <div class="bg-white rounded-lg shadow-md overflow-hidden">
+                <div class="px-6 py-4 bg-gray-50 border-b">
+                    <div class="flex justify-between items-center">
+                        <h2 class="text-xl font-semibold">System Users ({{ users|length }})</h2>
+                        <div class="text-sm text-gray-500">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            Click user actions to manage
+                        </div>
+                    </div>
+                </div>
+                
+                {% if users %}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User Details</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role & Status</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            {% for user in users %}
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-6 py-4">
+                                    <div class="flex items-center">
+                                        <div class="flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center 
+                                                    {% if user.is_admin %}bg-red-100{% else %}bg-blue-100{% endif %}">
+                                            <i class="fas fa-user {% if user.is_admin %}text-red-600{% else %}text-blue-600{% endif %}"></i>
+                                        </div>
+                                        <div class="ml-4">
+                                            <div class="font-medium text-gray-900">{{ user.username }}</div>
+                                            <div class="text-sm text-gray-500">
+                                                ID: {{ user.userNo }}
+                                                {% if user.StaffID %}
+                                                • Staff ID: {{ user.StaffID }}
+                                                {% endif %}
+                                            </div>
+                                            {% if user.is_current_user %}
+                                            <span class="inline-block mt-1 bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">Current User</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4">
+                                    <div class="space-y-2">
+                                        <div>
+                                            {% if user.is_admin %}
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                                <i class="fas fa-user-shield mr-1"></i> Administrator
+                                            </span>
+                                            {% else %}
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                                <i class="fas fa-user-tie mr-1"></i> Staff
+                                            </span>
+                                            {% endif %}
+                                        </div>
+                                        <div>
+                                            {% if user.is_active %}
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                <i class="fas fa-check-circle mr-1"></i> Active
+                                            </span>
+                                            {% else %}
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                                <i class="fas fa-times-circle mr-1"></i> Inactive
+                                            </span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4">
+                                    <div class="flex flex-col space-y-2">
+                                        <!-- Edit Button -->
+                                        <button onclick="editUserModal({{ user.userNo }})" 
+                                                class="text-left text-blue-600 hover:text-blue-800 px-3 py-1 rounded hover:bg-blue-50 flex items-center"
+                                                {% if user.is_current_user %}disabled title="Cannot edit yourself"{% endif %}>
+                                            <i class="fas fa-edit w-5 mr-2"></i> Edit
+                                        </button>
+                                        
+                                        <!-- Change Password Button -->
+                                        <button onclick="changePasswordModal({{ user.userNo }}, '{{ user.username }}')" 
+                                                class="text-left text-green-600 hover:text-green-800 px-3 py-1 rounded hover:bg-green-50 flex items-center">
+                                            <i class="fas fa-key w-5 mr-2"></i> Password
+                                        </button>
+                                        
+                                        <!-- Toggle Status Form -->
+                                        <form method="POST" class="inline" 
+                                              onsubmit="return confirm('{% if user.is_active %}Deactivate{% else %}Activate{% endif %} user {{ user.username }}?');">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <input type="hidden" name="action" value="toggle_status">
+                                            <input type="hidden" name="user_no" value="{{ user.userNo }}">
+                                            <button type="submit" 
+                                                    class="w-full text-left text-yellow-600 hover:text-yellow-800 px-3 py-1 rounded hover:bg-yellow-50 flex items-center"
+                                                    {% if user.is_current_user %}disabled title="Cannot change your own status"{% endif %}>
+                                                <i class="fas fa-toggle-{% if user.is_active %}on{% else %}off{% endif %} w-5 mr-2"></i>
+                                                {% if user.is_active %}Deactivate{% else %}Activate{% endif %}
+                                            </button>
+                                        </form>
+                                        
+                                        <!-- Delete Form -->
+                                        {% if not user.is_current_user %}
+                                        <form method="POST" class="inline" 
+                                              onsubmit="return confirm('Are you sure you want to delete user {{ user.username }}? This action cannot be undone.');">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <input type="hidden" name="action" value="delete">
+                                            <input type="hidden" name="user_no" value="{{ user.userNo }}">
+                                            <button type="submit" 
+                                                    class="w-full text-left text-red-600 hover:text-red-800 px-3 py-1 rounded hover:bg-red-50 flex items-center">
+                                                <i class="fas fa-trash w-5 mr-2"></i> Delete
+                                            </button>
+                                        </form>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="p-8 text-center text-gray-500">
+                    <i class="fas fa-users text-4xl mb-4 text-gray-300"></i>
+                    <p class="text-lg mb-2">No users found</p>
+                    <p class="text-sm">Create your first user using the form on the left</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit User Modal -->
+<div id="editModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden z-50 overflow-y-auto">
+    <div class="relative mx-auto p-4 w-full max-w-md mt-20">
+        <div class="relative bg-white rounded-lg shadow">
+            <div class="px-6 py-4 border-b bg-blue-50">
+                <h3 class="text-lg font-medium text-gray-900">Edit User</h3>
+            </div>
+            <form id="editForm" method="POST" class="px-6 py-4">
+                <input type="hidden" name="action" value="edit">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" id="edit_user_no" name="user_no">
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Username *</label>
+                        <input type="text" id="edit_username" name="username" required 
+                               class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Staff ID</label>
+                        <input type="text" id="edit_staff_id" name="staff_id" 
+                               class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                            <select id="edit_is_admin" name="is_admin" 
+                                    class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="0">Staff</option>
+                                <option value="1">Administrator</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                            <select id="edit_is_active" name="is_active" 
+                                    class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="1">Active</option>
+                                <option value="0">Inactive</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-6 flex justify-end space-x-3">
+                    <button type="button" onclick="closeEditModal()" 
+                            class="px-4 py-2 border rounded text-gray-700 hover:bg-gray-50">
+                        Cancel
+                    </button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                        Save Changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Change Password Modal -->
+<div id="passwordModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden z-50 overflow-y-auto">
+    <div class="relative mx-auto p-4 w-full max-w-md mt-20">
+        <div class="relative bg-white rounded-lg shadow">
+            <div class="px-6 py-4 border-b bg-green-50">
+                <h3 class="text-lg font-medium text-gray-900" id="passwordTitle">Change Password</h3>
+            </div>
+            <form id="passwordForm" method="POST" class="px-6 py-4">
+                <input type="hidden" name="action" value="change_password">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" id="password_user_no" name="user_no">
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">New Password *</label>
+                        <input type="password" name="new_password" required 
+                               class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                               placeholder="Enter new password">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Confirm Password *</label>
+                        <input type="password" name="confirm_password" required 
+                               class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                               placeholder="Confirm new password">
+                    </div>
+                    <div class="text-xs text-gray-500 bg-gray-50 p-3 rounded">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        Password must be at least 6 characters long
+                    </div>
+                </div>
+                
+                <div class="mt-6 flex justify-end space-x-3">
+                    <button type="button" onclick="closePasswordModal()" 
+                            class="px-4 py-2 border rounded text-gray-700 hover:bg-gray-50">
+                        Cancel
+                    </button>
+                    <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                        Change Password
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// Edit User Functions
+function editUserModal(userNo) {
+    fetch(`/admin/users/${userNo}/edit`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(user => {
+            document.getElementById('edit_user_no').value = user.userNo;
+            document.getElementById('edit_username').value = user.username;
+            document.getElementById('edit_staff_id').value = user.StaffID || '';
+            document.getElementById('edit_is_admin').value = user.is_admin;
+            document.getElementById('edit_is_active').value = user.is_active;
+            
+            document.getElementById('editModal').classList.remove('hidden');
+        })
+        .catch(error => {
+            alert('Error loading user data: ' + error.message);
+            console.error('Error:', error);
+        });
+}
+
+function closeEditModal() {
+    document.getElementById('editModal').classList.add('hidden');
+}
+
+// Change Password Functions
+function changePasswordModal(userNo, username) {
+    document.getElementById('password_user_no').value = userNo;
+    document.getElementById('passwordTitle').textContent = `Change Password for ${username}`;
+    document.getElementById('passwordModal').classList.remove('hidden');
+}
+
+function closePasswordModal() {
+    document.getElementById('passwordModal').classList.add('hidden');
+}
+
+// Close modals when clicking outside or pressing ESC
+document.addEventListener('click', (event) => {
+    const editModal = document.getElementById('editModal');
+    const passwordModal = document.getElementById('passwordModal');
+    
+    if (event.target === editModal) closeEditModal();
+    if (event.target === passwordModal) closePasswordModal();
+});
+
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+        closeEditModal();
+        closePasswordModal();
+    }
+});
+
+// Form validation
+document.getElementById('editForm')?.addEventListener('submit', function(e) {
+    const username = document.getElementById('edit_username').value.trim();
+    if (!username) {
+        e.preventDefault();
+        alert('Username is required');
+        return false;
+    }
+});
+
+document.getElementById('passwordForm')?.addEventListener('submit', function(e) {
+    const pass1 = this.querySelector('[name="new_password"]').value;
+    const pass2 = this.querySelector('[name="confirm_password"]').value;
+    
+    if (pass1.length < 6) {
+        e.preventDefault();
+        alert('Password must be at least 6 characters long');
+        return false;
+    }
+    
+    if (pass1 !== pass2) {
+        e.preventDefault();
+        alert('Passwords do not match');
+        return false;
+    }
+});
+</script>
+{% endblock %}

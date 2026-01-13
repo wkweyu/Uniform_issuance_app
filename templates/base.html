@@ -11,18 +11,29 @@
     <title>SkoolTrack Pro</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
+<<<<<<< HEAD
+=======
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+>>>>>>> 1b584a9 (class module)
     <!-- Local Tailwind CSS -->
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/tailwind.min.css') }}"
     />
+<<<<<<< HEAD
     <!-- (Fallback CDN link-->
+=======
+    <!-- Fallback CDN -->
+>>>>>>> 1b584a9 (class module)
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
       onerror="console.error('Failed to load local Tailwind')"
     />
 
+<<<<<<< HEAD
     <!-- Consistent Print Styling -->
     <style>
       @media print {
@@ -51,11 +62,22 @@
         td {
           padding: 6px;
         }
+=======
+    <!-- Print Styling -->
+    <style>
+      @media print {
+        .no-print { display: none !important; }
+        body { background: #fff; margin: 0; padding: 0; }
+        main, header, footer { box-shadow: none; padding: 0; margin: 0; }
+        table, th, td { border: 1px solid #000; border-collapse: collapse; }
+        th, td { padding: 6px; }
+>>>>>>> 1b584a9 (class module)
       }
     </style>
   </head>
 
   <body class="bg-gray-50 min-h-screen text-gray-800">
+<<<<<<< HEAD
     <!-- App Header -->
     <header class="bg-blue-800 text-white shadow no-print">
       <div class="max-w-7xl mx-auto flex justify-between items-center p-4">
@@ -71,10 +93,171 @@
           >
         </nav>
       </div>
+=======
+
+    <!-- App Header - FIXED: Single navigation section -->
+    <header class="bg-blue-800 text-white shadow no-print">
+      <div class="max-w-7xl mx-auto px-4">
+        <!-- Top Bar: Logo + User Info -->
+        <div class="flex justify-between items-center py-3">
+          <!-- Logo / Title -->
+          <div class="flex items-center space-x-3">
+            <h1 class="text-2xl font-bold">🎒 SkoolTrack Pro</h1>
+            {% if session.get('logged_in') and session.get('is_admin') %}
+              <a href="{{ url_for('admin_settings') }}" 
+                 class="bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded text-sm font-medium">
+                <i class="fas fa-cog"></i> Admin
+              </a>
+            {% endif %}
+          </div>
+
+          <!-- User Info -->
+          <div class="flex items-center space-x-4">
+            {% if session.get('logged_in') %}
+              <div class="text-right hidden md:block">
+                <div class="text-sm font-medium">{{ session.username }}</div>
+                <div class="text-xs text-blue-200">
+                  {% if session.is_admin %}
+                    <span class="bg-red-500 px-2 py-0.5 rounded">Administrator</span>
+                  {% else %}
+                    Staff User
+                  {% endif %}
+                </div>
+              </div>
+              <div class="flex items-center space-x-2">
+                <a href="{{ url_for('logout') }}" 
+                   class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-sm font-medium">
+                  <i class="fas fa-sign-out-alt"></i> Logout
+                </a>
+              </div>
+            {% else %}
+              <a href="{{ url_for('login') }}" 
+                 class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded text-sm font-medium">
+                <i class="fas fa-sign-in-alt"></i> Login
+              </a>
+            {% endif %}
+            
+            <!-- Mobile Hamburger Button -->
+            <button id="menu-btn" class="md:hidden focus:outline-none">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                   xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M4 6h16M4 12h16M4 18h16"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Main Navigation -->
+        <nav class="border-t border-blue-700 py-2 hidden md:block">
+          <div class="flex space-x-6">
+            {% if session.get('logged_in') %}
+              <a href="{{ url_for('index') }}" 
+                 class="hover:text-blue-200 {% if request.endpoint == 'index' %}text-blue-200 font-semibold border-b-2 border-blue-200{% endif %}">
+                <i class="fas fa-home mr-1"></i> Dashboard
+              </a>
+              
+              <a href="{{ url_for('uniform_dashboard') }}" 
+                 class="hover:text-blue-200 {% if 'uniform' in request.endpoint %}text-blue-200 font-semibold border-b-2 border-blue-200{% endif %}">
+                <i class="fas fa-tshirt mr-1"></i> Uniform
+              </a>
+              
+              <a href="{{ url_for('fleet_dashboard') }}" 
+                 class="hover:text-blue-200 {% if 'fleet' in request.endpoint %}text-blue-200 font-semibold border-b-2 border-blue-200{% endif %}">
+                <i class="fas fa-bus mr-1"></i> Fleet
+              </a>
+              
+              <a href="{{ url_for('students_list') }}" 
+                 class="hover:text-blue-200 {% if 'student' in request.endpoint %}text-blue-200 font-semibold border-b-2 border-blue-200{% endif %}">
+                <i class="fas fa-users mr-1"></i> Students
+              </a>
+              
+              <a href="{{ url_for('reports_dashboard') }}" 
+                 class="hover:text-blue-200 {% if 'report' in request.endpoint %}text-blue-200 font-semibold border-b-2 border-blue-200{% endif %}">
+                <i class="fas fa-chart-bar mr-1"></i> Reports
+              </a>
+              
+              {% if session.get('is_admin') %}
+                <a href="{{ url_for('manage_classes') }}" 
+                   class="hover:text-blue-200 {% if 'manage_classes' in request.endpoint %}text-blue-200 font-semibold border-b-2 border-blue-200{% endif %}">
+                  <i class="fas fa-school mr-1"></i> Classes
+                </a>
+              {% endif %}
+              
+              {% if session.get('is_admin') %}
+                <a href="{{ url_for('manage_users') }}" 
+                   class="hover:text-blue-200 {% if 'manage_users' in request.endpoint %}text-blue-200 font-semibold border-b-2 border-blue-200{% endif %}">
+                  <i class="fas fa-user-cog mr-1"></i> Users
+                </a>
+              {% endif %}
+            {% endif %}
+          </div>
+        </nav>
+      </div>
+
+      <!-- Mobile Menu -->
+      <div id="mobile-menu" class="hidden md:hidden bg-blue-700 border-t border-blue-600">
+        <div class="flex flex-col p-4 space-y-3">
+          {% if session.get('logged_in') %}
+            <a href="{{ url_for('index') }}" class="hover:bg-blue-600 p-2 rounded flex items-center">
+              <i class="fas fa-home w-6"></i> <span class="ml-2">Dashboard</span>
+            </a>
+            
+            <a href="{{ url_for('uniform_dashboard') }}" class="hover:bg-blue-600 p-2 rounded flex items-center">
+              <i class="fas fa-tshirt w-6"></i> <span class="ml-2">Uniform</span>
+            </a>
+            
+            <a href="{{ url_for('fleet_dashboard') }}" class="hover:bg-blue-600 p-2 rounded flex items-center">
+              <i class="fas fa-bus w-6"></i> <span class="ml-2">Fleet</span>
+            </a>
+            
+            <a href="{{ url_for('students_list') }}" class="hover:bg-blue-600 p-2 rounded flex items-center">
+              <i class="fas fa-users w-6"></i> <span class="ml-2">Students</span>
+            </a>
+            
+            <a href="{{ url_for('reports_dashboard') }}" class="hover:bg-blue-600 p-2 rounded flex items-center">
+              <i class="fas fa-chart-bar w-6"></i> <span class="ml-2">Reports</span>
+            </a>
+            
+            {% if session.get('is_admin') %}
+              <a href="{{ url_for('manage_classes') }}" class="hover:bg-blue-600 p-2 rounded flex items-center">
+                <i class="fas fa-school w-6"></i> <span class="ml-2">Classes</span>
+              </a>
+              
+              <a href="{{ url_for('admin_settings') }}" class="hover:bg-blue-600 p-2 rounded flex items-center">
+                <i class="fas fa-cog w-6"></i> <span class="ml-2">Admin Settings</span>
+              </a>
+              
+              <a href="{{ url_for('manage_users') }}" class="hover:bg-blue-600 p-2 rounded flex items-center">
+                <i class="fas fa-user-cog w-6"></i> <span class="ml-2">User Management</span>
+              </a>
+            {% endif %}
+            
+            <div class="border-t border-blue-600 pt-3 mt-3">
+              <div class="text-sm text-blue-200 px-2">
+                <i class="fas fa-user"></i> {{ session.username }}
+                {% if session.is_admin %}
+                  <span class="bg-red-500 text-xs px-2 py-0.5 rounded ml-2">Admin</span>
+                {% endif %}
+              </div>
+            </div>
+            
+            <a href="{{ url_for('logout') }}" class="hover:bg-red-600 bg-red-700 p-2 rounded flex items-center">
+              <i class="fas fa-sign-out-alt w-6"></i> <span class="ml-2">Logout</span>
+            </a>
+          {% else %}
+            <a href="{{ url_for('login') }}" class="hover:bg-blue-600 p-2 rounded flex items-center">
+              <i class="fas fa-sign-in-alt w-6"></i> <span class="ml-2">Login</span>
+            </a>
+          {% endif %}
+        </div>
+      </div>
+>>>>>>> 1b584a9 (class module)
     </header>
 
     <!-- Flash Messages -->
     <div class="max-w-7xl mx-auto mt-4 px-4 no-print">
+<<<<<<< HEAD
       {% with messages = get_flashed_messages() %} {% if messages %}
       <div
         class="p-4 mb-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-900 rounded"
@@ -90,13 +273,85 @@
     <main
       class="max-w-7xl mx-auto p-6 bg-white shadow rounded-lg mt-4 print-area"
     >
+=======
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="p-4 mb-4 rounded-lg border-l-4 
+              {% if category == 'error' %} 
+                bg-red-50 border-red-500 text-red-800
+              {% elif category == 'success' %}
+                bg-green-50 border-green-500 text-green-800
+              {% elif category == 'warning' %}
+                bg-yellow-50 border-yellow-500 text-yellow-800
+              {% else %}
+                bg-blue-50 border-blue-500 text-blue-800
+              {% endif %}">
+              <div class="flex items-center">
+                <i class="fas 
+                  {% if category == 'error' %} fa-exclamation-circle
+                  {% elif category == 'success' %} fa-check-circle
+                  {% elif category == 'warning' %} fa-exclamation-triangle
+                  {% else %} fa-info-circle {% endif %}
+                  mr-2"></i>
+                {{ message|safe }}
+              </div>
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+    </div>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto p-4 md:p-6 bg-white shadow rounded-lg mt-4 mb-6 print-area">
+>>>>>>> 1b584a9 (class module)
       {% block content %}{% endblock %}
     </main>
 
     <!-- Footer -->
+<<<<<<< HEAD
     <footer class="text-center text-sm text-gray-500 py-4 no-print">
       &copy; {{ datetime.utcnow().year }} Mother Kevin Comprehensive School. All
       rights reserved.
     </footer>
   </body>
 </html>
+=======
+    <footer class="text-center text-sm text-gray-500 py-4 no-print border-t border-gray-200 mt-8">
+      <div class="max-w-7xl mx-auto px-4">
+        <div class="flex flex-col md:flex-row justify-between items-center">
+          <div class="mb-2 md:mb-0">
+            &copy; {{ datetime.utcnow().year }} Mother Kevin Comprehensive School. All rights reserved.
+          </div>
+          <div class="text-xs text-gray-400">
+            <span class="hidden md:inline">•</span>
+            <span class="mx-2">SkoolTrack Pro v1.0</span>
+            <span class="hidden md:inline">•</span>
+            {% if session.get('logged_in') %}
+              <span class="mx-2">Logged in as: {{ session.username }}</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </footer>
+
+    <!-- Mobile Menu Script -->
+    <script>
+      const menuBtn = document.getElementById('menu-btn');
+      const mobileMenu = document.getElementById('mobile-menu');
+
+      menuBtn.addEventListener('click', () => {
+        mobileMenu.classList.toggle('hidden');
+      });
+
+      // Close mobile menu when clicking outside
+      document.addEventListener('click', (event) => {
+        if (!menuBtn.contains(event.target) && !mobileMenu.contains(event.target)) {
+          mobileMenu.classList.add('hidden');
+        }
+      });
+    </script>
+
+  </body>
+</html>
+>>>>>>> 1b584a9 (class module)

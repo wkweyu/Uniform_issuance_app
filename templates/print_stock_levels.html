@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto p-4">
+  <div class="mb-6 flex justify-between items-center">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-800">📦 Current Stock Levels</h1>
+      <p class="text-gray-600 mt-1">Printable stock list with reorder levels</p>
+    </div>
+    <div class="no-print">
+      <button onclick="window.print()" class="px-4 py-2 bg-blue-600 text-white rounded-md">🖨️ Print</button>
+      <a href="{{ url_for('manage_stock') }}" class="ml-2 px-4 py-2 bg-gray-300 text-gray-800 rounded-md">← Back</a>
+    </div>
+  </div>
+
+  <div class="bg-white p-4 rounded shadow" id="printable-stock">
+    <div class="mb-4 text-sm text-gray-700">
+      <strong>Generated:</strong> {{ now.strftime('%d %b %Y %H:%M') }}
+    </div>
+
+    <table class="w-full border-collapse text-sm">
+      <thead>
+        <tr class="bg-gray-700 text-white text-xs">
+          <th class="border px-2 py-2 text-left">Item</th>
+          <th class="border px-2 py-2 text-left">Classes</th>
+          <th class="border px-2 py-2 text-center">Current Stock</th>
+          <th class="border px-2 py-2 text-center">Reorder Level</th>
+          <th class="border px-2 py-2 text-center">Status</th>
+          <th class="border px-2 py-2 text-center">Last Restock</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr class="{% if loop.index0 % 2 == 0 %}bg-white{% else %}bg-gray-50{% endif %}">
+          <td class="border px-2 py-2 text-left font-medium">{{ item.item_name }}</td>
+          <td class="border px-2 py-2 text-left">{{ item.class_groups }}</td>
+          <td class="border px-2 py-2 text-center font-bold">{{ item.current_stock }}</td>
+          <td class="border px-2 py-2 text-center">{{ item.reorder_level }}</td>
+          <td class="border px-2 py-2 text-center">
+            {% if item.current_stock == 0 %}
+              Out of Stock
+            {% elif item.current_stock <= item.reorder_level %}
+              Low Stock
+            {% else %}
+              OK
+            {% endif %}
+          </td>
+          <td class="border px-2 py-2 text-center">{{ item.last_restock_date or 'Never' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="mt-6 text-xs text-gray-600">
+      <div>Prepared by: {{ session.username }}</div>
+    </div>
+  </div>
+
+</div>
+
+<style>
+  @media print {
+    .no-print { display: none !important; }
+    body { background: white !important; margin: 0; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #333; padding: 6px; font-size: 10pt; }
+    thead { background: #333; color: white; }
+  }
+</style>
+
+{% endblock %}

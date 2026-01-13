@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Class Subjects{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb Navigation -->
+<nav class="mb-6 text-sm">
+  <ol class="flex items-center space-x-2">
+    <li><a href="{{ url_for('index') }}" class="text-blue-600 hover:underline">Dashboard</a></li>
+    <li class="text-gray-400">/</li>
+    <li><a href="{{ url_for('manage_classes') }}" class="text-blue-600 hover:underline">Classes</a></li>
+    <li class="text-gray-400">/</li>
+    <li class="text-gray-600">Manage Subjects</li>
+  </ol>
+</nav>
+
+<div class="container mx-auto px-4 py-8 max-w-2xl">
+    <div class="mb-6">
+        <h1 class="text-3xl font-bold text-gray-800">📚 Allocate Subjects to Class</h1>
+        <p class="text-gray-600 mt-2">Define which subjects can be offered in this class</p>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-6">
+        <form method="POST" class="space-y-6">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <!-- Compulsory Toggle -->
+            <div class="flex items-center p-4 bg-blue-50 border border-blue-200 rounded">
+                <input type="checkbox" name="is_compulsory" id="is_compulsory" 
+                       class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                <label for="is_compulsory" class="ml-3 block text-sm font-medium text-gray-700">
+                    Mark all subjects as compulsory
+                </label>
+                <span class="ml-2 text-xs text-gray-500">(Can be overridden per subject)</span>
+            </div>
+
+            <!-- Subject Selection -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-3">
+                    Select Subjects *
+                </label>
+                
+                <div class="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-4">
+                    {% if subjects %}
+                        {% for subject in subjects %}
+                        <div class="flex items-center">
+                            <input type="checkbox" name="subject_ids" value="{{ subject.id }}" 
+                                   id="subject_{{ subject.id }}"
+                                   {% if subject.id in allocated_subject_ids %}checked{% endif %}
+                                   class="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded">
+                            <label for="subject_{{ subject.id }}" class="ml-3 block text-sm font-medium text-gray-700">
+                                <span class="font-mono text-blue-600">{{ subject.code }}</span>
+                                <span class="text-gray-600">— {{ subject.name }}</span>
+                            </label>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                    <p class="text-gray-500 italic">No subjects available. Create subjects first.</p>
+                    {% endif %}
+                </div>
+
+                <div id="selection_summary" class="mt-3 text-sm text-gray-600">
+                    <strong>Selected:</strong> <span id="count">0</span> subject(s)
+                </div>
+            </div>
+
+            <!-- Selected Subjects List -->
+            <div class="bg-gray-50 border border-gray-200 rounded p-4">
+                <h4 class="font-semibold text-gray-800 mb-2">Selected Subjects:</h4>
+                <div id="selected_list" class="text-sm text-gray-700">
+                    <p class="italic text-gray-500">Select subjects above to see preview</p>
+                </div>
+            </div>
+
+            <!-- Form Actions -->
+            <div class="flex gap-3 pt-4">
+                <button type="submit" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
+                    ✅ Save Subject Allocation
+                </button>
+                <a href="{{ url_for('manage_classes') }}" class="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded text-center">
+                    Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Info Card -->
+    <div class="mt-6 bg-gray-50 border border-gray-200 rounded p-4">
+        <h3 class="font-semibold text-gray-800 mb-2">ℹ️ About Subject Allocation</h3>
+        <ul class="text-sm text-gray-700 space-y-1">
+            <li>• Class subjects define what can be offered to students in this class</li>
+            <li>• Students can only enroll in subjects allocated to their class</li>
+            <li>• Mark subjects as compulsory if all students must take them</li>
+            <li>• Teachers are allocated to teach specific subjects</li>
+        </ul>
+    </div>
+</div>
+
+<script>
+    function updateSelectedList() {
+        const checkboxes = document.querySelectorAll('input[name="subject_ids"]:checked');
+        const list = document.getElementById('selected_list');
+        const count = document.getElementById('count');
+        
+        count.textContent = checkboxes.length;
+        
+        if (checkboxes.length === 0) {
+            list.innerHTML = '<p class="italic text-gray-500">No subjects selected</p>';
+            return;
+        }
+        
+        const items = Array.from(checkboxes).map(cb => {
+            const label = cb.nextElementSibling.textContent.trim();
+            return `<div class="flex items-center text-sm py-1">
+                        <span class="text-green-600 mr-2">✓</span>
+                        ${label}
+                    </div>`;
+        });
+        
+        list.innerHTML = items.join('');
+    }
+    
+    // Update on page load and whenever checkboxes change
+    document.querySelectorAll('input[name="subject_ids"]').forEach(cb => {
+        cb.addEventListener('change', updateSelectedList);
+    });
+    
+    updateSelectedList();
+</script>
+{% endblock %}

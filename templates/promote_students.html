@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+
+{% block title %}Promote Students{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb Navigation -->
+<nav class="mb-6 text-sm">
+  <ol class="flex items-center space-x-2">
+    <li><a href="{{ url_for('index') }}" class="text-blue-600 hover:underline">Dashboard</a></li>
+    <li class="text-gray-400">/</li>
+    <li><a href="{{ url_for('manage_classes') }}" class="text-blue-600 hover:underline">Classes</a></li>
+    <li class="text-gray-400">/</li>
+    <li class="text-gray-600">Promote Students</li>
+  </ol>
+</nav>
+
+<div class="container mx-auto px-4 py-8 max-w-3xl">
+    <div class="mb-6">
+        <h1 class="text-3xl font-bold text-gray-800">🚀 Promote Students</h1>
+        <p class="text-gray-600 mt-2">Promote all students from one class to another (atomic operation with audit trail)</p>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-6">
+        <form method="POST" onsubmit="return confirmPromotion()" class="space-y-6">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <!-- Promotion Details -->
+            <div class="bg-yellow-50 border border-yellow-200 rounded p-4 mb-6">
+                <h3 class="font-semibold text-yellow-900 mb-2">⚠️ Important</h3>
+                <p class="text-sm text-yellow-800">
+                    Promotion will move <strong>ALL students</strong> from the source class to the destination class.
+                    This operation is atomic and cannot be partially rolled back. Ensure you have a backup.
+                </p>
+            </div>
+
+            <!-- Source Class Selection -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label for="old_academic_year" class="block text-sm font-medium text-gray-700 mb-2">
+                        Source Academic Year *
+                    </label>
+                    <select name="old_academic_year" id="old_academic_year" required 
+                            onchange="updateSourceClasses()"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">-- Select Year --</option>
+                        {% for year in years %}
+                        <option value="{{ year.id }}">{{ year.year }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label for="old_class_id" class="block text-sm font-medium text-gray-700 mb-2">
+                        Source Class *
+                    </label>
+                    <select name="old_class_id" id="old_class_id" required 
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">-- Select Class --</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Destination Class Selection -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label for="new_academic_year" class="block text-sm font-medium text-gray-700 mb-2">
+                        Destination Academic Year *
+                    </label>
+                    <select name="new_academic_year" id="new_academic_year" required 
+                            onchange="updateDestinationClasses()"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">-- Select Year --</option>
+                        {% for year in years %}
+                        <option value="{{ year.id }}">{{ year.year }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label for="new_class_id" class="block text-sm font-medium text-gray-700 mb-2">
+                        Destination Class *
+                    </label>
+                    <select name="new_class_id" id="new_class_id" required 
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">-- Select Class --</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Promotion Notes -->
+            <div>
+                <label for="notes" class="block text-sm font-medium text-gray-700 mb-2">
+                    Promotion Notes (Optional)
+                </label>
+                <textarea name="notes" id="notes" rows="3" placeholder="e.g., Annual promotion, end of year 2025"
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"></textarea>
+                <p class="text-xs text-gray-500 mt-1">Notes will be recorded in promotion audit log</p>
+            </div>
+
+            <!-- Promotion Summary -->
+            <div class="bg-blue-50 border border-blue-200 rounded p-4">
+                <h4 class="font-semibold text-blue-900 mb-2">Promotion Summary</h4>
+                <p class="text-sm text-blue-800">
+                    <strong>Source:</strong> <span id="source_summary">Select classes above</span>
+                </p>
+                <p class="text-sm text-blue-800">
+                    <strong>Destination:</strong> <span id="dest_summary">Select classes above</span>
+                </p>
+                <p class="text-sm text-blue-800 mt-2">
+                    ℹ️ Student count will be shown after class selection
+                </p>
+            </div>
+
+            <!-- Form Actions -->
+            <div class="flex gap-3 pt-4">
+                <button type="submit" class="flex-1 bg-orange-600 hover:bg-orange-700 text-white font-bold py-2 px-4 rounded">
+                    🔄 Promote Students
+                </button>
+                <a href="{{ url_for('manage_classes') }}" class="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded text-center">
+                    Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Info Card -->
+    <div class="mt-6 bg-gray-50 border border-gray-200 rounded p-4">
+        <h3 class="font-semibold text-gray-800 mb-2">ℹ️ About Promotion</h3>
+        <ul class="text-sm text-gray-700 space-y-1">
+            <li>• Promotion is an <strong>atomic operation</strong> — all students move or none do</li>
+            <li>• Source and destination must be in consecutive academic years</li>
+            <li>• Promotion history is automatically recorded in the audit log</li>
+            <li>• Student subject allocations are automatically copied to new class</li>
+            <li>• Promoter ID and timestamp are recorded for compliance</li>
+        </ul>
+    </div>
+</div>
+
+<script>
+    // Fetch classes for a given year
+    async function updateSourceClasses() {
+        const yearId = document.getElementById('old_academic_year').value;
+        if (!yearId) {
+            document.getElementById('old_class_id').innerHTML = '<option value="">-- Select Class --</option>';
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/admin/get-classes-by-year?year_id=${yearId}`);
+            const data = await response.json();
+            
+            if (data.success) {
+                const select = document.getElementById('old_class_id');
+                select.innerHTML = '<option value="">-- Select Class --</option>';
+                data.classes.forEach(cls => {
+                    const option = document.createElement('option');
+                    option.value = cls.classID;
+                    option.textContent = cls.display_name;
+                    select.appendChild(option);
+                });
+                updateSourceSummary();
+            }
+        } catch (e) {
+            console.error('Error fetching classes:', e);
+        }
+    }
+
+    async function updateDestinationClasses() {
+        const yearId = document.getElementById('new_academic_year').value;
+        if (!yearId) {
+            document.getElementById('new_class_id').innerHTML = '<option value="">-- Select Class --</option>';
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/admin/get-classes-by-year?year_id=${yearId}`);
+            const data = await response.json();
+            
+            if (data.success) {
+                const select = document.getElementById('new_class_id');
+                select.innerHTML = '<option value="">-- Select Class --</option>';
+                data.classes.forEach(cls => {
+                    const option = document.createElement('option');
+                    option.value = cls.classID;
+                    option.textContent = cls.display_name;
+                    select.appendChild(option);
+                });
+                updateDestSummary();
+            }
+        } catch (e) {
+            console.error('Error fetching classes:', e);
+        }
+    }
+
+    function updateSourceSummary() {
+        const select = document.getElementById('old_class_id');
+        const text = select.options[select.selectedIndex].text || 'Select class';
+        document.getElementById('source_summary').textContent = text;
+    }
+
+    function updateDestSummary() {
+        const select = document.getElementById('new_class_id');
+        const text = select.options[select.selectedIndex].text || 'Select class';
+        document.getElementById('dest_summary').textContent = text;
+    }
+
+    function confirmPromotion() {
+        const oldClass = document.getElementById('old_class_id').options[document.getElementById('old_class_id').selectedIndex].text;
+        const newClass = document.getElementById('new_class_id').options[document.getElementById('new_class_id').selectedIndex].text;
+        
+        return confirm(`⚠️ CONFIRM PROMOTION\n\nMove students from:\n${oldClass}\n\nTo:\n${newClass}\n\nThis operation cannot be undone without restoring from backup.`);
+    }
+
+    // Update summaries when selections change
+    document.getElementById('old_class_id').addEventListener('change', updateSourceSummary);
+    document.getElementById('new_class_id').addEventListener('change', updateDestSummary);
+</script>
+{% endblock %}

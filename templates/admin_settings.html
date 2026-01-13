@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <h1 class="text-3xl font-bold mb-6 text-gray-800">Admin Settings</h1>
+    
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        
+        <!-- Term Dates Card -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="flex items-center mb-4">
+                <div class="bg-blue-100 p-3 rounded-full">
+                    <i class="fas fa-calendar-alt text-blue-600 text-xl"></i>
+                </div>
+                <h2 class="text-xl font-semibold ml-4">Term Dates</h2>
+            </div>
+            <p class="text-gray-600 mb-4">Manage uniform issuance term dates and periods.</p>
+            <div class="space-y-2">
+                <a href="{{ url_for('manage_term_dates') }}" class="block w-full bg-blue-600 text-white py-2 px-4 rounded text-center hover:bg-blue-700">
+                    Manage Term Dates
+                </a>
+                <a href="{{ url_for('current_term_status') }}" class="block w-full bg-gray-200 text-gray-800 py-2 px-4 rounded text-center hover:bg-gray-300">
+                    View Current Term
+                </a>
+            </div>
+        </div>
+        
+        <!-- Uniform Prices Card -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="flex items-center mb-4">
+                <div class="bg-green-100 p-3 rounded-full">
+                    <i class="fas fa-tags text-green-600 text-xl"></i>
+                </div>
+                <h2 class="text-xl font-semibold ml-4">Uniform Prices</h2>
+            </div>
+            <p class="text-gray-600 mb-4">Set uniform item prices for different class groups.</p>
+            <a href="{{ url_for('manage_uniform_items') }}" class="block w-full bg-green-600 text-white py-2 px-4 rounded text-center hover:bg-green-700">
+                Manage Prices
+            </a>
+        </div>
+        
+        <!-- Classes Card -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="flex items-center mb-4">
+                <div class="bg-purple-100 p-3 rounded-full">
+                    <i class="fas fa-graduation-cap text-purple-600 text-xl"></i>
+                </div>
+                <h2 class="text-xl font-semibold ml-4">Classes</h2>
+            </div>
+            <p class="text-gray-600 mb-4">Manage school classes and student assignments.</p>
+            <a href="{{ url_for('manage_classes') }}" class="block w-full bg-purple-600 text-white py-2 px-4 rounded text-center hover:bg-purple-700">
+                Manage Classes
+            </a>
+        </div>
+        
+        <!-- User Management Card -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="flex items-center mb-4">
+                <div class="bg-red-100 p-3 rounded-full">
+                    <i class="fas fa-users text-red-600 text-xl"></i>
+                </div>
+                <h2 class="text-xl font-semibold ml-4">Users</h2>
+            </div>
+            <p class="text-gray-600 mb-4">Manage system users and access permissions.</p>
+            <a href="{{ url_for('manage_users') }}" class="block w-full bg-red-600 text-white py-2 px-4 rounded text-center hover:bg-red-700">
+                Manage Users
+                <span class="text-xs bg-red-700 px-2 py-1 rounded-full ml-2">Admin Only</span>
+            </a>
+        </div>
+        
+        <!-- System Info Card -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="flex items-center mb-4">
+                <div class="bg-yellow-100 p-3 rounded-full">
+                    <i class="fas fa-info-circle text-yellow-600 text-xl"></i>
+                </div>
+                <h2 class="text-xl font-semibold ml-4">System Information</h2>
+            </div>
+            <div class="space-y-2 text-sm">
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Current User:</span>
+                    <span class="font-medium">{{ session.username }}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Role:</span>
+                    <span class="font-medium">
+                        {% if session.is_admin %}Administrator{% else %}Staff{% endif %}
+                    </span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Session:</span>
+                    <span class="font-medium">{{ session.get('userNo') }}</span>
+                </div>
+            </div>
+        </div>
+        
+    </div>
+</div>
+{% endblock %}

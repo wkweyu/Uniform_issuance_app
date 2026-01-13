@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 
 {% block content %}
+<<<<<<< HEAD
 <div class="max-w-6xl mx-auto p-6 bg-white rounded shadow">
   <h2 class="text-2xl font-bold mb-6">Manage Uniform Prices</h2>
 
@@ -47,3 +48,487 @@
   </form>
 </div>
 {% endblock %}
+=======
+<div class="max-w-7xl mx-auto p-6">
+  <!-- Header Section -->
+  <div class="flex flex-col md:flex-row md:items-center justify-between mb-6">
+    <div>
+      <h2 class="text-2xl font-bold text-gray-800">Manage Uniform Prices</h2>
+      <p class="text-gray-600 mt-1">Set prices for uniform items across different grade levels</p>
+    </div>
+    
+    <!-- Action Buttons -->
+    <div class="flex flex-wrap gap-3 mt-4 md:mt-0">
+      <!-- Add Item Button -->
+      <button type="button" 
+              onclick="openAddItemModal()"
+              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+        </svg>
+        Add New Item
+      </button>
+      
+      <!-- Save Button -->
+      <button type="submit" 
+              form="priceForm"
+              class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+        </svg>
+        Save Prices
+      </button>
+      
+      <!-- Quick Actions Dropdown -->
+      <div class="relative">
+        <button type="button" 
+                onclick="toggleQuickActions()"
+                class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition flex items-center gap-2">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+          </svg>
+          Quick Actions
+        </button>
+        <div id="quickActionsMenu" class="hidden absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border z-10">
+          <button type="button" 
+                  onclick="fillEmptyPrices()"
+                  class="w-full text-left px-4 py-2 hover:bg-gray-100 rounded-t-lg">
+            Fill Empty Prices
+          </button>
+          <button type="button" 
+                  onclick="resetAllPrices()"
+                  class="w-full text-left px-4 py-2 hover:bg-gray-100">
+            Reset All to Zero
+          </button>
+          <button type="button" 
+                  onclick="exportPrices()"
+                  class="w-full text-left px-4 py-2 hover:bg-gray-100 rounded-b-lg">
+            Export to CSV
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Statistics Cards -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+    <div class="bg-blue-50 p-4 rounded-lg border border-blue-100">
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-sm text-blue-600">Total Items</p>
+          <p class="text-2xl font-bold text-blue-700">{{ uniform_items|length }}</p>
+        </div>
+        <div class="text-blue-500">
+          <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+          </svg>
+        </div>
+      </div>
+    </div>
+    
+    <div class="bg-green-50 p-4 rounded-lg border border-green-100">
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-sm text-green-600">Items with Prices</p>
+          <p id="pricedItems" class="text-2xl font-bold text-green-700">0</p>
+        </div>
+        <div class="text-green-500">
+          <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+          </svg>
+        </div>
+      </div>
+    </div>
+    
+    <div class="bg-purple-50 p-4 rounded-lg border border-purple-100">
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-sm text-purple-600">Total Value</p>
+          <p id="totalValue" class="text-2xl font-bold text-purple-700">$0.00</p>
+        </div>
+        <div class="text-purple-500">
+          <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Price Table -->
+  <form id="priceForm" method="POST" action="{{ url_for('manage_uniform_prices') }}">
+    {{ csrf_token() }}
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full border-collapse">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="border-b p-4 text-left font-semibold text-gray-700 w-64">Uniform Item</th>
+              {% for group in class_groups %}
+              <th class="border-b p-4 text-right font-semibold text-gray-700">{{ group }}</th>
+              {% endfor %}
+              <th class="border-b p-4 text-center font-semibold text-gray-700 w-20">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in uniform_items %}
+            <tr class="hover:bg-gray-50 border-b">
+              <td class="p-4 font-medium text-gray-800">
+                <div class="flex items-center gap-2">
+                  <span>{{ item }}</span>
+                </div>
+              </td>
+              {% for group in class_groups %}
+              <td class="p-4">
+                <div class="flex justify-end">
+                  <div class="relative">
+                    <div class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">$</div>
+                    <input type="number"
+                           step="0.01"
+                           min="0"
+                           inputmode="decimal"
+                           placeholder="0.00"
+                           name="price_{{ item }}_{{ group }}"
+                           value="{{ prices.get((item, group), '') }}"
+                           class="w-32 pl-8 pr-3 py-2 border border-gray-300 rounded text-right focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+                           onchange="updateStatistics()">
+                  </div>
+                </div>
+              </td>
+              {% endfor %}
+              <td class="p-4 text-center">
+                <button type="button"
+                        onclick="confirmDeleteItem('{{ item }}')"
+                        class="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50 transition"
+                        title="Delete item">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                  </svg>
+                </button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      
+      {% if not uniform_items %}
+      <div class="text-center py-12">
+        <svg class="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+        </svg>
+        <h3 class="text-lg font-medium text-gray-700 mb-2">No uniform items found</h3>
+        <p class="text-gray-500 mb-4">Add your first uniform item to get started</p>
+        <button type="button"
+                onclick="openAddItemModal()"
+                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+          Add First Item
+        </button>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Footer Actions -->
+    {% if uniform_items %}
+    <div class="flex justify-between items-center mt-6 p-4 bg-gray-50 rounded-lg">
+      <div class="text-sm text-gray-600">
+        <span id="itemCount">{{ uniform_items|length }}</span> items
+        • <span id="priceCount">0</span> prices set
+      </div>
+      <div class="flex gap-3">
+        <button type="button"
+                onclick="resetAllPrices()"
+                class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition">
+          Reset All
+        </button>
+        <button type="submit"
+                class="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium">
+          Save All Prices
+        </button>
+      </div>
+    </div>
+    {% endif %}
+  </form>
+</div>
+
+<!-- Add Item Modal -->
+<div id="addItemModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+  <div class="relative top-20 mx-auto p-5 border w-full max-w-lg shadow-lg rounded-md bg-white">
+    <div class="flex justify-between items-center mb-4">
+      <h3 class="text-lg font-medium text-gray-900">Add New Uniform Item</h3>
+      <button onclick="closeAddItemModal()" class="text-gray-400 hover:text-gray-600">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
+    
+    <form id="addItemForm" method="POST" action="/admin/add_uniform_item">
+      {{ csrf_token() }}
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Item Name *</label>
+          <input type="text"
+                 name="item_name"
+                 required
+                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                 placeholder="e.g., School Bag, Sports Kit, School Shirt"
+                 autocomplete="off">
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Applicable Class Groups *</label>
+          <p class="text-xs text-gray-500 mb-2">Select which grade levels this item applies to:</p>
+          <div class="grid grid-cols-2 gap-2">
+            {% for group in class_groups %}
+            <div class="flex items-center">
+              <input type="checkbox"
+                     id="group_{{ loop.index }}"
+                     name="class_groups"
+                     value="{{ group }}"
+                     checked
+                     class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+              <label for="group_{{ loop.index }}" class="ml-2 text-sm text-gray-700">{{ group }}</label>
+            </div>
+            {% endfor %}
+          </div>
+          <div class="mt-2">
+            <button type="button"
+                    onclick="selectAllGroups()"
+                    class="text-xs text-blue-600 hover:text-blue-800 mr-3">
+              Select All
+            </button>
+            <button type="button"
+                    onclick="deselectAllGroups()"
+                    class="text-xs text-blue-600 hover:text-blue-800">
+              Deselect All
+            </button>
+          </div>
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Default Price *</label>
+          <div class="relative">
+            <div class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">$</div>
+            <input type="number"
+                   name="default_price"
+                   step="0.01"
+                   min="0"
+                   value="0.00"
+                   required
+                   class="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+          </div>
+          <p class="text-xs text-gray-500 mt-1">This price will be applied to all selected class groups</p>
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Category (Optional)</label>
+          <select name="category"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+            <option value="">Select a category</option>
+            <option value="uniform">Uniform</option>
+            <option value="sports">Sports</option>
+            <option value="accessories">Accessories</option>
+            <option value="footwear">Footwear</option>
+            <option value="books">Books & Stationery</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Description (Optional)</label>
+          <textarea name="description"
+                    rows="2"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Brief description of the item..."></textarea>
+        </div>
+        
+        <div class="flex gap-3 pt-4">
+          <button type="button"
+                  onclick="closeAddItemModal()"
+                  class="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition">
+            Cancel
+          </button>
+          <button type="submit"
+                  class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition">
+            Add Item
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// Modal Functions
+function openAddItemModal() {
+  document.getElementById('addItemModal').classList.remove('hidden');
+  document.querySelector('#addItemModal input[name="item_name"]').focus();
+}
+
+function closeAddItemModal() {
+  document.getElementById('addItemModal').classList.add('hidden');
+  document.getElementById('addItemForm').reset();
+  // Reset checkboxes to checked
+  document.querySelectorAll('input[name="class_groups"]').forEach(cb => cb.checked = true);
+}
+
+// Quick Actions Menu
+function toggleQuickActions() {
+  const menu = document.getElementById('quickActionsMenu');
+  menu.classList.toggle('hidden');
+}
+
+// Close quick actions when clicking outside
+document.addEventListener('click', function(event) {
+  const quickActions = document.getElementById('quickActionsMenu');
+  if (quickActions && !quickActions.contains(event.target) && 
+      !event.target.closest('button[onclick*="toggleQuickActions"]')) {
+    quickActions.classList.add('hidden');
+  }
+});
+
+// Select/Deselect all class groups
+function selectAllGroups() {
+  document.querySelectorAll('input[name="class_groups"]').forEach(cb => cb.checked = true);
+}
+
+function deselectAllGroups() {
+  document.querySelectorAll('input[name="class_groups"]').forEach(cb => cb.checked = false);
+}
+
+// Fill empty prices
+function fillEmptyPrices() {
+  const inputs = document.querySelectorAll('input[name^="price_"]');
+  let filled = 0;
+  inputs.forEach(input => {
+    if (input.value === '' || input.value === null) {
+      input.value = '0.00';
+      filled++;
+    }
+  });
+  if (filled > 0) {
+    alert(`Filled ${filled} empty price fields with 0.00`);
+    updateStatistics();
+  }
+  document.getElementById('quickActionsMenu').classList.add('hidden');
+}
+
+// Reset all prices to zero
+function resetAllPrices() {
+  if (confirm('Reset ALL prices to 0.00? This action cannot be undone.')) {
+    const inputs = document.querySelectorAll('input[name^="price_"]');
+    inputs.forEach(input => {
+      input.value = '0.00';
+    });
+    updateStatistics();
+    alert('All prices have been reset to 0.00');
+  }
+  document.getElementById('quickActionsMenu').classList.add('hidden');
+}
+
+// Delete item confirmation
+function confirmDeleteItem(itemName) {
+  if (confirm(`Delete "${itemName}" and all its prices? This action cannot be undone.`)) {
+    fetch(`/admin/delete_uniform_item/${encodeURIComponent(itemName)}`, {
+      method: 'DELETE',
+      headers: {
+        'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
+      }
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        location.reload();
+      } else {
+        alert('Error: ' + data.message);
+      }
+    })
+    .catch(error => {
+      alert('Error deleting item');
+      console.error(error);
+    });
+  }
+}
+
+// Update statistics
+function updateStatistics() {
+  const inputs = document.querySelectorAll('input[name^="price_"]');
+  let pricedItems = 0;
+  let totalValue = 0;
+  let priceCount = 0;
+  
+  inputs.forEach(input => {
+    const value = parseFloat(input.value);
+    if (!isNaN(value) && value > 0) {
+      pricedItems++;
+      totalValue += value;
+      priceCount++;
+    } else if (!isNaN(value)) {
+      priceCount++;
+    }
+  });
+  
+  // Count items with at least one price > 0
+  const itemNames = new Set();
+  inputs.forEach(input => {
+    const value = parseFloat(input.value);
+    if (!isNaN(value) && value > 0) {
+      const name = input.name.split('_')[1];
+      itemNames.add(name);
+    }
+  });
+  
+  document.getElementById('pricedItems').textContent = itemNames.size;
+  document.getElementById('totalValue').textContent = '$' + totalValue.toFixed(2);
+  document.getElementById('priceCount').textContent = priceCount;
+}
+
+// Export to CSV
+function exportPrices() {
+  window.location.href = '/admin/export_uniform_prices';
+  document.getElementById('quickActionsMenu').classList.add('hidden');
+}
+
+// Initialize statistics on page load
+document.addEventListener('DOMContentLoaded', function() {
+  updateStatistics();
+  
+  // Auto-format price inputs on blur
+  document.querySelectorAll('input[name^="price_"]').forEach(input => {
+    input.addEventListener('blur', function() {
+      if (this.value) {
+        this.value = parseFloat(this.value).toFixed(2);
+        updateStatistics();
+      }
+    });
+    
+    input.addEventListener('focus', function() {
+      this.select();
+    });
+  });
+  
+  // Keyboard shortcuts
+  document.addEventListener('keydown', function(e) {
+    // Ctrl + N to add new item
+    if (e.ctrlKey && e.key === 'n') {
+      e.preventDefault();
+      openAddItemModal();
+    }
+    
+    // Escape to close modal
+    if (e.key === 'Escape' && !document.getElementById('addItemModal').classList.contains('hidden')) {
+      closeAddItemModal();
+    }
+  });
+  
+  // Close modal when clicking outside
+  document.getElementById('addItemModal').addEventListener('click', function(e) {
+    if (e.target.id === 'addItemModal') {
+      closeAddItemModal();
+    }
+  });
+});
+</script>
+{% endblock %}
+>>>>>>> 1b584a9 (class module)

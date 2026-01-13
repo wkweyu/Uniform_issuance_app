@@ -129,3 +129,38 @@ CREATE TABLE IF NOT EXISTS oil_records (
   total_amount DECIMAL(10,2),
   FOREIGN KEY (bus_id) REFERENCES buses(id)
 );
+<<<<<<< HEAD
+=======
+
+-- Add item_stock table
+CREATE TABLE IF NOT EXISTS item_stock (
+    item_id INT PRIMARY KEY AUTO_INCREMENT,
+    item_name VARCHAR(255) NOT NULL UNIQUE,
+    current_stock INT DEFAULT 0,
+    reorder_level INT DEFAULT 10,
+    last_restock_date DATE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Add stock_movements table
+CREATE TABLE IF NOT EXISTS stock_movements (
+    movement_id INT PRIMARY KEY AUTO_INCREMENT,
+    item_id INT NOT NULL,
+    movement_type ENUM('PURCHASE', 'ISSUANCE', 'RETURN', 'DAMAGE', 'ADJUSTMENT', 'TRANSFER'),
+    quantity INT NOT NULL,
+    previous_stock INT,
+    new_stock INT,
+    reference_no VARCHAR(50),
+    student_admno VARCHAR(20),
+    user_id INT,
+    notes TEXT,
+    movement_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (item_id) REFERENCES item_stock(item_id) ON DELETE CASCADE
+);
+
+-- Update uniform_prices to reference item_stock
+ALTER TABLE uniform_prices 
+ADD COLUMN item_id INT,
+ADD FOREIGN KEY (item_id) REFERENCES item_stock(item_id) ON DELETE CASCADE;
+>>>>>>> 1b584a9 (class module)

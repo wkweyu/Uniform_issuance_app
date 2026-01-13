@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="max-w-4xl mx-auto bg-white p-6 rounded shadow">
+    <h2 class="text-xl font-bold mb-4">
+        Student Profile – {{ student.AdmNo }}
+    </h2>
+
+    <div class="grid grid-cols-2 gap-4 mb-6">
+        <div><strong>Name:</strong> {{ student.FName }} {{ student.LName }}</div>
+        <div><strong>Gender:</strong> {{ student.Gender }}</div>
+        <div><strong>DOB:</strong> {{ student.DOB }}</div>
+        <div><strong>Status:</strong> {{ student.Status }}</div>
+        <div><strong>Parent:</strong> {{ student.ParentName }}</div>
+        <div><strong>Phone:</strong> {{ student.ParentPhone }}</div>
+    </div>
+
+    <h3 class="font-bold mb-2">Class History</h3>
+    <table class="w-full border">
+        <thead class="bg-gray-100">
+            <tr>
+                <th class="p-2 border">Year</th>
+                <th class="p-2 border">Class</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for h in history %}
+            <tr>
+                <td class="p-2 border">{{ h.thisYear }}</td>
+                <td class="p-2 border">{{ h.class_name }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="mt-6 flex gap-4">
+        <a href="{{ url_for('students_list') }}"
+           class="bg-gray-600 text-white px-4 py-2 rounded">
+            Back
+        </a>
+
+        <a href="{{ url_for('issue_uniform') }}?admno={{ student.AdmNo }}"
+           class="bg-blue-600 text-white px-4 py-2 rounded">
+            Issue Uniform
+        </a>
+    </div>
+</div>
+
+{% endblock %}

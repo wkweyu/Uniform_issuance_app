@@ -1,0 +1,293 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-4xl font-bold text-gray-800 mb-2">📚 Class Management System</h1>
+  <p class="text-gray-600">Manage classes, students, subjects, and teacher allocations</p>
+</div>
+
+<!-- Breadcrumb Navigation -->
+<nav class="mb-6 text-sm">
+  <ol class="flex items-center space-x-2">
+    <li><a href="{{ url_for('index') }}" class="text-blue-600 hover:underline">Dashboard</a></li>
+    <li class="text-gray-400">/</li>
+    <li class="text-gray-600">Classes</li>
+  </ol>
+</nav>
+
+{% if not current_year %}
+<div class="mb-6 p-4 bg-red-50 border-l-4 border-red-500 rounded">
+  <p class="text-red-800"><i class="fas fa-exclamation-triangle mr-2"></i><strong>Warning:</strong> No active academic year configured. Please set up academic years in admin settings first.</p>
+</div>
+{% endif %}
+
+<!-- Quick Stats -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+  <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+    <div class="text-sm text-blue-600 font-semibold">📅 Academic Years</div>
+    <div class="text-3xl font-bold text-blue-800 mt-1">{{ academic_years_count or 0 }}</div>
+  </div>
+  
+  <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+    <div class="text-sm text-green-600 font-semibold">🏫 Total Classes</div>
+    <div class="text-3xl font-bold text-green-800 mt-1">{{ total_classes or 0 }}</div>
+  </div>
+  
+  <div class="bg-purple-50 border border-purple-200 rounded-lg p-4">
+    <div class="text-sm text-purple-600 font-semibold">👥 Total Students</div>
+    <div class="text-3xl font-bold text-purple-800 mt-1">{{ total_students or 0 }}</div>
+  </div>
+  
+  <div class="bg-orange-50 border border-orange-200 rounded-lg p-4">
+    <div class="text-sm text-orange-600 font-semibold">📖 Subjects</div>
+    <div class="text-3xl font-bold text-orange-800 mt-1">{{ total_subjects or 0 }}</div>
+  </div>
+</div>
+
+<!-- Main Features Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+  
+  <!-- Create Class -->
+  <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-lg font-bold text-gray-800">➕ Create New Class</h3>
+      <i class="fas fa-plus-circle text-blue-600 text-2xl"></i>
+    </div>
+    <p class="text-gray-600 text-sm mb-4">Create a new class for an academic year with automatic group assignment.</p>
+    <a href="{{ url_for('create_class') }}" class="inline-block bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">
+      <i class="fas fa-plus mr-2"></i>Create Class
+    </a>
+  </div>
+
+  <!-- Promote Students -->
+  <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-lg font-bold text-gray-800">🚀 Promote Students</h3>
+      <i class="fas fa-arrow-up text-green-600 text-2xl"></i>
+    </div>
+    <p class="text-gray-600 text-sm mb-4">Atomically promote all students from one class to another with audit logging.</p>
+    <a href="{{ url_for('promote_students') }}" class="inline-block bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition">
+      <i class="fas fa-arrow-up mr-2"></i>Promote Now
+    </a>
+  </div>
+
+  <!-- Manage Streams -->
+  <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-lg font-bold text-gray-800">🌊 Manage Streams</h3>
+      <i class="fas fa-water text-cyan-600 text-2xl"></i>
+    </div>
+    <p class="text-gray-600 text-sm mb-4">Add, edit, and manage class streams (A, B, C, D, etc.) that differentiate classes.</p>
+    <a href="{{ url_for('manage_streams') }}" class="inline-block bg-cyan-600 text-white px-4 py-2 rounded hover:bg-cyan-700 transition">
+      <i class="fas fa-water mr-2"></i>Manage Streams
+    </a>
+  </div>
+
+  <!-- Manage Class Subjects -->
+  <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition opacity-50 cursor-not-allowed">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-lg font-bold text-gray-800">📚 Class Subjects</h3>
+      <i class="fas fa-book text-purple-600 text-2xl"></i>
+    </div>
+    <p class="text-gray-600 text-sm mb-4">Allocate subjects to classes and mark compulsory vs. optional.</p>
+    <button disabled class="inline-block bg-gray-400 text-white px-4 py-2 rounded cursor-not-allowed">
+      <i class="fas fa-book mr-2"></i>Coming Soon
+    </button>
+  </div>
+
+  <!-- Allocate Teachers -->
+  <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition opacity-50 cursor-not-allowed">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-lg font-bold text-gray-800">👨‍🏫 Teacher Allocation</h3>
+      <i class="fas fa-chalkboard-user text-orange-600 text-2xl"></i>
+    </div>
+    <p class="text-gray-600 text-sm mb-4">Assign teachers to class-subject combinations with one-teacher-per-combo enforcement.</p>
+    <button disabled class="inline-block bg-gray-400 text-white px-4 py-2 rounded cursor-not-allowed">
+      <i class="fas fa-chalkboard-user mr-2"></i>Coming Soon
+    </button>
+  </div>
+
+  <!-- Enroll Students in Subjects -->
+  <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition opacity-50 cursor-not-allowed">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-lg font-bold text-gray-800">👤 Student Enrollment</h3>
+      <i class="fas fa-user-check text-teal-600 text-2xl"></i>
+    </div>
+    <p class="text-gray-600 text-sm mb-4">Enroll students in available subjects with validation against class allocation.</p>
+    <button disabled class="inline-block bg-gray-400 text-white px-4 py-2 rounded cursor-not-allowed">
+      <i class="fas fa-user-check mr-2"></i>Coming Soon
+    </button>
+  </div>
+
+  <!-- Reports -->
+  <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition opacity-50 cursor-not-allowed">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-lg font-bold text-gray-800">📊 Reports</h3>
+      <i class="fas fa-chart-bar text-indigo-600 text-2xl"></i>
+    </div>
+    <p class="text-gray-600 text-sm mb-4">View class allocations, student enrollments, and promotion history.</p>
+    <button disabled class="inline-block bg-gray-400 text-white px-4 py-2 rounded cursor-not-allowed">
+      <i class="fas fa-chart-bar mr-2"></i>Coming Soon
+    </button>
+  </div>
+
+</div>
+
+<!-- System Configuration -->
+<div class="bg-white rounded-lg shadow-md p-6 mb-8">
+  <h2 class="text-2xl font-bold text-gray-800 mb-4">⚙️ System Configuration</h2>
+  <p class="text-gray-600 mb-4">Current system settings:</p>
+  
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div class="bg-gray-50 rounded p-4">
+      <div class="text-sm font-semibold text-gray-700">Current Academic Year</div>
+      <div class="text-lg font-bold text-gray-900 mt-2">
+        {% if current_year %}
+          {{ current_year }}
+        {% else %}
+          <span class="text-red-600">Not Set</span>
+        {% endif %}
+      </div>
+    </div>
+    
+    <div class="bg-gray-50 rounded p-4">
+      <div class="text-sm font-semibold text-gray-700">Class Groups</div>
+      <div class="text-lg font-bold text-gray-900 mt-2">
+        Playgroup-PP2, Grade 1-3<br/>
+        Grade 4-6, Grade 7-9
+      </div>
+    </div>
+    
+    <div class="bg-gray-50 rounded p-4">
+      <div class="text-sm font-semibold text-gray-700">Streams</div>
+      <div class="text-lg font-bold text-gray-900 mt-2">A, B, C, D</div>
+    </div>
+  </div>
+  
+  <div class="mt-4 p-4 bg-blue-50 border-l-4 border-blue-500 rounded">
+    <p class="text-blue-800 text-sm">
+      <i class="fas fa-info-circle mr-2"></i>
+      <strong>Tip:</strong> Configure academic years, class groups, and streams in Admin Settings before creating classes.
+    </p>
+  </div>
+</div>
+
+<!-- Classes List Section -->
+<div class="bg-white rounded-lg shadow-md p-6 mb-8">
+  <h2 class="text-2xl font-bold text-gray-800 mb-4">📋 Available Classes ({{ classes|length }})</h2>
+  
+  {% if classes %}
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="bg-gray-100 border-b">
+          <th class="px-4 py-3 text-left font-semibold text-gray-700">Class Name</th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-700">Academic Year</th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-700">Group</th>
+          <th class="px-4 py-3 text-center font-semibold text-gray-700">Stream</th>
+          <th class="px-4 py-3 text-center font-semibold text-gray-700">Students</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y">
+        {% for class in classes %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-4 py-3 font-medium text-gray-800">{{ class.class_name }}</td>
+          <td class="px-4 py-3 text-gray-600">{{ class.year or 'N/A' }}</td>
+          <td class="px-4 py-3">
+            <span class="px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs font-medium">
+              {{ class.class_group }}
+            </span>
+          </td>
+          <td class="px-4 py-3 text-center">
+            <span class="px-3 py-1 bg-blue-100 text-blue-800 rounded-full font-bold">
+              {{ class.stream_code or '—' }}
+            </span>
+          </td>
+          <td class="px-4 py-3 text-center">
+            <span class="px-2 py-1 bg-green-100 text-green-800 rounded text-sm font-semibold">
+              {{ class.student_count or 0 }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="text-center py-8">
+    <i class="fas fa-inbox text-gray-300 text-4xl mb-3"></i>
+    <p class="text-gray-500">No classes created yet. <a href="{{ url_for('create_class') }}" class="text-blue-600 hover:underline">Create one now</a></p>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Streams List Section -->
+<div class="bg-white rounded-lg shadow-md p-6 mb-8">
+  <h2 class="text-2xl font-bold text-gray-800 mb-4">🌊 Active Streams ({{ streams|length }})</h2>
+  
+  {% if streams %}
+  <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+    {% for stream in streams %}
+    <div class="text-center p-4 bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg border-2 border-blue-200 hover:border-blue-400 transition">
+      <div class="text-3xl font-bold text-blue-600">{{ stream.code }}</div>
+      <div class="text-sm text-gray-600 mt-1">{{ stream.name }}</div>
+      <div class="text-xs text-green-600 font-semibold mt-2">✅ Active</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-center py-8">
+    <i class="fas fa-inbox text-gray-300 text-4xl mb-3"></i>
+    <p class="text-gray-500">No streams configured. <a href="{{ url_for('manage_streams') }}" class="text-blue-600 hover:underline">Add streams now</a></p>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Workflow Diagram -->
+<div class="bg-white rounded-lg shadow-md p-6">
+  <h2 class="text-2xl font-bold text-gray-800 mb-4">📋 Workflow Guide</h2>
+  
+  <div class="space-y-4">
+    <div class="flex items-start space-x-4">
+      <div class="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">1</div>
+      <div>
+        <h3 class="font-bold text-gray-800">Create Classes</h3>
+        <p class="text-gray-600 text-sm">Start by creating classes for the current academic year. Select academic year, class group, and stream.</p>
+      </div>
+    </div>
+    
+    <div class="flex items-start space-x-4">
+      <div class="flex-shrink-0 w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center font-bold">2</div>
+      <div>
+        <h3 class="font-bold text-gray-800">Allocate Subjects to Classes</h3>
+        <p class="text-gray-600 text-sm">For each class, select which subjects are offered (mark compulsory vs. optional).</p>
+      </div>
+    </div>
+    
+    <div class="flex items-start space-x-4">
+      <div class="flex-shrink-0 w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold">3</div>
+      <div>
+        <h3 class="font-bold text-gray-800">Assign Teachers</h3>
+        <p class="text-gray-600 text-sm">Assign teachers to each class-subject combination (one teacher per combo enforced).</p>
+      </div>
+    </div>
+    
+    <div class="flex items-start space-x-4">
+      <div class="flex-shrink-0 w-8 h-8 bg-orange-600 text-white rounded-full flex items-center justify-center font-bold">4</div>
+      <div>
+        <h3 class="font-bold text-gray-800">Enroll Students</h3>
+        <p class="text-gray-600 text-sm">Enroll students in their class and select which subjects they'll take (must be subset of class subjects).</p>
+      </div>
+    </div>
+    
+    <div class="flex items-start space-x-4">
+      <div class="flex-shrink-0 w-8 h-8 bg-teal-600 text-white rounded-full flex items-center justify-center font-bold">5</div>
+      <div>
+        <h3 class="font-bold text-gray-800">Promote Students</h3>
+        <p class="text-gray-600 text-sm">At year end, atomically promote students to next class with full audit trail and history preservation.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

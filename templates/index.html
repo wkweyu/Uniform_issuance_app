@@ -28,7 +28,11 @@
     </div>
   </div>
 
+<<<<<<< HEAD
   <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+=======
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+>>>>>>> 1b584a9 (class module)
     <div class="border p-4 rounded bg-white shadow">
       <h3 class="text-lg font-semibold mb-3">Fleet Quick Links</h3>
       <ul class="space-y-2">
@@ -61,13 +65,42 @@
         </li>
         <li>
           <a
+<<<<<<< HEAD
             href="{{ url_for('manage_prices') }}"
+=======
+            href="{{ url_for('manage_uniform_items') }}"
+>>>>>>> 1b584a9 (class module)
             class="text-blue-700 hover:underline"
             >💰 Manage Prices</a
           >
         </li>
       </ul>
     </div>
+<<<<<<< HEAD
+=======
+
+    {% if session.get('is_admin') %}
+    <div class="border p-4 rounded bg-white shadow">
+      <h3 class="text-lg font-semibold mb-3">📚 Classes & Subjects</h3>
+      <ul class="space-y-2">
+        <li>
+          <a
+            href="{{ url_for('manage_classes') }}"
+            class="text-green-700 hover:underline"
+            >📊 Manage Classes</a
+          >
+        </li>
+        <li>
+          <a
+            href="{{ url_for('create_class') }}"
+            class="text-green-700 hover:underline"
+            >➕ Create New Class</a
+          >
+        </li>
+      </ul>
+    </div>
+    {% endif %}
+>>>>>>> 1b584a9 (class module)
   </div>
 </div>
 {% endblock %}

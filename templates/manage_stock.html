@@ -1,0 +1,220 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto p-4">
+  <!-- Header -->
+  <div class="mb-8 flex justify-between items-center">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-800">Stock Management</h1>
+      <p class="text-gray-600 mt-1">Add stock, adjust inventory, and track stock movements</p>
+    </div>
+    <div class="flex gap-2">
+      <a href="{{ url_for('stock_ledger') }}" 
+         class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 text-sm">
+        📖 Stock Ledger
+      </a>
+      <a href="{{ url_for('print_stock_levels') }}" target="_blank" 
+         class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">
+        🖨️ Print Stock Levels
+      </a>
+    </div>
+  </div>
+
+  <!-- Low Stock Alerts -->
+  {% if low_stock_items %}
+  <div class="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+    <h2 class="text-lg font-bold text-yellow-800 mb-3">⚠️ Low Stock Items</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {% for item in low_stock_items %}
+      <div class="bg-white p-3 rounded border border-yellow-300">
+        <div class="font-medium text-gray-900">{{ item.item_name }}</div>
+        <div class="text-sm text-gray-600">Stock: <span class="font-bold text-red-600">{{ item.current_stock }}</span></div>
+        <div class="text-xs text-gray-500">Reorder Level: {{ item.reorder_level }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Add/Adjust Stock Forms -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+    <!-- Add Stock Form -->
+    <div class="p-6 bg-white border border-gray-200 rounded-lg shadow-sm">
+      <h2 class="text-lg font-bold text-gray-800 mb-4">➕ Add Stock</h2>
+      <form method="POST" action="{{ url_for('manage_stock') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="add_stock">
+        
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Item *</label>
+            <select name="item_name" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+              <option value="">-- Select Item --</option>
+              {% for item in items %}
+              <option value="{{ item.item_name }}">{{ item.item_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Quantity to Add *</label>
+            <input type="number" name="quantity" min="1" required 
+                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                   placeholder="0">
+          </div>
+          
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Supplier</label>
+            <input type="text" name="supplier"
+                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                   placeholder="e.g., ABC Uniforms Ltd">
+          </div>
+          
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Purchase Reference</label>
+            <input type="text" name="purchase_ref"
+                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                   placeholder="e.g., PO-2025-001">
+          </div>
+          
+          <button type="submit" class="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 font-medium">
+            Add Stock
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Adjust Stock Form -->
+    <div class="p-6 bg-white border border-gray-200 rounded-lg shadow-sm">
+      <h2 class="text-lg font-bold text-gray-800 mb-4">🔄 Adjust Stock</h2>
+      <form method="POST" action="{{ url_for('manage_stock') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="adjust_stock">
+        
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Item *</label>
+            <select name="item_name" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+              <option value="">-- Select Item --</option>
+              {% for item in items %}
+              <option value="{{ item.item_name }}">{{ item.item_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">New Stock Level *</label>
+            <input type="number" name="new_quantity" min="0" required 
+                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                   placeholder="0">
+          </div>
+          
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Reason *</label>
+            <textarea name="reason" required rows="3"
+                      class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="e.g., Inventory count discrepancy, Damaged units, etc."></textarea>
+          </div>
+          
+          <button type="submit" class="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium">
+            Adjust Stock
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Current Stock Levels -->
+  <div class="mb-8 bg-white rounded-lg shadow overflow-hidden">
+    <div class="border-b px-6 py-4">
+      <h2 class="text-lg font-medium text-gray-800">📦 Current Stock Levels</h2>
+    </div>
+    
+    <div class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
+            <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Classes</th>
+            <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Current Stock</th>
+            <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Reorder Level</th>
+            <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
+            <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Last Restock</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200">
+          {% for item in items %}
+          <tr>
+            <td class="px-6 py-4 font-medium text-gray-900">{{ item.item_name }}</td>
+            <td class="px-6 py-4 text-center text-sm text-gray-600">{{ item.class_groups }}</td>
+            <td class="px-6 py-4 text-center">
+              <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium 
+                {% if item.current_stock == 0 %}bg-red-100 text-red-800
+                {% elif item.current_stock <= item.reorder_level %}bg-yellow-100 text-yellow-800
+                {% else %}bg-green-100 text-green-800{% endif %}">
+                {{ item.current_stock }}
+              </span>
+            </td>
+            <td class="px-6 py-4 text-center text-sm text-gray-600">{{ item.reorder_level }}</td>
+            <td class="px-6 py-4 text-center text-sm">
+              {% if item.current_stock == 0 %}
+              <span class="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-medium">Out of Stock</span>
+              {% elif item.current_stock <= item.reorder_level %}
+              <span class="px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs font-medium">Low Stock</span>
+              {% else %}
+              <span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium">OK</span>
+              {% endif %}
+            </td>
+            <td class="px-6 py-4 text-center text-sm text-gray-600">
+              {{ item.last_restock_date or 'Never' }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Recent Stock Movements -->
+  {% if recent_movements %}
+  <div class="bg-white rounded-lg shadow overflow-hidden">
+    <div class="border-b px-6 py-4">
+      <h2 class="text-lg font-medium text-gray-800">📋 Recent Stock Movements</h2>
+    </div>
+    
+    <div class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
+            <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Type</th>
+            <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Quantity</th>
+            <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Previous Stock</th>
+            <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">New Stock</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Notes</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200">
+          {% for movement in recent_movements %}
+          <tr>
+            <td class="px-6 py-4 text-sm text-gray-600">{{ movement.movement_date }}</td>
+            <td class="px-6 py-4 text-sm font-medium text-gray-900">{{ movement.item_name }}</td>
+            <td class="px-6 py-4 text-center text-sm">
+              <span class="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">
+                {{ movement.movement_type }}
+              </span>
+            </td>
+            <td class="px-6 py-4 text-center text-sm text-gray-600">{{ movement.quantity }}</td>
+            <td class="px-6 py-4 text-center text-sm text-gray-600">{{ movement.previous_stock or '-' }}</td>
+            <td class="px-6 py-4 text-center text-sm font-medium text-gray-900">{{ movement.new_stock or '-' }}</td>
+            <td class="px-6 py-4 text-sm text-gray-600">{{ movement.notes or '-' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

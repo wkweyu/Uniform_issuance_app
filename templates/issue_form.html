@@ -6,7 +6,30 @@
     Issuing Uniform for {{ student_name }} ({{ class_name }})
   </h2>
 
+<<<<<<< HEAD
   <form id="issuanceForm">
+=======
+  <!-- Low Stock Warning -->
+  {% if low_stock_items %}
+  <div class="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+    <div class="flex items-center">
+      <svg class="h-5 w-5 text-yellow-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
+        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+      </svg>
+      <span class="font-medium text-yellow-800">Low Stock Alert</span>
+    </div>
+    <p class="mt-1 text-sm text-yellow-700">
+      The following items are running low. Please consider restocking:
+      {% for item in low_stock_items %}
+        <span class="font-semibold">{{ item.item_name }}</span>{% if not loop.last %}, {% endif %}
+      {% endfor %}
+    </p>
+  </div>
+  {% endif %}
+
+  <form id="issuanceForm">
+    {{ csrf_token() }}
+>>>>>>> 1b584a9 (class module)
     <input type="hidden" name="admno" value="{{ admno }}">
     <input type="hidden" name="student_name" value="{{ student_name }}">
     <input type="hidden" name="class_name" value="{{ class_name }}">
@@ -19,12 +42,17 @@
           <tr class="border-b">
             <th class="text-left p-2 font-semibold text-gray-600">Item</th>
             <th class="text-right p-2 font-semibold text-gray-600">Price (KES)</th>
+<<<<<<< HEAD
+=======
+            <th class="text-right p-2 font-semibold text-gray-600">Available Stock</th>
+>>>>>>> 1b584a9 (class module)
             <th class="text-right p-2 font-semibold text-gray-600">Quantity</th>
             <th class="text-right p-2 font-semibold text-gray-600">Total (KES)</th>
           </tr>
         </thead>
         <tbody>
           {% for item in items %}
+<<<<<<< HEAD
           <tr class="border-b hover:bg-gray-50">
             <td class="p-2 text-gray-700">{{ item.item_name }}</td>
             <td class="text-right p-2 text-gray-700">{{ "%.2f"|format(item.price) }}</td>
@@ -34,6 +62,45 @@
                 data-price="{{ item.price }}"
                 value="0" min="0"
                 class="w-20 px-2 py-1 border border-gray-300 rounded quantity-input text-right focus:ring-2 focus:ring-blue-300">
+=======
+          <tr class="border-b hover:bg-gray-50 
+            {% if item.current_stock <= item.reorder_level %}bg-yellow-50{% endif %}
+            {% if item.current_stock == 0 %}bg-red-50{% endif %}">
+            <td class="p-2 text-gray-700">
+              {{ item.item_name }}
+              {% if item.current_stock <= item.reorder_level %}
+                <span class="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                  Low Stock
+                </span>
+              {% endif %}
+              {% if item.current_stock == 0 %}
+                <span class="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                  Out of Stock
+                </span>
+              {% endif %}
+            </td>
+            <td class="text-right p-2 text-gray-700">{{ "%.2f"|format(item.price) }}</td>
+            <td class="text-right p-2">
+              <span class="font-medium 
+                {% if item.current_stock <= item.reorder_level %}text-yellow-600{% endif %}
+                {% if item.current_stock == 0 %}text-red-600{% endif %}">
+                {{ item.current_stock }}
+              </span>
+              {% if item.reorder_level and item.current_stock <= item.reorder_level %}
+                <span class="block text-xs text-gray-500">Reorder: {{ item.reorder_level }}</span>
+              {% endif %}
+            </td>
+            <td class="text-right p-2">
+              <input type="number"
+                name="quantity_{{ item.item_name }}"
+                data-price="{{ item.price }}"
+                data-stock="{{ item.current_stock }}"
+                data-item-name="{{ item.item_name }}"
+                value="0" min="0" max="{{ item.current_stock }}"
+                class="w-20 px-2 py-1 border border-gray-300 rounded quantity-input text-right focus:ring-2 focus:ring-blue-300
+                {% if item.current_stock == 0 %}bg-gray-100 cursor-not-allowed{% endif %}"
+                {% if item.current_stock == 0 %}disabled title="Out of stock"{% endif %}>
+>>>>>>> 1b584a9 (class module)
             </td>
             <td class="text-right p-2 total-cell text-gray-700">0.00</td>
           </tr>
@@ -46,9 +113,21 @@
       Grand Total: KES <span id="grandTotal">0.00</span>
     </div>
 
+<<<<<<< HEAD
     <div class="flex justify-end">
       <button type="button" onclick="validateAndSubmit()"
         class="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none">
+=======
+    <div class="flex justify-end space-x-3">
+      <a href="{{ url_for('issue_uniform') }}"
+        class="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 focus:outline-none">
+        Cancel
+      </a>
+      <button type="button" onclick="validateAndSubmit()"
+        class="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none
+        {% if not items %}opacity-50 cursor-not-allowed{% endif %}"
+        {% if not items %}disabled{% endif %}>
+>>>>>>> 1b584a9 (class module)
         Submit & Print Receipt
       </button>
     </div>
@@ -60,12 +139,41 @@
   class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black bg-opacity-50 transition-opacity duration-300">
   <div class="bg-white rounded-lg p-6 w-full max-w-md">
     <h3 class="text-lg font-medium mb-4 text-gray-800">Confirm Uniform Issuance</h3>
+<<<<<<< HEAD
     <p class="mb-6 text-gray-600">Are you sure you want to issue these items? This will charge the student's account.</p>
+=======
+    <div id="confirmationDetails" class="mb-4 text-gray-600">
+      <!-- Will be populated by JavaScript -->
+    </div>
+    <p class="mb-4 text-sm text-gray-500">This will charge the student's account and deduct items from inventory.</p>
+>>>>>>> 1b584a9 (class module)
     <div class="flex justify-end space-x-3 mt-4">
       <button onclick="closeModal()"
         class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">Cancel</button>
       <button onclick="submitIssuance()"
+<<<<<<< HEAD
         class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">Confirm</button>
+=======
+        class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">Confirm Issuance</button>
+    </div>
+  </div>
+</div>
+
+<!-- Error Modal -->
+<div id="errorModal"
+  class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black bg-opacity-50 transition-opacity duration-300">
+  <div class="bg-white rounded-lg p-6 w-full max-w-md">
+    <div class="flex items-center mb-4">
+      <svg class="h-6 w-6 text-red-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
+        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+      </svg>
+      <h3 class="text-lg font-medium text-gray-800">Stock Issue</h3>
+    </div>
+    <p id="errorMessage" class="mb-6 text-gray-600"></p>
+    <div class="flex justify-end">
+      <button onclick="closeErrorModal()"
+        class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700">OK</button>
+>>>>>>> 1b584a9 (class module)
     </div>
   </div>
 </div>
@@ -73,10 +181,16 @@
 <script>
 function updateTotals() {
   let grandTotal = 0;
+<<<<<<< HEAD
+=======
+  let hasItems = false;
+  
+>>>>>>> 1b584a9 (class module)
   document.querySelectorAll("tr").forEach(function (row) {
     let qtyInput = row.querySelector(".quantity-input");
     let totalCell = row.querySelector(".total-cell");
 
+<<<<<<< HEAD
     if (qtyInput && totalCell) {
       let price = parseFloat(qtyInput.getAttribute("data-price"));
       let quantity = parseInt(qtyInput.value) || 0;
@@ -110,6 +224,92 @@ function validateAndSubmit() {
   document.getElementById('confirmModal').classList.remove('hidden');
 }
 
+=======
+    if (qtyInput && totalCell && !qtyInput.disabled) {
+      let price = parseFloat(qtyInput.getAttribute("data-price"));
+      let quantity = parseInt(qtyInput.value) || 0;
+      let stock = parseInt(qtyInput.getAttribute("data-stock")) || 0;
+      
+      // Validate against available stock
+      if (quantity > stock) {
+        showError(`Cannot issue ${quantity} units of ${qtyInput.dataset.itemName}. Only ${stock} available.`);
+        qtyInput.value = Math.min(quantity, stock);
+        quantity = parseInt(qtyInput.value);
+      }
+      
+      let lineTotal = price * quantity;
+      totalCell.innerText = lineTotal.toFixed(2);
+      grandTotal += lineTotal;
+      
+      if (quantity > 0) hasItems = true;
+    }
+  });
+  
+  document.getElementById("grandTotal").innerText = grandTotal.toFixed(2);
+  return hasItems;
+}
+
+function showConfirmationDetails() {
+  const detailsDiv = document.getElementById('confirmationDetails');
+  let html = '<p class="mb-2">You are about to issue:</p><ul class="list-disc pl-5 space-y-1">';
+  let itemCount = 0;
+  
+  document.querySelectorAll(".quantity-input").forEach(input => {
+    const quantity = parseInt(input.value);
+    if (quantity > 0 && !input.disabled) {
+      const itemName = input.dataset.itemName;
+      const price = parseFloat(input.dataset.price);
+      const total = price * quantity;
+      html += `<li><span class="font-medium">${itemName}</span>: ${quantity} × KES ${price.toFixed(2)} = KES ${total.toFixed(2)}</li>`;
+      itemCount++;
+    }
+  });
+  
+  if (itemCount === 0) {
+    html = '<p class="text-red-600">No items selected!</p>';
+  } else {
+    const grandTotal = parseFloat(document.getElementById('grandTotal').textContent);
+    html += `</ul><p class="mt-3 font-medium">Total: KES ${grandTotal.toFixed(2)}</p>`;
+  }
+  
+  detailsDiv.innerHTML = html;
+}
+
+function validateAndSubmit() {
+  const hasItems = updateTotals();
+  
+  if (!hasItems) {
+    showError('Please select at least one item to issue');
+    return;
+  }
+  
+  // Check for out-of-stock attempts
+  let outOfStockAttempt = false;
+  document.querySelectorAll(".quantity-input").forEach(input => {
+    const quantity = parseInt(input.value);
+    const stock = parseInt(input.dataset.stock);
+    if (quantity > stock) {
+      outOfStockAttempt = true;
+      showError(`Cannot issue ${quantity} units. Only ${stock} available for ${input.dataset.itemName}.`);
+    }
+  });
+  
+  if (outOfStockAttempt) return;
+  
+  showConfirmationDetails();
+  document.getElementById('confirmModal').classList.remove('hidden');
+}
+
+function showError(message) {
+  document.getElementById('errorMessage').textContent = message;
+  document.getElementById('errorModal').classList.remove('hidden');
+}
+
+function closeErrorModal() {
+  document.getElementById('errorModal').classList.add('hidden');
+}
+
+>>>>>>> 1b584a9 (class module)
 function closeModal() {
   document.getElementById('confirmModal').classList.add('hidden');
 }
@@ -121,6 +321,7 @@ function submitIssuance() {
   const formData = new FormData(form);
 
   const items = [];
+<<<<<<< HEAD
   document.querySelectorAll(".quantity-input").forEach(input => {
     const quantity = parseInt(input.value);
     if (quantity > 0) {
@@ -132,6 +333,37 @@ function submitIssuance() {
     }
   });
 
+=======
+  let totalQuantity = 0;
+  
+  document.querySelectorAll(".quantity-input").forEach(input => {
+    if (!input.disabled) {
+      const quantity = parseInt(input.value);
+      if (quantity > 0) {
+        const stock = parseInt(input.dataset.stock);
+        
+        // Final stock validation
+        if (quantity > stock) {
+          showError(`Stock changed for ${input.dataset.itemName}. Only ${stock} available now.`);
+          throw new Error('Stock validation failed');
+        }
+        
+        items.push({
+          item_name: input.name.replace('quantity_', ''),
+          price: parseFloat(input.dataset.price),
+          quantity: quantity
+        });
+        totalQuantity += quantity;
+      }
+    }
+  });
+
+  if (items.length === 0) {
+    showError('No items selected for issuance');
+    return;
+  }
+
+>>>>>>> 1b584a9 (class module)
   const payload = {
     admno: formData.get('admno'),
     student_name: formData.get('student_name'),
@@ -141,6 +373,15 @@ function submitIssuance() {
     items: items
   };
 
+<<<<<<< HEAD
+=======
+  // Show loading state
+  const submitBtn = document.querySelector('button[onclick="validateAndSubmit()"]');
+  const originalText = submitBtn.textContent;
+  submitBtn.textContent = 'Processing...';
+  submitBtn.disabled = true;
+
+>>>>>>> 1b584a9 (class module)
   fetch("{{ url_for('submit_issuance') }}", {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -152,17 +393,81 @@ function submitIssuance() {
     })
     .then(data => {
       if (data.success) {
+<<<<<<< HEAD
         const url = `{{ url_for('print_receipt') }}?admno=${data.admno}&year=${data.year}&term=${data.term}&receipt_no=${data.receipt_no}`;
         window.open(url, '_blank');
         window.location.href = "{{ url_for('issue_uniform') }}";
       } else {
         alert('Error: ' + data.message);
+=======
+        // Check for low stock warnings
+        if (data.low_stock_warning) {
+          let warningMsg = 'Issuance successful! But the following items are now low on stock:\n';
+          data.low_stock_items.forEach(item => {
+            warningMsg += `• ${item.item_name}: ${item.current_stock} remaining\n`;
+          });
+          alert(warningMsg);
+        }
+        
+        // Open receipt in new tab
+        const url = `{{ url_for('print_receipt') }}?admno=${data.admno}&year=${data.year}&term=${data.term}&receipt_no=${data.receipt_no}`;
+        window.open(url, '_blank');
+        
+        // Redirect back to search page after delay
+        setTimeout(() => {
+          window.location.href = "{{ url_for('issue_uniform') }}";
+        }, 1000);
+      } else {
+        showError('Error: ' + data.message);
+>>>>>>> 1b584a9 (class module)
       }
     })
     .catch(error => {
       console.error('Error:', error);
+<<<<<<< HEAD
       alert('Failed to submit uniform issuance. Please try again.');
     });
 }
 </script>
 {% endblock %}
+=======
+      if (error.message && error.message.includes('Insufficient stock')) {
+        showError(error.message);
+      } else {
+        showError('Failed to submit uniform issuance. Please try again.');
+      }
+    })
+    .finally(() => {
+      submitBtn.textContent = originalText;
+      submitBtn.disabled = false;
+    });
+}
+
+// Attach event listeners
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll(".quantity-input").forEach(function (input) {
+    input.addEventListener("input", function() {
+      const stock = parseInt(this.dataset.stock);
+      const quantity = parseInt(this.value) || 0;
+      
+      if (quantity > stock) {
+        this.value = stock;
+        showError(`Maximum available: ${stock} units`);
+      }
+      updateTotals();
+    });
+    
+    // Prevent typing negative numbers
+    input.addEventListener("keydown", function(e) {
+      if (e.key === '-' || e.key === 'e' || e.key === 'E') {
+        e.preventDefault();
+      }
+    });
+  });
+  
+  // Update totals on page load
+  updateTotals();
+});
+</script>
+{% endblock %}
+>>>>>>> 1b584a9 (class module)

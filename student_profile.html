@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Student Profile - {{ student.FName }} {{ student.SName }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2rem; background: #f5f5f5; }
+        .container { max-width: 800px; margin: auto; background: #fff; padding: 2rem; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1 { text-align: center; margin-bottom: 2rem; }
+        table { width: 100%; border-collapse: collapse; }
+        td { padding: 0.5rem; vertical-align: top; }
+        td.label { font-weight: bold; width: 30%; }
+        .status-active { color: green; font-weight: bold; }
+        .status-blocked { color: red; font-weight: bold; }
+        .back-link { display: block; margin-top: 2rem; text-align: center; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Student Profile</h1>
+
+    <table>
+        <tr>
+            <td class="label">Admission No:</td>
+            <td>{{ student.AdmNo }}</td>
+        </tr>
+        <tr>
+            <td class="label">Full Name:</td>
+            <td>{{ student.FName }} {% if student.MName %}{{ student.MName }}{% endif %} {{ student.SName }}</td>
+        </tr>
+        <tr>
+            <td class="label">Gender:</td>
+            <td>{{ student.Sex }}</td>
+        </tr>
+        <tr>
+            <td class="label">Date of Birth:</td>
+            <td>{{ student.DOB }}</td>
+        </tr>
+        <tr>
+            <td class="label">Parent Name:</td>
+            <td>{{ student.ParentName }}</td>
+        </tr>
+        <tr>
+            <td class="label">Parent Phone:</td>
+            <td>{{ student.ParentPhone }}</td>
+        </tr>
+        <tr>
+            <td class="label">Address:</td>
+            <td>{{ student.Address }}</td>
+        </tr>
+        <tr>
+            <td class="label">Admission Date:</td>
+            <td>{{ student.AdmissionDate }}</td>
+        </tr>
+        <tr>
+            <td class="label">Status:</td>
+            <td class="{% if student.blocked == 'NO' %}status-active{% else %}status-blocked{% endif %}">
+                {% if student.blocked == 'NO' %}Active{% else %}Blocked{% endif %}
+            </td>
+        </tr>
+        {% if student.classID %}
+        <tr>
+            <td class="label">Class:</td>
+            <td>{{ student.class_name }} ({{ student.thisYear }})</td>
+        </tr>
+        {% endif %}
+    </table>
+
+    <a href="{{ url_for('students_list') }}" class="back-link">← Back to Student List</a>
+</div>
+</body>
+</html>
