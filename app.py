@@ -1,6 +1,7 @@
 
 import os
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, make_response, send_file
+from werkzeug.security import generate_password_hash, check_password_hash
 import pymysql, hashlib, csv
 
 # Use environment variables for DB credentials
