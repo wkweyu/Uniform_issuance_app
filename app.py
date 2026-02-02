@@ -1,6 +1,21 @@
 
+import os
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, make_response, send_file
 import pymysql, hashlib, csv
+
+# Use environment variables for DB credentials
+DB_HOST = os.environ.get('DB_HOST', 'localhost')
+DB_USER = os.environ.get('DB_USER', 'schooluser')
+DB_PASSWORD = os.environ.get('DB_PASSWORD', 'jbs')
+DB_NAME = os.environ.get('DB_NAME', 'schoolmngt')
+DB_PORT = int(os.environ.get('DB_PORT', 3306))
+
+# Construct SQLALCHEMY_DATABASE_URI
+DEFAULT_DB_URI = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', DEFAULT_DB_URI)
+if SQLALCHEMY_DATABASE_URI.startswith("postgres://"):
+    SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace("postgres://", "postgresql://", 1)
+
 from io import StringIO, BytesIO
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -24,8 +39,8 @@ def create_app():
     app = Flask(__name__, static_folder='static')
     
     # Configuration
-    app.secret_key = 'your_secret_key_please_change_in_production'
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://schooluser:jbs@localhost/schoolmngt'
+    app.secret_key = os.environ.get('SECRET_KEY', 'your_secret_key_please_change_in_production')
+    app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['WTF_CSRF_TIME_LIMIT'] = None  # CSRF token doesn't expire
     
@@ -59,10 +74,11 @@ app = create_app()
 # DB connection function (can stay outside or inside)
 def get_db_connection():
     return pymysql.connect(
-        host='localhost',
-        user='schooluser',
-        password='jbs',
-        database='schoolmngt',
+        host=DB_HOST,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME,
+        port=DB_PORT,
         cursorclass=pymysql.cursors.DictCursor
     )
 
