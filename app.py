@@ -7,7 +7,7 @@ import pymysql, hashlib, csv
 # Use environment variables for DB credentials
 DB_HOST = os.environ.get('DB_HOST', 'localhost')
 DB_USER = os.environ.get('DB_USER', 'schooluser')
-DB_PASSWORD = os.environ.get('DB_PASSWORD', 'jbs')
+DB_PASSWORD = os.environ.get('DB_PASSWORD') or os.environ.get('DB_PASS', 'jbs')
 DB_NAME = os.environ.get('DB_NAME', 'schoolmngt')
 DB_PORT = int(os.environ.get('DB_PORT', 3306))
 
