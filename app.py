@@ -25,8 +25,12 @@ else:
 # Construct SQLALCHEMY_DATABASE_URI
 DEFAULT_DB_URI = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', DEFAULT_DB_URI)
+
+# Ensure the URI uses the correct driver and format
 if SQLALCHEMY_DATABASE_URI.startswith("postgres://"):
     SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace("postgres://", "postgresql://", 1)
+elif SQLALCHEMY_DATABASE_URI.startswith("mysql://"):
+    SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace("mysql://", "mysql+pymysql://", 1)
 
 from io import StringIO, BytesIO
 from datetime import datetime, timedelta
