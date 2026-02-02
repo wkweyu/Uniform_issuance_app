@@ -1,16 +1,32 @@
 import os
 import pymysql
+import urllib.parse as urlparse
 from werkzeug.security import generate_password_hash
 
-# Fetch DB credentials from environment or use defaults
-DB_HOST = os.environ.get('DB_HOST', 'localhost')
-DB_USER = os.environ.get('DB_USER', 'schooluser')
-DB_PASSWORD = os.environ.get('DB_PASSWORD', 'jbs')
-DB_NAME = os.environ.get('DB_NAME', 'schoolmngt')
-DB_PORT = int(os.environ.get('DB_PORT', 3306))
+# Fetch DB credentials from environment
+DATABASE_URL = os.environ.get('DATABASE_URL')
+
+if DATABASE_URL:
+    # Handle mysql://user:pass@host:port/dbname
+    url = urlparse.urlparse(DATABASE_URL)
+    DB_HOST = url.hostname
+    DB_USER = url.username
+    DB_PASSWORD = url.password
+    DB_NAME = url.path.lstrip('/')
+    DB_PORT = url.port or 3306
+else:
+    DB_HOST = os.environ.get('DB_HOST', 'localhost')
+    DB_USER = os.environ.get('DB_USER', 'schooluser')
+    DB_PASSWORD = os.environ.get('DB_PASSWORD', 'jbs')
+    DB_NAME = os.environ.get('DB_NAME', 'schoolmngt')
+    DB_PORT = int(os.environ.get('DB_PORT', 3306))
 
 def create_admin():
-    print(f"Connecting to {DB_HOST}...")
+    if not DB_HOST or DB_HOST == 'localhost' and 'RENDER' in os.environ:
+        print("ERROR: DB_HOST is not set correctly for Render environment.")
+        return
+
+    print(f"Connecting to {DB_HOST} on port {DB_PORT} as {DB_USER}...")
     try:
         conn = pymysql.connect(
             host=DB_HOST,
