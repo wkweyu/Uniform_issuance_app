@@ -1,0 +1,753 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="mb-4">
+    <nav class="text-sm font-medium text-gray-500 mb-4">
+        <ol class="flex items-center space-x-2">
+            <li><a href="{{ url_for('index') }}" class="hover:text-blue-600">Dashboard</a></li>
+            <li><span class="mx-2">/</span></li>
+            <li><a href="{{ url_for('manage_classes') }}" class="hover:text-blue-600">Classes</a></li>
+            <li><span class="mx-2">/</span></li>
+            <li class="text-gray-900">Manage Hub</li>
+        </ol>
+    </nav>
+</div>
+
+<!-- Class Header -->
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+            <h1 class="text-3xl font-extrabold text-blue-900">{{ class_details.display_name }}</h1>
+            <p class="text-gray-500">
+                <span class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full font-bold mr-2">
+                    {{ class_details.academic_year_name }}
+                </span>
+                Group: <span class="font-semibold">{{ class_details.class_group_code }}</span> | 
+                Stream: <span class="font-semibold">{{ class_details.stream_code }}</span>
+            </p>
+        </div>
+        <div class="flex gap-4">
+            <div class="text-center px-4 py-2 bg-blue-50 rounded-lg">
+                <div class="text-xs text-blue-600 font-bold uppercase">Students</div>
+                <div class="text-2xl font-black text-blue-900">{{ students|length }}</div>
+            </div>
+            <div class="text-center px-4 py-2 bg-purple-50 rounded-lg">
+                <div class="text-xs text-purple-600 font-bold uppercase">Subjects</div>
+                <div class="text-2xl font-black text-purple-900">{{ subjects|length }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tabs Navigation -->
+<div class="mb-6 border-b border-gray-200">
+    <ul class="flex flex-wrap -mb-px text-sm font-medium text-center" id="tabList">
+        <li class="mr-2">
+            <button class="inline-block p-4 border-b-2 rounded-t-lg active-tab text-blue-600 border-blue-600" id="overview-tab" onclick="switchTab('overview')">
+                <i class="fas fa-info-circle mr-2"></i>Overview
+            </button>
+        </li>
+        <li class="mr-2">
+            <button class="inline-block p-4 border-b-2 rounded-t-lg hover:text-gray-600 hover:border-gray-300 transition" id="subjects-tab" onclick="switchTab('subjects')">
+                <i class="fas fa-book mr-2"></i>Subjects
+            </button>
+        </li>
+        <li class="mr-2">
+            <button class="inline-block p-4 border-b-2 rounded-t-lg hover:text-gray-600 hover:border-gray-300 transition" id="teachers-tab" onclick="switchTab('teachers')">
+                <i class="fas fa-chalkboard-teacher mr-2"></i>Teachers
+            </button>
+        </li>
+        <li class="mr-2">
+            <button class="inline-block p-4 border-b-2 rounded-t-lg hover:text-gray-600 hover:border-gray-300 transition" id="students-tab" onclick="switchTab('students')">
+                <i class="fas fa-users mr-2"></i>Students
+            </button>
+        </li>
+    </ul>
+</div>
+
+<!-- Tab Contents -->
+<div id="tabContents">
+    
+    <!-- Overview Tab -->
+    <div id="overview-content" class="tab-pane">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <h3 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Class Info</h3>
+                <dl class="space-y-3">
+                    <div class="flex justify-between">
+                        <dt class="text-gray-500">Current Class Teacher:</dt>
+                        <dd class="font-bold text-blue-700">
+                            {% if class_teacher %}
+                                {{ class_teacher.username }}
+                            {% else %}
+                                <span class="text-red-500 italic">Not Assigned</span>
+                            {% endif %}
+                        </dd>
+                    </div>
+                    <div class="flex justify-between">
+                        <dt class="text-gray-500">Status:</dt>
+                        <dd>
+                            {% if students and subjects and class_teacher %}
+                                <span class="bg-green-100 text-green-800 text-xs font-bold px-2 py-1 rounded-full">ACTIVE / CONFIGURED</span>
+                            {% else %}
+                                <span class="bg-yellow-100 text-yellow-800 text-xs font-bold px-2 py-1 rounded-full">INCOMPLETE SETUP</span>
+                            {% endif %}
+                        </dd>
+                    </div>
+                </dl>
+            </div>
+            
+            <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <h3 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Quick Actions</h3>
+                <div class="grid grid-cols-2 gap-3">
+                    <button onclick="switchTab('students')" class="flex flex-col items-center p-3 bg-blue-50 hover:bg-blue-100 rounded-lg text-blue-700 transition">
+                        <i class="fas fa-user-plus text-xl mb-1"></i>
+                        <span class="text-xs font-bold">Add Students</span>
+                    </button>
+                    <button onclick="switchTab('subjects')" class="flex flex-col items-center p-3 bg-purple-50 hover:bg-purple-100 rounded-lg text-purple-700 transition">
+                        <i class="fas fa-plus-square text-xl mb-1"></i>
+                        <span class="text-xs font-bold">Allocate Subjects</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- New Section: Allocated Subjects -->
+            <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm col-span-1 md:col-span-2">
+                <div class="flex items-center justify-between mb-4 border-b pb-2">
+                    <h3 class="text-lg font-bold text-gray-800 italic flex items-center gap-2">
+                        <i class="fas fa-book text-blue-500"></i> Allocated Subjects
+                    </h3>
+                    <span class="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded-full">
+                        {{ subjects|length }} Subjects
+                    </span>
+                </div>
+                {% if subjects %}
+                    <div class="flex flex-wrap gap-2">
+                        {% for subj in subjects %}
+                        <div class="flex items-center bg-gray-50 border border-gray-100 rounded-lg p-2 hover:bg-blue-50 transition cursor-default">
+                            <div class="w-8 h-8 bg-blue-100 rounded flex items-center justify-center text-blue-700 font-bold text-xs mr-2">
+                                {{ (subj.code|string)[:2] }}
+                            </div>
+                            <div>
+                                <div class="text-[10px] text-gray-400 font-bold uppercase">{{ subj.code }}</div>
+                                <div class="text-xs font-bold text-gray-700">{{ subj.name }}</div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-6 bg-red-50 rounded-lg border border-red-100">
+                        <p class="text-red-500 text-sm font-bold italic">No subjects allocated yet.</p>
+                        <button onclick="switchTab('subjects')" class="text-xs text-blue-600 font-bold hover:underline mt-1">Allocate Subjects Now</button>
+                    </div>
+                {% endif %}
+            </div>
+
+            <!-- New Section: Enrolled Students -->
+            <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm col-span-1 md:col-span-2">
+                <div class="flex items-center justify-between mb-4 border-b pb-2">
+                    <h3 class="text-lg font-bold text-gray-800 italic flex items-center gap-2">
+                        <i class="fas fa-users text-green-500"></i> Enrolled Students
+                    </h3>
+                    <span class="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full">
+                        {{ students|length }} Students
+                    </span>
+                </div>
+                {% if students %}
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                        {% for student in students[:8] %}
+                        <div class="flex items-center p-2 border border-gray-100 rounded-lg bg-gray-50">
+                            <div class="w-8 h-8 rounded-full bg-{% if student.Gender == 'Female' %}pink{% else %}blue{% endif %}-100 flex items-center justify-center text-{% if student.Gender == 'Female' %}pink{% else %}blue{% endif %}-600 mr-2">
+                                <i class="fas fa-user text-xs"></i>
+                            </div>
+                            <div class="truncate">
+                                <p class="text-xs font-bold text-gray-800 truncate">{{ student.FName }} {{ student.SName }}</p>
+                                <p class="text-[10px] text-gray-400 font-mono">{{ student.AdmNo }}</p>
+                            </div>
+                        </div>
+                        {% endfor %}
+                        {% if students|length > 8 %}
+                        <button onclick="switchTab('students')" class="flex items-center justify-center p-2 border-2 border-dashed border-gray-200 rounded-lg text-gray-400 hover:text-blue-500 hover:border-blue-200 transition">
+                            <span class="text-xs font-bold">+{{ students|length - 8 }} more...</span>
+                        </button>
+                        {% endif %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-6 bg-yellow-50 rounded-lg border border-yellow-100">
+                        <p class="text-yellow-600 text-sm font-bold italic">No students enrolled yet.</p>
+                        <button onclick="switchTab('students')" class="text-xs text-blue-600 font-bold hover:underline mt-1">Enroll Students Now</button>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Subjects Tab -->
+    <div id="subjects-content" class="tab-pane hidden">
+        <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+            <h3 class="text-xl font-bold text-gray-800 mb-4">Allocate Subjects</h3>
+            <p class="text-sm text-gray-500 mb-6">Select the subjects offered in this class. These subjects will be available for student enrollment.</p>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-8 max-h-96 overflow-y-auto p-2 border rounded-lg bg-gray-50">
+                {% for subj in all_subjects %}
+                <label class="flex items-center p-3 bg-white rounded-lg border border-gray-200 hover:border-blue-500 cursor-pointer transition">
+                    <input type="checkbox" class="subject-checkbox w-4 h-4 text-blue-600 rounded focus:ring-blue-500" 
+                           value="{{ subj.id }}"
+                           {% if subj.id in subjects|map(attribute='subject_id')|list %}checked{% endif %}>
+                    <div class="ml-3">
+                        <div class="text-xs font-bold text-blue-600">{{ subj.code }}</div>
+                        <div class="text-sm font-semibold">{{ subj.name }}</div>
+                    </div>
+                </label>
+                {% endfor %}
+            </div>
+            
+            <div class="flex justify-end">
+                <button onclick="saveSubjects()" id="btnSaveSubjects" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg shadow transition">
+                    <i class="fas fa-save mr-2"></i>Save Subject Allocation
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Teachers Tab -->
+    <div id="teachers-content" class="tab-pane hidden">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Left Side: Class Teacher -->
+            <div class="lg:col-span-1">
+                <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm mb-6">
+                    <h3 class="text-lg font-bold text-gray-800 mb-2">Class Teacher</h3>
+                    <p class="text-xs text-gray-500 mb-4">The primary administrator for this class.</p>
+                    
+                    <div class="space-y-4">
+                        <select id="selectClassTeacher" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                            <option value="">-- Choose Teacher --</option>
+                            {% for teacher in all_teachers %}
+                            <option value="{{ teacher.userNo }}" {% if class_teacher and class_teacher.userNo == teacher.userNo %}selected{% endif %}>
+                                {{ teacher.username }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <button onclick="assignClassTeacher()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg transition">
+                            Set Class Teacher
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Side: Subject Teachers -->
+            <div class="lg:col-span-2">
+                <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                    <h3 class="text-lg font-bold text-gray-800 mb-4">Subject Teachers</h3>
+                    {% if subjects %}
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead>
+                                <tr class="text-xs font-bold text-gray-500 uppercase tracking-wider border-b">
+                                    <th class="py-3 px-2">Subject</th>
+                                    <th class="py-3 px-2">Assigned Teacher</th>
+                                    <th class="py-3 px-2 text-right">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100">
+                                {% for subj in subjects %}
+                                <tr>
+                                    <td class="py-4 px-2">
+                                        <div class="text-xs font-bold text-blue-600">{{ subj.code }}</div>
+                                        <div class="text-sm font-bold">{{ subj.name }}</div>
+                                    </td>
+                                    <td class="py-4 px-2">
+                                        <select class="subject-teacher-select w-full max-w-xs text-sm border-gray-300 rounded focus:ring-blue-500" data-subject-id="{{ subj.subject_id }}">
+                                            <option value="">-- Unassigned --</option>
+                                            {% for t in all_teachers %}
+                                            <option value="{{ t.userNo }}" {% if subj.teacher_id == t.userNo %}selected{% endif %}>
+                                                {{ t.username }}
+                                            </option>
+                                            {% endfor %}
+                                        </select>
+                                    </td>
+                                    <td class="py-4 px-2 text-right">
+                                        <button onclick="assignSubjectTeacher(this)" class="text-white bg-blue-500 hover:bg-blue-600 text-xs px-3 py-1 rounded font-bold transition">
+                                            Assign
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-10 bg-gray-50 rounded-lg">
+                        <i class="fas fa-book-open text-gray-300 text-4xl mb-4"></i>
+                        <p class="text-gray-500">No subjects allocated yet. Allocate subjects first.</p>
+                        <button onclick="switchTab('subjects')" class="mt-4 text-blue-600 font-bold hover:underline">Go to Subjects</button>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Students Tab -->
+    <div id="students-content" class="tab-pane hidden">
+        <div class="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                <div>
+                    <h3 class="text-xl font-bold text-gray-800">Current Students</h3>
+                    <p class="text-sm text-gray-500">Total: {{ students|length }} students</p>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="openBatchEnrollModal()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow-sm transition flex items-center gap-2">
+                        <i class="fas fa-layer-group"></i> Batch Enroll
+                    </button>
+                    <button onclick="openAddStudentModal()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg shadow-sm transition">
+                        <i class="fas fa-plus mr-2"></i>Add Student(s)
+                    </button>
+                </div>
+            </div>
+
+            {% if students %}
+            <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead>
+                        <tr class="text-xs font-bold text-gray-500 uppercase tracking-wider border-b">
+                            <th class="py-3 px-4">Adm No</th>
+                            <th class="py-3 px-4">Full Name</th>
+                            <th class="py-3 px-4">Gender</th>
+                            <th class="py-3 px-4 text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        {% for student in students %}
+                        <tr class="hover:bg-gray-50">
+                            <td class="py-3 px-4 font-mono text-xs font-bold text-gray-400">#{{ student.AdmNo }}</td>
+                            <td class="py-3 px-4 font-bold text-gray-800">{{ student.FName }} {{ student.SName }}</td>
+                            <td class="py-3 px-4 text-sm text-gray-600">{{ student.Gender }}</td>
+                            <td class="py-3 px-4 text-right flex justify-end gap-2">
+                                <button onclick="openStudentSubjectsModal({{ student.allocation_id }}, '{{ student.FName }} {{ student.SName }}')" 
+                                        class="text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition" 
+                                        title="Manage Student Subjects">
+                                    <i class="fas fa-book"></i>
+                                </button>
+                                <button onclick="removeStudent({{ student.allocation_id }})" class="text-red-500 hover:bg-red-50 p-2 rounded-lg transition" title="Remove student from class">
+                                    <i class="fas fa-times-circle"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-20 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
+                <i class="fas fa-user-slash text-gray-200 text-6xl mb-4"></i>
+                <h4 class="text-xl font-bold text-gray-400">No students found</h4>
+                <p class="text-gray-400">Add students to this class to see them here.</p>
+                <button onclick="openAddStudentModal()" class="mt-4 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded font-bold">Add Students Now</button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+</div>
+
+<!-- Multi-Student Modal -->
+<div id="studentModal" class="hidden fixed inset-0 z-50 overflow-auto bg-black bg-opacity-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl transform transition-all">
+        <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-blue-900 rounded-t-2xl">
+            <h3 class="text-xl font-bold text-white">Select Students to Add</h3>
+            <button onclick="closeAddStudentModal()" class="text-white hover:text-gray-200 transition">
+                <i class="fas fa-times text-2xl"></i>
+            </button>
+        </div>
+        <div class="p-6">
+            <div class="mb-4">
+                <input type="text" id="studentSearch" placeholder="Search by name or Adm No..." 
+                       class="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-blue-500 outline-none transition"
+                       onkeyup="filterStudents()">
+            </div>
+            <div class="max-h-80 overflow-y-auto mb-6 p-2 rounded-xl bg-gray-50" id="studentListContainer">
+                {% if available_students %}
+                    {% for student in available_students %}
+                    <label class="student-row flex items-center p-3 hover:bg-white hover:shadow-sm rounded-lg cursor-pointer transition">
+                        <input type="checkbox" value="{{ student.AdmNo }}" class="student-checkbox w-5 h-5 text-blue-600 rounded">
+                        <div class="ml-4">
+                            <span class="font-bold text-gray-800">{{ student.FName }} {{ student.SName }}</span>
+                            <span class="text-xs font-mono text-gray-400 ml-2">#{{ student.AdmNo }}</span>
+                        </div>
+                    </label>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-center text-gray-500 py-10 italic">No unallocated students found.</p>
+                {% endif %}
+            </div>
+            <div class="flex justify-end gap-3">
+                <button onclick="closeAddStudentModal()" class="px-6 py-2 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-xl font-bold transition">Cancel</button>
+                <button onclick="saveAddedStudents()" id="btnAddStudents" class="px-6 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-xl font-bold shadow-md transition">Add Selected Students</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .tab-pane.hidden { display: none; }
+    .active-tab { 
+        color: #1e40af; /* blue-800 */
+        border-color: #1e40af; 
+    }
+</style>
+
+<script>
+    const classId = {{ class_id }};
+    // Tab switching logic
+    function switchTab(tabId) {
+        // Hide all panes
+        document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.add('hidden'));
+        // Show selected pane
+        document.getElementById(tabId + '-content').classList.remove('hidden');
+        
+        // Update tab styles
+        document.querySelectorAll('#tabList button').forEach(btn => {
+            btn.classList.remove('active-tab', 'text-blue-600', 'border-blue-600');
+            btn.classList.add('text-gray-500', 'border-transparent');
+        });
+        
+        const activeBtn = document.getElementById(tabId + '-tab');
+        activeBtn.classList.add('active-tab', 'text-blue-600', 'border-blue-600');
+        activeBtn.classList.remove('text-gray-500', 'border-transparent');
+    }
+
+    // Modal logic
+    function openAddStudentModal() {
+        document.getElementById('studentModal').classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+    }
+    
+    function closeAddStudentModal() {
+        document.getElementById('studentModal').classList.add('hidden');
+        document.body.style.overflow = 'auto';
+    }
+
+    function filterStudents() {
+        const query = document.getElementById('studentSearch').value.toLowerCase();
+        document.querySelectorAll('.student-row').forEach(row => {
+            const text = row.textContent.toLowerCase();
+            row.style.display = text.includes(query) ? 'flex' : 'none';
+        });
+    }
+
+    // API Calls
+    async function saveSubjects() {
+        const btn = document.getElementById('btnSaveSubjects');
+        const subjects = Array.from(document.querySelectorAll('.subject-checkbox:checked')).map(cb => cb.value);
+        
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Saving...';
+        
+        try {
+            const response = await fetch('/api/class/{{ class_id }}/update-subjects', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },
+                body: JSON.stringify({ subject_ids: subjects })
+            });
+            const result = await response.json();
+            if (result.success) {
+                showToast('Success!', result.message, 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showToast('Error', result.message, 'error');
+            }
+        } catch (e) {
+            showToast('Error', 'Connection failed', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-save mr-2"></i>Save Subject Allocation';
+        }
+    }
+
+    async function assignClassTeacher() {
+        const teacherId = document.getElementById('selectClassTeacher').value;
+        if (!teacherId) return showToast('Info', 'Select a teacher first', 'info');
+        
+        performTeacherAssign(teacherId, null, true);
+    }
+
+    async function assignSubjectTeacher(btnElement) {
+        const row = btnElement.closest('tr');
+        const select = row.querySelector('.subject-teacher-select');
+        const teacherId = select.value;
+        const subjectId = select.dataset.subjectId;
+        
+        if (!teacherId) return showToast('Info', 'Select a teacher for the subject', 'info');
+        
+        performTeacherAssign(teacherId, subjectId, false);
+    }
+
+    async function performTeacherAssign(teacherId, subjectId, isClassTeacher) {
+        try {
+            const response = await fetch('/api/class/{{ class_id }}/assign-teacher', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },
+                body: JSON.stringify({ 
+                    teacher_id: teacherId, 
+                    subject_id: subjectId, 
+                    is_class_teacher: isClassTeacher 
+                })
+            });
+            const result = await response.json();
+            if (result.success) {
+                showToast('Success!', result.message, 'success');
+            } else {
+                showToast('Error', result.message, 'error');
+            }
+        } catch (e) {
+            showToast('Error', 'Connection failed', 'error');
+        }
+    }
+
+    async function saveAddedStudents() {
+        const btn = document.getElementById('btnAddStudents');
+        const students = Array.from(document.querySelectorAll('.student-checkbox:checked')).map(cb => cb.value);
+        
+        if (students.length === 0) return showToast('Info', 'Select at least one student', 'info');
+        
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Adding...';
+        
+        try {
+            const response = await fetch('/api/class/{{ class_id }}/add-students', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },
+                body: JSON.stringify({ student_ids: students })
+            });
+            const result = await response.json();
+            if (result.success) {
+                showToast('Success!', result.message, 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showToast('Error', result.message, 'error');
+            }
+        } catch (e) {
+            showToast('Error', 'Connection failed', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = 'Add Selected Students';
+        }
+    }
+
+    async function removeStudent(allocationId) {
+        if (!confirm('Are you sure you want to remove this student from the class?')) return;
+        
+        try {
+            const response = await fetch(`/api/class/remove-student/${allocationId}`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': '{{ csrf_token() }}' }
+            });
+            const result = await response.json();
+            if (result.success) {
+                showToast('Success!', result.message, 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showToast('Error', result.message, 'error');
+            }
+        } catch (e) {
+            showToast('Error', 'Connection failed', 'error');
+        }
+    }
+
+    async function openStudentSubjectsModal(allocationId, studentName) {
+        document.getElementById('currentAllocationId').value = allocationId;
+        document.getElementById('subModalStudentName').innerText = `Subjects: ${studentName}`;
+        
+        // Reset checkboxes
+        document.querySelectorAll('.student-sub-checkbox').forEach(cb => cb.checked = false);
+        
+        // Fetch current enrollments
+        try {
+            const response = await fetch(`/api/student/${allocationId}/subjects`);
+            const result = await response.json();
+            if (result.success) {
+                result.enrolled_subject_ids.forEach(sid => {
+                    const cb = document.querySelector(`.student-sub-checkbox[value="${sid}"]`);
+                    if (cb) cb.checked = true;
+                });
+            }
+        } catch (e) {
+            console.error(e);
+        }
+        
+        document.getElementById('studentSubjectsModal').classList.remove('hidden');
+    }
+
+    function closeStudentSubjectsModal() {
+        document.getElementById('studentSubjectsModal').classList.add('hidden');
+    }
+
+    async function saveStudentSubjects() {
+        const allocationId = document.getElementById('currentAllocationId').value;
+        const subjects = Array.from(document.querySelectorAll('.student-sub-checkbox:checked')).map(cb => cb.value);
+        const btn = document.getElementById('btnSaveStudentSubjects');
+        
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        
+        try {
+            const response = await fetch('/api/student/subjects/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },
+                body: JSON.stringify({ allocation_id: allocationId, subject_ids: subjects })
+            });
+            const result = await response.json();
+            if (result.success) {
+                showToast('Success!', result.message, 'success');
+                closeStudentSubjectsModal();
+            } else {
+                showToast('Error', result.message, 'error');
+            }
+        } catch (e) {
+            showToast('Error', 'Connection failed', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = 'Save Enrollment';
+        }
+    }
+
+    async function batchEnrollSubjects() {
+        const subjects = Array.from(document.querySelectorAll('.batch-sub-checkbox:checked')).map(cb => parseInt(cb.value));
+        if (subjects.length === 0) return showToast('Info', 'Select at least one subject', 'info');
+        
+        const btn = document.getElementById('btnConfirmBatchEnroll');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enrolling...';
+
+        try {
+            const response = await fetch(`/api/class/${classId}/batch-enroll-subjects`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },
+                body: JSON.stringify({ subject_ids: subjects })
+            });
+            const result = await response.json();
+            if (result.success) {
+                showToast('Success!', result.message, 'success');
+                closeBatchEnrollModal();
+            } else {
+                showToast('Error', result.message, 'error');
+            }
+        } catch (e) {
+            showToast('Error', 'Batch enrollment failed', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = 'Confirm Batch Enrollment';
+        }
+    }
+
+    function openBatchEnrollModal() {
+        document.getElementById('batchEnrollModal').classList.remove('hidden');
+    }
+
+    function closeBatchEnrollModal() {
+        document.getElementById('batchEnrollModal').classList.add('hidden');
+    }
+
+    function toggleAllBatchSubjects(source) {
+        document.querySelectorAll('.batch-sub-checkbox').forEach(cb => cb.checked = source.checked);
+    }
+
+    function showToast(title, message, type) {
+        // Simple alert for now, could be improved with a real toast UI component
+        alert(`${title}: ${message}`);
+    }
+</script>
+
+<!-- Batch Enroll Modal -->
+<div id="batchEnrollModal" class="hidden fixed inset-0 z-50 overflow-auto bg-black bg-opacity-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg transform transition-all">
+        <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-blue-800 rounded-t-2xl">
+            <div>
+                <h3 class="text-xl font-bold text-white">Batch Subject Enrollment</h3>
+                <p class="text-xs text-blue-100">Enroll ALL current students in selected subjects</p>
+            </div>
+            <button onclick="closeBatchEnrollModal()" class="text-white hover:text-gray-200 transition">
+                <i class="fas fa-times text-2xl"></i>
+            </button>
+        </div>
+        <div class="p-6">
+            <div class="flex items-center justify-between mb-4 pb-2 border-b">
+                <span class="text-sm font-bold text-gray-700">Select Subjects:</span>
+                <label class="flex items-center text-xs text-blue-600 font-bold cursor-pointer">
+                    <input type="checkbox" onchange="toggleAllBatchSubjects(this)" class="mr-1"> Select All
+                </label>
+            </div>
+            <div id="batchSubjectList" class="grid grid-cols-1 gap-2 max-h-80 overflow-y-auto mb-6 p-1">
+                {% if subjects %}
+                    {% for subj in subjects %}
+                    <label class="flex items-center p-3 hover:bg-gray-50 rounded-lg cursor-pointer border border-gray-100 hover:border-blue-200 transition">
+                        <input type="checkbox" value="{{ subj.subject_id }}" class="batch-sub-checkbox w-5 h-5 text-blue-600 rounded">
+                        <div class="ml-3">
+                            <span class="text-xs font-bold text-blue-500 block">{{ subj.code }}</span>
+                            <span class="font-bold text-gray-800">{{ subj.name }}</span>
+                        </div>
+                    </label>
+                    {% endfor %}
+                {% else %}
+                    <div class="text-center py-10 bg-gray-50 rounded-lg">
+                        <p class="text-gray-500 text-sm italic">No subjects allocated to this class.</p>
+                    </div>
+                {% endif %}
+            </div>
+            <div class="flex justify-end gap-3">
+                <button onclick="closeBatchEnrollModal()" class="px-6 py-2 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-xl font-bold transition">Cancel</button>
+                <button onclick="batchEnrollSubjects()" id="btnConfirmBatchEnroll" class="px-6 py-2 bg-blue-800 text-white hover:bg-blue-900 rounded-xl font-bold shadow-md transition">Confirm Batch Enrollment</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Student Subjects Modal -->
+<div id="studentSubjectsModal" class="hidden fixed inset-0 z-50 overflow-auto bg-black bg-opacity-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg transform transition-all">
+        <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-blue-700 rounded-t-2xl">
+            <div>
+                <h3 class="text-xl font-bold text-white" id="subModalStudentName">Student Subjects</h3>
+                <p class="text-xs text-blue-100">Select specific subjects for this student</p>
+            </div>
+            <button onclick="closeStudentSubjectsModal()" class="text-white hover:text-gray-200 transition">
+                <i class="fas fa-times text-2xl"></i>
+            </button>
+        </div>
+        <div class="p-6">
+            <input type="hidden" id="currentAllocationId">
+            <div id="studentSubjectList" class="grid grid-cols-1 gap-2 max-h-80 overflow-y-auto mb-6 p-1">
+                {% if subjects %}
+                    {% for subj in subjects %}
+                    <label class="flex items-center p-3 hover:bg-gray-50 rounded-lg cursor-pointer border border-gray-100 hover:border-blue-200 transition">
+                        <input type="checkbox" value="{{ subj.subject_id }}" class="student-sub-checkbox w-5 h-5 text-blue-600 rounded">
+                        <div class="ml-3">
+                            <span class="text-xs font-bold text-blue-500 block">{{ subj.code }}</span>
+                            <span class="font-bold text-gray-800">{{ subj.name }}</span>
+                        </div>
+                    </label>
+                    {% endfor %}
+                {% else %}
+                    <div class="text-center py-10 bg-gray-50 rounded-lg">
+                        <p class="text-gray-500 text-sm italic">No subjects allocated to this class.</p>
+                    </div>
+                {% endif %}
+            </div>
+            <div class="flex justify-end gap-3">
+                <button onclick="closeStudentSubjectsModal()" class="px-6 py-2 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-xl font-bold transition">Cancel</button>
+                <button onclick="saveStudentSubjects()" id="btnSaveStudentSubjects" class="px-6 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-xl font-bold shadow-md transition">Save Enrollment</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .tab-pane.hidden { display: none; }
+    .active-tab { 
+        color: #1e40af; /* blue-800 */
+        border-color: #1e40af; 
+    }
+</style>
+
+{% endblock %}

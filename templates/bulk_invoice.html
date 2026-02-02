@@ -1,0 +1,156 @@
+{% extends 'base.html' %}
+
+{% block title %}Bulk Invoicing{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="max-w-4xl mx-auto">
+        <div class="mb-6">
+            <nav class="flex mb-2" aria-label="Breadcrumb">
+                <ol class="inline-flex items-center space-x-1 md:space-x-3 text-sm font-medium text-gray-500">
+                    <li class="inline-flex items-center">
+                        <a href="{{ url_for('fees_dashboard') }}" class="hover:text-blue-600">Fees Management</a>
+                    </li>
+                    <li>
+                        <div class="flex items-center">
+                            <svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+                            <span class="ml-1 md:ml-2">Bulk Invoicing</span>
+                        </div>
+                    </li>
+                </ol>
+            </nav>
+            <h1 class="text-3xl font-bold text-gray-800">Bulk Fee Invoicing</h1>
+            <p class="text-gray-500 mt-2">Generate invoices for multiple classes based on their defined fee structures.</p>
+        </div>
+
+        <form action="{{ url_for('bulk_invoice') }}" method="POST" id="bulkForm">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            
+            <div class="bg-white rounded-lg shadow-md overflow-hidden">
+                <div class="p-6 border-b bg-blue-50">
+                    <h2 class="text-lg font-bold text-blue-800 mb-4">Step 1: Select Invoicing Period</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-gray-700 text-sm font-bold mb-2">Academic Year</label>
+                            <select name="year_id" required class="w-full border rounded px-3 py-2 bg-white">
+                                {% for y in years %}
+                                <option value="{{ y.id }}">{{ y.year }}{% if y.is_current %} (Current){% endif %}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-gray-700 text-sm font-bold mb-2">Term</label>
+                            <select name="term_id" required class="w-full border rounded px-3 py-2 bg-white">
+                                {% for t in terms %}
+                                <option value="{{ t.id }}">Term {{ t.term_number }} ({{ t.year }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 1.5: Optional Votehead-specific invoicing -->
+                <div class="p-6 border-b bg-orange-50">
+                    <div class="flex items-center mb-4">
+                        <input type="checkbox" id="toggleSpecific" class="w-4 h-4 text-orange-600 rounded mr-2" onchange="toggleSpecificSection()">
+                        <h2 class="text-lg font-bold text-orange-800">Invoice Individual Votehead (Optional)</h2>
+                    </div>
+                    <div id="specificSection" class="grid grid-cols-1 md:grid-cols-2 gap-6 opacity-40 pointer-events-none transition-opacity duration-300">
+                        <div>
+                            <label class="block text-gray-700 text-sm font-bold mb-2">Select Votehead</label>
+                            <select name="specific_votehead_id" id="specific_vh" class="w-full border rounded px-3 py-2 bg-white">
+                                <option value="">-- Select Votehead (e.g. Tour) --</option>
+                                {% for v in voteheads %}
+                                <option value="{{ v.id }}">{{ v.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-gray-700 text-sm font-bold mb-2">Amount (KES)</label>
+                            <input type="number" name="specific_amount" id="specific_amt" step="0.01" min="0" placeholder="0.00" class="w-full border rounded px-3 py-2">
+                        </div>
+                    </div>
+                    <p class="text-xs text-orange-700 mt-2 italic">
+                        <i class="fas fa-info-circle mr-1"></i> If checked, this will post ONLY this specific charge to students in selected classes, bypassing standard fee structures.
+                    </p>
+                </div>
+
+                <div class="p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-lg font-bold text-gray-800">Step 2: Select Classes</h2>
+                        <div class="text-sm space-x-3">
+                            <button type="button" onclick="toggleAll(true)" class="text-blue-600 hover:underline">Select All</button>
+                            <button type="button" onclick="toggleAll(false)" class="text-gray-500 hover:underline">Deselect All</button>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        {% for c in classes %}
+                        <label class="flex items-center p-3 border rounded-lg hover:bg-gray-50 cursor-pointer transition">
+                            <input type="checkbox" name="class_ids" value="{{ c.classID }}" class="w-5 h-5 text-blue-600 rounded mr-3 class-checkbox">
+                            <span class="text-sm font-medium text-gray-700">{{ c.display_name }}</span>
+                        </label>
+                        {% else %}
+                        <div class="col-span-3 text-center py-8 text-gray-500 italic border-2 border-dashed rounded-lg">
+                            No active classes found. Create classes in Academic Management first.
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="p-6 bg-gray-50 border-t flex items-center justify-between">
+                    <div class="text-sm text-gray-500 max-w-md">
+                        <span class="font-bold text-orange-600 italic">Warning:</span> 
+                        This will generate invoices for all students in selected classes who haven't been invoiced for this period yet. This action cannot be easily undone.
+                    </div>
+                    <button type="submit" id="submitBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed">
+                        Generate Invoices
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function toggleAll(checked) {
+    document.querySelectorAll('.class-checkbox').forEach(cb => cb.checked = checked);
+    validateForm();
+}
+
+function toggleSpecificSection() {
+    const isChecked = document.getElementById('toggleSpecific').checked;
+    const section = document.getElementById('specificSection');
+    const vh = document.getElementById('specific_vh');
+    const amt = document.getElementById('specific_amt');
+    
+    if (isChecked) {
+        section.classList.remove('opacity-40', 'pointer-events-none');
+        vh.required = true;
+        amt.required = true;
+    } else {
+        section.classList.add('opacity-40', 'pointer-events-none');
+        vh.required = false;
+        amt.required = false;
+        vh.value = "";
+        amt.value = "";
+    }
+}
+
+function validateForm() {
+    const btn = document.getElementById('submitBtn');
+    const checked = document.querySelectorAll('.class-checkbox:checked').length;
+    btn.disabled = checked === 0;
+}
+
+document.querySelectorAll('.class-checkbox').forEach(cb => {
+    cb.addEventListener('change', validateForm);
+});
+
+validateForm(); // Initial state
+
+document.getElementById('bulkForm').onsubmit = function() {
+    return confirm('Are you sure you want to invoice ' + document.querySelectorAll('.class-checkbox:checked').length + ' classes?');
+};
+</script>
+{% endblock %}

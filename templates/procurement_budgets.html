@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="bg-gray-50 min-h-screen">
+    <!-- Header Section -->
+    <div class="bg-white border-b sticky top-0 z-10">
+        <div class="container mx-auto px-6 py-6">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div>
+                    <nav class="flex text-xs text-gray-400 mb-1 uppercase font-bold tracking-widest">
+                        <ol class="flex items-center space-x-2">
+                            <li>Procurement</li>
+                            <li><i class="fas fa-chevron-right mx-1 text-[8px]"></i></li>
+                            <li class="text-indigo-600">Budgetary Control</li>
+                        </ol>
+                    </nav>
+                    <h1 class="text-2xl font-black text-gray-900 flex items-center gap-3">
+                        <i class="fas fa-wallet text-indigo-600"></i>
+                        Expenditure Allocation
+                    </h1>
+                </div>
+                
+                <div class="flex items-center gap-4">
+                    <form action="{{ url_for('manage_procurement_budgets') }}" method="GET" class="flex items-center gap-2">
+                        <span class="text-[10px] font-black uppercase text-gray-400 tracking-widest">Fiscal Period:</span>
+                        <select name="academic_year_id" onchange="this.form.submit()" class="bg-slate-50 border-gray-200 rounded-lg text-xs font-black py-1.5 focus:ring-indigo-500">
+                            {% for y in academic_years %}
+                            <option value="{{ y.id }}" {% if y.id == current_year_id %}selected{% endif %}>{{ y.year }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                    <a href="{{ url_for('procurement_dashboard') }}" class="bg-slate-900 hover:bg-black text-white px-5 py-2 rounded-xl text-xs font-bold transition shadow-lg">
+                        Hub
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container mx-auto px-6 py-8">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <!-- Strategic Input Form -->
+            <div class="lg:col-span-4">
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 sticky top-28">
+                    <h2 class="text-xs font-black uppercase tracking-widest text-indigo-600 mb-6 flex items-center gap-2">
+                        <i class="fas fa-plus-circle"></i>
+                        New Allocation
+                    </h2>
+                    
+                    <form action="{{ url_for('manage_procurement_budgets') }}?academic_year_id={{ current_year_id }}" method="POST" class="space-y-5">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        
+                        <div>
+                            <label class="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1.5">Department Unit</label>
+                            <select name="department_id" required class="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-3 text-sm font-bold focus:ring-indigo-500 transition">
+                                <option value="">-- Select Source --</option>
+                                {% for d in departments %}
+                                <option value="{{ d.deptID }}">{{ d.dept }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1.5">Cost Category</label>
+                            <select name="category" required class="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-3 text-sm font-bold focus:ring-indigo-500 transition">
+                                <option value="Stationery">Stationery</option>
+                                <option value="Uniforms">Uniforms</option>
+                                <option value="Sports">Sports Equipment</option>
+                                <option value="Lab Chemicals">Lab Chemicals</option>
+                                <option value="General">General Maintenance</option>
+                                <option value="ICT">ICT & Computer Supplies</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1.5">Authorized Amount (KES)</label>
+                            <div class="relative">
+                                <span class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-bold">KES</span>
+                                <input type="number" step="0.01" name="allocated_amount" required placeholder="0.00" class="w-full bg-gray-50 border-gray-100 rounded-xl pl-12 pr-4 py-3 text-sm font-black focus:ring-indigo-500 transition">
+                            </div>
+                        </div>
+
+                        <button type="submit" class="w-full bg-indigo-600 hover:bg-slate-900 text-white font-black py-3.5 rounded-xl shadow-xl shadow-indigo-100 transition uppercase tracking-widest text-[10px]">
+                            Commit to Budget
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Quantitative Analysis Table -->
+            <div class="lg:col-span-8">
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                    <table class="w-full text-left whitespace-nowrap">
+                        <thead>
+                            <tr class="bg-gray-50/50 text-gray-500 font-black uppercase text-[10px] tracking-widest border-b">
+                                <th class="px-6 py-5">Operational Unit</th>
+                                <th class="px-6 py-5 text-right">Allocated</th>
+                                <th class="px-6 py-5 text-right">Utilized</th>
+                                <th class="px-6 py-5 text-right border-l bg-gray-50/30">Free Balance</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            {% for b in budgets %}
+                            <tr class="hover:bg-indigo-50/20 transition group">
+                                <td class="px-6 py-5">
+                                    <div class="font-bold text-gray-900">{{ b.department_name }}</div>
+                                    <div class="text-[10px] text-indigo-500 font-black uppercase tracking-widest">{{ b.category }}</div>
+                                </td>
+                                <td class="px-6 py-5 text-right font-medium text-gray-500">{{ b.allocated_amount | currency }}</td>
+                                <td class="px-6 py-5 text-right font-bold text-rose-600">
+                                    {{ b.spent_amount | currency }}
+                                    <div class="mt-2 w-24 ml-auto h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                        {% set perc = (b.spent_amount / b.allocated_amount * 100) if b.allocated_amount > 0 else 0 %}
+                                        <div class="h-full {% if perc > 90 %}bg-rose-500{% elif perc > 70 %}bg-amber-500{% else %}bg-emerald-500{% endif %}" style="width: {{ [perc, 100]|min }}%"></div>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-5 text-right font-black text-emerald-700 border-l bg-gray-50/10">
+                                    {{ (b.allocated_amount - b.spent_amount) | currency }}
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="4" class="px-6 py-32 text-center text-gray-400 italic font-medium uppercase text-[10px] tracking-widest">
+                                    No strategic allocations defined for this period
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Strategic Summary -->
+                <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="bg-indigo-600 rounded-2xl p-6 text-white shadow-xl shadow-indigo-100">
+                        <div class="text-[10px] font-black uppercase tracking-widest text-indigo-200 mb-1">Total Authorization</div>
+                        <div class="text-3xl font-black">
+                            {{ budgets | map(attribute='allocated_amount') | sum | currency }}
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm flex items-center justify-between">
+                        <div>
+                            <div class="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Net Utilization</div>
+                            <div class="text-2xl font-black text-gray-900">
+                                {{ budgets | map(attribute='spent_amount') | sum | currency }}
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            {% set total_alloc = budgets | map(attribute='allocated_amount') | sum %}
+                            {% set total_spent = budgets | map(attribute='spent_amount') | sum %}
+                            {% set total_perc = (total_spent / total_alloc * 100) if total_alloc > 0 else 0 %}
+                            <div class="text-2xl font-black {% if total_perc > 90 %}text-rose-600{% else %}text-indigo-600{% endif %}">
+                                {{ total_perc | round(1) }}%
+                            </div>
+                            <div class="text-[10px] font-black uppercase text-gray-400">Absorbtion Rate</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -653,6 +653,48 @@ class ClassManagementService:
             logger.error(f"Failed to enroll student in subjects: {str(e)}")
             raise ClassManagementException(f"Failed to enroll: {str(e)}")
 
+    def enroll_all_students_in_class_subjects(self, class_id: int, subject_ids: List[int] = None) -> int:
+        """
+        Enroll all students in a class in specified subjects (or all allocated subjects if none specified).
+        """
+        try:
+            # 1. Get all students in the class
+            self.cursor.execute("SELECT id FROM class_allocation WHERE class_id = %s AND is_current = TRUE", (class_id,))
+            allocations = self.cursor.fetchall()
+            
+            # 2. Determine subjects to enroll
+            if subject_ids:
+                # Use provided subjects, but validate they belong to the class
+                self.cursor.execute("""
+                    SELECT subject_id FROM class_subjects 
+                    WHERE class_id = %s AND subject_id IN %s AND is_active = TRUE
+                """, (class_id, tuple(subject_ids)))
+                subjects = self.cursor.fetchall()
+            else:
+                # Get all subjects in the class
+                self.cursor.execute("SELECT subject_id FROM class_subjects WHERE class_id = %s AND is_active = TRUE", (class_id,))
+                subjects = self.cursor.fetchall()
+            
+            if not allocations or not subjects:
+                return 0
+                
+            self.connection.begin()
+            count = 0
+            for alloc in allocations:
+                for subj in subjects:
+                    self.cursor.execute("""
+                        INSERT INTO student_subjects (class_allocation_id, subject_id, enrollment_date, is_active)
+                        VALUES (%s, %s, NOW(), TRUE)
+                        ON DUPLICATE KEY UPDATE is_active = TRUE
+                    """, (alloc['id'], subj['subject_id']))
+                    count += 1
+            
+            self.connection.commit()
+            return count
+        except pymysql.Error as e:
+            self.connection.rollback()
+            raise ClassManagementException(f"Batch enrollment failed: {str(e)}")
+
     # =========================================================================
     # 6. TEACHER ALLOCATION
     # =========================================================================
@@ -681,10 +723,12 @@ class ClassManagementService:
             ValidationError if subject not in class
         """
         try:
-            # Validate subject is in class
+            # Validate subject is in class. Use SELECT 1 to avoid depending on an
+            # `id` column which may not exist in older schemas.
             self.cursor.execute("""
-                SELECT id FROM class_subjects
+                SELECT 1 FROM class_subjects
                 WHERE class_id = %s AND subject_id = %s AND is_active = TRUE
+                LIMIT 1
             """, (class_id, subject_id))
             
             if not self.cursor.fetchone():
@@ -700,9 +744,10 @@ class ClassManagementService:
             # Allocate new teacher
             self.cursor.execute("""
                 INSERT INTO teacher_allocations (
-                    teacher_id, class_id, subject_id, academic_year_id, is_active
+                    teacher_id, class_id, subject_id, academic_year_id, 
+                    allocation_date, is_active
                 )
-                VALUES (%s, %s, %s, %s, TRUE)
+                VALUES (%s, %s, %s, %s, CURDATE(), TRUE)
             """, (teacher_id, class_id, subject_id, academic_year_id))
             
             self.connection.commit()
@@ -713,6 +758,102 @@ class ClassManagementService:
             self.connection.rollback()
             logger.error(f"Failed to allocate teacher: {str(e)}")
             raise ClassManagementException(f"Failed to allocate teacher: {str(e)}")
+
+    def set_class_teacher(
+        self,
+        class_id: int,
+        teacher_id: int,
+        academic_year_id: int
+    ) -> bool:
+        """
+        Allocate a teacher as the main class teacher.
+        """
+        try:
+            self.connection.begin()
+            
+            # Deactivate current class teacher for this class-year
+            self.cursor.execute("""
+                UPDATE class_teachers 
+                SET is_active = FALSE 
+                WHERE class_id = %s AND academic_year_id = %s
+            """, (class_id, academic_year_id))
+            
+            # Insert new class teacher
+            self.cursor.execute("""
+                INSERT INTO class_teachers (class_id, teacher_id, academic_year_id, is_active)
+                VALUES (%s, %s, %s, TRUE)
+            """, (class_id, teacher_id, academic_year_id))
+            
+            self.connection.commit()
+            logger.info(f"Set teacher {teacher_id} as class teacher for class {class_id}")
+            return True
+        except pymysql.Error as e:
+            self.connection.rollback()
+            logger.error(f"Failed to set class teacher: {str(e)}")
+            raise ClassManagementException(f"Failed to set class teacher: {str(e)}")
+
+    def allocate_students_to_class(
+        self,
+        class_id: int,
+        student_ids: List[int],
+        academic_year_id: int
+    ) -> int:
+        """
+        Bulk allocate students to a class.
+        """
+        allocated_count = 0
+        try:
+            self.connection.begin()
+            
+            for student_id in student_ids:
+                # Deactivate previous allocations for this year if any
+                self.cursor.execute("""
+                    UPDATE class_allocation 
+                    SET is_current = FALSE 
+                    WHERE student_id = %s AND academic_year_id = %s
+                """, (student_id, academic_year_id))
+                
+                # Insert new allocation
+                self.cursor.execute("""
+                    INSERT INTO class_allocation (student_id, class_id, academic_year_id, allocation_date, is_current)
+                    VALUES (%s, %s, %s, NOW(), TRUE)
+                """, (student_id, class_id, academic_year_id))
+                allocated_count += 1
+            
+            self.connection.commit()
+            logger.info(f"Allocated {allocated_count} students to class {class_id}")
+            return allocated_count
+        except pymysql.Error as e:
+            self.connection.rollback()
+            logger.error(f"Failed to bulk allocate students: {str(e)}")
+            raise ClassManagementException(f"Failed to allocate students: {str(e)}")
+
+    def remove_student_from_class(self, allocation_id: int) -> bool:
+        """
+        Deactivate a student's allocation to a class.
+        """
+        try:
+            self.cursor.execute("UPDATE class_allocation SET is_current = FALSE WHERE id = %s", (allocation_id,))
+            self.connection.commit()
+            return True
+        except pymysql.Error as e:
+            self.connection.rollback()
+            raise ClassManagementException(f"Failed to remove student: {str(e)}")
+
+    def get_available_students(self, academic_year_id: int) -> List[Dict]:
+        """
+        Get students not yet allocated to any class for the given year.
+        """
+        self.cursor.execute("""
+            SELECT AdmNo, FName, SName, Sex as Gender
+            FROM studentinfo
+            WHERE AdmNo NOT IN (
+                SELECT student_id FROM class_allocation 
+                WHERE academic_year_id = %s AND is_current = TRUE
+            )
+            ORDER BY FName, SName
+        """, (academic_year_id,))
+        return self.cursor.fetchall()
 
     # =========================================================================
     # 7. REPORTING QUERIES

@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto py-8 px-4">
+    <!-- Header Section -->
+    <div class="mb-8 flex justify-between items-center">
+        <div>
+            <h1 class="text-3xl font-black text-gray-900 leading-tight uppercase tracking-tight">System Calendar Status</h1>
+            <p class="text-gray-500 font-bold mt-1 uppercase tracking-widest text-[10px]">Reference: Real-time Academic Clock | {{ today.strftime('%d %b %Y') }}</p>
+        </div>
+        <a href="{{ url_for('manage_term_dates') }}" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-lg transition flex items-center gap-2">
+            <i class="fas fa-calendar-alt"></i> Manage Calendar
+        </a>
+    </div>
+
+    {% if current_term %}
+    <!-- Active Term Card -->
+    <div class="bg-white rounded-3xl border-4 border-gray-900 shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] overflow-hidden">
+        <div class="bg-gray-900 text-white px-8 py-4 flex justify-between items-center">
+            <span class="text-[11px] font-black uppercase tracking-[0.3em]">Operational Status: ACTIVE</span>
+            <i class="fas fa-clock animate-pulse text-green-400"></i>
+        </div>
+        
+        <div class="p-10 text-center">
+            <div class="inline-block bg-blue-100 text-blue-700 rounded-full px-6 py-1.5 text-xs font-black uppercase tracking-widest mb-4">
+                TERM {{ current_term.term_number }}
+            </div>
+            <h2 class="text-6xl font-black text-gray-900 mb-2 uppercase italic tracking-tighter">Academic Session</h2>
+            <p class="text-gray-400 font-bold text-lg mb-8 uppercase tracking-[0.2em]">Year {{ today.year }}</p>
+            
+            <div class="grid grid-cols-2 gap-10 max-w-2xl mx-auto border-t-2 border-dashed border-gray-200 pt-8">
+                <div class="text-left">
+                    <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Start Date</label>
+                    <div class="text-2xl font-black text-gray-900">{{ current_term.start_date.strftime('%B %d, %Y') }}</div>
+                </div>
+                <div class="text-right">
+                    <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">End Date</label>
+                    <div class="text-2xl font-black text-gray-900">{{ current_term.end_date.strftime('%B %d, %Y') }}</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-gray-50 px-8 py-4 border-t border-gray-100 flex justify-between items-center text-[10px] font-bold text-gray-500 uppercase">
+            <span>Progress: {{ ((today - current_term.start_date).days / (current_term.end_date - current_term.start_date).days * 100)|round|int if (current_term.end_date - current_term.start_date).days > 0 else 0 }}% Complete</span>
+            <span>Total Operational Terms Defined: {{ total_terms }}</span>
+        </div>
+    </div>
+    {% else %}
+    <!-- Warning State -->
+    <div class="bg-red-50 rounded-3xl border-4 border-red-200 border-dashed p-12 text-center">
+        <div class="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6">
+            <i class="fas fa-exclamation-triangle text-3xl"></i>
+        </div>
+        <h2 class="text-4xl font-black text-gray-900 mb-2 uppercase">Out of Session</h2>
+        <p class="text-red-500 font-bold max-w-md mx-auto mb-8 uppercase tracking-widest text-xs leading-relaxed">
+            There is no active academic term defined for today's date ({{ today.strftime('%Y-%m-%d') }}). Pricing and issuance might be affected.
+        </p>
+        <a href="{{ url_for('manage_term_dates') }}" class="inline-block bg-gray-900 text-white px-8 py-3 rounded-xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-black transition">
+            Fix Calendar Setup
+        </a>
+    </div>
+    {% endif %}
+
+    <!-- Guidance Note -->
+    <div class="mt-12 text-center text-[9px] font-bold text-gray-400 uppercase tracking-widest leading-loose">
+        The system automatically determines the active term based on the server time.<br>
+        To change current operations, adjust term boundaries in the Academic Calendar.
+    </div>
+</div>
+{% endblock %}

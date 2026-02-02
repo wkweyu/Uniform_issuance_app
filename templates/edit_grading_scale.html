@@ -1,0 +1,126 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div class="mb-8">
+        <nav class="flex mb-4" aria-label="Breadcrumb">
+            <ol class="flex items-center space-x-2 text-sm text-gray-500">
+                <li><a href="{{ url_for('manage_grading_scales') }}" class="hover:text-indigo-600">Grading Systems</a></li>
+                <li><i class="fas fa-chevron-right text-gray-400 text-xs"></i></li>
+                <li class="font-medium text-gray-900">{{ scale.name }}</li>
+            </ol>
+        </nav>
+        <h2 class="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl">
+            Configure Grades: {{ scale.name }}
+        </h2>
+        <p class="mt-1 text-sm text-gray-500">
+            Define the boundaries for each grade within this scale.
+        </p>
+    </div>
+
+    <form action="{{ url_for('save_grading_details', scale_id=scale.id) }}" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="bg-white shadow overflow-hidden sm:rounded-lg">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grade</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Min Mark</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Max Mark</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Points</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject Remarks</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Class Teacher Remarks</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Principal Remarks</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="gradeRows" class="bg-white divide-y divide-gray-200">
+                    {% for grade in grades %}
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <input type="text" name="grade[]" value="{{ grade.grade }}" required 
+                                   class="w-16 border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-black">
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <input type="number" step="0.01" name="min_mark[]" value="{{ grade.min_mark }}" required 
+                                   class="w-20 border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-black">
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <input type="number" step="0.01" name="max_mark[]" value="{{ grade.max_mark }}" required 
+                                   class="w-20 border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-black">
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <input type="number" name="points[]" value="{{ grade.points }}" 
+                                   class="w-16 border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-black">
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <input type="text" name="remarks[]" value="{{ grade.remarks or '' }}" 
+                                   class="w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-black">
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <input type="text" name="class_teacher_remarks[]" value="{{ grade.class_teacher_remarks or '' }}" 
+                                   class="w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-black">
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <input type="text" name="principal_remarks[]" value="{{ grade.principal_remarks or '' }}" 
+                                   class="w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-black">
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                            <button type="button" onclick="this.closest('tr').remove()" class="text-red-600 hover:text-red-900">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <div class="px-6 py-4 bg-gray-50 flex justify-between">
+                <button type="button" onclick="addGradeRow()" 
+                        class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                    <i class="fas fa-plus mr-2 text-indigo-500"></i> Add Grade Row
+                </button>
+                <button type="submit" 
+                        class="inline-flex items-center px-6 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">
+                    Save All Changes
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+function addGradeRow() {
+    const tbody = document.getElementById('gradeRows');
+    const row = document.createElement('tr');
+    row.innerHTML = `
+        <td class="px-6 py-4 whitespace-nowrap">
+            <input type="text" name="grade[]" required class="w-16 border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap">
+            <input type="number" step="0.01" name="min_mark[]" required class="w-20 border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap">
+            <input type="number" step="0.01" name="max_mark[]" required class="w-20 border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap">
+            <input type="number" name="points[]" class="w-16 border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-black">
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap">
+            <input type="text" name="remarks[]" class="w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-black">
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap">
+            <input type="text" name="class_teacher_remarks[]" class="w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-black">
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap">
+            <input type="text" name="principal_remarks[]" class="w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-black">
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap text-right">
+            <button type="button" onclick="this.closest('tr').remove()" class="text-red-600 hover:text-red-900">
+                <i class="fas fa-trash"></i>
+            </button>
+        </td>
+    `;
+    tbody.appendChild(row);
+}
+</script>
+{% endblock %}

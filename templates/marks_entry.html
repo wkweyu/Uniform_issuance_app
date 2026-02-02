@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+        <div>
+            <div class="flex items-center mb-2">
+                <a href="{{ url_for('marks_entry_select', exam_id=exam.id) }}" class="text-blue-600 hover:text-blue-800 mr-2">
+                    <i class="fas fa-arrow-left"></i>
+                </a>
+                <h1 class="text-2xl font-bold text-gray-800">Recording Marks</h1>
+            </div>
+            <div class="flex flex-wrap gap-x-4 text-gray-600 text-sm">
+                <span><i class="fas fa-file-alt mr-1"></i> <span class="font-semibold">{{ exam.name }}</span></span>
+                <span><i class="fas fa-users mr-1"></i> Class: <span class="font-semibold">{{ class_info.display_name }}</span></span>
+                <span><i class="fas fa-book mr-1"></i> Subject: <span class="font-semibold">{{ subject.name }}</span></span>
+            </div>
+        </div>
+        
+        <div class="flex flex-wrap gap-3 items-center">
+            {% if not exam.is_locked %}
+            <div class="flex gap-2">
+                <a href="{{ url_for('export_marks_template', exam_id=exam.id, class_id=class_info.classID, subject_id=subject.id) }}" 
+                   class="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition shadow-sm text-sm font-bold">
+                    <i class="fas fa-file-download mr-2"></i> Download Template
+                </a>
+                
+                <form id="import-form" action="{{ url_for('import_marks_csv', exam_id=exam.id, class_id=class_info.classID, subject_id=subject.id) }}" 
+                      method="POST" enctype="multipart/form-data" class="m-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="file" id="bulk-file" name="file" class="hidden" accept=".csv" onchange="this.form.submit()">
+                    <button type="button" onclick="document.getElementById('bulk-file').click()" 
+                            class="flex items-center px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition shadow-sm text-sm font-bold">
+                        <i class="fas fa-file-upload mr-2"></i> Upload Marks (CSV)
+                    </button>
+                </form>
+            </div>
+            
+            <div class="bg-blue-50 border border-blue-200 rounded p-2 text-[11px] text-blue-700 max-w-[200px] leading-tight">
+                <i class="fas fa-info-circle mr-1"></i> Auto-saves as you type. Or use CSV for bulk.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse" id="marks-table">
+                <thead>
+                    <tr class="bg-gray-100 text-gray-700 uppercase text-xs font-bold">
+                        <th class="px-6 py-4 border-b w-16 text-center">#</th>
+                        <th class="px-6 py-4 border-b w-24">Adm No</th>
+                        <th class="px-6 py-4 border-b">Student Name</th>
+                        <th class="px-6 py-4 border-b w-32 text-center">Score (Max 100)</th>
+                        <th class="px-6 py-4 border-b w-24 text-center">Grade</th>
+                        <th class="px-6 py-4 border-b w-20 text-center">Absent</th>
+                        <th class="px-6 py-4 border-b">Subj Remarks</th>
+                        <th class="px-6 py-4 border-b">C/T Remarks</th>
+                        <th class="px-6 py-4 border-b">H/T Remarks</th>
+                        <th class="px-6 py-4 border-b w-20 text-center">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                    {% for student in students %}
+                    <tr class="hover:bg-gray-50 transition duration-150" data-admno="{{ student.AdmNo }}">
+                        <td class="px-6 py-4 text-center text-gray-400 font-mono">{{ loop.index }}</td>
+                        <td class="px-6 py-4 font-semibold text-gray-700">{{ student.AdmNo }}</td>
+                        <td class="px-6 py-4 text-gray-800">{{ student.FName }} {{ student.LName }}</td>
+                        <td class="px-6 py-4">
+                            <input type="number" step="0.01" min="0" max="100" 
+                                value="{{ student.mark if student.mark is not none else '' }}"
+                                data-field="mark"
+                                {{ 'disabled' if exam.is_locked or student.is_absent }}
+                                class="w-full px-3 py-2 border border-gray-300 rounded text-center focus:ring-2 focus:ring-blue-500 outline-none transition disabled:bg-gray-100 mark-input text-black">
+                        </td>
+                        <td class="px-6 py-4 text-center text-black">
+                            <span class="inline-flex items-center px-3 py-1 rounded-md text-sm font-bold bg-gray-100 text-gray-700 grade-badge">
+                                {{ student.grade if student.grade else '-' }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-center">
+                            <input type="checkbox" data-field="is_absent" 
+                                {{ 'checked' if student.is_absent }}
+                                {{ 'disabled' if exam.is_locked }}
+                                class="w-5 h-5 rounded text-blue-600 focus:ring-blue-500 border-gray-300 transition absent-checkbox">
+                        </td>
+                        <td class="px-6 py-4">
+                            <input type="text" value="{{ student.remarks or '' }}" 
+                                data-field="remarks"
+                                {{ 'disabled' if exam.is_locked }}
+                                class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none transition disabled:bg-gray-100 remarks-input text-black text-sm">
+                        </td>
+                        <td class="px-6 py-4">
+                            <input type="text" value="{{ student.ct_remarks or '' }}" 
+                                data-field="ct_remarks"
+                                {{ 'disabled' if exam.is_locked }}
+                                class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none transition disabled:bg-gray-100 ct_remarks-input text-black text-sm">
+                        </td>
+                        <td class="px-6 py-4">
+                            <input type="text" value="{{ student.p_remarks or '' }}" 
+                                data-field="p_remarks"
+                                {{ 'disabled' if exam.is_locked }}
+                                class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none transition disabled:bg-gray-100 p_remarks-input text-black text-sm">
+                        </td>
+                        <td class="px-6 py-4 text-center">
+                            <div class="status-indicator">
+                                <i class="fas fa-check-circle text-green-500 opacity-0 transition-opacity duration-300" title="Saved"></i>
+                                <i class="fas fa-spinner fa-spin text-blue-500 hidden" title="Saving..."></i>
+                                <i class="fas fa-exclamation-triangle text-red-500 hidden" title="Error saving"></i>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="p-6 bg-gray-50 border-t border-gray-200">
+            <div class="flex justify-between items-center">
+                <p class="text-sm text-gray-500">
+                    <span class="font-bold">{{ students|length }}</span> students total in this class.
+                </p>
+                <div class="flex gap-4">
+                    <a href="{{ url_for('marks_entry_select', exam_id=exam.id) }}" class="px-6 py-2 bg-white border border-gray-300 rounded hover:bg-gray-100 text-gray-700 font-semibold transition">
+                        Back to Selection
+                    </a>
+                    <button onclick="window.location.reload()" class="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-semibold shadow transition">
+                        Finish & Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const table = document.getElementById('marks-table');
+    const examId = {{ exam.id }};
+    const subjectId = {{ subject.id }};
+    const csrfToken = "{{ csrf_token() }}";
+
+    // Auto-save logic
+    table.addEventListener('input', function(e) {
+        if (e.target.matches('.mark-input') || e.target.matches('.remarks-input') || 
+            e.target.matches('.ct_remarks-input') || e.target.matches('.p_remarks-input') || 
+            e.target.matches('.absent-checkbox')) {
+            const row = e.target.closest('tr');
+            handleSave(row);
+        }
+    });
+
+    table.addEventListener('change', function(e) {
+        if (e.target.matches('.absent-checkbox')) {
+            const row = e.target.closest('tr');
+            const markInput = row.querySelector('.mark-input');
+            if (e.target.checked) {
+                markInput.value = '';
+                markInput.disabled = true;
+            } else {
+                markInput.disabled = false;
+            }
+            handleSave(row);
+        }
+    });
+
+    let saveTimeouts = {};
+
+    function handleSave(row) {
+        const admno = row.dataset.admno;
+        const statusDiv = row.querySelector('.status-indicator');
+        const checkIcon = statusDiv.querySelector('.fa-check-circle');
+        const spinnerIcon = statusDiv.querySelector('.fa-spinner');
+        const errorIcon = statusDiv.querySelector('.fa-exclamation-triangle');
+        const gradeBadge = row.querySelector('.grade-badge');
+
+        // Show spinner
+        checkIcon.classList.add('opacity-0');
+        errorIcon.classList.add('hidden');
+        spinnerIcon.classList.remove('hidden');
+
+        // Debounce saves
+        if (saveTimeouts[admno]) clearTimeout(saveTimeouts[admno]);
+
+        saveTimeouts[admno] = setTimeout(() => {
+            const mark = row.querySelector('.mark-input').value;
+            const remarks = row.querySelector('.remarks-input').value;
+            const ct_remarks = row.querySelector('.ct_remarks-input').value;
+            const p_remarks = row.querySelector('.p_remarks-input').value;
+            const isAbsent = row.querySelector('.absent-checkbox').checked;
+
+            fetch(`/api/exams/${examId}/save-mark`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({
+                    student_id: admno,
+                    subject_id: subjectId,
+                    mark: mark === '' ? null : parseFloat(mark),
+                    remarks: remarks,
+                    ct_remarks: ct_remarks,
+                    p_remarks: p_remarks,
+                    is_absent: isAbsent
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                spinnerIcon.classList.add('hidden');
+                if (data.success) {
+                    checkIcon.classList.remove('opacity-0');
+                    if (data.grade) {
+                        gradeBadge.textContent = data.grade;
+                        // Auto-populate remarks if fields are empty
+                        const remarksInput = row.querySelector('.remarks-input');
+                        if (remarksInput.value.trim() === '' && data.remarks) {
+                            remarksInput.value = data.remarks;
+                        }
+                        const ctRemarksInput = row.querySelector('.ct_remarks-input');
+                        if (ctRemarksInput.value.trim() === '' && data.ct_remarks) {
+                            ctRemarksInput.value = data.ct_remarks;
+                        }
+                        const pRemarksInput = row.querySelector('.p_remarks-input');
+                        if (pRemarksInput.value.trim() === '' && data.p_remarks) {
+                            pRemarksInput.value = data.p_remarks;
+                        }
+                    } else if (isAbsent) {
+                        gradeBadge.textContent = 'X';
+                    } else {
+                        gradeBadge.textContent = '-';
+                    }
+                } else {
+                    errorIcon.classList.remove('hidden');
+                    console.error('Save failed:', data.message);
+                }
+            })
+            .catch(error => {
+                spinnerIcon.classList.add('hidden');
+                errorIcon.classList.remove('hidden');
+                console.error('Server error:', error);
+            });
+        }, 800);
+    }
+});
+</script>
+{% endblock %}

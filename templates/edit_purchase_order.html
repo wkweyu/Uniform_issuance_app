@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="mb-8">
+        <a href="{{ url_for('view_purchase_order', po_id=po.id) }}" class="text-blue-600 hover:text-blue-800 font-bold flex items-center gap-2 mb-4">
+            <i class="fas fa-arrow-left"></i> Back to View PO
+        </a>
+        <h1 class="text-3xl font-bold text-gray-800">Edit Purchase Order: {{ po.po_number }}</h1>
+    </div>
+
+    <form method="POST" class="space-y-8">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-2 tracking-widest">Select Supplier</label>
+                    <select name="supplier_id" required class="w-full border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-gray-50">
+                        <option value="">-- Choose a Supplier --</option>
+                        {% for s in suppliers %}
+                        <option value="{{ s.supplierID }}" {% if s.supplierID == po.supplier_id %}selected{% endif %}>{{ s.company }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-2 tracking-widest">Order Date</label>
+                    <input type="date" name="order_date" required value="{{ po.order_date }}" class="w-full border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-gray-50">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-2 tracking-widest">Reference / Notes</label>
+                    <input type="text" name="notes" value="{{ po.notes or '' }}" placeholder="e.g. Q3 Stationery supplies" class="w-full border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-gray-50">
+                </div>
+            </div>
+
+            <div class="border-t border-gray-100 pt-8">
+                <h3 class="font-bold text-gray-800 uppercase tracking-widest text-sm mb-6 border-l-4 border-blue-600 pl-4">Order Items</h3>
+                <div id="items-container" class="space-y-4">
+                    {% for item in po.po_items %}
+                    <div class="item-row grid grid-cols-12 gap-4 items-end bg-gray-50/50 p-4 rounded-xl border border-dashed border-gray-200">
+                        <div class="col-span-3">
+                            <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Catalog Item (Optional)</label>
+                            <select name="item_id[]" onchange="syncDescription(this)" class="w-full border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-blue-500 bg-white">
+                                <option value="">-- Manual Entry --</option>
+                                {% for s_item in stock_items %}
+                                <option value="{{ s_item.item_id }}" {% if item.item_id == s_item.item_id %}selected{% endif %}>{{ s_item.item_name }} (In Stock: {{ s_item.current_stock }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-span-4">
+                            <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Item Description</label>
+                            <input type="text" name="item_description[]" value="{{ item.description }}" required {% if item.item_id %}readonly class="bg-gray-100 pointer-events-none"{% endif %} placeholder="Enter item name or service" class="w-full border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Qty</label>
+                            <input type="number" step="1" name="item_qty[]" value="{{ item.quantity }}" required class="w-full border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-blue-500 focus:border-blue-500 text-center font-mono">
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Unit Price (KES)</label>
+                            <input type="number" step="0.01" name="item_price[]" value="{{ item.unit_price }}" required class="w-full border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-blue-500 focus:border-blue-500 text-right font-mono">
+                        </div>
+                        <div class="col-span-1 text-center">
+                            <button type="button" onclick="removeItem(this)" class="text-red-400 hover:text-red-600 p-2"><i class="fas fa-trash"></i></button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <div class="mt-6 flex justify-between items-center bg-blue-50 p-4 rounded-xl border border-blue-100">
+                    <button type="button" onclick="addItem()" class="text-blue-700 font-bold hover:text-blue-900 flex items-center gap-2">
+                        <i class="fas fa-circle-plus"></i> Add Another Item
+                    </button>
+                    <div class="text-right">
+                        <span class="text-xs text-blue-400 uppercase font-bold mr-4">Total Estimated</span>
+                        <span id="grand-total" class="text-xl font-black text-blue-900">KES {{ po.total_amount | currency }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-10 flex justify-end gap-4 border-t border-gray-100 pt-8">
+                <a href="{{ url_for('view_purchase_order', po_id=po.id) }}" class="bg-white border text-gray-600 px-8 py-3 rounded-xl font-bold hover:bg-gray-50 transition">
+                    Cancel
+                </a>
+                <button type="submit" class="bg-blue-600 text-white px-10 py-3 rounded-xl font-bold hover:bg-blue-700 transition shadow-2xl flex items-center gap-2">
+                    <i class="fas fa-save"></i> Save Changes
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+function addItem() {
+    const container = document.getElementById('items-container');
+    const firstRow = container.querySelector('.item-row');
+    const newRow = firstRow.cloneNode(true);
+    newRow.querySelectorAll('input').forEach(input => {
+        input.value = '';
+        input.readOnly = false;
+        input.classList.remove('bg-gray-100', 'pointer-events-none');
+    });
+    newRow.querySelectorAll('select').forEach(select => select.selectedIndex = 0);
+    container.appendChild(newRow);
+    calculateTotal();
+}
+
+function syncDescription(select) {
+    const row = select.closest('.item-row');
+    const descInput = row.querySelector('input[name="item_description[]"]');
+    if (select.value) {
+        const text = select.options[select.selectedIndex].text.split(' (In Stock')[0];
+        descInput.value = text;
+        descInput.readOnly = true;
+        descInput.classList.add('bg-gray-100', 'pointer-events-none');
+    } else {
+        descInput.value = '';
+        descInput.readOnly = false;
+        descInput.classList.remove('bg-gray-100', 'pointer-events-none');
+    }
+}
+
+function removeItem(btn) {
+    const rows = document.querySelectorAll('.item-row');
+    if (rows.length > 1) {
+        btn.closest('.item-row').remove();
+        calculateTotal();
+    }
+}
+
+document.addEventListener('input', function(e) {
+    if (e.target.name === 'item_qty[]' || e.target.name === 'item_price[]') {
+        calculateTotal();
+    }
+});
+
+function calculateTotal() {
+    let total = 0;
+    const qtys = document.getElementsByName('item_qty[]');
+    const prices = document.getElementsByName('item_price[]');
+    
+    for (let i = 0; i < qtys.length; i++) {
+        const q = parseFloat(qtys[i].value) || 0;
+        const p = parseFloat(prices[i].value) || 0;
+        total += q * p;
+    }
+    
+    document.getElementById('grand-total').textContent = 'KES ' + total.toLocaleString(undefined, {minimumFractionDigits: 2});
+}
+
+// Initial calculation to set UI state correctly
+window.onload = calculateTotal;
+</script>
+{% endblock %}

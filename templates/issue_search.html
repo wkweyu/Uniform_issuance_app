@@ -12,10 +12,6 @@
     {% endif %}
     
     <form method="POST" action="{{ url_for('issue_uniform') }}" class="flex gap-4">
-<<<<<<< HEAD
-=======
-        {{ csrf_token() }}
->>>>>>> 1b584a9 (class module)
         <input type="text" name="admno" placeholder="Enter Admission Number" required 
                class="border p-2 rounded flex-grow">
         <button type="submit" class="bg-blue-500 text-white p-2 rounded hover:bg-blue-600">

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto px-4 py-8">
+  <div class="mb-10 text-center">
+    <div class="inline-flex items-center justify-center w-20 h-20 bg-green-100 text-green-600 rounded-3xl mb-4 shadow-sm">
+      <i class="fas fa-file-excel text-3xl"></i>
+    </div>
+    <h1 class="text-4xl font-extrabold text-gray-900 tracking-tight">Bulk Student Intake</h1>
+    <p class="text-gray-500 mt-2 text-lg">Upload a CSV file to admit multiple students at once.</p>
+  </div>
+
+  <div class="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+    <div class="p-8 border-b border-gray-50">
+      <h2 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Step 1: Download Template</h2>
+      <p class="text-sm text-gray-600 mb-4">Ensure your CSV file matches our structure to prevent import errors.</p>
+      <a href="{{ url_for('static', filename='templates/student_import_template.csv') }}" class="inline-flex items-center text-blue-600 font-bold hover:underline">
+        <i class="fas fa-download mr-2"></i> Download CSV Template
+      </a>
+    </div>
+
+    <form method="POST" enctype="multipart/form-data" class="p-8">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      
+      <div class="space-y-6">
+        <div>
+          <h2 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Step 2: Upload File</h2>
+          <div class="relative group">
+            <input type="file" name="file" id="fileInput" accept=".csv" required 
+                   class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+            <div class="border-2 border-dashed border-gray-200 rounded-2xl p-12 text-center group-hover:border-blue-400 group-hover:bg-blue-50/50 transition">
+              <i class="fas fa-cloud-upload-alt text-4xl text-gray-300 mb-4 group-hover:text-blue-500"></i>
+              <p class="text-gray-500 font-medium" id="fileNameDisplay">Click or drag CSV file here</p>
+              <p class="text-[10px] text-gray-400 mt-2">Maximum file size: 5MB</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-6 border-t border-gray-50 flex gap-4">
+          <button type="submit" class="flex-1 py-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition font-bold shadow-lg shadow-blue-200">
+            <i class="fas fa-search-plus mr-2"></i> Preview & Validate Data
+          </button>
+          <a href="{{ url_for('admit_student') }}" class="flex-1 py-4 bg-gray-50 text-gray-500 rounded-xl hover:bg-gray-100 transition font-bold text-center">
+            Back to Manual Admission
+          </a>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <div class="mt-8 bg-blue-50 rounded-2xl p-6 border border-blue-100">
+    <h3 class="font-bold text-blue-800 flex items-center mb-3">
+      <i class="fas fa-check-double mr-2"></i> The Validation Process
+    </h3>
+    <ul class="space-y-2 text-xs text-blue-700 list-disc list-inside">
+      <li><strong>Step 1:</strong> Upload your CSV file using the template provided.</li>
+      <li><strong>Step 2:</strong> Review all rows in the <strong>Preview Screen</strong>.</li>
+      <li><strong>Step 3:</strong> Correct any errors (like class mismatches) directly in the table.</li>
+      <li><strong>Step 4:</strong> Remove any rows you don't wish to import.</li>
+      <li><strong>Step 5:</strong> Confirm to finalise the admission.</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+document.getElementById('fileInput').addEventListener('change', function(e) {
+    const fileName = e.target.files[0] ? e.target.files[0].name : "Click or drag CSV file here";
+    document.getElementById('fileNameDisplay').textContent = fileName;
+});
+</script>
+{% endblock %}

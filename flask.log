@@ -1,0 +1,186 @@
+ * Serving Flask app 'app'
+ * Debug mode: on
+INFO:werkzeug:[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.1.103:5000
+INFO:werkzeug:[33mPress CTRL+C to quit[0m
+INFO:werkzeug: * Restarting with stat
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 196-996-215
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:30:04] "GET /admin/teacher/allocate-debug HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:30:12] "[32mGET /admin/manage_classes HTTP/1.1[0m" 302 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:30:18] "[32mHEAD /admin/manage_classes HTTP/1.1[0m" 302 -
+/home/frappe-user/uniform issuance app/app.py:3424: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  return {'now': datetime.utcnow()}
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:31:17] "GET /admin/manage_classes HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:31:17] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:31:31] "GET /admin/manage_classes HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:31:31] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:31:32] "GET /admin/teacher/allocate HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:31:32] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+ERROR:app:Allocate teacher error: Subject not allocated to this class.
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:32:41] "[32mPOST /admin/teacher/allocate HTTP/1.1[0m" 302 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:32:41] "GET /admin/manage_classes HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:32:41] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:32:57] "GET /admin/class_subjects_select HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:32:57] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:33:00] "GET /admin/class/23/subjects HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:33:00] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:class_management_service:Allocated 6 subjects to class 23
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:33:37] "[32mPOST /admin/class/23/subjects HTTP/1.1[0m" 302 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:33:37] "GET /admin/manage_classes HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:33:37] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:33:49] "GET /admin/teacher/allocate HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:33:49] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+ERROR:class_management_service:Failed to allocate teacher: (1364, "Field 'allocation_date' doesn't have a default value")
+ERROR:app:Allocate teacher error: Failed to allocate teacher: (1364, "Field 'allocation_date' doesn't have a default value")
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:34:19] "[32mPOST /admin/teacher/allocate HTTP/1.1[0m" 302 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:34:19] "GET /admin/manage_classes HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:34:19] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:34:22] "GET /admin/class_subjects_select HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:34:22] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:34:24] "GET /admin/class/23/subjects HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:34:25] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:38:25] "GET / HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:38:25] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:38:27] "GET / HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:38:27] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:38:30] "GET /admin/teacher/allocate HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:38:30] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:38:45] "GET /admin/manage_classes HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:38:45] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:38:53] "GET /admin/class_subjects_select HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:38:53] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:38:56] "GET /admin/class/27/subjects HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:38:56] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:class_management_service:Allocated 6 subjects to class 27
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:39:32] "[32mPOST /admin/class/27/subjects HTTP/1.1[0m" 302 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:39:32] "GET /admin/manage_classes HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:39:32] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:39:36] "GET /admin/class_subjects_select HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:39:36] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:39:39] "GET /admin/class/23/subjects HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:39:39] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:39:45] "GET /admin/class/28/subjects HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:39:45] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:class_management_service:Allocated 5 subjects to class 28
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:39:55] "[32mPOST /admin/class/28/subjects HTTP/1.1[0m" 302 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:39:55] "GET /admin/manage_classes HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:39:55] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:39:57] "GET /admin/class_subjects_select HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:39:57] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:39:59] "GET /admin/class/27/subjects HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:40:00] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:40:04] "GET /admin/class/30/subjects HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:40:04] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:class_management_service:Allocated 4 subjects to class 30
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:40:13] "[32mPOST /admin/class/30/subjects HTTP/1.1[0m" 302 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:40:13] "GET /admin/manage_classes HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:40:13] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:40:15] "GET /admin/class_subjects_select HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:40:15] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:40:20] "GET /admin/class/29/subjects HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:40:20] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:class_management_service:Allocated 3 subjects to class 29
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:40:29] "[32mPOST /admin/class/29/subjects HTTP/1.1[0m" 302 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:40:29] "GET /admin/manage_classes HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:40:29] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:40:33] "GET /admin/teacher/allocate HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:40:33] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:40:58] "GET /admin/teacher/allocate HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:40:58] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug: * Detected change in '/home/frappe-user/uniform issuance app/class_management_service.py', reloading
+INFO:werkzeug: * Restarting with stat
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 196-996-215
+INFO:werkzeug: * Detected change in '/home/frappe-user/uniform issuance app/class_management_service.py', reloading
+INFO:werkzeug: * Restarting with stat
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 196-996-215
+INFO:werkzeug: * Detected change in '/home/frappe-user/uniform issuance app/app.py', reloading
+INFO:werkzeug: * Restarting with stat
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 196-996-215
+INFO:werkzeug: * Detected change in '/home/frappe-user/uniform issuance app/app.py', reloading
+INFO:werkzeug: * Restarting with stat
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 196-996-215
+INFO:werkzeug: * Detected change in '/home/frappe-user/uniform issuance app/class_management_service.py', reloading
+INFO:werkzeug: * Restarting with stat
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 196-996-215
+INFO:werkzeug: * Detected change in '/home/frappe-user/uniform issuance app/app.py', reloading
+INFO:werkzeug: * Restarting with stat
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 196-996-215
+INFO:werkzeug: * Detected change in '/home/frappe-user/uniform issuance app/app.py', reloading
+INFO:werkzeug: * Restarting with stat
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 196-996-215
+/home/frappe-user/uniform issuance app/app.py:3424: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  return {'now': datetime.utcnow()}
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:49:24] "GET /admin/manage_classes HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:49:24] "GET /static/css/tailwind.min.css HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:49:28] "GET /admin/settings HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:49:28] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:49:30] "GET /admin/settings HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:49:30] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:49:33] "GET /admin/teacher/allocate HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:49:33] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:49:56] "GET /admin/settings HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:49:56] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:49:57] "GET /admin/manage_classes HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:49:57] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+ERROR:app:Class hub error: (1054, "Unknown column 's.id' in 'SELECT'")
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:50:10] "[32mGET /admin/class/23/manage HTTP/1.1[0m" 302 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:50:10] "GET /admin/manage_classes HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:50:10] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+ERROR:app:Class hub error: (1054, "Unknown column 's.id' in 'SELECT'")
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:50:19] "[32mGET /admin/class/29/manage HTTP/1.1[0m" 302 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:50:19] "GET /admin/manage_classes HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:50:19] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug: * Detected change in '/home/frappe-user/uniform issuance app/app.py', reloading
+INFO:werkzeug: * Restarting with stat
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 196-996-215
+INFO:werkzeug: * Detected change in '/home/frappe-user/uniform issuance app/app.py', reloading
+INFO:werkzeug: * Restarting with stat
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 196-996-215
+INFO:werkzeug: * Detected change in '/home/frappe-user/uniform issuance app/app.py', reloading
+INFO:werkzeug: * Restarting with stat
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 196-996-215
+INFO:werkzeug: * Detected change in '/home/frappe-user/uniform issuance app/app.py', reloading
+INFO:werkzeug: * Restarting with stat
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 196-996-215
+/home/frappe-user/uniform issuance app/app.py:3424: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  return {'now': datetime.utcnow()}
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:53:31] "GET /admin/manage_classes HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:53:31] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+ERROR:app:Class hub error: (1054, "Unknown column 'si.Gender' in 'SELECT'")
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:53:35] "[32mGET /admin/class/23/manage HTTP/1.1[0m" 302 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:53:35] "GET /admin/manage_classes HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [15/Jan/2026 21:53:35] "[36mGET /static/css/tailwind.min.css HTTP/1.1[0m" 304 -
+INFO:werkzeug: * Detected change in '/home/frappe-user/uniform issuance app/check_schema.py', reloading
+INFO:werkzeug: * Restarting with stat
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 196-996-215
+INFO:werkzeug: * Detected change in '/home/frappe-user/uniform issuance app/app.py', reloading
+INFO:werkzeug: * Restarting with stat
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 196-996-215
+Traceback (most recent call last):
+  File "/home/frappe-user/uniform issuance app/app.py", line 4719, in <module>
+    app.run(host="0.0.0.0", port=5000, debug=True)
+  File "/home/frappe-user/uniform issuance app/venv/lib/python3.12/site-packages/flask/app.py", line 662, in run
+    run_simple(t.cast(str, host), port, self, **options)
+  File "/home/frappe-user/uniform issuance app/venv/lib/python3.12/site-packages/werkzeug/serving.py", line 1115, in run_simple
+    run_with_reloader(
+  File "/home/frappe-user/uniform issuance app/venv/lib/python3.12/site-packages/werkzeug/_reloader.py", line 453, in run_with_reloader
+    ensure_echo_on()
+  File "/home/frappe-user/uniform issuance app/venv/lib/python3.12/site-packages/werkzeug/_reloader.py", line 433, in ensure_echo_on
+    termios.tcsetattr(sys.stdin, termios.TCSANOW, attributes)
+termios.error: (5, 'Input/output error')

@@ -1,0 +1,62 @@
+{% extends 'base_report.html' %}
+
+{% block report_title %}Student Fees Statement{% endblock %}
+
+{% block content %}
+<div class="mb-4 flex justify-between items-end border-b pb-2">
+    <div class="space-y-1">
+        <p class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Student Information</p>
+        <p class="text-xl font-black text-blue-900 uppercase leading-none">{{ student.FName }} {{ student.SName }}</p>
+        <p class="text-sm font-bold text-gray-600">Admission No: <span class="font-mono text-blue-600">{{ student.AdmNo }}</span></p>
+    </div>
+    <div class="text-right">
+        <p class="text-[10px] text-gray-400 font-black uppercase tracking-widest">Outstanding Balance</p>
+        <p class="text-2xl font-black {% if balance > 0 %}text-red-600{% else %}text-green-600{% endif %} font-mono">
+            {{ balance | currency }}
+        </p>
+    </div>
+</div>
+
+<div class="overflow-x-auto print:overflow-visible">
+    <table class="w-full border-collapse">
+        <thead class="bg-gray-900 print:bg-gray-100">
+            <tr class="text-white text-[9pt] font-black uppercase tracking-widest print:text-black">
+                <th class="px-2 py-1 text-left">Date</th>
+                <th class="px-2 py-1 text-left">Particulars / Description</th>
+                <th class="px-2 py-1 text-left">Reference</th>
+                <th class="px-2 py-1 text-right">Debit (+)</th>
+                <th class="px-2 py-1 text-right">Credit (-)</th>
+                <th class="px-2 py-1 text-right">Balance</th>
+            </tr>
+        </thead>
+        <tbody class="bg-white">
+            {% for entry in statement %}
+            <tr class="border-b border-gray-50 hover:bg-gray-50 transition print:border-gray-200">
+                <td class="px-2 py-1 text-[10pt] text-gray-600">{{ entry.transaction_date.strftime('%d-%m-%Y') }}</td>
+                <td class="px-2 py-1 text-[10pt] text-gray-800 font-medium">{{ entry.description }}</td>
+                <td class="px-2 py-1 text-[10pt] font-mono text-gray-500">{{ entry.reference_no or '-' }}</td>
+                <td class="px-2 py-1 text-right text-[10pt] font-mono">
+                    {% if entry.type == 'CHARGE' %}{{ entry.amount | currency }}{% else %}-{% endif %}
+                </td>
+                <td class="px-2 py-1 text-right text-[10pt] font-mono text-green-600">
+                    {% if entry.type == 'PAYMENT' %}{{ entry.amount | currency }}{% else %}-{% endif %}
+                </td>
+                <td class="px-2 py-1 text-right font-mono font-bold text-gray-900 text-[10pt]">
+                    {{ entry.balance_after | currency }}
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="6" class="px-4 py-8 text-center text-gray-400 italic text-[10pt]">No financial history found.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot class="bg-gray-100 print:bg-white border-t-2 border-gray-900">
+            <tr class="font-black text-gray-900">
+                <td colspan="5" class="px-2 py-1 text-right text-[9pt] uppercase font-bold text-gray-500">Statement Balance as at {{ datetime.now().strftime('%d %b %Y') }}</td>
+                <td class="px-2 py-1 text-right text-[11pt] font-mono">{{ balance | currency }}</td>
+            </tr>
+        </tfoot>
+    </table>
+</div>
+{% endblock %}

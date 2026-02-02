@@ -1,0 +1,271 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto py-8">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+        <div>
+            <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight">Payment Vouchers</h1>
+            <p class="text-gray-500 italic mt-1 uppercase text-xs font-bold tracking-widest">General Ledger & Expenditure Control</p>
+        </div>
+        <button onclick="document.getElementById('voucher_modal').classList.remove('hidden')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl font-bold transition transform hover:scale-105 shadow-lg">
+            <i class="fas fa-plus mr-2"></i> New Payment Voucher
+        </button>
+    </div>
+
+    <div class="bg-white border rounded-2xl overflow-hidden shadow-sm">
+        <table class="w-full text-left">
+            <thead>
+                <tr class="bg-gray-50 border-b border-gray-100 text-gray-500 text-xs font-bold uppercase tracking-wider">
+                    <th class="px-6 py-4">Voucher No</th>
+                    <th class="px-6 py-4">Date</th>
+                    <th class="px-6 py-4">Payee</th>
+                    <th class="px-6 py-4">Description</th>
+                    <th class="px-6 py-4">Account</th>
+                    <th class="px-6 py-4 text-right">Amount (KES)</th>
+                    <th class="px-6 py-4">Status & Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+                {% for v in vouchers %}
+                <tr class="hover:bg-indigo-50/30 transition">
+                    <td class="px-6 py-4">
+                        <span class="font-mono text-xs bg-gray-100 px-2 py-1 rounded text-gray-600">#{{ v.voucher_no }}</span>
+                        {% if v.source_type == 'PROCUREMENT' %}
+                        <span class="block text-[9px] font-bold text-amber-600 mt-1"><i class="fas fa-shopping-cart mr-1"></i> FROM PROCUREMENT</span>
+                        {% else %}
+                        <span class="block text-[9px] font-bold text-indigo-600 mt-1"><i class="fas fa-file-invoice-dollar mr-1"></i> FINANCE VOUCHER</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 text-sm">
+                        {% if v.created_at is string %}
+                            {{ v.created_at }}
+                        {% else %}
+                            {{ v.created_at.strftime('%Y-%m-%d') }}
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 font-bold text-gray-900">
+                        {{ v.payee_name }}
+                        {% if v.supplier_name %}
+                        <div class="text-[10px] text-indigo-500 uppercase tracking-tighter">Registered Supplier: {{ v.supplier_name }}</div>
+                        {% endif %}
+                        {% if v.po_number %}
+                        <div class="text-[10px] text-green-600 font-bold uppercase mt-1">
+                            <i class="fas fa-link mr-1"></i> Linked PO: #{{ v.po_number }}
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 text-sm text-gray-500">{{ v.description }}</td>
+                    <td class="px-6 py-4">
+                        <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">{{ v.account_name or 'Default Expense' }}</span>
+                    </td>
+                    <td class="px-6 py-4 text-right">
+                        <div class="font-mono font-bold text-gray-900">{{ v.amount | currency }}</div>
+                        {% if v.payment_mode == 'CHEQUE' %}
+                        <a href="{{ url_for('print_cheque', voucher_id=v.id, source=v.source_type) }}" target="_blank" class="text-[10px] text-blue-600 hover:underline">
+                            <i class="fas fa-print mr-1"></i> Print Cheque
+                        </a>
+                        {% endif %}
+                        {% if v.source_type == 'VOUCHER' %}
+                        <a href="{{ url_for('print_payment_voucher', voucher_id=v.id) }}" target="_blank" class="text-[10px] text-indigo-600 hover:underline block mt-1">
+                            <i class="fas fa-file-invoice mr-1"></i> Print Voucher
+                        </a>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4">
+                        <div class="flex flex-col gap-2">
+                            {% if v.status == 'PENDING_VERIFICATION' %}
+                                <span class="text-[10px] bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full w-fit">PENDING VERIFICATION</span>
+                                <form action="{{ url_for('verify_voucher', voucher_id=v.id) }}" method="POST">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button class="text-[10px] bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 transition font-bold">VERIFY</button>
+                                </form>
+                            {% elif v.status == 'PENDING_PAYMENT' %}
+                                <span class="text-[10px] bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full w-fit">PENDING AUTHORIZATION</span>
+                                <form action="{{ url_for('authorize_voucher', voucher_id=v.id) }}" method="POST" class="flex flex-col gap-1">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <select name="source_account_id" required class="text-[10px] border-none py-1 bg-gray-50 rounded">
+                                        <option value="">Select Bank...</option>
+                                        {% for acc in accounts if acc.type in ['ASSET', 'LIABILITY'] %}
+                                        <option value="{{ acc.id }}">{{ acc.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <button class="text-[10px] bg-indigo-600 text-white px-3 py-1 rounded hover:bg-indigo-700 transition font-bold uppercase tracking-widest">AUTHORIZE PAYMENT</button>
+                                </form>
+                            {% elif v.status == 'PAID' or v.status == 'APPROVED' %}
+                                <span class="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full w-fit">PAID & POSTED</span>
+                                <div class="text-[9px] text-gray-400">Audited transaction</div>
+                            {% else %}
+                                <span class="text-[10px] bg-gray-100 text-gray-700 font-bold px-2 py-0.5 rounded-full w-fit">{{ v.status }}</span>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="px-6 py-12 text-center text-gray-400 italic">No vouchers found for this period.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- New Voucher Modal -->
+    <div id="voucher_modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
+            <div class="px-6 py-4 bg-indigo-600 text-white flex justify-between items-center">
+                <h3 class="font-bold text-lg">Record New Payment Voucher</h3>
+                <button onclick="document.getElementById('voucher_modal').classList.add('hidden')" class="hover:bg-indigo-700 p-1 rounded">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form action="{{ url_for('manage_vouchers') }}" method="POST" class="p-6 space-y-4">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="col-span-2">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-2">Vendor Type</label>
+                        <div class="flex gap-4">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="vendor_type" value="registered" checked onchange="toggleVendorSource(this.value)" class="text-indigo-600 focus:ring-indigo-500">
+                                <span class="text-sm font-medium">Registered Supplier</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="vendor_type" value="manual" onchange="toggleVendorSource(this.value)" class="text-indigo-600 focus:ring-indigo-500">
+                                <span class="text-sm font-medium">Random Vendor</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div id="registered_vendor_box" class="col-span-2">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Select Supplier</label>
+                        <select name="supplier_id" id="supplier_select" onchange="filterPOs(this.value)" class="w-full border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500 transition shadow-sm">
+                            <option value="">-- Choose Supplier --</option>
+                            {% for s in suppliers %}
+                            <option value="{{ s.supplierID }}">{{ s.company }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div id="po_box" class="col-span-2 hidden">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Link to Purchase Order (Optional)</label>
+                        <select name="po_id" id="po_select" class="w-full border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500 transition shadow-sm">
+                            <option value="">-- Select PO --</option>
+                            {% for po in pending_pos %}
+                            <option value="{{ po.id }}" data-supplier="{{ po.supplier_id }}">#{{ po.po_number }} - Due: {{ po.total_amount | currency }}</option>
+                            {% endfor %}
+                        </select>
+                        <p class="text-[10px] text-gray-400 mt-1">Linking to a PO will automatically update the procurement status.</p>
+                    </div>
+
+                    <script>
+                        function filterPOs(supplierId) {
+                            const poSelect = document.getElementById('po_select');
+                            const poBox = document.getElementById('po_box');
+                            const options = poSelect.options;
+                            let hasMatch = false;
+
+                            if (!supplierId) {
+                                poBox.classList.add('hidden');
+                                return;
+                            }
+
+                            for (let i = 1; i < options.length; i++) {
+                                if (options[i].getAttribute('data-supplier') == supplierId) {
+                                    options[i].style.display = 'block';
+                                    hasMatch = true;
+                                } else {
+                                    options[i].style.display = 'none';
+                                }
+                            }
+
+                            if (hasMatch) {
+                                poBox.classList.remove('hidden');
+                                poSelect.value = "";
+                            } else {
+                                poBox.classList.add('hidden');
+                            }
+                        }
+
+                        function toggleVendorSource(val) {
+                            const regBox = document.getElementById('registered_vendor_box');
+                            const manBox = document.getElementById('manual_vendor_box');
+                            const poBox = document.getElementById('po_box');
+                            const supSel = document.getElementById('supplier_select');
+                            const manPay = document.getElementById('manual_payee');
+
+                            if (val === 'registered') {
+                                regBox.classList.remove('hidden');
+                                manBox.classList.add('hidden');
+                                supSel.required = true;
+                                manPay.required = false;
+                            } else {
+                                regBox.classList.add('hidden');
+                                manBox.classList.remove('hidden');
+                                poBox.classList.add('hidden');
+                                supSel.required = false;
+                                manPay.required = true;
+                                supSel.value = "";
+                            }
+                        }
+                    </script>
+
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Gross Amount (KES)</label>
+                        <input type="number" step="0.01" name="amount" required class="w-full border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500 transition shadow-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">VAT Amount</label>
+                        <input type="number" step="0.01" name="vat_amount" value="0.00" class="w-full border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500 transition shadow-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">WHT Amount</label>
+                        <input type="number" step="0.01" name="wht_amount" value="0.00" class="w-full border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500 transition shadow-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Payment Mode</label>
+                        <select name="payment_mode" required onchange="toggleCheque(this.value)" class="w-full border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500 transition shadow-sm">
+                            <option value="CASH">CASH</option>
+                            <option value="CHEQUE">CHEQUE</option>
+                            <option value="MPESA">MPESA</option>
+                            <option value="BANK_TRANSFER">BANK TRANSFER</option>
+                        </select>
+                    </div>
+                    <div id="cheque_field" class="hidden">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Cheque No</label>
+                        <input type="text" name="cheque_no" class="w-full border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500 transition shadow-sm">
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Expense Account (DR)</label>
+                        <select name="account_id" required class="w-full border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500 transition shadow-sm">
+                            <option value="">Select account...</option>
+                            {% for acc in accounts %}
+                            <option value="{{ acc.id }}">{{ acc.name }} ({{ acc.code }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Description / Memo</label>
+                        <textarea name="description" rows="2" class="w-full border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500 transition shadow-sm"></textarea>
+                    </div>
+                </div>
+
+                <script>
+                    function toggleCheque(val) {
+                        const field = document.getElementById('cheque_field');
+                        if (val === 'CHEQUE') {
+                            field.classList.remove('hidden');
+                        } else {
+                            field.classList.add('hidden');
+                        }
+                    }
+                </script>
+
+                <div class="flex justify-end gap-3 pt-4">
+                    <button type="button" onclick="document.getElementById('voucher_modal').classList.add('hidden')" class="px-6 py-2 text-gray-500 font-bold hover:bg-gray-50 rounded-lg">Cancel</button>
+                    <button type="submit" class="bg-indigo-600 text-white px-8 py-2 rounded-lg font-bold shadow-md hover:indigo-700 transition">Save & Post Voucher</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

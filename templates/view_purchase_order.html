@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="mb-8 flex justify-between items-end no-print">
+        <div>
+            <a href="{{ url_for('procurement_dashboard') }}" class="text-blue-600 hover:text-blue-800 font-bold flex items-center gap-2 mb-4">
+                <i class="fas fa-arrow-left"></i> Back to Dashboard
+            </a>
+            <h1 class="text-3xl font-bold text-gray-800">Purchase Order Details</h1>
+        </div>
+        <div class="flex gap-2">
+            <a href="{{ url_for('print_purchase_order', po_id=po.id) }}" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg font-bold transition flex items-center gap-2">
+                <i class="fas fa-print"></i> Official Print
+            </a>
+            <a href="{{ url_for('download_purchase_order', po_id=po.id) }}" class="bg-blue-50 text-blue-700 px-4 py-2 rounded-lg font-bold transition flex items-center gap-2">
+                <i class="fas fa-file-pdf"></i> Download PDF
+            </a>
+            {% if po.status == 'DRAFT' %}
+            <a href="{{ url_for('edit_purchase_order', po_id=po.id) }}" class="bg-amber-100 text-amber-700 px-4 py-2 rounded-lg font-bold transition flex items-center gap-2">
+                <i class="fas fa-edit"></i> Edit PO
+            </a>
+            <form action="{{ url_for('delete_purchase_order', po_id=po.id) }}" method="POST" onsubmit="return confirm('Delete this DRAFT purchase order?')" class="inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="bg-red-50 text-red-600 px-4 py-2 rounded-lg font-bold transition flex items-center gap-2">
+                    <i class="fas fa-trash"></i> Delete
+                </button>
+            </form>
+            <form method="POST" action="{{ url_for('update_po_status', po_id=po.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="status" value="ORDERED">
+                <button type="submit" class="bg-green-600 text-white px-6 py-2 rounded-lg font-bold shadow-lg hover:bg-green-700 flex items-center gap-2">
+                    <i class="fas fa-paper-plane"></i> Finalize & Order
+                </button>
+            </form>
+            {% elif po.status == 'ORDERED' %}
+            <div class="flex items-center bg-blue-50 px-4 py-2 rounded-lg border border-blue-200 mr-2">
+                <span class="text-blue-700 text-xs font-bold"><i class="fas fa-info-circle mr-1"></i> Partial deliveries supported</span>
+            </div>
+            <a href="{{ url_for('receive_goods', po_id=po.id) }}" class="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold shadow-lg hover:bg-blue-700 flex items-center gap-2">
+                <i class="fas fa-truck-loading"></i> Record Delivery (GRN)
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 print:shadow-none print:border-none">
+        <!-- PO Header (Print style) -->
+        <div class="p-10 border-b border-gray-100 bg-gray-50 flex justify-between items-start print:bg-white print:p-0 print:mb-8">
+            <div>
+                <h2 class="text-blue-600 font-black text-4xl mb-2">PURCHASE ORDER</h2>
+                <span class="font-mono text-xl text-gray-500 font-bold">#{{ po.po_number }}</span>
+            </div>
+            <div class="text-right">
+                <p class="text-xs uppercase font-bold text-gray-400 tracking-widest mb-1">Order Status</p>
+                <span class="px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider bg-gray-900 text-white">
+                    {{ po.status }}
+                </span>
+                <p class="mt-4 text-sm font-bold text-gray-800">Date: {{ po.order_date }}</p>
+            </div>
+        </div>
+
+        <div class="p-10 grid grid-cols-2 gap-10 print:p-0 print:mb-10">
+            <div>
+                <h4 class="text-xs uppercase font-black text-gray-300 tracking-[0.2em] mb-4">Supplier Information</h4>
+                <div class="text-gray-800">
+                    <p class="text-xl font-black mb-1 capitalize">{{ po.supplier_name }}</p>
+                    <p class="text-sm font-medium opacity-70">{{ po.supplier_email }}</p>
+                    <p class="text-sm font-medium opacity-70">{{ po.supplier_phone }}</p>
+                </div>
+            </div>
+            <div class="bg-gray-50 rounded-2xl p-6 border border-gray-100 print:bg-white print:border print:border-gray-200">
+                <h4 class="text-xs uppercase font-black text-gray-300 tracking-[0.2em] mb-4">Payment Summary</h4>
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-sm font-bold text-gray-500">Order Total</span>
+                    <span class="text-xl font-mono font-black text-gray-900 text-right">{{ po.total_amount | currency }}</span>
+                </div>
+                <div class="flex justify-between items-center pt-4 border-t border-gray-200">
+                    <span class="text-xs font-bold text-gray-400 uppercase">Payment Status</span>
+                    <span class="text-sm font-black {% if po.payment_status == 'PAID' %}text-emerald-600{% else %}text-orange-600{% endif %}">
+                        {{ po.payment_status }}
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Line Items -->
+        <div class="p-10 print:p-0">
+            <h4 class="text-xs uppercase font-black text-gray-300 tracking-[0.2em] mb-6 border-b pb-4">Order Items Inventory</h4>
+            <table class="w-full text-left">
+                <thead>
+                    <tr class="text-gray-400 font-bold text-[10px] uppercase tracking-widest">
+                        <th class="pb-4">No.</th>
+                        <th class="pb-4">Description</th>
+                        <th class="pb-4 text-center">Ordered</th>
+                        <th class="pb-4 text-center">Received</th>
+                        <th class="pb-4 text-right">Unit Price</th>
+                        <th class="pb-4 text-right">Total</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50">
+                    {% for item in po.po_items %}
+                    <tr class="text-gray-800">
+                        <td class="py-4 text-sm font-bold text-gray-400">{{ loop.index }}</td>
+                        <td class="py-4 text-sm font-black">{{ item.description }}</td>
+                        <td class="py-4 text-sm font-mono text-center">{{ item.quantity|int }}</td>
+                        <td class="py-4 text-sm font-mono text-center {% if item.total_received == item.quantity %}text-green-600{% else %}text-blue-600{% endif %} font-bold">
+                            {{ item.total_received|int }}
+                        </td>
+                        <td class="py-4 text-sm font-mono text-right">{{ item.unit_price | currency }}</td>
+                        <td class="py-4 text-sm font-mono text-right font-black">{{ item.total_price | currency }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr class="bg-gray-900 text-white">
+                        <td colspan="5" class="px-6 py-4 text-right font-bold uppercase text-[10px] tracking-widest opacity-60">Grand Total</td>
+                        <td class="px-6 py-4 text-right text-xl font-mono font-black">{{ po.total_amount | currency }}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+
+        {% if po.grns %}
+        <!-- Delivery History -->
+        <div class="px-10 pb-10 no-print">
+            <h4 class="text-xs uppercase font-black text-gray-300 tracking-[0.2em] mb-4 border-b pb-4">Delivery History (GRNs)</h4>
+            <div class="space-y-2">
+                {% for g in po.grns %}
+                <div class="flex justify-between items-center bg-gray-50 p-4 rounded-xl border border-gray-100">
+                    <div class="flex items-center gap-4">
+                        <span class="bg-blue-100 text-blue-700 px-3 py-1 rounded-lg font-mono font-bold text-xs">{{ g.grn_number }}</span>
+                        <div>
+                            <p class="text-sm font-bold text-gray-800">{{ g.delivery_note_ref }}</p>
+                            <p class="text-[10px] text-gray-400 uppercase">{{ g.received_date }}</p>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% if po.notes %}
+        <div class="p-10 bg-gray-50 border-t border-gray-100 print:bg-white print:border print:border-gray-200 print:m-0">
+             <h4 class="text-xs uppercase font-black text-gray-300 tracking-[0.2em] mb-2">Remarks / Notes</h4>
+             <p class="text-sm text-gray-600 italic">{{ po.notes }}</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Payment History -->
+    {% if payments %}
+    <div class="mt-8 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden no-print">
+        <div class="px-6 py-4 bg-gray-50 border-b border-gray-100">
+            <h3 class="font-bold text-gray-800 uppercase text-xs tracking-widest">Payment History</h3>
+        </div>
+        <table class="w-full text-left">
+            <thead>
+                <tr class="text-[10px] font-bold text-gray-400 uppercase tracking-widest bg-gray-50/50">
+                    <th class="px-6 py-4">Date</th>
+                    <th class="px-6 py-4">Reference</th>
+                    <th class="px-6 py-4">Mode</th>
+                    <th class="px-6 py-4 text-right">Amount</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+                {% for p in payments %}
+                <tr>
+                    <td class="px-6 py-4 text-sm">{{ p.payment_date }}</td>
+                    <td class="px-6 py-4 font-mono text-xs text-indigo-600 font-bold">
+                        {{ p.reference_no }}
+                        {% if p.payment_mode == 'CHEQUE' %}
+                        <a href="{{ url_for('print_cheque', voucher_id=p.id, source='PROCUREMENT') }}" target="_blank" class="ml-2 text-blue-500 hover:text-blue-700">
+                            <i class="fas fa-print"></i> Print
+                        </a>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 text-xs font-bold text-gray-500">{{ p.payment_mode }}</td>
+                    <td class="px-6 py-4 text-right font-mono font-bold text-gray-900">{{ p.amount | currency }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- Payment Section (No print) -->
+    {% if po.status in ['ORDERED', 'RECEIVED'] and po.payment_status != 'PAID' %}
+    <div class="mt-8 bg-blue-900 rounded-2xl p-10 shadow-2xl no-print">
+        <div class="flex justify-between items-center mb-8">
+            <h2 class="text-2xl font-black text-white uppercase tracking-widest">Record Payment</h2>
+            <div class="bg-blue-800 px-4 py-2 rounded-lg">
+                 <span class="text-xs text-blue-300 font-bold uppercase block">Outstanding</span>
+                 <span class="text-xl text-white font-black font-mono">{{ po.total_amount | currency }}</span>
+            </div>
+        </div>
+        <form method="POST" action="{{ url_for('record_po_payment', po_id=po.id) }}" class="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div>
+                <label class="block text-xs font-bold text-blue-300 uppercase mb-2">Payment Amount</label>
+                <input type="number" step="0.01" name="amount" required value="{{ po.total_amount }}" class="w-full bg-blue-800 border-none rounded-xl px-4 py-3 text-white font-mono focus:ring-2 focus:ring-blue-400">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-blue-300 uppercase mb-2">Payment Mode</label>
+                <select name="payment_mode" required class="w-full bg-blue-800 border-none rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-blue-400">
+                    <option value="BANK TRANSFER">Bank Transfer</option>
+                    <option value="CHEQUE">Cheque</option>
+                    <option value="CASH">Cash</option>
+                    <option value="MPESA">Lipa na M-Pesa</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-blue-300 uppercase mb-2">Source Account (CR)</label>
+                <select name="source_account_id" required class="w-full bg-blue-800 border-none rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-blue-400">
+                    <option value="">Select account...</option>
+                    {% for acc in accounts if acc.type in ['ASSET', 'LIABILITY'] %}
+                    <option value="{{ acc.id }}">{{ acc.name }} ({{ acc.code }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-blue-300 uppercase mb-2">Reference No</label>
+                <input type="text" name="reference_no" required placeholder="Cheque # or TRX ID" class="w-full bg-blue-800 border-none rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-blue-400">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-blue-300 uppercase mb-2">Payment Date</label>
+                <input type="date" name="payment_date" value="{{ datetime.now().strftime('%Y-%m-%d') }}" class="w-full bg-blue-800 border-none rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-blue-400">
+            </div>
+            <div class="md:col-span-4 mt-4">
+                <button type="submit" class="w-full bg-blue-500 hover:bg-blue-400 text-white py-4 rounded-xl font-black uppercase tracking-widest transition shadow-lg">
+                    Process Ledger Payment
+                </button>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+@media print {
+    @page { size: A4; margin: 10mm; }
+    .no-print { display: none !important; }
+    body { background: white; padding: 0; margin: 0; font-family: ui-sans-serif, system-ui, sans-serif; }
+    .container { width: 100%; max-width: none; margin: 0 !important; padding: 0 !important; }
+    .print-paper { border: none !important; shadow: none !important; }
+    .bg-gray-50, .bg-blue-900 { background: transparent !important; color: black !important; }
+    .text-white, .text-blue-300 { color: black !important; }
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #f3f4f6 !important; border: 1px solid #ccc !important; text-transform: uppercase; font-size: 8pt; padding: 4px; }
+    td { border: 1px solid #eee !important; padding: 6px; font-size: 9pt; }
+    .total-row { background: #f9fafb !important; font-weight: bold; }
+    .letterhead { display: flex !important; justify-content: space-between; border-bottom: 2px solid #000; margin-bottom: 20px; padding-bottom: 10px; }
+}
+@media screen {
+    .letterhead { display: none; }
+}
+</style>
+{% endblock %}
+    .total-row { background: #f9fafb !important; font-weight: bold; }
+    .letterhead { display: flex !important; justify-content: space-between; border-bottom: 2px solid #000; margin-bottom: 20px; padding-bottom: 10px; }
+}
+@media screen {
+    .letterhead { display: none; }
+}
+</style>
+
+<div class="letterhead print-only">
+    <div style="display: flex; align-items: center; gap: 15px;">
+        <img src="{{ url_for('static', filename='images/school_logo.png') }}" style="height: 60px;">
+        <div>
+            <h1 style="font-size: 18pt; font-weight: 900; margin: 0;">Mother Kevin Comprehensive School</h1>
+            <p style="font-size: 8pt; margin: 0; color: #666;">P.O. Box 12345, Bungoma | info@motherkevin.edu</p>
+        </div>
+    </div>
+    <div style="text-align: right;">
+        <h2 style="font-size: 20pt; font-weight: 900; margin: 0;">PURCHASE ORDER</h2>
+        <p style="font-size: 10pt; font-weight: bold;">#{{ po.po_number }}</p>
+    </div>
+</div>
+
+<div class="container mx-auto px-4 py-8">

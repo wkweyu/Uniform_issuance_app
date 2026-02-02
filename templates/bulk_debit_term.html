@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="max-w-4xl mx-auto py-8">
+  <h1 class="text-2xl font-bold mb-4">Bulk Debit Term Fees</h1>
+  <form action="{{ url_for('bulk_debit_term') }}" method="POST" class="bg-white border rounded-lg p-6">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="grid grid-cols-2 gap-4 mb-4">
+      <div>
+        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Academic Year</label>
+        <select name="year_id" class="border rounded px-3 py-2 w-full">
+          {% for y in years %}
+          <option value="{{ y.id }}">{{ y.year }}{% if y.is_current %} (Current){% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Term</label>
+        <select name="term_id" class="border rounded px-3 py-2 w-full">
+          {% for t in terms %}
+          <option value="{{ t.id }}">Term {{ t.term_number }} ({{ t.year }})</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div>
+      <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Classes</label>
+      <div class="grid grid-cols-2 md:grid-cols-3 gap-2 border rounded p-3 max-h-64 overflow-y-auto">
+        {% for c in classes %}
+        <label class="flex items-center gap-2 text-sm">
+          <input type="checkbox" name="class_ids" value="{{ c.classID }}"> {{ c.display_name }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="mt-4 text-right">
+      <button type="submit" class="bg-green-600 text-white px-6 py-2 rounded font-bold">Debit Selected</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

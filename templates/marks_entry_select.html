@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex items-center mb-8">
+        <a href="{{ url_for('exams_dashboard') }}" class="text-blue-600 hover:text-blue-800 mr-4">
+            <i class="fas fa-arrow-left fa-lg"></i>
+        </a>
+        <div>
+            <h1 class="text-2xl font-bold text-gray-800">Select Class & Subject</h1>
+            <p class="text-gray-600">Series: <span class="font-semibold">{{ exam.name }}</span> ({{ exam.academic_year_name }}, Term {{ exam.term }})</p>
+        </div>
+    </div>
+
+    {% if exam.is_locked %}
+    <div class="mb-8 p-4 bg-red-100 border-l-4 border-red-500 text-red-700 flex items-center">
+        <i class="fas fa-lock mr-3 text-xl"></i>
+        <p class="font-medium text-lg">This exam series is locked. Marks can be viewed but not saved.</p>
+    </div>
+    {% endif %}
+
+    <div class="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+        <div class="p-8">
+            <form action="{{ url_for('marks_entry', exam_id=exam.id) }}" method="GET" class="space-y-6 max-w-xl">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2" for="class_id">
+                        Select Class
+                    </label>
+                    <select name="class_id" id="class_id" required onchange="fetchSubjects(this.value)"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition outline-none">
+                        <option value="">-- Select Class --</option>
+                        {% for cls in classes %}
+                        <option value="{{ cls.classID }}">{{ cls.display_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2" for="subject_id">
+                        Select Subject
+                    </label>
+                    <select name="subject_id" id="subject_id" required disabled
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition outline-none disabled:bg-gray-50 disabled:text-gray-400">
+                        <option value="">-- Choose Subject --</option>
+                    </select>
+                    <p id="subject-loading" class="mt-1 text-xs text-blue-500 hidden">
+                        <i class="fas fa-spinner fa-spin mr-1"></i> Loading subjects available for this class...
+                    </p>
+                </div>
+
+                <div class="pt-4">
+                    <button type="submit" id="submit-btn" disabled
+                            class="w-full py-4 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-md transition transform active:scale-95 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                        Proceed to Marks Entry
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+const examId = {{ exam.id }};
+
+function fetchSubjects(classId) {
+    const subjectSelect = document.getElementById('subject_id');
+    const loadingText = document.getElementById('subject-loading');
+    const submitBtn = document.getElementById('submit-btn');
+
+    if (!classId) {
+        subjectSelect.innerHTML = '<option value="">-- Choose Subject --</option>';
+        subjectSelect.disabled = true;
+        submitBtn.disabled = true;
+        return;
+    }
+
+    loadingText.classList.remove('hidden');
+    subjectSelect.disabled = true;
+
+    // Call the new status-aware API
+    fetch(`/api/exams/${examId}/class/${classId}/subjects-status`)
+    .then(response => response.json())
+    .then(data => {
+        loadingText.classList.add('hidden');
+        subjectSelect.disabled = false;
+        
+        if (data.success && data.subjects.length > 0) {
+            subjectSelect.innerHTML = '<option value="">-- Choose Subject --</option>';
+            data.subjects.forEach(sub => {
+                const option = document.createElement('option');
+                option.value = sub.id;
+                
+                // Add status indicator to dropdown text
+                const statusSymbol = sub.is_complete ? '✓' : '◌';
+                option.textContent = `${statusSymbol} ${sub.name} (${sub.status_text})`;
+                
+                if (sub.is_complete) {
+                    option.classList.add('text-green-600', 'font-semibold');
+                }
+                
+                subjectSelect.appendChild(option);
+            });
+            submitBtn.disabled = false;
+        } else {
+            subjectSelect.innerHTML = '<option value="">No subjects allocated to this class</option>';
+            submitBtn.disabled = true;
+        }
+    })
+    .catch(error => {
+        console.error('Error fetching subjects:', error);
+        loadingText.classList.add('hidden');
+        subjectSelect.innerHTML = '<option value="">Error loading subjects</option>';
+    });
+}
+</script>
+{% endblock %}

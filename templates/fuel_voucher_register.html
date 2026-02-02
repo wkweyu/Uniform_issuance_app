@@ -1,153 +1,101 @@
-{% extends 'base_report.html' %} {% block content %}
-<div class="max-w-6xl mx-auto p-6 bg-white shadow rounded shadow">
-  <h2 class="text-2xl font-bold mb-6 no-print">🚍 Fuel Voucher Register</h2>
+{% extends 'base_report.html' %} 
 
-  <form method="POST" class="flex flex-wrap gap-3 mb-6 no-print">
-<<<<<<< HEAD
-=======
-    {{ csrf_token() }}
->>>>>>> 1b584a9 (class module)
-    <input
-      type="text"
-      name="registration_no"
-      placeholder="Reg No"
-      value="{{ filters.reg_no or '' }}"
-      class="border px-3 py-2 rounded w-40"
-    />
-    <input
-      type="text"
-      name="driver_name"
-      placeholder="Driver"
-      value="{{ filters.driver_name or '' }}"
-      class="border px-3 py-2 rounded w-40"
-    />
-    <input
-      type="text"
-      name="voucher_no"
-      placeholder="Voucher No"
-      value="{{ filters.voucher_no or '' }}"
-      class="border px-3 py-2 rounded w-40"
-    />
-    <div>
-      <label class="block text-sm mb-1">From:</label>
-      <input
-        type="date"
-        name="date_from"
-        value="{{ date_from }}"
-        class="border px-3 py-2 rounded"
-      />
-    </div>
-    <div>
-      <label class="block text-sm mb-1">To:</label>
-      <input
-        type="date"
-        name="date_to"
-        value="{{ date_to }}"
-        class="border px-3 py-2 rounded"
-      />
-    </div>
+{% block report_title %}Fuel Voucher & Invoice Register{% endblock %}
 
-    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded">
-      Filter
-    </button>
-    {% if vouchers %}
-    <button
-      type="button"
-      onclick="window.print()"
-      class="px-4 py-2 bg-green-600 text-white rounded no-print"
-    >
-      🖨️ Print
-    </button>
-    {% endif %}
-  </form>
+{% block content %}
 
-  {% if vouchers %}
+<!-- Filters -->
+<div class="mb-6 bg-gray-50 border p-4 rounded no-print">
+    <form method="POST" class="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
+        <div>
+            <label class="block text-[10px] uppercase font-black text-gray-400 mb-1">Reg No</label>
+            <input type="text" name="registration_no" placeholder="KCP 001X..." value="{{ filters.reg_no or '' }}" class="w-full border rounded px-3 py-1.5 text-xs">
+        </div>
+        <div>
+            <label class="block text-[10px] uppercase font-black text-gray-400 mb-1">Driver Name</label>
+            <input type="text" name="driver_name" placeholder="John Doe..." value="{{ filters.driver_name or '' }}" class="w-full border rounded px-3 py-1.5 text-xs">
+        </div>
+        <div>
+            <label class="block text-[10px] uppercase font-black text-gray-400 mb-1">Voucher #</label>
+            <input type="text" name="voucher_no" placeholder="FV-0001..." value="{{ filters.voucher_no or '' }}" class="w-full border rounded px-3 py-1.5 text-xs">
+        </div>
+        <div>
+            <label class="block text-[10px] uppercase font-black text-gray-400 mb-1">From Date</label>
+            <input type="date" name="date_from" value="{{ date_from }}" class="w-full border rounded px-3 py-1.5 text-xs">
+        </div>
+        <div>
+            <label class="block text-[10px] uppercase font-black text-gray-400 mb-1">To Date</label>
+            <input type="date" name="date_to" value="{{ date_to }}" class="w-full border rounded px-3 py-1.5 text-xs">
+        </div>
+        <div class="flex gap-2">
+            <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded text-[10px] font-black uppercase flex-1 shadow-sm hover:bg-blue-700">Filter</button>
+            <button type="button" onclick="window.print()" class="bg-gray-800 text-white px-4 py-2 rounded text-[10px] font-black uppercase shadow-sm hover:bg-black">Print</button>
+        </div>
+    </form>
+</div>
 
-  <table class="w-full border-collapse border text-sm">
-    <thead class="bg-gray-100">
-      <tr>
-        <th class="border p-2">Voucher No</th>
-        <th class="border p-2">Date</th>
-        <th class="border p-2">Bus</th>
-        <th class="border p-2">Driver</th>
-        <th class="border p-2 text-right">Litres</th>
-        <th class="border p-2 text-right">Total (KES)</th>
-        <th class="border p-2 no-print">Actions</th>
-        <th class="border p-2 no-print">Invoiced</th>
+{% if vouchers %}
+<div class="overflow-x-auto">
+  <table class="w-full border-collapse text-[11px]">
+    <thead>
+      <tr class="bg-gray-900 text-white uppercase font-black text-[9px] tracking-widest print:bg-gray-100 print:text-black">
+        <th class="p-3 text-left">Voucher #</th>
+        <th class="p-3 text-left">Date</th>
+        <th class="p-3 text-left">Bus Reg</th>
+        <th class="p-3 text-left">Driver</th>
+        <th class="p-3 text-right">Litres (L)</th>
+        <th class="p-3 text-right">Amount (KES)</th>
+        <th class="p-3 text-center no-print">Workflow Actions</th>
       </tr>
     </thead>
-    <!-- In the table body section -->
-    <tbody>
+    <tbody class="divide-y divide-gray-100 border-x">
       {% for v in vouchers %}
-      <tr class="hover:bg-gray-50">
-        <td class="border p-2">{{ v.voucher_no }}</td>
-        <td class="border p-2">{{ v.issued_on.strftime('%d-%m-%Y') }}</td>
-        <td class="border p-2">{{ v.reg_no }}</td>
-        <td class="border p-2">{{ v.driver_name or 'UNKNOWN' }}</td>
-        <td
-          class="border p-2 text-right {{ 'text-gray-400' if v.invoiced == 'No' else '' }}"
-        >
-          {% if v.invoiced == 'Yes' %} {{ v.litres|currency }} {% else %}
-          Pending {% endif %}
-        </td>
-        <td
-          class="border p-2 text-right {{ 'text-gray-400' if v.invoiced == 'No' else '' }}"
-        >
-          {% if v.invoiced == 'Yes' %} KES {{ v.total_cost|currency }} {% else
-          %} Pending {% endif %}
-        </td>
-        <!--td class="border p-2 no-print">
-          <a
-            href="{{ url_for('print_voucher', voucher_no=v.voucher_no) }}"
-            target="_blank"
-            class="text-blue-600 hover:underline"
-            >Print</a
-          >
-        </td>
-        <td class="border p-2 no-print">
-          {{ v.invoiced }} {% if v.invoiced == 'No' %} |
-          <a
-            href="{{ url_for('record_fuel_invoice') }}?voucher_id={{ v.id }}"
-            class="text-blue-600 underline"
-            >Record Invoice</a
-          >
-          {% endif %}
-        </td-->
-
-        <td class="border p-2 no-print">
-          {% if v.invoiced == 'No' %}
-          <a
-            href="{{ url_for('print_voucher', voucher_no=v.voucher_no) }}"
-            target="_blank"
-            class="text-green-700 hover:underline"
-            >Print Voucher</a
-          >
-          |
-          <a
-            href="{{ url_for('record_fuel_invoice') }}?voucher_id={{ v.id }}"
-            class="text-blue-600 underline"
-            >Record Invoice</a
-          >
+      <tr class="hover:bg-blue-50/30 transition-colors">
+        <td class="p-3 font-mono font-bold text-blue-900">{{ v.voucher_no }}</td>
+        <td class="p-3 text-gray-600">{{ v.issued_on.strftime('%d-%m-%Y') }}</td>
+        <td class="p-3 font-black">{{ v.reg_no }}</td>
+        <td class="p-3 uppercase text-gray-500">{{ v.driver_name or 'PENDING' }}</td>
+        <td class="p-3 text-right font-mono text-gray-700">
+          {% if v.invoiced == 'Yes' %}
+            {{ "{:,.2f}".format(v.litres or 0) }}
           {% else %}
-          <a
-            href="{{ url_for('print_invoice', voucher_id=v.id) }}"
-            target="_blank"
-            class="text-green-700 hover:underline"
-            >Print Invoice</a
-          >
-          |
-          <a
-            href="{{ url_for('edit_invoice', voucher_id=v.id) }}"
-            class="text-yellow-600 hover:underline"
-            >Edit</a
-          >
-          |
-          <form
-            method="POST"
-            action="{{ url_for('delete_invoice', voucher_id=v.id) }}"
-            class="inline"
-            onsubmit="return confirm('Delete this invoice?');"
-          >
+            <span class="text-[9px] bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full font-black uppercase">Pending Invoice</span>
+          {% endif %}
+        </td>
+        <td class="p-3 text-right font-mono font-bold">
+          {% if v.invoiced == 'Yes' %}
+            {{ (v.total_cost or 0) | currency }}
+          {% else %}
+            <span class="text-gray-300">---</span>
+          {% endif %}
+        </td>
+        <td class="p-3 text-center no-print">
+          <div class="flex justify-center items-center gap-3">
+            {% if v.invoiced == 'No' %}
+              <a href="{{ url_for('print_voucher', voucher_no=v.voucher_no) }}" target="_blank" class="text-blue-600 hover:text-blue-900 font-bold uppercase text-[9px] border-b border-blue-600">Print Voucher</a>
+              <a href="{{ url_for('record_fuel_invoice') }}?voucher_id={{ v.id }}" class="bg-green-600 text-white px-2 py-1 rounded text-[9px] font-black uppercase hover:bg-green-700">Record Invoice</a>
+            {% else %}
+              <a href="{{ url_for('print_invoice', voucher_id=v.id) }}" target="_blank" class="text-gray-600 hover:text-black font-bold uppercase text-[9px] border-b border-gray-400">View Invoice</a>
+              <a href="{{ url_for('edit_invoice', voucher_id=v.id) }}" class="text-yellow-600 hover:text-yellow-800 font-bold uppercase text-[9px]">Edit</a>
+              <form method="POST" action="{{ url_for('delete_invoice', voucher_id=v.id) }}" class="inline" onsubmit="return confirm('CRITICAL: Delete this invoice? This action cannot be undone.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="text-red-500 hover:text-red-700 font-bold uppercase text-[9px]">Delete</button>
+              </form>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="bg-gray-50 border-2 border-dashed border-gray-200 rounded-xl p-12 text-center">
+    <p class="text-gray-400 font-black uppercase tracking-widest text-xs">No records matching your search criteria were found</p>
+</div>
+{% endif %}
+
+{% endblock %}
             <button
               type="submit"
               class="text-red-600 underline bg-transparent border-none"

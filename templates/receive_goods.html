@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="mb-8">
+        <a href="{{ url_for('view_purchase_order', po_id=po.id) }}" class="text-blue-600 hover:text-blue-800 font-bold flex items-center gap-2 mb-4">
+            <i class="fas fa-arrow-left"></i> Back to PO
+        </a>
+        <h1 class="text-3xl font-bold text-gray-800">Record Delivery (GRN)</h1>
+        <p class="text-gray-500">Record items received for PO #{{ po.po_number }} from {{ po.supplier_name }}</p>
+    </div>
+
+    <form method="POST" class="space-y-8">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase mb-2 tracking-widest">Delivery Note Reference</label>
+                    <input type="text" name="delivery_note_ref" required placeholder="e.g. DN-12345" class="w-full border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-gray-50">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase mb-2 tracking-widest">General Notes</label>
+                    <input type="text" name="notes" placeholder="e.g. All items in good condition" class="w-full border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-gray-50">
+                </div>
+            </div>
+
+            <div class="border-t border-gray-100 pt-8">
+                <h3 class="font-bold text-gray-800 uppercase tracking-widest text-sm mb-6 border-l-4 border-blue-600 pl-4">Incoming Items</h3>
+                <div class="overflow-hidden rounded-xl border border-gray-100">
+                    <table class="w-full text-left bg-gray-50/30">
+                        <thead class="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase">
+                            <tr>
+                                <th class="px-6 py-4">Item Description</th>
+                                <th class="px-6 py-4 text-center">Ordered</th>
+                                <th class="px-6 py-4 text-center">Prev. Received</th>
+                                <th class="px-6 py-4 text-center">Outstanding</th>
+                                <th class="px-6 py-4 text-right w-40">Now Receiving</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100 bg-white">
+                            {% for item in po.po_items %}
+                            {% set outstanding = item.quantity - item.total_received %}
+                            <tr>
+                                <td class="px-6 py-4">
+                                    <input type="hidden" name="po_item_id[]" value="{{ item.id }}">
+                                    <div class="font-bold text-gray-800">{{ item.description }}</div>
+                                </td>
+                                <td class="px-6 py-4 text-center font-mono">{{ item.quantity|int }}</td>
+                                <td class="px-6 py-4 text-center font-mono text-blue-600">{{ item.total_received|int }}</td>
+                                <td class="px-6 py-4 text-center font-mono text-amber-600">{{ outstanding|int }}</td>
+                                <td class="px-6 py-4 text-right">
+                                    <input type="number" step="1" name="receive_qty[]" 
+                                           max="{{ outstanding }}" value="{{ outstanding|int }}"
+                                           class="w-full border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-blue-500 font-mono text-right">
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="mt-10 flex justify-end gap-4 border-t border-gray-100 pt-8">
+                <button type="submit" class="bg-green-600 text-white px-10 py-3 rounded-xl font-bold hover:bg-green-700 transition shadow-2xl flex items-center gap-2">
+                    <i class="fas fa-check-double"></i> Confirm & Update Stock
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}

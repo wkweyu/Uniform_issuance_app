@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-8 border-b pb-4 no-print">
+        <div>
+            <h1 class="text-3xl font-black text-gray-800 uppercase tracking-tight">Class Examination Report</h1>
+            <p class="text-indigo-600 font-bold uppercase text-xs tracking-widest mt-1">
+                {{ class_info.display_name }} | {{ exam.name }} | Term {{ exam.term }}, {{ exam.academic_year_name }}
+            </p>
+        </div>
+        <div class="flex gap-4">
+            <button onclick="window.print()" class="px-6 py-2 bg-gray-800 text-white rounded-xl font-bold uppercase text-xs hover:bg-black transition shadow-lg">
+                <i class="fas fa-print mr-2"></i> Print Report
+            </button>
+        </div>
+    </div>
+
+    <!-- Stats Summary Row -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
+        <div class="bg-blue-600 p-6 rounded-2xl shadow-lg text-white">
+            <p class="text-[10px] font-black uppercase tracking-widest opacity-80 mb-1">Mean Score</p>
+            <h3 class="text-3xl font-black">{{ "%.2f"|format(stats.mean_score) }}</h3>
+            <div class="mt-2 text-xs font-bold uppercase bg-white bg-opacity-20 inline-block px-2 py-1 rounded">Overall Class Avg</div>
+        </div>
+        <div class="bg-gray-800 p-6 rounded-2xl shadow-lg text-white">
+            <p class="text-[10px] font-black uppercase tracking-widest opacity-80 mb-1">Total Students</p>
+            <h3 class="text-3xl font-black">{{ stats.total_students }}</h3>
+            <div class="mt-2 text-xs font-bold uppercase bg-white bg-opacity-10 inline-block px-2 py-1 rounded">Sat for Exam</div>
+        </div>
+        <div class="bg-white p-6 rounded-2xl shadow-md border border-gray-100 col-span-2">
+            <p class="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-4">Grade Distribution</p>
+            <div class="flex flex-wrap gap-4">
+                {% for grade, count in stats.distribution.items()|sort %}
+                <div class="flex flex-col items-center">
+                    <span class="text-lg font-black text-gray-800">{{ grade }}</span>
+                    <span class="text-xs font-bold text-gray-400 bg-gray-100 px-2 rounded-full">{{ count }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
+        <!-- Top 3 Students -->
+        <div>
+            <h2 class="text-xl font-black text-gray-800 uppercase tracking-wider mb-6 flex items-center">
+                <i class="fas fa-trophy text-yellow-500 mr-3"></i> Top 3 Students (Class)
+            </h2>
+            <div class="space-y-4">
+                {% for student in top_3 %}
+                <div class="flex items-center p-5 bg-white rounded-2xl shadow-sm border border-gray-100">
+                    <div class="w-12 h-12 rounded-full {% if loop.index == 1 %}bg-yellow-400{% elif loop.index == 2 %}bg-gray-300{% else %}bg-amber-600{% endif %} flex items-center justify-center text-white font-black text-xl mr-4">
+                        {{ loop.index }}
+                    </div>
+                    <div class="flex-grow">
+                        <h4 class="font-bold text-gray-900">{{ student.name }}</h4>
+                        <p class="text-[10px] text-gray-400 font-bold uppercase">ADM: {{ student.admno }}</p>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xl font-black text-gray-800">{{ student.total }}</div>
+                        <div class="text-[10px] font-black text-blue-600 uppercase">Avg: {{ "%.2f"|format(student.average) }} ({{ student.grade }})</div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- Subject Performance Analysis -->
+            <h2 class="text-xl font-black text-gray-800 uppercase tracking-wider mb-6 mt-12 flex items-center">
+                <i class="fas fa-chart-bar text-blue-500 mr-3"></i> Subject Mean Scores
+            </h2>
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="bg-gray-50 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                            <th class="px-6 py-3 text-left">Subject</th>
+                            <th class="px-6 py-3 text-center">Sat</th>
+                            <th class="px-6 py-3 text-right">Mean Score</th>
+                            <th class="px-6 py-3 text-center">Mean Grade</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-50">
+                        {% for subj in stats.subject_stats %}
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-6 py-4">
+                                <div class="font-bold text-gray-900">{{ subj.name }}</div>
+                                <div class="text-[10px] text-gray-400 uppercase font-bold">{{ subj.code }}</div>
+                            </td>
+                            <td class="px-6 py-4 text-center font-bold text-gray-600">{{ subj.count }}</td>
+                            <td class="px-6 py-4 text-right">
+                                <span class="font-black text-gray-800">{{ "%.2f"|format(subj.average) }}</span>
+                            </td>
+                            <td class="px-6 py-4 text-center">
+                                <span class="px-3 py-1 bg-blue-50 text-blue-700 rounded-lg font-black">{{ subj.grade }}</span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Subject Hits & Improved -->
+        <div>
+            <!-- Top Subject Students -->
+            <h2 class="text-xl font-black text-gray-800 uppercase tracking-wider mb-6 flex items-center">
+                <i class="fas fa-award text-indigo-500 mr-3"></i> Top in each Subject
+            </h2>
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <table class="w-full text-sm">
+                    <tbody class="divide-y divide-gray-50">
+                        {% for winner in subject_winners %}
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-6 py-4">
+                                <div class="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">{{ winner.subject_name }}</div>
+                                <div class="font-bold text-gray-900">{{ winner.student_name }}</div>
+                            </td>
+                            <td class="px-6 py-4 text-right">
+                                <div class="text-lg font-black text-indigo-600">{{ winner.mark }}</div>
+                                <div class="text-[10px] font-bold text-gray-400 uppercase">Grade: {{ winner.grade }}</div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Most Improved -->
+            {% if most_improved %}
+            <h2 class="text-xl font-black text-gray-800 uppercase tracking-wider mb-6 mt-12 flex items-center">
+                <i class="fas fa-chart-line text-green-500 mr-3"></i> Most Improved in Class
+            </h2>
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div class="p-6">
+                    <div class="space-y-6">
+                        {% for item in most_improved %}
+                        <div>
+                            <div class="flex justify-between items-end mb-2">
+                                <div>
+                                    <p class="font-bold text-gray-900">{{ item.name }}</p>
+                                    <p class="text-[10px] text-gray-400 font-bold uppercase">ADM: {{ item.admno }}</p>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-green-600 font-black">+{{ "%.2f"|format(item.improvement) }}</span>
+                                </div>
+                            </div>
+                            <div class="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
+                                <div class="bg-green-500 h-full rounded-full" style="width: {{ [item.improvement * 5, 100]|min }}%"></div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Print Footer -->
+    <div class="mt-12 pt-8 border-t text-center text-gray-400 text-[10px] uppercase font-bold tracking-widest hidden print:block">
+        Generated on {{ now.strftime('%Y-%m-%d %H:%M') }} | School Management System
+    </div>
+</div>
+{% endblock %}

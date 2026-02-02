@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto py-8">
+    <div class="mb-8 overflow-hidden bg-white shadow sm:rounded-lg border border-gray-200">
+        <div class="px-4 py-5 sm:px-6 bg-gradient-to-r from-red-600 to-red-800 text-white">
+            <h3 class="text-lg font-bold leading-6">Academic Year Roll-Up (Financial)</h3>
+            <p class="mt-1 max-w-2xl text-sm opacity-90 italic">Carry forward outstanding student balances to the next academic year.</p>
+        </div>
+        
+        <div class="border-t border-gray-200 px-4 py-5 sm:p-6">
+            <div class="rounded-md bg-yellow-50 p-4 mb-6 border border-yellow-200">
+                <div class="flex">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-exclamation-triangle text-yellow-400"></i>
+                    </div>
+                    <div class="ml-3">
+                        <h3 class="text-sm font-medium text-yellow-800 tracking-tight uppercase">Critical Operation Notice</h3>
+                    <div class="mt-2 text-sm text-yellow-700">
+                        <ul class="list-disc list-inside space-y-1">
+                            <li>This will identify every student with a <strong>non-zero balance</strong> in the source year.</li>
+                            <li>A new <strong>CHARGE</strong> entry (Arrears) will be created in the destination year.</li>
+                            <li>Both positive balances (Arrears) and negative balances (Overpayments) will be carried forward.</li>
+                            <li>This operation cannot be automatically undone. Please confirm your selection.</li>
+                        </ul>
+                    </div>
+                </div>
+              </div>
+            </div>
+
+            <form action="{{ url_for('admin_fees_rollup') }}" method="POST" class="space-y-6">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-2">Source Academic Year (Old)</label>
+                        <select name="old_year_id" required class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-red-500 focus:border-red-500">
+                            <option value="">Select source year...</option>
+                            {% for year in years %}
+                            <option value="{{ year.id }}">{{ year.name }} ({{ year.year }})</option>
+                            {% endfor %}
+                        </select>
+                        <p class="mt-2 text-xs text-gray-400 italic">Fetch balances from this year.</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-2">Destination Academic Year (New)</label>
+                        <select name="new_year_id" required class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-red-500 focus:border-red-500">
+                            <option value="">Select destination year...</option>
+                            {% for year in years %}
+                            <option value="{{ year.id }}">{{ year.name }} ({{ year.year }})</option>
+                            {% endfor %}
+                        </select>
+                        <p class="mt-2 text-xs text-gray-400 italic">Balances will be posted as the starting balance in this year.</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-end space-x-4 pt-6 border-t">
+                    <a href="{{ url_for('admin_settings') }}" class="text-gray-500 hover:text-gray-700 font-medium px-4 py-2">Cancel</a>
+                    <button type="submit" onclick="return confirm('Are you absolutely sure you want to proceed? This will post starting balances for ALL students in the selected new year.')" class="bg-red-600 hover:bg-red-700 text-white px-8 py-2.5 rounded-lg font-bold shadow-lg transition transform hover:scale-105">
+                        <i class="fas fa-sync-alt mr-2"></i> Execute Roll-Up
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-6 text-sm text-blue-800">
+        <h4 class="font-bold mb-2 flex items-center">
+            <i class="fas fa-info-circle mr-2"></i> Why is this necessary?
+        </h4>
+        <p>In school accounting, balances from the previous session (e.g., unpaid tuition or credit balances) must be reflected as the opening position in the new session. This tool automates that transfer into the <strong>Arrears</strong> ledger for accurate invoicing.</p>
+    </div>
+</div>
+{% endblock %}

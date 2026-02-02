@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto px-4 py-8">
+    
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-gray-900">Payment Reallocation & Audit</h1>
+        <p class="text-gray-500">Correct posting errors by shifting payments between students while preserving the audit trail.</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <!-- Reallocation Form -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+            <h2 class="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+                <i class="fas fa-exchange-alt text-blue-600"></i> Shift Payment
+            </h2>
+            
+            <form action="{{ url_for('reallocate_fee_payment') }}" method="POST" class="space-y-6">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 mb-1">Payment Reference (M-PESA/Slip No)</label>
+                    <input type="text" name="reference_no" required placeholder="e.g. QWE123RTY4" 
+                           class="w-full rounded-xl border-gray-200 focus:border-blue-500 bg-gray-50 p-3">
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">From AdmNo</label>
+                        <input type="text" name="from_admno" required placeholder="Current Student" 
+                               class="w-full rounded-xl border-gray-200 focus:border-blue-500 bg-gray-50 p-3">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">To AdmNo</label>
+                        <input type="text" name="to_admno" required placeholder="Target Student" 
+                               class="w-full rounded-xl border-gray-200 focus:border-blue-500 bg-gray-50 p-3">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 mb-1">Reason for Reallocation</label>
+                    <textarea name="reason" rows="3" required placeholder="e.g. Posted to wrong twin brother" 
+                              class="w-full rounded-xl border-gray-200 focus:border-blue-500 bg-gray-50 p-3"></textarea>
+                </div>
+
+                <div class="p-4 bg-yellow-50 rounded-xl border border-yellow-100 flex gap-3 text-sm text-yellow-800">
+                    <i class="fas fa-info-circle text-lg mt-1"></i>
+                    <p>This action will move both the Payment record and the Ledger credit entry. The original student's balance will increase accordingly.</p>
+                </div>
+
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-lg transition">
+                    Apply Reallocation
+                </button>
+            </form>
+        </div>
+
+        <!-- Help / Sidebar -->
+        <div class="space-y-6">
+            <div class="bg-gray-900 text-white p-6 rounded-2xl shadow-xl">
+                <h3 class="font-bold mb-4 flex items-center gap-2">
+                    <i class="fas fa-shield-alt text-blue-400"></i> Audit Integrity
+                </h3>
+                <ul class="space-y-4 text-sm text-gray-300">
+                    <li class="flex gap-3">
+                        <i class="fas fa-check-circle text-green-500"></i>
+                        <span>Original reference number is preserved to prevent double usage.</span>
+                    </li>
+                    <li class="flex gap-3">
+                        <i class="fas fa-check-circle text-green-500"></i>
+                        <span>Every shift is logged with the accountant's user ID.</span>
+                    </li>
+                    <li class="flex gap-3">
+                        <i class="fas fa-check-circle text-green-500"></i>
+                        <span>Historical balances are not overwritten; new ledger events are triggered.</span>
+                    </li>
+                </ul>
+            </div>
+            
+            <div class="border border-dashed border-gray-300 p-6 rounded-2xl text-center">
+                <i class="fas fa-history text-3xl text-gray-300 mb-3"></i>
+                <p class="text-gray-500 text-sm italic">Need to see the log? Check the Reallocation Audit Report in the Admin section.</p>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

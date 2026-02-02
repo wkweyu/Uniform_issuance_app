@@ -52,7 +52,75 @@
                 Manage Classes
             </a>
         </div>
+
+        <!-- Exam & Grading Card -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="flex items-center mb-4">
+                <div class="bg-indigo-100 p-3 rounded-full">
+                    <i class="fas fa-award text-indigo-600 text-xl"></i>
+                </div>
+                <h2 class="text-xl font-semibold ml-4">Exams & Grading</h2>
+            </div>
+            <p class="text-gray-600 mb-4">Configure exam metrics and grading systems.</p>
+            <div class="space-y-2">
+                <a href="{{ url_for('exams_dashboard') }}" class="block w-full bg-indigo-600 text-white py-2 px-4 rounded text-center hover:bg-indigo-700">
+                    Exam Dashboard
+                </a>
+                <a href="{{ url_for('manage_grading_scales') }}" class="block w-full bg-gray-200 text-gray-800 py-2 px-4 rounded text-center hover:bg-gray-300">
+                    Grading Systems
+                </a>
+            </div>
+        </div>
         
+        <!-- Fees Management Card -->
+        <div class="bg-white rounded-lg shadow-md border-t-4 border-orange-500 p-6">
+            <div class="flex items-center mb-4">
+                <div class="bg-orange-100 p-3 rounded-full">
+                    <i class="fas fa-money-bill-wave text-orange-600 text-xl"></i>
+                </div>
+                <h2 class="text-xl font-semibold ml-4">Fees & Billing</h2>
+            </div>
+            <p class="text-gray-600 mb-4 text-sm">Automate invoicing, track payments, and manage fee structures.</p>
+            <div class="grid grid-cols-2 gap-2">
+                <a href="{{ url_for('manage_fee_structures') }}" class="bg-orange-600 text-white py-2 px-1 rounded text-center text-xs font-bold hover:bg-orange-700">
+                    Structures
+                </a>
+                <a href="{{ url_for('manage_voteheads') }}" class="bg-orange-100 text-orange-800 py-2 px-1 rounded text-center text-xs font-bold hover:bg-orange-200">
+                    Voteheads
+                </a>
+                <a href="{{ url_for('admin_fees_rollup') }}" class="bg-red-50 text-red-600 py-2 px-1 rounded text-center text-xs font-bold hover:bg-red-100 border border-red-200">
+                    Year Roll-Up
+                </a>
+                <a href="{{ url_for('reallocate_fee_payment') }}" class="bg-gray-100 text-gray-700 py-2 px-1 rounded text-center text-xs font-bold hover:bg-gray-200">
+                    Reallocate
+                </a>
+            </div>
+        </div>
+
+        <!-- Finance & General Ledger Card -->
+        <div class="bg-white rounded-lg shadow-md border-t-4 border-emerald-600 p-6">
+            <div class="flex items-center mb-4">
+                <div class="bg-emerald-100 p-3 rounded-full">
+                    <i class="fas fa-balance-scale text-emerald-600 text-xl"></i>
+                </div>
+                <h2 class="text-xl font-semibold ml-4">Accountancy</h2>
+            </div>
+            <p class="text-gray-600 mb-4 text-sm">Double-entry accounting, Trial balance, and Expenditure vouchers.</p>
+            <div class="space-y-2">
+                <a href="{{ url_for('finance_dashboard') }}" class="block w-full bg-emerald-600 text-white py-2 px-4 rounded text-center hover:bg-emerald-700 font-bold">
+                    Finance Dashboard
+                </a>
+                <div class="grid grid-cols-2 gap-2">
+                    <a href="{{ url_for('manage_vouchers') }}" class="bg-gray-100 text-gray-700 py-2 px-1 rounded text-center text-xs font-bold hover:bg-gray-200">
+                        Vouchers
+                    </a>
+                    <a href="{{ url_for('trial_balance_report') }}" class="bg-gray-100 text-gray-700 py-2 px-1 rounded text-center text-xs font-bold hover:bg-gray-200">
+                        Trial Balance
+                    </a>
+                </div>
+            </div>
+        </div>
+
         <!-- User Management Card -->
         <div class="bg-white rounded-lg shadow-md p-6">
             <div class="flex items-center mb-4">

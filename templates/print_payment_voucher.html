@@ -1,0 +1,107 @@
+{% extends 'base_report.html' %}
+
+{% block report_title %}Payment Voucher{% endblock %}
+
+{% block content %}
+<div class="mb-4 flex justify-between items-start">
+    <div class="space-y-1">
+        <p class="text-xs font-bold text-gray-500 uppercase tracking-widest">Payee Information</p>
+        <p class="text-lg font-black text-gray-900 capitalize">{{ voucher.payee_name }}</p>
+        <p class="text-xs text-gray-600">Code: {{ voucher.supplier_id or 'N/A' }} | Account: {{ voucher.account_name }}</p>
+    </div>
+    <div class="text-right space-y-1">
+        <p class="text-xs font-bold text-gray-500 uppercase tracking-widest">Voucher Number</p>
+        <p class="text-xl font-mono font-black text-indigo-700 bg-indigo-50 px-3 py-1 rounded inline-block">{{ voucher.voucher_no }}</p>
+        <p class="text-xs text-gray-500">Status: <span class="font-bold text-emerald-600">{{ voucher.status }}</span></p>
+    </div>
+</div>
+
+<div class="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6 grid grid-cols-2 gap-4">
+    <div>
+        <span class="text-[10px] font-black text-gray-400 uppercase">Payment Mode:</span>
+        <span class="text-xs font-bold text-gray-800 ml-2">{{ voucher.payment_mode }}</span>
+    </div>
+    <div class="text-right">
+        <span class="text-[10px] font-black text-gray-400 uppercase text-right">Reference / Cheque:</span>
+        <span class="text-xs font-mono font-bold text-gray-800 ml-2">{{ voucher.cheque_no or 'N/A' }}</span>
+    </div>
+</div>
+
+<table class="w-full mb-6">
+    <thead>
+        <tr>
+            <th class="w-2/3">Particulars / Description</th>
+            <th class="text-right w-1/3">Amount (KES)</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="h-24 align-top">
+                <p class="font-bold text-gray-800">{{ voucher.description or 'Being payment for goods/services rendered' }}</p>
+                {% if voucher.po_number %}
+                <p class="text-[10px] text-gray-500 mt-2 italic">Ref: Purchase Order #{{ voucher.po_number }}</p>
+                {% endif %}
+            </td>
+            <td class="text-right font-mono font-black align-top text-lg">
+                {{ voucher.gross_amount | currency }}
+            </td>
+        </tr>
+    </tbody>
+    <tfoot>
+        {% if voucher.vat_amount and voucher.vat_amount > 0 %}
+        <tr>
+            <td class="text-right text-xs font-bold uppercase py-1">Gross Amount</td>
+            <td class="text-right font-mono text-sm border-none py-1">{{ voucher.gross_amount | currency }}</td>
+        </tr>
+        <tr>
+            <td class="text-right text-xs font-bold uppercase py-1">VAT Amount</td>
+            <td class="text-right font-mono text-sm border-none py-1">({{ voucher.vat_amount | currency }})</td>
+        </tr>
+        {% endif %}
+        {% if voucher.withholding_tax and voucher.withholding_tax > 0 %}
+        <tr>
+            <td class="text-right text-xs font-bold uppercase py-1">Withholding Tax (WHT)</td>
+            <td class="text-right font-mono text-sm border-none py-1">({{ voucher.withholding_tax | currency }})</td>
+        </tr>
+        {% endif %}
+        <tr class="bg-gray-900 text-white">
+            <td class="text-right font-black uppercase text-xs">Net Amount Paid</td>
+            <td class="text-right font-mono font-black text-xl">{{ voucher.amount | currency }}</td>
+        </tr>
+    </tfoot>
+</table>
+
+<div class="mb-8 p-4 bg-gray-50 rounded-lg border-l-4 border-gray-400">
+    <p class="text-[10px] font-black text-gray-400 uppercase mb-1">Amount in Words:</p>
+    <p class="text-xs font-bold italic text-gray-700 capitalize">*** {{ amount_in_words }} Only ***</p>
+</div>
+
+<div class="grid grid-cols-2 gap-8 mt-12">
+    <div class="border border-gray-100 p-4 rounded-xl">
+        <p class="text-[10px] font-black text-gray-400 uppercase mb-4">Payee Acknowledgement</p>
+        <div class="h-16 border-b border-dashed border-gray-300"></div>
+        <p class="text-[9px] text-gray-500 mt-2">Signature & Identification #</p>
+    </div>
+    <div class="border border-gray-100 p-4 rounded-xl">
+        <p class="text-[10px] font-black text-gray-400 uppercase mb-4">Internal Verifications</p>
+        <div class="space-y-4">
+            <div class="flex justify-between text-[9px]">
+                <span>Checked By: {{ voucher.verified_by_name or 'PENDING' }}</span>
+                <span class="italic">Date: {{ voucher.verified_at or '_____' }}</span>
+            </div>
+            <div class="flex justify-between text-[9px]">
+                <span>Authorized By: {{ voucher.authorized_by_name or 'PENDING' }}</span>
+                <span class="italic">Date: {{ voucher.paid_at or '_____' }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    @media print {
+        th { background-color: #f3f4f6 !important; height: 10mm; }
+        td { height: 8mm; }
+        tfoot td { border: none !important; }
+    }
+</style>
+{% endblock %}

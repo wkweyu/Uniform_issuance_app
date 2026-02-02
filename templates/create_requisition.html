@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="max-w-4xl mx-auto">
+        <div class="bg-white shadow-xl rounded-2xl overflow-hidden border border-gray-100">
+            <div class="bg-indigo-600 px-8 py-6">
+                <h1 class="text-2xl font-bold text-white">Create Purchase Requisition</h1>
+                <p class="text-indigo-100 text-sm">Submit items for procurement approval</p>
+            </div>
+
+            <form method="POST" class="p-8">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Department</label>
+                        <select name="department_id" required class="w-full rounded-lg border-gray-300 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm">
+                            <option value="">Select Department...</option>
+                            {% for dept in depts %}
+                            <option value="{{ dept.deptID }}">{{ dept.dept }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Academic Year</label>
+                        <select name="academic_year_id" required class="w-full rounded-lg border-gray-300 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm">
+                            {% for year in academic_years %}
+                            <option value="{{ year.id }}" {% if year.is_current %}selected{% endif %}>{{ year.year }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Category</label>
+                        <select name="category" class="w-full rounded-lg border-gray-300 focus:ring-indigo-500 focus:border-indigo-500 shadow-sm">
+                            <option value="General">General</option>
+                            <option value="Academic">Academic</option>
+                            <option value="Uniforms">Uniforms</option>
+                            <option value="Fleet">Fleet</option>
+                            <option value="Maintenance">Maintenance</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="mb-8">
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Justification / Purpose</label>
+                    <textarea name="justification" rows="2" class="w-full rounded-lg border-gray-300 shadow-sm" placeholder="Why are these items needed?"></textarea>
+                </div>
+
+                <div class="mb-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-lg font-bold text-gray-800">Requested Items</h2>
+                        <button type="button" onclick="addItemRow()" class="text-indigo-600 hover:text-indigo-800 font-bold text-sm bg-indigo-50 px-3 py-1 rounded-full">+ Add Item</button>
+                    </div>
+                    
+                    <div id="items-container">
+                        <div class="grid grid-cols-12 gap-4 mb-3 item-row items-center">
+                            <div class="col-span-6">
+                                <label class="block text-[10px] uppercase font-bold text-gray-400 mb-1">Description</label>
+                                <input type="text" name="description[]" required class="w-full rounded-lg border-gray-300 text-sm" placeholder="Item name/description">
+                            </div>
+                            <div class="col-span-2">
+                                <label class="block text-[10px] uppercase font-bold text-gray-400 mb-1">Qty</label>
+                                <input type="number" name="quantity[]" step="0.01" required class="w-full rounded-lg border-gray-300 text-sm" placeholder="0.00">
+                            </div>
+                            <div class="col-span-3">
+                                <label class="block text-[10px] uppercase font-bold text-gray-400 mb-1">Est. Unit Price</label>
+                                <input type="number" name="price[]" step="0.01" class="w-full rounded-lg border-gray-300 text-sm" placeholder="0.00">
+                            </div>
+                            <div class="col-span-1 pt-4 text-center">
+                                <!-- No delete on first row -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-end gap-4 pt-6 border-t mt-8">
+                    <a href="{{ url_for('manage_requisitions') }}" class="text-gray-500 hover:text-gray-700 font-medium px-6 py-2">Cancel</a>
+                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-10 rounded-xl shadow-lg shadow-indigo-200 transition-all flex items-center gap-2">
+                        <i class="fas fa-paper-plane"></i> Submit Requisition
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function addItemRow() {
+    const container = document.getElementById('items-container');
+    const newRow = document.createElement('div');
+    newRow.className = 'grid grid-cols-12 gap-4 mb-3 item-row items-center';
+    newRow.innerHTML = `
+        <div class="col-span-6">
+            <input type="text" name="description[]" required class="w-full rounded-lg border-gray-300 text-sm" placeholder="Item name/description">
+        </div>
+        <div class="col-span-2">
+            <input type="number" name="quantity[]" step="0.01" required class="w-full rounded-lg border-gray-300 text-sm" placeholder="0.00">
+        </div>
+        <div class="col-span-3">
+            <input type="number" name="price[]" step="0.01" class="w-full rounded-lg border-gray-300 text-sm" placeholder="0.00">
+        </div>
+        <div class="col-span-1 text-center">
+            <button type="button" onclick="this.parentElement.parentElement.remove()" class="text-red-400 hover:text-red-600"><i class="fas fa-trash"></i></button>
+        </div>
+    `;
+    container.appendChild(newRow);
+}
+</script>
+{% endblock %}

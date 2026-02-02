@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-8">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-800">Suppliers Management</h1>
+            <p class="text-gray-600">Add and manage vendor information.</p>
+        </div>
+        <button onclick="document.getElementById('addSupplierModal').classList.remove('hidden')" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-bold transition flex items-center gap-2 shadow-lg">
+            <i class="fas fa-plus"></i> Add New Supplier
+        </button>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <table class="w-full text-left text-sm">
+            <thead>
+                <tr class="bg-gray-50 border-b border-gray-100 text-gray-500 font-bold uppercase text-[10px] tracking-widest">
+                    <th class="px-6 py-4">Company Name</th>
+                    <th class="px-6 py-4">Contact Person</th>
+                    <th class="px-6 py-4">Email / Phone</th>
+                    <th class="px-6 py-4">Status</th>
+                    <th class="px-6 py-4 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+                {% for s in suppliers %}
+                <tr class="hover:bg-gray-50 transition">
+                    <td class="px-6 py-4">
+                        <div class="font-bold text-gray-800">{{ s.company }}</div>
+                        <div class="text-[10px] text-gray-400 font-mono">{{ s.cert_no or 'N/A' }}</div>
+                    </td>
+                    <td class="px-6 py-4 text-gray-600">
+                        {{ s.contact_person or s.firstName ~ ' ' ~ s.lastName or 'N/A' }}
+                    </td>
+                    <td class="px-6 py-4">
+                        <div class="text-gray-800">{{ s.email }}</div>
+                        <div class="text-xs text-gray-500">{{ s.mobilePhone }}</div>
+                    </td>
+                    <td class="px-6 py-4">
+                        {% if s.in_operation == 'Y' %}
+                        <span class="bg-green-100 text-green-700 px-2 py-1 rounded-full text-[10px] font-bold">ACTIVE</span>
+                        {% else %}
+                        <span class="bg-red-100 text-red-700 px-2 py-1 rounded-full text-[10px] font-bold">INACTIVE</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 text-right flex justify-end gap-3">
+                        <a href="{{ url_for('vendor_statement', supplier_id=s.supplierID) }}" class="text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1">
+                            <i class="fas fa-file-invoice-dollar"></i> Statement
+                        </a>
+                        <button class="text-blue-600 hover:text-blue-800 font-bold">Edit</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Add Supplier Modal -->
+<div id="addSupplierModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 hidden">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+        <div class="bg-gray-50 px-6 py-4 border-b flex justify-between items-center">
+            <h3 class="font-bold text-gray-800 uppercase tracking-widest text-sm text-center">Register New Supplier</h3>
+            <button onclick="document.getElementById('addSupplierModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <form method="POST" class="p-6 space-y-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Company Name</label>
+                <input type="text" name="company" required class="w-full border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Reg/Cert No</label>
+                    <input type="text" name="cert_no" class="w-full border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">PIN No</label>
+                    <input type="text" name="pin_no" class="w-full border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Contact Person</label>
+                    <input type="text" name="contact_person" class="w-full border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Phone Number</label>
+                    <input type="text" name="phone" required class="w-full border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Email Address</label>
+                <input type="email" name="email" class="w-full border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Address</label>
+                <textarea name="address" rows="2" class="w-full border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-blue-500 focus:border-blue-500"></textarea>
+            </div>
+            <div class="pt-4">
+                <button type="submit" class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition shadow-lg">
+                    Create Supplier Profile
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,44 @@
+{% extends 'base_report.html' %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-4">📊 Class Reports Dashboard</h1>
+<h2 class="text-lg font-semibold mb-2">Class Allocations</h2>
+<table class="w-full text-sm mb-8">
+  <thead>
+    <tr class="bg-gray-100">
+      <th class="px-4 py-2 text-left">Class Name</th>
+      <th class="px-4 py-2 text-left">Year</th>
+      <th class="px-4 py-2 text-center">Students</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in class_summary %}
+    <tr class="border-b">
+      <td class="px-4 py-2">{{ row.display_name }}</td>
+      <td class="px-4 py-2">{{ row.year }}</td>
+      <td class="px-4 py-2 text-center">{{ row.students }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<h2 class="text-lg font-semibold mb-2">Promotion History</h2>
+<table class="w-full text-sm mb-8">
+  <thead>
+    <tr class="bg-gray-100">
+      <th class="px-4 py-2 text-left">Old Class ID</th>
+      <th class="px-4 py-2 text-left">New Class ID</th>
+      <th class="px-4 py-2 text-center">Students Promoted</th>
+      <th class="px-4 py-2 text-left">Date</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for promo in promotions %}
+    <tr class="border-b">
+      <td class="px-4 py-2">{{ promo.old_class_id }}</td>
+      <td class="px-4 py-2">{{ promo.new_class_id }}</td>
+      <td class="px-4 py-2 text-center">{{ promo.student_count }}</td>
+      <td class="px-4 py-2">{{ promo.promotion_date }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

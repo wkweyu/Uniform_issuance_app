@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-4">Select Class for Subject Allocation</h1>
+<p class="mb-4 text-gray-600">Choose a class below to allocate subjects.</p>
+<table class="w-full text-sm mb-8">
+  <thead>
+    <tr class="bg-gray-100">
+      <th class="px-4 py-2 text-left">Class Name</th>
+      <th class="px-4 py-2 text-left">Year</th>
+      <th class="px-4 py-2 text-left">Group</th>
+      <th class="px-4 py-2 text-left">Stream</th>
+      <th class="px-4 py-2 text-center">Action</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for class in classes %}
+    <tr class="border-b">
+      <td class="px-4 py-2">{{ class.display_name }}</td>
+      <td class="px-4 py-2">{{ class.academic_year_id }}</td>
+      <td class="px-4 py-2">{{ class.class_group_code }}</td>
+      <td class="px-4 py-2">{{ class.stream_code }}</td>
+      <td class="px-4 py-2 text-center">
+        <a href="/admin/class/{{ class.classID }}/subjects" class="bg-purple-600 text-white px-3 py-1 rounded hover:bg-purple-700">Allocate Subjects</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

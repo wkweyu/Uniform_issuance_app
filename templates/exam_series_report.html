@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-8 border-b pb-4 no-print">
+        <div>
+            <h1 class="text-3xl font-black text-gray-800 uppercase tracking-tight">Exam Series Report</h1>
+            <p class="text-blue-600 font-bold uppercase text-xs tracking-widest mt-1">{{ exam.name }} - {{ exam.academic_year_name }} Term {{ exam.term }}</p>
+        </div>
+        <div class="flex gap-4">
+            <button onclick="window.print()" class="px-6 py-2 bg-gray-800 text-white rounded-xl font-bold uppercase text-xs hover:bg-black transition shadow-lg">
+                <i class="fas fa-print mr-2"></i> Print Report
+            </button>
+        </div>
+    </div>
+
+    <!-- Overall Top 3 -->
+    <div class="mb-12">
+        <h2 class="text-xl font-black text-gray-800 uppercase tracking-wider mb-6 flex items-center">
+            <i class="fas fa-trophy text-yellow-500 mr-3"></i> Overall Top Students (Series)
+        </h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {% for student in overall_top_3 %}
+            <div class="bg-gradient-to-br from-white to-gray-50 p-6 rounded-2xl shadow-md border-t-4 {% if loop.index == 1 %}border-yellow-400{% elif loop.index == 2 %}border-gray-300{% else %}border-amber-600{% endif %}">
+                <div class="flex justify-between items-start mb-4">
+                    <span class="text-4xl font-black {% if loop.index == 1 %}text-yellow-400{% elif loop.index == 2 %}text-gray-400{% else %}text-amber-600{% endif %}">#{{ loop.index }}</span>
+                    <span class="text-xs font-bold uppercase px-3 py-1 bg-gray-200 rounded-full text-gray-600">{{ student.class_name }}</span>
+                </div>
+                <h3 class="text-lg font-bold text-gray-900 mb-1">{{ student.name }}</h3>
+                <p class="text-xs text-gray-500 font-bold uppercase mb-4">Adm: {{ student.admno }}</p>
+                <div class="flex justify-between items-end">
+                    <div>
+                        <p class="text-[10px] text-gray-400 uppercase font-black tracking-widest">Total Marks</p>
+                        <p class="text-2xl font-black text-gray-800">{{ student.total }}</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-[10px] text-gray-400 uppercase font-black tracking-widest">Mean Grade</p>
+                        <p class="text-xl font-black text-blue-600">{{ student.grade }}</p>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
+        <!-- Class-wise Winners -->
+        <div>
+            <h2 class="text-xl font-black text-gray-800 uppercase tracking-wider mb-6 flex items-center">
+                <i class="fas fa-medal text-blue-500 mr-3"></i> Top 3 Students per Class
+            </h2>
+            <div class="space-y-6">
+                {% for entry in class_rankings %}
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div class="bg-gray-50 px-6 py-3 border-b border-gray-100 flex justify-between items-center">
+                        <span class="font-bold text-gray-800">{{ entry.class_name }}</span>
+                        <span class="text-[10px] font-black uppercase text-gray-400 tracking-widest">Top Performers</span>
+                    </div>
+                    <table class="w-full text-sm">
+                        <tbody class="divide-y divide-gray-50">
+                            {% for student in entry.students %}
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-6 py-3 font-black text-gray-400 w-12">{{ loop.index }}</td>
+                                <td class="px-2 py-3">
+                                    <div class="font-bold text-gray-900">{{ student.name }}</div>
+                                    <div class="text-[10px] text-gray-400">ADM: {{ student.admno }}</div>
+                                </td>
+                                <td class="px-6 py-3 text-right">
+                                    <div class="font-black text-gray-800">{{ student.total }}</div>
+                                    <div class="text-[10px] font-bold text-blue-600 uppercase">{{ student.grade }}</div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Subject Winners -->
+        <div>
+            <h2 class="text-xl font-black text-gray-800 uppercase tracking-wider mb-6 flex items-center">
+                <i class="fas fa-star text-indigo-500 mr-3"></i> Best per Subject (Entire Series)
+            </h2>
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="bg-gray-50 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                            <th class="px-6 py-3 text-left">Subject</th>
+                            <th class="px-6 py-3 text-left">Winner</th>
+                            <th class="px-6 py-3 text-right">Score</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-50">
+                        {% for winner in subject_winners %}
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-6 py-4">
+                                <div class="font-bold text-gray-900">{{ winner.subject_name }}</div>
+                                <div class="text-[10px] text-gray-400 uppercase">{{ winner.subject_code }}</div>
+                            </td>
+                            <td class="px-6 py-4">
+                                <div class="font-bold text-blue-600">{{ winner.student_name }}</div>
+                                <div class="text-[10px] text-gray-400 uppercase font-bold">{{ winner.class_name }}</div>
+                            </td>
+                            <td class="px-6 py-4 text-right">
+                                <div class="text-lg font-black text-gray-800">{{ winner.mark }}</div>
+                                <div class="text-[10px] font-bold text-indigo-600 uppercase">{{ winner.grade }}</div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Most Improved -->
+            {% if most_improved %}
+            <h2 class="text-xl font-black text-gray-800 uppercase tracking-wider mb-6 mt-12 flex items-center">
+                <i class="fas fa-chart-line text-green-500 mr-3"></i> Most Improved Students
+            </h2>
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <table class="w-full text-sm">
+                    <tbody class="divide-y divide-gray-50">
+                        {% for item in most_improved %}
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-6 py-4">
+                                <div class="font-bold text-gray-900">{{ item.name }}</div>
+                                <div class="text-[10px] text-gray-400">ADM: {{ item.admno }}</div>
+                            </td>
+                            <td class="px-6 py-4 text-right">
+                                <div class="flex items-center justify-end text-green-600 font-black">
+                                    <i class="fas fa-arrow-up mr-2 text-xs"></i>
+                                    <span>+{{ "%.2f"|format(item.improvement) }}</span>
+                                </div>
+                                <div class="text-[10px] text-gray-400 uppercase font-bold">Points Improved</div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Print Footer -->
+    <div class="mt-12 pt-8 border-t text-center text-gray-400 text-[10px] uppercase font-bold tracking-widest hidden print:block">
+        Generated on {{ now.strftime('%Y-%m-%d %H:%M') }} | School Management System
+    </div>
+</div>
+{% endblock %}

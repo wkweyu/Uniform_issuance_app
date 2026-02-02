@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="bg-slate-50 min-h-screen">
+    <!-- Header Section -->
+    <div class="bg-white border-b sticky top-0 z-10">
+        <div class="container mx-auto px-6 py-4">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <nav class="flex text-xs text-slate-400 mb-1 uppercase font-bold tracking-widest">
+                        <ol class="flex items-center space-x-2">
+                            <li>Procurement</li>
+                            <li><i class="fas fa-chevron-right mx-1 text-[8px]"></i></li>
+                            <li class="text-indigo-600">Accounts Payable</li>
+                        </ol>
+                    </nav>
+                    <h1 class="text-2xl font-black text-slate-900 flex items-center gap-3">
+                        <i class="fas fa-money-bill-trend-up text-indigo-600"></i>
+                        Suppliers Aging Analysis
+                    </h1>
+                </div>
+                
+                <div class="flex items-center gap-3">
+                    <button onclick="window.print()" class="bg-white hover:bg-slate-50 text-slate-700 px-5 py-2.5 rounded-xl border font-bold text-sm flex items-center gap-2 transition shadow-sm">
+                        <i class="fas fa-print text-slate-400"></i> Print Report
+                    </button>
+                    <a href="{{ url_for('procurement_dashboard') }}" class="bg-slate-900 hover:bg-black text-white px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition shadow-lg">
+                        <i class="fas fa-arrow-left"></i> Hub
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container mx-auto px-6 py-8">
+        <!-- Summary Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center text-center">
+                <span class="text-[10px] uppercase font-black tracking-widest text-slate-400 mb-2">0-30 Days (Current)</span>
+                <span class="text-2xl font-black text-slate-900">{{ aging_data | map(attribute='bucket_0_30') | sum | currency }}</span>
+                <div class="w-full h-1.5 bg-indigo-100 rounded-full mt-4">
+                    <div class="h-full bg-indigo-500 rounded-full" style="width: 100%"></div>
+                </div>
+            </div>
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center text-center">
+                <span class="text-[10px] uppercase font-black tracking-widest text-slate-400 mb-2">31-60 Days</span>
+                <span class="text-2xl font-black text-slate-900">{{ aging_data | map(attribute='bucket_31_60') | sum | currency }}</span>
+                <div class="w-full h-1.5 bg-amber-100 rounded-full mt-4">
+                    <div class="h-full bg-amber-500 rounded-full" style="width: 75%"></div>
+                </div>
+            </div>
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center text-center">
+                <span class="text-[10px] uppercase font-black tracking-widest text-slate-400 mb-2">61-90 Days</span>
+                <span class="text-2xl font-black text-slate-900">{{ aging_data | map(attribute='bucket_61_90') | sum | currency }}</span>
+                <div class="w-full h-1.5 bg-orange-100 rounded-full mt-4">
+                    <div class="h-full bg-orange-500 rounded-full" style="width: 50%"></div>
+                </div>
+            </div>
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center text-center">
+                <span class="text-[10px] uppercase font-black tracking-widest text-slate-400 mb-2">91+ Days (Overdue)</span>
+                <span class="text-2xl font-black text-rose-600">{{ aging_data | map(attribute='bucket_91_plus') | sum | currency }}</span>
+                <div class="w-full h-1.5 bg-rose-100 rounded-full mt-4">
+                    <div class="h-full bg-rose-500 rounded-full" style="width: 25%"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left whitespace-nowrap">
+                    <thead>
+                        <tr class="bg-slate-50/50 text-slate-500 font-black uppercase text-[10px] tracking-widest border-b">
+                            <th class="px-6 py-5">Supplier Profile</th>
+                            <th class="px-6 py-5 text-right">0-30 Days</th>
+                            <th class="px-6 py-5 text-right">31-60 Days</th>
+                            <th class="px-6 py-5 text-right">61-90 Days</th>
+                            <th class="px-6 py-5 text-right">91+ Days</th>
+                            <th class="px-6 py-5 text-right bg-slate-50 border-l">Total Balance</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        {% for row in aging_data %}
+                        <tr class="hover:bg-slate-50 transition anim-fade-in">
+                            <td class="px-6 py-5">
+                                <div class="font-bold text-slate-900">{{ row.supplier_name }}</div>
+                                <div class="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Active Accounts Payable</div>
+                            </td>
+                            <td class="px-6 py-5 text-right font-medium text-slate-600">{{ row.bucket_0_30 | currency }}</td>
+                            <td class="px-6 py-5 text-right font-medium text-slate-600">{{ row.bucket_31_60 | currency }}</td>
+                            <td class="px-6 py-5 text-right font-medium text-orange-600">{{ row.bucket_61_90 | currency }}</td>
+                            <td class="px-6 py-5 text-right font-bold text-rose-600">
+                                {% if row.bucket_91_plus > 0 %}
+                                <span class="bg-rose-50 px-2 py-1 rounded text-rose-700">{{ row.bucket_91_plus | currency }}</span>
+                                {% else %}
+                                0.00
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-5 text-right font-black text-indigo-900 bg-slate-50/50 border-l">{{ row.total_owed | currency }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="6" class="px-6 py-24 text-center">
+                                <i class="fas fa-check-double text-emerald-400 text-5xl mb-4"></i>
+                                <h3 class="text-slate-900 font-bold">No Outstanding Balances</h3>
+                                <p class="text-slate-400 text-sm">All purchase orders are currently settled.</p>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    {% if aging_data %}
+                    <tfoot class="bg-slate-900 text-white font-bold">
+                        <tr>
+                            <td class="px-6 py-5 text-xs uppercase tracking-widest">Aggregate Totals</td>
+                            <td class="px-6 py-5 text-right text-sm">{{ aging_data | map(attribute='bucket_0_30') | sum | currency }}</td>
+                            <td class="px-6 py-5 text-right text-sm">{{ aging_data | map(attribute='bucket_31_60') | sum | currency }}</td>
+                            <td class="px-6 py-5 text-right text-sm">{{ aging_data | map(attribute='bucket_61_90') | sum | currency }}</td>
+                            <td class="px-6 py-5 text-right text-sm">{{ aging_data | map(attribute='bucket_91_plus') | sum | currency }}</td>
+                            <td class="px-6 py-5 text-right font-black text-indigo-300 border-l border-white/10">{{ aging_data | map(attribute='total_owed') | sum | currency }}</td>
+                        </tr>
+                    </tfoot>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+
+        <div class="mt-8 flex flex-col md:flex-row gap-6 no-print">
+            <div class="flex-grow bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <h3 class="flex items-center gap-2 text-slate-900 font-black uppercase text-xs tracking-tighter mb-3">
+                    <i class="fas fa-info-circle text-indigo-500"></i>
+                    Report Methodology
+                </h3>
+                <p class="text-slate-500 text-sm leading-relaxed">
+                    Balances are calculated using active Purchase Orders that have not reached full settlement status. 
+                    Aging is tracked from the <strong>Order Date</strong>. 
+                    The 91+ bucket represents high-priority debt that may affect procurement terms if not settled.
+                </p>
+            </div>
+            
+            <div class="shrink-0 md:w-72 bg-indigo-600 p-6 rounded-2xl shadow-xl shadow-indigo-100 text-white flex flex-col justify-between">
+                <div>
+                    <h3 class="text-indigo-100 font-bold uppercase text-[10px] tracking-widest mb-1">Total Exposure</h3>
+                    <div class="text-2xl font-black">{{ aging_data | map(attribute='total_owed') | sum | currency }}</div>
+                </div>
+                <a href="{{ url_for('create_purchase_order') }}" class="mt-4 bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg text-xs font-bold text-center transition backdrop-blur-md">
+                    Initiate New Payment
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+@media print {
+    .no-print { display: none !important; }
+    body { background: white !important; }
+    .bg-slate-50, .bg-slate-50\/50 { background-color: transparent !important; }
+    .shadow-sm, .shadow-xl { shadow: none !important; }
+    table { border-collapse: collapse !important; }
+    th, td { border: 1px solid #e2e8f0 !important; }
+    .bg-slate-900 { background-color: #0f172a !important; -webkit-print-color-adjust: exact; }
+}
+
+.anim-fade-in {
+    animation: fadeIn 0.5s ease-out forwards;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+</style>
+{% endblock %}

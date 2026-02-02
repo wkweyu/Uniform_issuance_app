@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="max-w-4xl mx-auto">
+        <div class="bg-yellow-50 border-l-8 border-yellow-400 p-6 rounded-xl shadow-lg mb-8">
+            <div class="flex items-center">
+                <div class="p-3 bg-yellow-400 rounded-full mr-4 text-white">
+                    <i class="fas fa-exclamation-triangle text-2xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-black text-yellow-800 uppercase tracking-tight">Warning: Missing Marks Detected</h1>
+                    <p class="text-yellow-700 font-bold">You are attempting to lock <span class="underline">{{ exam.name }}</span>, but some entries are incomplete.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-200">
+            <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                <h2 class="text-lg font-black text-gray-800 uppercase tracking-widest"><i class="fas fa-list-ul mr-2 text-blue-600"></i> Missing Mark Details</h2>
+                <span class="px-4 py-1 bg-red-100 text-red-700 rounded-full text-xs font-black">{{ missing|length }} Missing Entries</span>
+            </div>
+            
+            <div class="max-h-[500px] overflow-y-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead class="bg-gray-100 text-gray-600 uppercase text-[10px] font-black tracking-widest sticky top-0">
+                        <tr>
+                            <th class="px-6 py-3 border-b">Class</th>
+                            <th class="px-6 py-3 border-b">Subject</th>
+                            <th class="px-6 py-3 border-b">Student</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        {% for item in missing %}
+                        <tr class="hover:bg-blue-50/50 transition duration-150 text-sm">
+                            <td class="px-6 py-4 font-bold text-gray-700">{{ item.class_name }}</td>
+                            <td class="px-6 py-4 font-bold text-blue-600">{{ item.subject_name }}</td>
+                            <td class="px-6 py-4 text-gray-500">
+                                <span class="font-mono text-gray-400 mr-2">{{ item.AdmNo }}</span>
+                                <span class="font-black uppercase text-gray-900">{{ item.student_name }}</span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="p-8 bg-gray-50 border-t border-gray-200">
+                <div class="flex flex-col md:flex-row gap-4 justify-between items-center">
+                    <a href="{{ url_for('exams_dashboard') }}" class="w-full md:w-auto px-8 py-3 bg-white border-2 border-gray-300 text-gray-700 rounded-xl font-black uppercase tracking-widest hover:bg-gray-100 transition text-center shadow-sm">
+                        <i class="fas fa-arrow-left mr-2"></i> Stop & Fix Marks
+                    </a>
+                    
+                    <form action="{{ url_for('toggle_exam_status', exam_id=exam.id) }}" method="POST" class="w-full md:w-auto m-0">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="force" value="true">
+                        <button type="submit" class="w-full md:w-auto px-8 py-3 bg-red-600 text-white rounded-xl font-black uppercase tracking-widest hover:bg-red-700 transition shadow-lg transform active:scale-95">
+                            <i class="fas fa-lock mr-2"></i> Force Lock Anyway
+                        </button>
+                    </form>
+                </div>
+                <p class="text-center mt-6 text-[10px] text-gray-400 font-bold uppercase tracking-[0.2em]">
+                    Note: Forced locking will prevent further edits but might result in incomplete report cards.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

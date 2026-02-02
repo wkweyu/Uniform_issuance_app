@@ -1,0 +1,50 @@
+{% extends 'base_report.html' %}
+
+{% block report_title %}Fees Collection by Payment Mode{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex justify-between items-end no-print">
+  <form class="flex gap-2 items-end">
+    <div>
+      <label class="block text-xs font-bold text-gray-500 uppercase mb-1">From</label>
+      <input type="date" name="start_date" value="{{ start_date }}" class="border rounded px-3 py-1.5 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs font-bold text-gray-500 uppercase mb-1">To</label>
+      <input type="date" name="end_date" value="{{ end_date }}" class="border rounded px-3 py-1.5 text-sm">
+    </div>
+    <button type="submit" class="bg-blue-600 text-white px-4 py-1.5 rounded text-sm font-bold">Filter</button>
+  </form>
+  <button onclick="window.print()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-6 py-2 rounded-xl font-bold transition">Print Report</button>
+</div>
+
+<div class="bg-white border rounded-lg overflow-hidden">
+  <table class="w-full text-left text-sm">
+    <thead>
+      <tr class="bg-gray-100 border-b-2 border-gray-200 text-gray-700 font-bold">
+        <th class="px-4 py-3">Payment Mode</th>
+        <th class="px-4 py-3 text-right">Count</th>
+        <th class="px-4 py-3 text-right">Total (KES)</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y">
+      {% set grand_total = 0 %}
+      {% for row in data %}
+      {% set grand_total = grand_total + (row.total_amount or 0) %}
+      <tr class="hover:bg-gray-50">
+        <td class="px-4 py-3">{{ row.payment_mode }}</td>
+        <td class="px-4 py-3 text-right font-mono">{{ row.count }}</td>
+        <td class="px-4 py-3 text-right font-mono">{{ row.total_amount | currency }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot class="bg-gray-900 text-white font-bold">
+      <tr>
+        <td class="px-4 py-4 text-right uppercase tracking-widest text-xs">Grand Total</td>
+        <td class="px-4 py-4 text-right font-mono">&nbsp;</td>
+        <td class="px-4 py-4 text-right font-mono text-lg">{{ grand_total | currency }}</td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+{% endblock %}

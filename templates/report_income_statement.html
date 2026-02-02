@@ -1,0 +1,78 @@
+{% extends 'base_report.html' %}
+{% block report_title %}Income Statement{% endblock %}
+{% block content %}
+<div class="mb-4 flex justify-between items-end no-print">
+  <form class="flex gap-2 items-end">
+    <div>
+      <label class="block text-[10px] font-black text-gray-400 uppercase mb-1">From</label>
+      <input type="date" name="start_date" value="{{ start_date }}" class="border rounded px-4 py-2 text-sm focus:ring-blue-500">
+    </div>
+    <div>
+      <label class="block text-[10px] font-black text-gray-400 uppercase mb-1">To</label>
+      <input type="date" name="end_date" value="{{ end_date }}" class="border rounded px-4 py-2 text-sm focus:ring-blue-500">
+    </div>
+    <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-blue-700 transition">Filter Period</button>
+  </form>
+</div>
+
+<div class="space-y-4">
+  <!-- Revenue Section -->
+  <div>
+    <h3 class="bg-gray-800 text-white px-2 py-1 text-[9pt] font-black uppercase tracking-[0.2em] print:bg-gray-100 print:text-black print:border-b print:border-black">1. Revenue / Income</h3>
+    <table class="w-full border-collapse">
+        <tbody>
+            {% for r in data.income %}
+            <tr class="border-b border-gray-100 hover:bg-gray-50 transition print:border-gray-200">
+              <td class="px-2 py-1 text-[10pt] font-bold text-gray-700">{{ r.name }}</td>
+              <td class="px-2 py-1 text-right font-mono text-[10pt]">{{ r.amount | currency }}</td>
+            </tr>
+            {% else %}
+            <tr><td class="px-2 py-2 text-gray-400 italic text-[10pt] text-center" colspan="2">No revenue recorded for this period.</td></tr>
+            {% endfor %}
+        </tbody>
+        <tfoot class="border-t border-gray-900 bg-gray-50">
+            <tr class="font-black">
+                <td class="px-2 py-1.5 text-[9pt] uppercase tracking-widest text-gray-600">Total Operating Revenue</td>
+                <td class="px-2 py-1.5 text-right font-mono text-[11pt] text-blue-900">{{ data.total_income | currency }}</td>
+            </tr>
+        </tfoot>
+    </table>
+  </div>
+
+  <!-- Expenses Section -->
+  <div>
+    <h3 class="bg-gray-800 text-white px-2 py-1 text-[9pt] font-black uppercase tracking-[0.2em] print:bg-gray-100 print:text-black print:border-b print:border-black">2. Operating Expenses</h3>
+    <table class="w-full border-collapse">
+        <tbody>
+            {% for e in data.expenses %}
+            <tr class="border-b border-gray-100 hover:bg-gray-50 transition print:border-gray-200">
+              <td class="px-2 py-1 text-[10pt] font-bold text-gray-700">{{ e.name }}</td>
+              <td class="px-2 py-1 text-right font-mono text-[10pt] text-red-600">({{ e.amount | currency }})</td>
+            </tr>
+            {% else %}
+            <tr><td class="px-2 py-2 text-gray-400 italic text-[10pt] text-center" colspan="2">No expenses recorded for this period.</td></tr>
+            {% endfor %}
+        </tbody>
+        <tfoot class="border-t border-gray-900 bg-gray-50">
+            <tr class="font-black">
+                <td class="px-2 py-1.5 text-[9pt] uppercase tracking-widest text-gray-600">Total Operating Expenses</td>
+                <td class="px-2 py-1.5 text-right font-mono text-[11pt] text-red-900">({{ data.total_expenses | currency }})</td>
+            </tr>
+        </tfoot>
+    </table>
+  </div>
+
+  <!-- Final Net Profit -->
+  <div class="mt-4 border-t-2 border-gray-900 bg-gray-100 p-4 flex justify-between items-center print:bg-white print:border-black">
+      <div class="space-y-1">
+          <h4 class="text-[9pt] font-black uppercase tracking-widest text-gray-500">Net Profit / (Loss)</h4>
+          <p class="text-[8pt] text-gray-400 italic">For the period: {{ start_date }} to {{ end_date }}</p>
+      </div>
+      <div class="text-right">
+          <span class="text-2xl font-black font-mono {% if data.net_profit >= 0 %}text-emerald-700{% else %}text-red-700{% endif %}">
+              {{ data.net_profit | currency }}
+          </span>
+      </div>
+  </div>
+</div>
+{% endblock %}

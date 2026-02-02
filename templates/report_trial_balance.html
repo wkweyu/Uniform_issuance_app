@@ -1,0 +1,84 @@
+{% extends 'base_report.html' %}
+
+{% block report_title %}Financial Trial Balance{% endblock %}
+
+{% block content %}
+<div class="mb-4 flex justify-between items-end no-print">
+    <div>
+        <p class="text-gray-500 text-xs italic tracking-tight">Report for period ending: <strong>{{ date }}</strong></p>
+    </div>
+    <form class="flex gap-2 items-end">
+        <div>
+            <label class="block text-[10px] font-black text-gray-400 uppercase mb-1">Target Date</label>
+            <input type="date" name="date" value="{{ date }}" class="border rounded px-3 py-1.5 text-xs">
+        </div>
+        <button type="submit" class="bg-blue-600 text-white px-4 py-1.5 rounded text-[10px] font-black uppercase">Filter</button>
+    </form>
+</div>
+
+<div class="overflow-x-auto print:overflow-visible">
+    <table class="w-full border-collapse">
+        <thead class="bg-gray-900 text-white print:bg-gray-100 print:text-black">
+            <tr class="text-[9pt] font-black uppercase tracking-widest">
+                <th class="px-2 py-1 text-left">Code</th>
+                <th class="px-2 py-1 text-left">Account Name</th>
+                <th class="px-2 py-1 text-left">Category</th>
+                <th class="px-2 py-1 text-right">Debit (KES)</th>
+                <th class="px-2 py-1 text-right">Credit (KES)</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            {% set total_dr = [0] %}
+            {% set total_cr = [0] %}
+            {% for row in data %}
+                {% set dr = row.total_debit - row.total_credit %}
+                {% set cr = row.total_credit - row.total_debit %}
+                
+                {% if dr > 0 %}
+                    {% if total_dr.append(total_dr.pop() + dr) %}{% endif %}
+                {% elif cr > 0 %}
+                    {% if total_cr.append(total_cr.pop() + cr) %}{% endif %}
+                {% endif %}
+
+                <tr class="hover:bg-gray-50/50 transition">
+                    <td class="px-2 py-1 font-mono text-[9pt] text-gray-400">{{ row.code }}</td>
+                    <td class="px-2 py-1 text-[10pt] font-bold text-gray-800">{{ row.name }}</td>
+                    <td class="px-2 py-1 text-[9pt] uppercase text-gray-400 font-bold">{{ row.type }}</td>
+                    <td class="px-2 py-1 text-right font-mono text-[10pt]">
+                        {% if dr > 0 %}{{ dr | currency }}{% else %}-{% endif %}
+                    </td>
+                    <td class="px-2 py-1 text-right font-mono text-[10pt]">
+                        {% if cr > 0 %}{{ cr | currency }}{% else %}-{% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot class="bg-gray-100 text-black border-t-2 border-gray-900">
+            <tr class="font-black">
+                <td colspan="3" class="px-2 py-2 text-right uppercase tracking-[0.2em] text-[10pt]">Balanced Totals</td>
+                <td class="px-2 py-2 text-right font-mono text-[11pt] border-b-4 border-double border-gray-900">{{ total_dr[0] | currency }}</td>
+                <td class="px-2 py-2 text-right font-mono text-[11pt] border-b-4 border-double border-gray-900">{{ total_cr[0] | currency }}</td>
+            </tr>
+        </tfoot>
+    </table>
+</div>
+
+{% if total_dr[0] != total_cr[0] %}
+<div class="mt-4 p-4 bg-red-100 text-red-800 rounded-lg border border-red-200 text-xs font-bold flex items-center gap-2">
+    <i class="fas fa-exclamation-triangle"></i>
+    Warning: Trial Balance is out of equilibrium by {{ (total_dr[0] - total_cr[0])|abs | currency }}. Check all manual ledger postings.
+</div>
+{% endif %}
+
+<div class="mt-8 grid grid-cols-2 gap-8 no-print">
+    <div class="p-6 bg-blue-50 rounded-xl border border-blue-100 italic text-sm text-blue-800">
+        <i class="fas fa-info-circle mr-2"></i>
+        This report summarizes all accounts in the general ledger. Ensure that total Debits equal total Credits to maintain accounting integrity.
+    </div>
+    <div class="flex items-center justify-end">
+        <button onclick="window.print()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-6 py-2 rounded-xl font-bold transition">
+            <i class="fas fa-print mr-2"></i> Print Accountant's Copy
+        </button>
+    </div>
+</div>
+{% endblock %}

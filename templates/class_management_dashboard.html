@@ -1,6 +1,32 @@
 {% extends 'base.html' %}
 
 {% block content %}
+{% if missing_subject_classes and missing_subject_classes|length > 0 %}
+<div class="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-500 rounded">
+  <p class="text-yellow-800"><i class="fas fa-exclamation-circle mr-2"></i><strong>Attention:</strong> The following classes have no subjects allocated:
+    <span class="font-semibold">{{ missing_subject_classes|join(', ') }}</span>.
+    <a href="/admin/class_subjects_select" class="underline text-blue-700 ml-2">Allocate Now</a>
+  </p>
+</div>
+{% endif %}
+
+{% if missing_class_teachers and missing_class_teachers|length > 0 %}
+<div class="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-500 rounded">
+  <p class="text-yellow-800"><i class="fas fa-exclamation-circle mr-2"></i><strong>Attention:</strong> The following classes have no class teacher assigned:
+    <span class="font-semibold">{{ missing_class_teachers|join(', ') }}</span>.
+    <a href="{{ url_for('allocate_teacher') }}" class="underline text-blue-700 ml-2">Assign Now</a>
+  </p>
+</div>
+{% endif %}
+
+{% if missing_subject_teachers and missing_subject_teachers|length > 0 %}
+<div class="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-500 rounded">
+  <p class="text-yellow-800"><i class="fas fa-exclamation-circle mr-2"></i><strong>Attention:</strong> The following class-subjects have no subject teacher assigned:
+    <span class="font-semibold">{{ missing_subject_teachers|join('; ') }}</span>.
+    <a href="{{ url_for('allocate_teacher') }}" class="underline text-blue-700 ml-2">Assign Now</a>
+  </p>
+</div>
+{% endif %}
 <div class="mb-6">
   <h1 class="text-4xl font-bold text-gray-800 mb-2">📚 Class Management System</h1>
   <p class="text-gray-600">Manage classes, students, subjects, and teacher allocations</p>
@@ -44,93 +70,141 @@
   </div>
 </div>
 
-<!-- Main Features Grid -->
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+<!-- Action Categories -->
+<div class="space-y-12 mb-12">
   
-  <!-- Create Class -->
-  <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition">
-    <div class="flex items-center justify-between mb-4">
-      <h3 class="text-lg font-bold text-gray-800">➕ Create New Class</h3>
-      <i class="fas fa-plus-circle text-blue-600 text-2xl"></i>
+  <!-- Category: Class Setup & Structure -->
+  <section>
+    <div class="flex items-center space-x-3 mb-6 border-b pb-2">
+      <div class="bg-blue-600 p-2 rounded-lg">
+        <i class="fas fa-building text-white text-xl"></i>
+      </div>
+      <h2 class="text-2xl font-bold text-gray-800">Class Setup & Structure</h2>
     </div>
-    <p class="text-gray-600 text-sm mb-4">Create a new class for an academic year with automatic group assignment.</p>
-    <a href="{{ url_for('create_class') }}" class="inline-block bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">
-      <i class="fas fa-plus mr-2"></i>Create Class
-    </a>
-  </div>
+    
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <!-- Create Class -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="font-bold text-gray-800">➕ Create New Class</h3>
+          <i class="fas fa-plus-circle text-blue-600 text-xl"></i>
+        </div>
+        <p class="text-gray-600 text-sm mb-4">Initialize a new class for an academic year with auto-grouping.</p>
+        <a href="{{ url_for('create_class') }}" class="w-full text-center inline-block bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition font-semibold text-sm">
+          Create Class
+        </a>
+      </div>
 
-  <!-- Promote Students -->
-  <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition">
-    <div class="flex items-center justify-between mb-4">
-      <h3 class="text-lg font-bold text-gray-800">🚀 Promote Students</h3>
-      <i class="fas fa-arrow-up text-green-600 text-2xl"></i>
+      <!-- Manage Streams -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="font-bold text-gray-800">🌊 Manage Streams</h3>
+          <i class="fas fa-water text-cyan-600 text-xl"></i>
+        </div>
+        <p class="text-gray-600 text-sm mb-4">Define school streams (A, B, C, D) used to differentiate classes.</p>
+        <a href="{{ url_for('manage_streams') }}" class="w-full text-center inline-block bg-cyan-600 text-white px-4 py-2 rounded-lg hover:bg-cyan-700 transition font-semibold text-sm">
+          Manage Streams
+        </a>
+      </div>
+
+      <!-- Manage Class Subjects -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="font-bold text-gray-800">📚 Class Subjects</h3>
+          <i class="fas fa-book text-purple-600 text-xl"></i>
+        </div>
+        <p class="text-gray-600 text-sm mb-4">Allocate subjects to specific classes and mark compulsory status.</p>
+        <a href="/admin/class_subjects_select" class="w-full text-center inline-block bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition font-semibold text-sm">
+          Configure Subjects
+        </a>
+      </div>
     </div>
-    <p class="text-gray-600 text-sm mb-4">Atomically promote all students from one class to another with audit logging.</p>
-    <a href="{{ url_for('promote_students') }}" class="inline-block bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition">
-      <i class="fas fa-arrow-up mr-2"></i>Promote Now
-    </a>
-  </div>
+  </section>
 
-  <!-- Manage Streams -->
-  <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition">
-    <div class="flex items-center justify-between mb-4">
-      <h3 class="text-lg font-bold text-gray-800">🌊 Manage Streams</h3>
-      <i class="fas fa-water text-cyan-600 text-2xl"></i>
+  <!-- Category: Faculty & Student Enrollment -->
+  <section>
+    <div class="flex items-center space-x-3 mb-6 border-b pb-2">
+      <div class="bg-orange-500 p-2 rounded-lg">
+        <i class="fas fa-users-rectangle text-white text-xl"></i>
+      </div>
+      <h2 class="text-2xl font-bold text-gray-800">Faculty & Enrollments</h2>
     </div>
-    <p class="text-gray-600 text-sm mb-4">Add, edit, and manage class streams (A, B, C, D, etc.) that differentiate classes.</p>
-    <a href="{{ url_for('manage_streams') }}" class="inline-block bg-cyan-600 text-white px-4 py-2 rounded hover:bg-cyan-700 transition">
-      <i class="fas fa-water mr-2"></i>Manage Streams
-    </a>
-  </div>
+    
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <!-- Allocate Teachers -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition">
+        <div class="flex items-center space-x-4 mb-4">
+          <div class="bg-orange-100 p-3 rounded-full">
+            <i class="fas fa-chalkboard-user text-orange-600 text-2xl"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-gray-800 text-lg">Teacher Allocation</h3>
+            <p class="text-gray-500 text-sm">Assign teachers to class-subject units</p>
+          </div>
+        </div>
+        <a href="{{ url_for('allocate_teacher') }}" class="inline-block border-2 border-orange-500 text-orange-600 px-6 py-2 rounded-lg hover:bg-orange-50 transition font-bold text-sm">
+          <i class="fas fa-plus mr-2"></i>New Allocation
+        </a>
+      </div>
 
-  <!-- Manage Class Subjects -->
-  <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition opacity-50 cursor-not-allowed">
-    <div class="flex items-center justify-between mb-4">
-      <h3 class="text-lg font-bold text-gray-800">📚 Class Subjects</h3>
-      <i class="fas fa-book text-purple-600 text-2xl"></i>
+      <!-- Enroll Students in Subjects -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition">
+        <div class="flex items-center space-x-4 mb-4">
+          <div class="bg-teal-100 p-3 rounded-full">
+            <i class="fas fa-user-check text-teal-600 text-2xl"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-gray-800 text-lg">Subject Enrollment</h3>
+            <p class="text-gray-500 text-sm">Manage student subject choices per class</p>
+          </div>
+        </div>
+        <a href="/admin/student_subjects_select" class="inline-block border-2 border-teal-500 text-teal-600 px-6 py-2 rounded-lg hover:bg-teal-50 transition font-bold text-sm">
+          <i class="fas fa-user-tag mr-2"></i>Enroll Students
+        </a>
+      </div>
     </div>
-    <p class="text-gray-600 text-sm mb-4">Allocate subjects to classes and mark compulsory vs. optional.</p>
-    <button disabled class="inline-block bg-gray-400 text-white px-4 py-2 rounded cursor-not-allowed">
-      <i class="fas fa-book mr-2"></i>Coming Soon
-    </button>
-  </div>
+  </section>
 
-  <!-- Allocate Teachers -->
-  <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition opacity-50 cursor-not-allowed">
-    <div class="flex items-center justify-between mb-4">
-      <h3 class="text-lg font-bold text-gray-800">👨‍🏫 Teacher Allocation</h3>
-      <i class="fas fa-chalkboard-user text-orange-600 text-2xl"></i>
+  <!-- Category: Lifecycle & Reporting -->
+  <section>
+    <div class="flex items-center space-x-3 mb-6 border-b pb-2">
+      <div class="bg-indigo-600 p-2 rounded-lg">
+        <i class="fas fa-chart-line text-white text-xl"></i>
+      </div>
+      <h2 class="text-2xl font-bold text-gray-800">Lifecycle & Insights</h2>
     </div>
-    <p class="text-gray-600 text-sm mb-4">Assign teachers to class-subject combinations with one-teacher-per-combo enforcement.</p>
-    <button disabled class="inline-block bg-gray-400 text-white px-4 py-2 rounded cursor-not-allowed">
-      <i class="fas fa-chalkboard-user mr-2"></i>Coming Soon
-    </button>
-  </div>
+    
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <!-- Promote Students -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h3 class="font-bold text-gray-800 text-lg">🚀 Student Promotion</h3>
+            <p class="text-gray-500 text-sm">Atomic year-to-year promotion with audit trails.</p>
+          </div>
+          <a href="{{ url_for('promote_students') }}" class="bg-green-600 text-white p-3 rounded-lg hover:bg-green-700 transition">
+            <i class="fas fa-arrow-up"></i>
+          </a>
+        </div>
+      </div>
 
-  <!-- Enroll Students in Subjects -->
-  <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition opacity-50 cursor-not-allowed">
-    <div class="flex items-center justify-between mb-4">
-      <h3 class="text-lg font-bold text-gray-800">👤 Student Enrollment</h3>
-      <i class="fas fa-user-check text-teal-600 text-2xl"></i>
+      <!-- Reports -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition flex items-center justify-between">
+        <div>
+          <h3 class="font-bold text-gray-800 text-lg">📊 Academic Reports</h3>
+          <p class="text-gray-500 text-sm">Access allocation and enrollment stats.</p>
+        </div>
+        <div class="flex space-x-2">
+          <a href="/admin/class_reports" class="bg-indigo-100 text-indigo-700 p-2 rounded hover:bg-indigo-200 transition" title="General Reports">
+            <i class="fas fa-file-invoice"></i>
+          </a>
+          <a href="/admin/class_subjects_report" class="bg-purple-100 text-purple-700 p-2 rounded hover:bg-purple-200 transition" title="Subject Report">
+            <i class="fas fa-book-open"></i>
+          </a>
+        </div>
+      </div>
     </div>
-    <p class="text-gray-600 text-sm mb-4">Enroll students in available subjects with validation against class allocation.</p>
-    <button disabled class="inline-block bg-gray-400 text-white px-4 py-2 rounded cursor-not-allowed">
-      <i class="fas fa-user-check mr-2"></i>Coming Soon
-    </button>
-  </div>
-
-  <!-- Reports -->
-  <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition opacity-50 cursor-not-allowed">
-    <div class="flex items-center justify-between mb-4">
-      <h3 class="text-lg font-bold text-gray-800">📊 Reports</h3>
-      <i class="fas fa-chart-bar text-indigo-600 text-2xl"></i>
-    </div>
-    <p class="text-gray-600 text-sm mb-4">View class allocations, student enrollments, and promotion history.</p>
-    <button disabled class="inline-block bg-gray-400 text-white px-4 py-2 rounded cursor-not-allowed">
-      <i class="fas fa-chart-bar mr-2"></i>Coming Soon
-    </button>
-  </div>
-
+  </section>
 </div>
 
 <!-- System Configuration -->
@@ -207,6 +281,131 @@
             <span class="px-2 py-1 bg-green-100 text-green-800 rounded text-sm font-semibold">
               {{ class.student_count or 0 }}
             </span>
+          </td>
+          <td class="px-4 py-3 text-right">
+            <a href="/admin/class/{{ class.classID }}/manage" class="inline-block bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 text-xs font-semibold mr-2 transition">
+              <i class="fas fa-cog"></i> Manage Hub
+            </a>
+            <button type="button" class="inline-block bg-yellow-400 text-white px-3 py-1 rounded hover:bg-yellow-500 text-xs font-semibold mr-2" onclick="editClass({{ class.classID }}, '{{ class.class_name|escape }}', '{{ class.class_group|escape }}', '{{ class.stream_code|escape }}'); return false;">
+              <i class="fas fa-edit"></i> Edit
+            </button>
+            <!-- Edit Modal (Hidden) -->
+            <div id="editModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+                <h3 class="text-xl font-bold text-gray-800 mb-4">Edit Class</h3>
+                <form id="editForm" method="POST" action="#" onsubmit="return false;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="class_id" id="editClassId">
+                  <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Class Name</label>
+                    <input 
+                      type="text" 
+                      name="class_name" 
+                      id="editClassName"
+                      required 
+                      class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                    >
+                  </div>
+                  <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Class Group</label>
+                    <select name="class_group" id="editClassGroup" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500">
+                      <option value="Playgroup-PP2">Playgroup-PP2</option>
+                      <option value="Grade 1-3">Grade 1-3</option>
+                      <option value="Grade 4-6">Grade 4-6</option>
+                      <option value="Grade 7-9">Grade 7-9</option>
+                    </select>
+                  </div>
+                  <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Stream</label>
+                    <select name="stream_code" id="editStreamCode" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500">
+                      {% for stream in streams %}
+                        <option value="{{ stream.code }}">{{ stream.code }} - {{ stream.name }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="flex gap-3">
+                    <button 
+                      type="submit" 
+                      class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium"
+                    >
+                      Save Changes
+                    </button>
+                    <button 
+                      type="button" 
+                      onclick="closeEditModal()"
+                      class="flex-1 px-4 py-2 bg-gray-400 text-white rounded-md hover:bg-gray-500 font-medium"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <script>
+
+            function editClass(classId, className, classGroup, streamCode) {
+              // Unescape HTML entities for single quotes
+              className = className.replace(/&#39;/g, "'");
+              classGroup = classGroup.replace(/&#39;/g, "'");
+              streamCode = streamCode ? streamCode.replace(/&#39;/g, "'") : '';
+              document.getElementById('editClassId').value = classId;
+              document.getElementById('editClassName').value = className;
+              document.getElementById('editClassGroup').value = classGroup;
+              document.getElementById('editStreamCode').value = streamCode;
+              document.getElementById('editModal').classList.remove('hidden');
+            }
+
+            function closeEditModal() {
+              document.getElementById('editModal').classList.add('hidden');
+            }
+
+            // Close modal when pressing Escape
+            document.addEventListener('keydown', function(e) {
+              if (e.key === 'Escape') closeEditModal();
+            });
+
+            // Close modal when clicking outside
+            document.getElementById('editModal').addEventListener('click', function(e) {
+              if (e.target === this) closeEditModal();
+            });
+
+            // Handle form submit to POST to correct endpoint
+            document.addEventListener('DOMContentLoaded', function() {
+              document.getElementById('editForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                var classId = document.getElementById('editClassId').value;
+                var formData = new FormData(this);
+                fetch(`/admin/classes/${classId}/edit`, {
+                  method: 'POST',
+                  body: formData
+                })
+                .then(response => {
+                  if (response.headers.get('content-type') && response.headers.get('content-type').includes('application/json')) {
+                    return response.json();
+                  } else {
+                    return response.text().then(text => { throw new Error(text); });
+                  }
+                })
+                .then(data => {
+                  if (data.error) {
+                    alert(data.error);
+                  } else {
+                    location.reload();
+                  }
+                })
+                .catch((err) => {
+                  alert('An error occurred while saving changes. ' + (err.message || ''));
+                });
+                return false;
+              });
+            });
+            </script>
+            <form method="POST" action="{{ url_for('delete_class', class_id=class.classID) }}" style="display:inline;" onsubmit="return confirm('Are you sure you want to delete this class?');">
+              <button type="submit" class="inline-block bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 text-xs font-semibold">
+                <i class="fas fa-trash"></i> Delete
+              </button>
+            </form>
           </td>
         </tr>
         {% endfor %}

@@ -1,106 +1,222 @@
-{% extends 'base.html' %} {% block content %} {% if term_number and year %}
-<div class="p-3 mb-4 bg-yellow-100 border-l-4 border-yellow-600 rounded">
-  📌 <strong>Current Term:</strong> Term {{ term_number }} - {{ year }}
-</div>
-{% else %}
-<div class="p-3 mb-4 bg-red-100 border-l-4 border-red-600 rounded">
-  ⚠️ <strong>No Active Academic Term found!</strong>
-</div>
-{% endif %}
+{% extends 'base.html' %} 
 
-<div class="max-w-6xl mx-auto p-6">
-  <h2 class="text-3xl font-bold mb-6">
-    📊 Welcome to {{ system_name or 'Integrated' }} Dashboard
-  </h2>
-
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-    <div class="p-4 bg-white shadow rounded">
-      <h3 class="text-lg font-semibold">🚌 Active Buses</h3>
-      <p class="text-3xl mt-2">{{ active_buses }}</p>
-    </div>
-    <div class="p-4 bg-white shadow rounded">
-      <h3 class="text-lg font-semibold">⛽ Vouchers Today</h3>
-      <p class="text-3xl mt-2">{{ vouchers_today }}</p>
-    </div>
-    <div class="p-4 bg-white shadow rounded">
-      <h3 class="text-lg font-semibold">👕 Uniform Receipts (This Term)</h3>
-      <p class="text-3xl mt-2">{{ uniform_issued }}</p>
-    </div>
-  </div>
-
-<<<<<<< HEAD
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-=======
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
->>>>>>> 1b584a9 (class module)
-    <div class="border p-4 rounded bg-white shadow">
-      <h3 class="text-lg font-semibold mb-3">Fleet Quick Links</h3>
-      <ul class="space-y-2">
-        <li>
-          <a
-            href="{{ url_for('fleet_dashboard') }}"
-            class="text-blue-700 hover:underline"
-            >🚍 Fleet Dashboard</a
-          >
-        </li>
-        <li>
-          <a
-            href="{{ url_for('issue_fuel') }}"
-            class="text-blue-700 hover:underline"
-            >+ Issue Fuel Voucher</a
-          >
-        </li>
-      </ul>
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 py-8">
+    
+    <!-- Hero Section / Greeting -->
+    <div class="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+        <div>
+            <h1 class="text-3xl font-extrabold text-gray-900">
+                Welcome back, <span class="text-blue-600">{{ session.username }}</span>! 👋
+            </h1>
+            <p class="text-gray-500 mt-1">Here's what's happening in your school today.</p>
+        </div>
+        
+        {% if term_number and year %}
+        <div class="flex items-center gap-3 bg-blue-50 border border-blue-100 px-4 py-2 rounded-xl">
+            <span class="flex h-3 w-3 relative">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+            </span>
+            <span class="text-blue-800 font-semibold">Active: Term {{ term_number }} - {{ year }}</span>
+        </div>
+        {% else %}
+        <div class="bg-red-50 border border-red-100 text-red-700 px-4 py-2 rounded-xl flex items-center gap-2">
+            <i class="fas fa-exclamation-triangle"></i> No active term configured
+        </div>
+        {% endif %}
     </div>
 
-    <div class="border p-4 rounded bg-white shadow">
-      <h3 class="text-lg font-semibold mb-3">Uniform Quick Links</h3>
-      <ul class="space-y-2">
-        <li>
-          <a
-            href="{{ url_for('uniform_dashboard') }}"
-            class="text-blue-700 hover:underline"
-            >👕 Uniform Dashboard</a
-          >
-        </li>
-        <li>
-          <a
-<<<<<<< HEAD
-            href="{{ url_for('manage_prices') }}"
-=======
-            href="{{ url_for('manage_uniform_items') }}"
->>>>>>> 1b584a9 (class module)
-            class="text-blue-700 hover:underline"
-            >💰 Manage Prices</a
-          >
-        </li>
-      </ul>
-    </div>
-<<<<<<< HEAD
-=======
+    <!-- Key Statistics Grid -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+        <!-- Students -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 transition hover:shadow-md">
+            <div class="flex items-center gap-4">
+                <div class="p-3 bg-blue-50 text-blue-600 rounded-xl">
+                    <i class="fas fa-user-graduate text-2xl"></i>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Total Students</p>
+                    <h3 class="text-2xl font-bold text-gray-900">{{ total_students }}</h3>
+                </div>
+            </div>
+        </div>
 
-    {% if session.get('is_admin') %}
-    <div class="border p-4 rounded bg-white shadow">
-      <h3 class="text-lg font-semibold mb-3">📚 Classes & Subjects</h3>
-      <ul class="space-y-2">
-        <li>
-          <a
-            href="{{ url_for('manage_classes') }}"
-            class="text-green-700 hover:underline"
-            >📊 Manage Classes</a
-          >
-        </li>
-        <li>
-          <a
-            href="{{ url_for('create_class') }}"
-            class="text-green-700 hover:underline"
-            >➕ Create New Class</a
-          >
-        </li>
-      </ul>
+        <!-- Staff -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 transition hover:shadow-md">
+            <div class="flex items-center gap-4">
+                <div class="p-3 bg-purple-50 text-purple-600 rounded-xl">
+                    <i class="fas fa-chalkboard-teacher text-2xl"></i>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Total Staff</p>
+                    <h3 class="text-2xl font-bold text-gray-900">{{ total_staff }}</h3>
+                </div>
+            </div>
+        </div>
+
+        <!-- Collections -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 transition hover:shadow-md">
+            <div class="flex items-center gap-4">
+                <div class="p-3 bg-green-50 text-green-600 rounded-xl">
+                    <i class="fas fa-wallet text-2xl"></i>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Uniform Today</p>
+                    <h3 class="text-2xl font-bold text-gray-900">{{ today_collections | currency }}</h3>
+                </div>
+            </div>
+        </div>
+
+        <!-- Fleet -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 transition hover:shadow-md">
+            <div class="flex items-center gap-4">
+                <div class="p-3 bg-orange-50 text-orange-600 rounded-xl">
+                    <i class="fas fa-bus text-2xl"></i>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Active Buses</p>
+                    <h3 class="text-2xl font-bold text-gray-900">{{ active_buses }}</h3>
+                </div>
+            </div>
+        </div>
     </div>
-    {% endif %}
->>>>>>> 1b584a9 (class module)
-  </div>
+
+    <!-- Operational Overview -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
+        
+        <!-- Left Column: Quick Actions / Modules -->
+        <div class="lg:col-span-2 space-y-8">
+            <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                <i class="fas fa-th-large text-blue-600"></i> Management Modules
+            </h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                
+                <!-- Academic -->
+                <a href="{{ url_for('manage_classes') }}" class="group p-5 bg-white border border-gray-100 rounded-2xl shadow-sm hover:border-blue-300 transition flex items-center gap-4">
+                    <div class="p-4 bg-gray-50 group-hover:bg-blue-50 text-gray-500 group-hover:text-blue-600 rounded-xl transition">
+                        <i class="fas fa-graduation-cap text-xl"></i>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-gray-900">Academic</h4>
+                        <p class="text-sm text-gray-500">Classes, Streams & Allocations</p>
+                    </div>
+                </a>
+
+                <!-- Students -->
+                <a href="{{ url_for('student_search') }}" class="group p-5 bg-white border border-gray-100 rounded-2xl shadow-sm hover:border-indigo-300 transition flex items-center gap-4">
+                    <div class="p-4 bg-gray-50 group-hover:bg-indigo-50 text-gray-500 group-hover:text-indigo-600 rounded-xl transition">
+                        <i class="fas fa-users text-xl"></i>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-gray-900">Students</h4>
+                        <p class="text-sm text-gray-500">Profiles, Search & Enrollment</p>
+                    </div>
+                </a>
+
+                <!-- Uniforms -->
+                <a href="{{ url_for('uniform_dashboard') }}" class="group p-5 bg-white border border-gray-100 rounded-2xl shadow-sm hover:border-emerald-300 transition flex items-center gap-4">
+                    <div class="p-4 bg-gray-50 group-hover:bg-emerald-50 text-gray-500 group-hover:text-emerald-600 rounded-xl transition">
+                        <i class="fas fa-tshirt text-xl"></i>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-gray-900">Uniforms</h4>
+                        <p class="text-sm text-gray-500">Issuance, Inventory & Pricing</p>
+                    </div>
+                </a>
+
+                <!-- Fleet -->
+                <a href="{{ url_for('fleet_dashboard') }}" class="group p-5 bg-white border border-gray-100 rounded-2xl shadow-sm hover:border-amber-300 transition flex items-center gap-4">
+                    <div class="p-4 bg-gray-50 group-hover:bg-amber-50 text-gray-500 group-hover:text-amber-600 rounded-xl transition">
+                        <i class="fas fa-truck-moving text-xl"></i>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-gray-900">Fleet</h4>
+                        <p class="text-sm text-gray-500">Buses, Fuel & Service tracking</p>
+                    </div>
+                </a>
+
+                <!-- Exams -->
+                <a href="{{ url_for('exams_dashboard') }}" class="group p-5 bg-white border border-gray-100 rounded-2xl shadow-sm hover:border-red-300 transition flex items-center gap-4">
+                    <div class="p-4 bg-gray-50 group-hover:bg-red-50 text-gray-500 group-hover:text-red-600 rounded-xl transition">
+                        <i class="fas fa-file-invoice text-xl"></i>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-gray-900">Exams</h4>
+                        <p class="text-sm text-gray-500">Results, Grading & Reports</p>
+                    </div>
+                </a>
+
+                <!-- Finance -->
+                <a href="{{ url_for('fees_dashboard') }}" class="group p-5 bg-white border border-gray-100 rounded-2xl shadow-sm hover:border-cyan-300 transition flex items-center gap-4">
+                    <div class="p-4 bg-gray-50 group-hover:bg-cyan-50 text-gray-500 group-hover:text-cyan-600 rounded-xl transition">
+                        <i class="fas fa-coins text-xl"></i>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-gray-900">Finance</h4>
+                        <p class="text-sm text-gray-500">Fee Structures & Collections</p>
+                    </div>
+                </a>
+            </div>
+        </div>
+
+        <!-- Right Column: Contextual Summary -->
+        <div class="space-y-6">
+            <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                <i class="fas fa-chart-line text-blue-600"></i> Today's Summary
+            </h2>
+            
+            <div class="bg-gray-900 text-white rounded-2xl p-6 shadow-xl relative overflow-hidden">
+                <div class="relative z-10">
+                    <h5 class="text-gray-400 text-sm uppercase tracking-wider mb-4">Operations Status</h5>
+                    
+                    <div class="space-y-4">
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-300">Fuel Vouchers</span>
+                            <span class="bg-white/10 px-3 py-1 rounded-full text-sm font-mono">{{ vouchers_today }} issued</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-300">Uniform Receipts</span>
+                            <span class="bg-white/10 px-3 py-1 rounded-full text-sm font-mono">{{ uniform_issued }} this term</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-300">Active Classes</span>
+                            <span class="bg-white/10 px-3 py-1 rounded-full text-sm font-mono">{{ total_classes }} classes</span>
+                        </div>
+                    </div>
+
+                    <div class="mt-8 pt-6 border-t border-white/10">
+                        <p class="text-xs text-gray-500 italic">Last login: {{ datetime.now().strftime('%d %b, %H:%M') }}</p>
+                    </div>
+                </div>
+                
+                <!-- Abstract Design Elements -->
+                <div class="absolute -bottom-10 -right-10 w-40 h-40 bg-blue-600 filter blur-[80px] opacity-20"></div>
+                <div class="absolute -top-10 -left-10 w-32 h-32 bg-indigo-600 filter blur-[60px] opacity-20"></div>
+            </div>
+
+            <!-- Quick Access Links -->
+            <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                <h4 class="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                    <i class="fas fa-bolt text-yellow-500"></i> Quick Actions
+                </h4>
+                <div class="grid grid-cols-2 gap-3">
+                    <a href="{{ url_for('issue_uniform') }}" class="p-3 bg-gray-50 hover:bg-blue-50 text-gray-700 hover:text-blue-700 rounded-xl text-center transition text-sm font-medium border border-transparent hover:border-blue-100">
+                        Issue Uniform
+                    </a>
+                    <a href="{{ url_for('issue_fuel') }}" class="p-3 bg-gray-50 hover:bg-orange-50 text-gray-700 hover:text-orange-700 rounded-xl text-center transition text-sm font-medium border border-transparent hover:border-orange-100">
+                        Fuel Voucher
+                    </a>
+                    <a href="{{ url_for('create_class') }}" class="p-3 bg-gray-50 hover:bg-green-50 text-gray-700 hover:text-green-700 rounded-xl text-center transition text-sm font-medium border border-transparent hover:border-green-100">
+                        Add Class
+                    </a>
+                    <a href="/admin/create_user" class="p-3 bg-gray-50 hover:bg-purple-50 text-gray-700 hover:text-purple-700 rounded-xl text-center transition text-sm font-medium border border-transparent hover:border-purple-100">
+                        Add User
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
 </div>
 {% endblock %}

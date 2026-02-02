@@ -1,99 +1,80 @@
-{% extends 'base_report.html' %} {% block content %}
-<div class="max-w-6xl mx-auto p-6 bg-white rounded shadow">
-  <h2 class="text-2xl font-bold mb-6">⛽ Cumulative Fuel Consumption</h2>
+{% extends 'base_report.html' %} 
 
-  <!-- Filter Form (no-print ensures it doesn't appear in print) -->
-  <form method="POST" class="flex items-center space-x-4 mb-6 no-print">
-<<<<<<< HEAD
-=======
-    {{ csrf_token() }}
->>>>>>> 1b584a9 (class module)
-    <div>
-      <label class="block text-sm mb-1">From:</label>
-      <input
-        type="date"
-        name="from_date"
-        value="{{ from_date }}"
-        class="border px-3 py-2 rounded"
-        required
-      />
-    </div>
-    <div>
-      <label class="block text-sm mb-1">To:</label>
-      <input
-        type="date"
-        name="to_date"
-        value="{{ to_date }}"
-        class="border px-3 py-2 rounded"
-        required
-      />
-    </div>
-    <div class="pt-5">
-      <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded">
-        Filter
-      </button>
-    </div>
-  </form>
+{% block report_title %}Cumulative Fuel Consumption Summary{% endblock %}
 
-  <!-- Report Table -->
-  <div class="overflow-x-auto">
-    <table class="w-full border-collapse border text-sm">
-      <thead class="bg-gray-100">
-        <tr>
-          <th class="border p-2">Bus Reg No</th>
-          <th class="border p-2 text-right">Vouchers</th>
-          <th class="border p-2 text-right">Litres</th>
-          <th class="border p-2 text-right">Total Cost (KES)</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in report %}
-          <td class="border p-2 text-right">{{ r.reg_no }}</td>
-          <td class="border p-2 text-right">{{ r.vouchers_issued }}</td>
-          <td class="border p-2 text-right">
-            {{ "%.2f"|format(r.total_litres|float) }}
-          </td>
-          <td class="border p-2 text-right">
-            KES {{ "{:,.2f}".format(r.total_amount|float) }}
-          </td>
-          <td class="border p-2 text-center no-print">
-            <button 
-              class="px-3 py-1 bg-blue-600 text-white rounded text-xs"
-              onclick="toggleInvoices('{{ r.reg_no }}')"
-            >View Invoices</button>
-          </td>
-        </tr>
-        <!-- Placeholder for invoice details -->
-<tr id="invoices-{{ r.reg_no }}" class="hidden">
-  <td colspan="5" class="border p-3 bg-gray-50">
-    <div id="details-{{ r.reg_no }}">Loading invoices…</div>
-  </td>
-</tr>
-        {% endfor %}
-        <tr class="bg-gray-50 font-semibold">
-          <td class="border p-2">Grand Total</td>
-          <td class="border p-2 text-right">
-            {{ report|sum(attribute='vouchers_issued') }}
-          </td>
-          <td class="border p-2 text-right">
-            {{ "%.2f"|format(report|sum(attribute='total_litres')) }}
-          </td>
-          <td class="border p-2 text-right">
-            KES {{ "{:,.2f}".format(report|sum(attribute='total_amount')) }}
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+{% block content %}
+
+<!-- Header & Filter -->
+<div class="mb-6 flex justify-between items-end border-b pb-4">
+    <div>
+        <p class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Reporting Period</p>
+        <p class="text-lg font-black text-blue-900 uppercase leading-none">{{ from_date or 'N/A' }} — {{ to_date or 'N/A' }}</p>
+    </div>
+    <div class="no-print">
+        <form method="POST" class="flex items-center gap-2">
+            <div class="flex gap-2">
+                <input type="date" name="from_date" value="{{ from_date }}" class="border rounded px-3 py-1.5 text-xs text-gray-700 font-mono shadow-inner" required />
+                <input type="date" name="to_date" value="{{ to_date }}" class="border rounded px-3 py-1.5 text-xs text-gray-700 font-mono shadow-inner" required />
+            </div>
+            <button type="submit" class="bg-blue-600 text-white px-5 py-2 rounded text-[10px] font-black uppercase tracking-wider hover:bg-blue-700 transition-colors">
+                Apply Filter
+            </button>
+        </form>
+    </div>
 </div>
+
+<div class="overflow-x-auto">
+  <table class="w-full border-collapse text-xs">
+    <thead>
+      <tr class="bg-gray-900 text-white uppercase font-black text-[9px] tracking-widest print:bg-gray-100 print:text-black">
+        <th class="p-3 text-left">Bus Registration</th>
+        <th class="p-3 text-right">Vouchers Issued</th>
+        <th class="p-3 text-right">Total Litres (L)</th>
+        <th class="p-3 text-right">Total Cost (KES)</th>
+        <th class="p-3 text-center no-print">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100 border-x border-gray-100">
+      {% for r in report %}
+      <tr class="hover:bg-blue-50/30 transition-colors group">
+        <td class="p-3 font-bold text-blue-900">{{ r.reg_no }}</td>
+        <td class="p-3 text-right font-mono">{{ r.vouchers_issued }}</td>
+        <td class="p-3 text-right font-mono">{{ "%.2f"|format(r.total_litres|float) }}</td>
+        <td class="p-3 text-right font-mono font-bold">{{ r.total_amount | currency if r.total_amount else '0.00' }}</td>
+        <td class="p-3 text-center no-print">
+          <button 
+            class="px-3 py-1 bg-gray-100 group-hover:bg-blue-600 group-hover:text-white text-gray-600 rounded text-[9px] font-black uppercase transition-all"
+            onclick="toggleInvoices('{{ r.reg_no }}')"
+          >Details</button>
+        </td>
+      </tr>
+      <!-- Placeholder for invoice details -->
+      <tr id="invoices-{{ r.reg_no }}" class="hidden bg-gray-50/80">
+        <td colspan="5" class="p-4 border-b border-gray-200">
+          <div id="details-{{ r.reg_no }}" class="animate-pulse text-gray-400 text-[10px] font-black uppercase italic">Fetching detailed invoice logs...</div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot class="border-t-2 border-gray-900">
+      <tr class="bg-gray-50 font-black text-blue-900">
+        <td class="p-3 uppercase text-[9px]">Grand Totals:</td>
+        <td class="p-3 text-right font-mono">{{ report|sum(attribute='vouchers_issued') }}</td>
+        <td class="p-3 text-right font-mono">{{ "%.2f"|format(report|sum(attribute='total_litres')) }}</td>
+        <td class="p-3 text-right font-mono text-base">{{ report|sum(attribute='total_amount') | currency }}</td>
+        <td class="p-3 no-print"></td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+
 <script>
   function toggleInvoices(regNo) {
     const row = document.getElementById('invoices-' + regNo);
     const detailsDiv = document.getElementById('details-' + regNo);
   
     if (row.classList.contains('hidden')) {
-      // Fetch only if empty
-      if (detailsDiv.innerHTML === 'Loading invoices…') {
+      if (detailsDiv.innerHTML === 'Fetching detailed invoice logs...') {
         const fromDate = "{{ from_date }}";
         const toDate = "{{ to_date }}";
   
@@ -101,25 +82,31 @@
           .then(response => response.json())
           .then(data => {
             if (data.length > 0) {
-              let html = '<table class="w-full border-collapse border text-sm mt-2">';
-              html += '<thead><tr class="bg-gray-100">';
-              html += '<th class="border p-1">Date</th><th class="border p-1 text-right">Litres</th><th class="border p-1 text-right">Amount (KES)</th><th class="border p-1">Station</th><th class="border p-1">Remarks</th>';
-              html += '</tr></thead><tbody>';
+              let html = '<div class="bg-white border rounded shadow-sm overflow-hidden"><table class="w-full text-[10px]">';
+              html += '<thead><tr class="bg-gray-100 border-b">';
+              html += '<th class="p-2 text-left uppercase font-black text-gray-500">Date</th><th class="p-2 text-right uppercase font-black text-gray-500">Litres</th><th class="p-2 text-right uppercase font-black text-gray-500">Unit Price</th><th class="p-2 text-right uppercase font-black text-gray-500">Amount</th><th class="p-2 text-left uppercase font-black text-gray-500">Station</th>';
+              html += '</tr></thead><tbody class="divide-y">';
   
               data.forEach(item => {
-                html += `<tr>
-                    <td class="border p-1">${item.date}</td>
-                    <td class="border p-1 text-right">${item.actual_litres}</td>
-                    <td class="border p-1 text-right">KES ${item.amount_paid}</td>
-                    <td class="border p-1">${item.petrol_station}</td>
-                    <td class="border p-1">${item.remarks}</td>
+                const amount = parseFloat(item.amount_paid) || 0;
+                const litres = parseFloat(item.actual_litres) || 0;
+                const unitPrice = litres > 0 ? (amount / litres).toFixed(2) : '-';
+                
+                html += `<tr class="hover:bg-gray-50">
+                    <td class="p-2 font-mono">${item.date}</td>
+                    <td class="p-2 text-right font-mono">${litres.toFixed(2)}</td>
+                    <td class="p-2 text-right font-mono">${unitPrice}</td>
+                    <td class="p-2 text-right font-mono font-bold">${amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td class="p-2 italic">${item.petrol_station}</td>
                   </tr>`;
               });
   
-              html += '</tbody></table>';
+              html += '</tbody></table></div>';
               detailsDiv.innerHTML = html;
+              detailsDiv.classList.remove('animate-pulse');
             } else {
-              detailsDiv.innerHTML = '<p class="text-sm text-gray-600">No invoices found for this period.</p>';
+              detailsDiv.innerHTML = '<p class="text-[10px] text-gray-500 font-bold uppercase py-2">No detailed invoices available for this period.</p>';
+              detailsDiv.classList.remove('animate-pulse');
             }
           });
       }
@@ -128,6 +115,5 @@
       row.classList.add('hidden');
     }
   }
-  </script>
-  
+</script>
 {% endblock %}

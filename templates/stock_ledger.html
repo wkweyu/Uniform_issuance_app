@@ -1,19 +1,130 @@
-{% extends 'base.html' %}
+{% extends 'base_report.html' %} 
+
+{% block report_title %}Stock Movement Ledger{% endblock %}
 
 {% block content %}
-<div class="max-w-7xl mx-auto p-4">
-  <!-- Header -->
-  <div class="mb-8 flex justify-between items-center">
+
+<!-- Controls -->
+<div class="mb-6 p-4 bg-gray-50 border rounded no-print">
+    <form method="GET" action="{{ url_for('stock_ledger') }}" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+        <div>
+            <label class="block text-[10px] uppercase font-black text-gray-400 mb-1">Item Selection</label>
+            <select name="item_name" required onchange="this.form.submit()" class="w-full border rounded px-3 py-2 text-xs font-bold">
+                <option value="">-- Select Uniform Item --</option>
+                {% for item in items %}
+                <option value="{{ item.item_name }}" {% if selected_item == item.item_name %}selected{% endif %}>
+                  {{ item.item_name }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="block text-[10px] uppercase font-black text-gray-400 mb-1">From Date</label>
+            <input type="date" name="date_from" value="{{ date_from or '' }}" class="w-full border rounded px-3 py-2 text-xs font-mono">
+        </div>
+        <div>
+            <label class="block text-[10px] uppercase font-black text-gray-400 mb-1">To Date</label>
+            <input type="date" name="date_to" value="{{ date_to or '' }}" class="w-full border rounded px-3 py-2 text-xs font-mono">
+        </div>
+        <div class="flex gap-2">
+            <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded text-[10px] font-black uppercase flex-1 shadow-sm hover:bg-blue-700 transition-colors">Generate Ledger</button>
+            <button type="button" onclick="window.print()" class="bg-gray-800 text-white px-4 py-2 rounded text-[10px] font-black uppercase shadow-sm hover:bg-black transition-colors">Print</button>
+        </div>
+    </form>
+</div>
+
+{% if selected_item %}
+<div class="mb-6 flex justify-between items-end border-b-2 border-gray-900 pb-2">
     <div>
-      <h1 class="text-2xl font-bold text-gray-800">📖 Stock Ledger</h1>
-      <p class="text-gray-600 mt-1">Track stock IN/OUT movements for each item</p>
+        <p class="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none">Stock Ledger Statement</p>
+        <h2 class="text-2xl font-black text-blue-900 uppercase tracking-tight">{{ selected_item }}</h2>
     </div>
-    <div class="no-print">
-      <button onclick="window.print()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
-        🖨️ Print Statement
-      </button>
+    <div class="text-right">
+        <p class="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none">Current Balance</p>
+        <p class="text-3xl font-black text-gray-900 font-mono leading-none">{{ current_balance }}</p>
     </div>
-  </div>
+</div>
+
+<!-- Summary Boxes -->
+<div class="grid grid-cols-4 gap-4 mb-8">
+    <div class="border-2 border-gray-100 p-3 bg-white">
+        <p class="text-[9px] font-black text-gray-400 uppercase mb-1">Total Stock IN</p>
+        <p class="text-xl font-black text-green-600 font-mono">{{ total_in }}</p>
+    </div>
+    <div class="border-2 border-gray-100 p-3 bg-white">
+        <p class="text-[9px] font-black text-gray-400 uppercase mb-1">Total Stock OUT</p>
+        <p class="text-xl font-black text-red-600 font-mono">{{ total_out }}</p>
+    </div>
+    <div class="border-2 border-gray-100 p-3 bg-white">
+        <p class="text-[9px] font-black text-gray-400 uppercase mb-1">Net Flow</p>
+        <p class="text-xl font-black text-blue-600 font-mono">{{ total_in - total_out }}</p>
+    </div>
+    <div class="border-2 border-gray-100 p-3 bg-white">
+        <p class="text-[9px] font-black text-gray-400 uppercase mb-1">Reporting Period</p>
+        <p class="text-[10px] font-bold text-gray-700 leading-tight">
+            {% if date_from and date_to %}{{ date_from }} to {{ date_to }}{% else %}All Time History{% endif %}
+        </p>
+    </div>
+</div>
+
+<div class="overflow-x-auto">
+    <table class="w-full border-collapse text-xs">
+      <thead>
+        <tr class="bg-gray-900 text-white uppercase font-black text-[9px] tracking-[0.2em] print:bg-gray-100 print:text-black">
+          <th class="p-3 text-left">Date</th>
+          <th class="p-3 text-left">Operation Type</th>
+          <th class="p-3 text-right">IN</th>
+          <th class="p-3 text-right">OUT</th>
+          <th class="p-3 text-right">Running Balance</th>
+          <th class="p-3 text-left">Reference / Notes</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100 border-x">
+        {% for row in ledger_data %}
+        <tr class="hover:bg-blue-50/30 transition-colors">
+          <td class="p-3 font-mono text-gray-600">{{ row.movement_date.strftime('%d-%m-%Y') if row.movement_date else '-' }}</td>
+          <td class="p-3">
+              <span class="text-[9px] font-black uppercase px-2 py-0.5 rounded-full 
+                {% if row.movement_type == 'PURCHASE' %}bg-green-100 text-green-700
+                {% elif row.movement_type == 'ISSUANCE' %}bg-red-100 text-red-700
+                {% elif row.movement_type == 'RETURN' %}bg-blue-100 text-blue-800
+                {% else %}bg-gray-100 text-gray-800{% endif %}">
+                {{ row.movement_type|replace('PURCHASE', 'STOCK ENTRY')|replace('ISSUANCE', 'DISBURSEMENT') }}
+              </span>
+          </td>
+          <td class="p-3 text-right font-mono font-bold text-green-600">{% if row.stock_in > 0 %}{{ row.stock_in }}{% else %}-{% endif %}</td>
+          <td class="p-3 text-right font-mono font-bold text-red-600">{% if row.stock_out > 0 %}{{ row.stock_out }}{% else %}-{% endif %}</td>
+          <td class="p-3 text-right font-mono font-bold bg-gray-50/50">{{ row.running_balance }}</td>
+          <td class="p-3">
+              <div class="text-[10px] font-bold text-gray-900 uppercase truncate max-w-xs">{{ row.reference_no or 'SYSTEM ADJ' }}</div>
+              {% if row.student_admno %}<div class="text-[9px] text-gray-400 italic">Student: {{ row.student_admno }}</div>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+</div>
+
+<div class="mt-12 bg-gray-900 text-white p-6 rounded-xl flex justify-between items-center print:bg-white print:text-black print:border-t-4 print:border-black">
+    <div>
+        <p class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Certification</p>
+        <p class="text-sm font-bold">This document is an accurate representation of inventory records.</p>
+    </div>
+    <div class="text-right border-l border-gray-700 pl-6">
+        <p class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Signatory Authority</p>
+        <div class="mt-4 border-t border-gray-600 pt-1 text-[10px] font-bold uppercase italic">Store In-Charge</div>
+    </div>
+</div>
+
+{% else %}
+<div class="bg-blue-50 border-2 border-dashed border-blue-200 rounded-2xl p-20 text-center">
+    <div class="text-4xl mb-4">📖</div>
+    <h3 class="text-blue-900 font-black uppercase tracking-widest text-sm mb-2">No Item Selected</h3>
+    <p class="text-blue-400 text-xs">Please select a uniform item from the filter above to generate a movement ledger.</p>
+</div>
+{% endif %}
+
+{% endblock %}
 
   <!-- Item Selection & Filters -->
   <div class="mb-6 p-6 bg-white border border-gray-200 rounded-lg shadow-sm no-print">

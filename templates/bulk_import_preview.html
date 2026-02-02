@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-full mx-auto px-4 py-8">
+  <div class="mb-10 flex justify-between items-end">
+    <div>
+      <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight">Review Import Data</h1>
+      <p class="text-gray-500 mt-2">Check for errors and potential sibling links before finalising indices.</p>
+    </div>
+    <div class="flex gap-4">
+      <a href="{{ url_for('bulk_admit_students') }}" class="px-6 py-2 bg-gray-100 text-gray-600 rounded-xl font-bold hover:bg-gray-200 transition">
+        Cancel & Re-upload
+      </a>
+    </div>
+  </div>
+
+  <form action="{{ url_for('finalize_bulk_import') }}" method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    
+    <div class="bg-white rounded-2xl shadow-xl shadow-gray-200/50 border border-gray-100 overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left whitespace-nowrap">
+          <thead class="bg-gray-50 text-gray-400 uppercase text-[10px] font-bold tracking-widest border-b">
+            <tr>
+              <th class="px-4 py-4">Status</th>
+              <th class="px-4 py-4">Adm No</th>
+              <th class="px-4 py-4">Student Name</th>
+              <th class="px-4 py-4">Class Allocation</th>
+              <th class="px-4 py-4">Category</th>
+              <th class="px-4 py-4">Parent Details</th>
+              <th class="px-4 py-4">Action</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for row in data %}
+            <tr class="{{ 'bg-red-50/30' if not row.is_valid else 'hover:bg-gray-50/50' }} transition group">
+              <td class="px-4 py-4">
+                {% if row.is_valid %}
+                  <span class="inline-flex items-center text-green-600 text-[10px] font-bold uppercase bg-green-100 px-2 py-1 rounded-full">
+                    <i class="fas fa-check-circle mr-1"></i> Ready
+                  </span>
+                {% else %}
+                  <span class="inline-flex items-center text-red-600 text-[10px] font-bold uppercase bg-red-100 px-2 py-1 rounded-full animate-pulse" title="{{ row.validation_errors|join(', ') }}">
+                    <i class="fas fa-exclamation-triangle mr-1"></i> Error
+                  </span>
+                {% endif %}
+                
+                {% if row.has_sibling %}
+                  <div class="mt-1">
+                    <span class="text-[9px] text-blue-600 font-bold uppercase bg-blue-100 px-2 py-0.5 rounded-full">
+                      <i class="fas fa-link mr-1"></i> Sibling
+                    </span>
+                  </div>
+                {% endif %}
+              </td>
+              <td class="px-4 py-4">
+                <input type="text" name="admno[]" value="{{ row.admno }}" 
+                       class="px-2 py-1 border {{ 'border-red-300' if 'exists' in row.validation_errors|join('') else 'border-gray-200' }} rounded font-mono text-sm focus:ring-2 focus:ring-blue-500 outline-none w-32">
+                {% if 'exists' in row.validation_errors|join('') %}
+                  <p class="text-[9px] text-red-500 mt-1 font-bold">Duplicate AdmNo</p>
+                {% endif %}
+              </td>
+              <td class="px-4 py-4">
+                <div class="flex gap-1">
+                  <input type="text" name="fname[]" value="{{ row.fname }}" placeholder="First" class="px-2 py-1 border border-gray-200 rounded text-sm w-24">
+                  <input type="text" name="mname[]" value="{{ row.mname }}" placeholder="Middle" class="px-2 py-1 border border-gray-200 rounded text-sm w-24">
+                  <input type="text" name="lname[]" value="{{ row.lname }}" placeholder="Last" class="px-2 py-1 border border-gray-200 rounded text-sm w-24">
+                </div>
+                <div class="flex gap-2 mt-2">
+                  <input type="date" name="dob[]" value="{{ row.dob }}" class="text-[10px] border border-gray-100 rounded px-1">
+                  <select name="gender[]" class="text-[10px] border border-gray-100 rounded">
+                    <option value="M" {{ 'selected' if row.gender|upper == 'M' }}>M</option>
+                    <option value="F" {{ 'selected' if row.gender|upper == 'F' }}>F</option>
+                  </select>
+                </div>
+              </td>
+              <td class="px-4 py-4">
+                <select name="class_id[]" required 
+                        class="w-48 px-2 py-1 border {{ 'border-red-300 bg-red-50' if not row.class_id else 'border-gray-200' }} rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                  <option value="">-- Select Class --</option>
+                  {% for c in available_classes %}
+                  <option value="{{ c.classID }}" {{ 'selected' if row.class_id == c.classID }}>
+                    {{ c.display_name }}
+                  </option>
+                  {% endfor %}
+                </select>
+                {% if not row.class_id %}
+                  <p class="text-[9px] text-red-500 mt-1 font-bold">Original: "{{ row.class_name }}" (Not found)</p>
+                {% endif %}
+              </td>
+              <td class="px-4 py-4">
+                <select name="category[]" class="text-sm border border-gray-200 rounded px-2 py-1">
+                  <option value="Day" {{ 'selected' if row.category == 'Day' }}>Day</option>
+                  <option value="Boarding" {{ 'selected' if row.category == 'Boarding' }}>Boarding</option>
+                  <option value="Transport" {{ 'selected' if row.category == 'Transport' }}>Transport</option>
+                </select>
+                <input type="hidden" name="religion[]" value="{{ row.religion or 'Christianity' }}">
+              </td>
+              <td class="px-4 py-4">
+                <div class="space-y-1">
+                  <input type="text" name="parent_name[]" value="{{ row.parent_name }}" placeholder="Parent Name" class="block w-full text-xs px-2 py-1 border border-gray-200 rounded">
+                  <input type="text" name="parent_phone[]" value="{{ row.parent_phone }}" placeholder="Phone" class="block w-full text-xs px-2 py-1 border border-gray-200 rounded font-mono">
+                  <input type="hidden" name="parent_email[]" value="{{ row.parent_email }}">
+                  <input type="hidden" name="parent_id_no[]" value="{{ row.parent_id_no }}">
+                  <input type="hidden" name="residency[]" value="{{ row.residency }}">
+                  <input type="hidden" name="home_address[]" value="{{ row.home_address }}">
+                </div>
+              </td>
+              <td class="px-4 py-4">
+                <button type="button" onclick="this.closest('tr').remove()" class="text-gray-300 hover:text-red-500 transition">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      
+      <div class="p-6 bg-gray-50 border-t flex items-center justify-between">
+        <p class="text-sm text-gray-500">
+          <i class="fas fa-info-circle mr-1"></i> 
+          You can edit individual fields above. Rows with "Error" status must be corrected or removed before successful import.
+        </p>
+        <button type="submit" class="bg-blue-600 text-white px-10 py-3 rounded-xl font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-200 flex items-center">
+            <i class="fas fa-cloud-upload-alt mr-2"></i> Confirm & Import Valid Data
+        </button>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}

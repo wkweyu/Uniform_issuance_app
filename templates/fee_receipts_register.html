@@ -1,0 +1,175 @@
+{% extends 'base.html' %}
+
+{% block title %}Fee Receipts Register{% endblock %}
+
+{% block content %}
+<div class="bg-gray-50 min-h-screen pb-12">
+    <!-- Header -->
+    <div class="bg-white border-b sticky top-0 z-10">
+        <div class="container mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-4">
+                    <a href="{{ url_for('fees_dashboard') }}" class="text-gray-400 hover:text-indigo-600 transition">
+                        <i class="fas fa-arrow-left text-xl"></i>
+                    </a>
+                    <div>
+                        <h1 class="text-2xl font-black text-gray-900">Receipts Journal</h1>
+                        <p class="text-xs text-gray-400 font-bold uppercase tracking-widest">Financial Audit Trail</p>
+                    </div>
+                </div>
+                
+                <a href="{{ url_for('collect_fees') }}" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-indigo-100 transition flex items-center gap-2">
+                    <i class="fas fa-plus"></i> New Payment
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="container mx-auto px-6 mt-8">
+        <!-- Filters -->
+        <div class="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 mb-8">
+            <form method="GET" class="grid grid-cols-1 md:grid-cols-4 gap-6 items-end">
+                <div>
+                    <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Start Date</label>
+                    <input type="date" name="start_date" value="{{ filters.start_date }}" class="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">End Date</label>
+                    <input type="date" name="end_date" value="{{ filters.end_date }}" class="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Adm No</label>
+                    <input type="number" name="admno" value="{{ filters.admno }}" placeholder="Search ID..." class="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-indigo-500">
+                </div>
+                <div class="flex gap-2">
+                    <button type="submit" class="flex-1 bg-gray-900 text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:bg-gray-800 transition">
+                        Apply Filters
+                    </button>
+                    <a href="{{ url_for('fee_receipts_register') }}" class="bg-gray-100 text-gray-500 px-4 py-2.5 rounded-xl hover:bg-gray-200 transition">
+                        <i class="fas fa-sync-alt"></i>
+                    </a>
+                </div>
+            </form>
+        </div>
+
+        <!-- Table -->
+        <div class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-gray-50/50 text-[10px] font-black text-gray-500 uppercase tracking-widest border-b border-gray-100">
+                            <th class="px-8 py-5">Receipt No</th>
+                            <th class="px-8 py-5">Student Details</th>
+                            <th class="px-8 py-5">Period</th>
+                            <th class="px-8 py-5">Method</th>
+                            <th class="px-8 py-5 text-right">Amount</th>
+                            <th class="px-8 py-5 text-center">Status</th>
+                            <th class="px-8 py-5 text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-50">
+                        {% for record in records %}
+                        <tr class="hover:bg-gray-50/50 transition duration-150">
+                            <td class="px-8 py-5">
+                                <span class="text-sm font-black text-indigo-600 block">{{ record.receipt_no }}</span>
+                                <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{{ record.payment_date }}</span>
+                            </td>
+                            <td class="px-8 py-5">
+                                <div class="font-bold text-gray-900">{{ record.FName }} {{ record.SName }}</div>
+                                <div class="text-[10px] font-bold text-gray-400 tracking-widest uppercase">ID: {{ record.admno }}</div>
+                            </td>
+                            <td class="px-8 py-5">
+                                <div class="text-xs font-bold text-gray-700">Term {{ record.term_number }}</div>
+                                <div class="text-[10px] font-bold text-gray-400">{{ record.year_name }}</div>
+                            </td>
+                            <td class="px-8 py-5">
+                                <span class="px-3 py-1 bg-gray-100 rounded-full text-[10px] font-black text-gray-600 uppercase">{{ record.payment_mode }}</span>
+                                <div class="text-[10px] font-bold text-gray-400 mt-1">Ref: {{ record.reference_number }}</div>
+                            </td>
+                            <td class="px-8 py-5 text-right">
+                                <span class="text-sm font-black text-gray-900">{{ record.amount|currency }}</span>
+                            </td>
+                            <td class="px-8 py-5 text-center text-[10px] font-black uppercase">
+                                {% if record.status == 'COMPLETED' %}
+                                <span class="text-emerald-500 bg-emerald-50 px-3 py-1 rounded-full"><i class="fas fa-check-circle mr-1"></i> Paid</span>
+                                {% elif record.status == 'CANCELLED' or record.status == 'REVERSED' %}
+                                <span class="text-rose-500 bg-rose-50 px-3 py-1 rounded-full"><i class="fas fa-times-circle mr-1"></i> Voided</span>
+                                {% else %}
+                                <span class="text-amber-500 bg-amber-50 px-3 py-1 rounded-full">{{ record.status }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-8 py-5 text-right">
+                                <div class="flex items-center justify-end gap-2">
+                                    <a href="{{ url_for('print_fee_receipt', payment_id=record.id) }}" target="_blank" class="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center hover:bg-indigo-600 hover:text-white transition" title="Print Receipt">
+                                        <i class="fas fa-print text-xs"></i>
+                                    </a>
+                                    {% if record.status == 'COMPLETED' %}
+                                    <a href="{{ url_for('edit_fee_receipt', payment_id=record.id) }}" class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center hover:bg-amber-600 hover:text-white transition" title="Edit Meta">
+                                        <i class="fas fa-edit text-xs"></i>
+                                    </a>
+                                    <button onclick="confirmVoid('{{ record.id }}', '{{ record.receipt_no }}')" class="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center hover:bg-rose-600 hover:text-white transition" title="Void Receipt">
+                                        <i class="fas fa-trash-alt text-xs"></i>
+                                    </button>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="7" class="px-8 py-20 text-center">
+                                <div class="text-gray-300 mb-4"><i class="fas fa-receipt text-6xl"></i></div>
+                                <div class="text-gray-400 font-bold uppercase tracking-widest text-sm">No receipt records found</div>
+                                <div class="text-gray-300 text-xs mt-2">Try adjusting your filters or record a new payment</div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Void Confirmation Modal -->
+<div id="voidModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl w-full max-w-md overflow-hidden transform transition-all shadow-2xl">
+        <div class="p-8">
+            <div class="w-16 h-16 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center text-3xl mb-6 mx-auto">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <h3 class="text-xl font-black text-gray-900 text-center mb-2">Void Receipt?</h3>
+            <p class="text-sm text-gray-500 text-center mb-8">This will irreversibly cancel receipt <span id="modalReceiptNo" class="font-bold text-rose-600"></span> and restore the student's arrears. This action is logged for audit purposes.</p>
+            
+            <form id="voidForm" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="mb-6">
+                    <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Reason for Cancellation</label>
+                    <textarea name="reason" required placeholder="e.g. Wrong student, Bounced cheque, Mistake in entry..." 
+                        class="w-full bg-gray-50 border-gray-100 rounded-2xl px-5 py-4 text-sm font-bold focus:ring-rose-500 focus:border-rose-500 transition shadow-inner min-h-[100px]"></textarea>
+                </div>
+                
+                <div class="flex gap-4">
+                    <button type="button" onclick="closeVoidModal()" class="flex-1 px-6 py-4 rounded-2xl font-bold text-gray-500 hover:bg-gray-50 transition uppercase tracking-widest text-xs">
+                        Dismiss
+                    </button>
+                    <button type="submit" class="flex-1 px-6 py-4 bg-rose-600 text-white rounded-2xl font-black hover:bg-rose-700 transition shadow-lg shadow-rose-100 uppercase tracking-widest text-xs">
+                        Confirm Void
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    function confirmVoid(paymentId, receiptNo) {
+        document.getElementById('modalReceiptNo').textContent = receiptNo;
+        document.getElementById('voidForm').action = `/admin/fees/receipt/${paymentId}/void`;
+        document.getElementById('voidModal').classList.remove('hidden');
+    }
+
+    function closeVoidModal() {
+        document.getElementById('voidModal').classList.add('hidden');
+    }
+</script>
+{% endblock %}

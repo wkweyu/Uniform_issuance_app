@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="mb-8">
+        <a href="{{ url_for('procurement_dashboard') }}" class="text-blue-600 hover:text-blue-800 font-bold flex items-center gap-2 mb-4">
+            <i class="fas fa-arrow-left"></i> Back to Dashboard
+        </a>
+        <h1 class="text-3xl font-bold text-gray-800">New Purchase Order</h1>
+    </div>
+
+    <form method="POST" class="space-y-8">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-2 tracking-widest">Select Supplier</label>
+                    <select name="supplier_id" required class="w-full border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-gray-50">
+                        <option value="">-- Choose a Supplier --</option>
+                        {% for s in suppliers %}
+                        <option value="{{ s.supplierID }}">{{ s.company }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-2 tracking-widest">Order Date</label>
+                    <input type="date" name="order_date" required value="{{ datetime.now().strftime('%Y-%m-%d') }}" class="w-full border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-gray-50">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-2 tracking-widest">Reference / Notes</label>
+                    <input type="text" name="notes" placeholder="e.g. Q3 Stationery supplies" class="w-full border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-blue-500 focus:border-blue-500 bg-gray-50">
+                </div>
+            </div>
+
+            <div class="border-t border-gray-100 pt-8">
+                <h3 class="font-bold text-gray-800 uppercase tracking-widest text-sm mb-6 border-l-4 border-blue-600 pl-4">Order Items</h3>
+                <div id="items-container" class="space-y-4">
+                    <div class="item-row grid grid-cols-12 gap-4 items-end bg-gray-50/50 p-4 rounded-xl border border-dashed border-gray-200">
+                        <div class="col-span-3">
+                            <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Entry Type</label>
+                            <select onchange="handleTypeChange(this)" class="type-select w-full border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-blue-500 bg-white">
+                                <option value="manual">Manual Entry</option>
+                                <option value="uniform">Uniform Item</option>
+                            </select>
+                        </div>
+                        <div class="col-span-4">
+                            <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Item Description</label>
+                            <div class="field-container">
+                                <!-- Manual Input (Default) -->
+                                <input type="text" oninput="syncManual(this)" class="desc-manual w-full border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-blue-500 focus:border-blue-500" placeholder="Enter item name">
+                                
+                                <!-- Uniform Dropdown -->
+                                <select onchange="syncSelect(this)" class="select-uniform hidden w-full border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-blue-500 bg-white">
+                                    <option value="">-- Choose Uniform --</option>
+                                    {% for item in uniform_items %}
+                                    <option value="{{ item.item_id or '' }}" data-name="{{ item.item_name }}">{{ item.item_name }} (Stock: {{ item.current_stock }})</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <!-- Hidden inputs for actual submission -->
+                            <input type="hidden" name="item_description[]" class="desc-final">
+                            <input type="hidden" name="item_id[]" class="id-final">
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Qty</label>
+                            <input type="number" step="1" name="item_qty[]" required class="w-full border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-blue-500 focus:border-blue-500 text-center font-mono">
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Unit Price (KES)</label>
+                            <input type="number" step="0.01" name="item_price[]" required class="w-full border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-blue-500 focus:border-blue-500 text-right font-mono">
+                        </div>
+                        <div class="col-span-1 text-center">
+                            <button type="button" onclick="removeItem(this)" class="text-red-400 hover:text-red-600 p-2"><i class="fas fa-trash"></i></button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-6 flex justify-between items-center bg-blue-50 p-4 rounded-xl border border-blue-100">
+                    <button type="button" onclick="addItem()" class="text-blue-700 font-bold hover:text-blue-900 flex items-center gap-2">
+                        <i class="fas fa-circle-plus"></i> Add Another Item
+                    </button>
+                    <div class="text-right">
+                        <span class="text-xs text-blue-400 uppercase font-bold mr-4">Total Estimated</span>
+                        <span id="grand-total" class="text-xl font-black text-blue-900">KES 0.00</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-10 flex justify-end gap-4 border-t border-gray-100 pt-8">
+                <a href="{{ url_for('procurement_dashboard') }}" class="bg-white border text-gray-600 px-8 py-3 rounded-xl font-bold hover:bg-gray-50 transition">
+                    Cancel
+                </a>
+                <button type="submit" class="bg-blue-600 text-white px-10 py-3 rounded-xl font-bold hover:bg-blue-700 transition shadow-2xl flex items-center gap-2">
+                    <i class="fas fa-file-signature"></i> Finalize Purchase Order
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+function handleTypeChange(select) {
+    const row = select.closest('.item-row');
+    const type = select.value;
+    const manual = row.querySelector('.desc-manual');
+    const uniform = row.querySelector('.select-uniform');
+    const idFinal = row.querySelector('.id-final');
+    const descFinal = row.querySelector('.desc-final');
+
+    // Reset visibility
+    manual.classList.add('hidden');
+    uniform.classList.add('hidden');
+    
+    if (type === 'manual') {
+        manual.classList.remove('hidden');
+        idFinal.value = '';
+        descFinal.value = manual.value;
+    } else if (type === 'uniform') {
+        uniform.classList.remove('hidden');
+        syncSelect(uniform);
+    }
+}
+
+function syncManual(input) {
+    const row = input.closest('.item-row');
+    row.querySelector('.desc-final').value = input.value;
+}
+
+function syncSelect(select) {
+    const row = select.closest('.item-row');
+    const idFinal = row.querySelector('.id-final');
+    const descFinal = row.querySelector('.desc-final');
+    
+    const option = select.options[select.selectedIndex];
+    if (option && option.getAttribute('data-name')) {
+        idFinal.value = option.value || '';
+        descFinal.value = option.getAttribute('data-name');
+    } else {
+        idFinal.value = '';
+        descFinal.value = '';
+    }
+}
+
+function addItem() {
+    const container = document.getElementById('items-container');
+    const rows = container.querySelectorAll('.item-row');
+    const newRow = rows[0].cloneNode(true);
+    
+    // Reset all inputs in new row
+    newRow.querySelectorAll('input').forEach(input => input.value = '');
+    newRow.querySelectorAll('select').forEach(select => select.selectedIndex = 0);
+    
+    // Ensure manual entry is visible by default for new row
+    newRow.querySelector('.desc-manual').classList.remove('hidden');
+    newRow.querySelector('.select-uniform').classList.add('hidden');
+    
+    container.appendChild(newRow);
+    calculateTotal();
+}
+
+function removeItem(btn) {
+    const rows = document.querySelectorAll('.item-row');
+    if (rows.length > 1) {
+        btn.closest('.item-row').remove();
+        calculateTotal();
+    }
+}
+
+document.addEventListener('input', function(e) {
+    if (e.target.name === 'item_qty[]' || e.target.name === 'item_price[]') {
+        calculateTotal();
+    }
+});
+
+function calculateTotal() {
+    let total = 0;
+    const qtys = document.getElementsByName('item_qty[]');
+    const prices = document.getElementsByName('item_price[]');
+    
+    for (let i = 0; i < qtys.length; i++) {
+        const q = parseFloat(qtys[i].value) || 0;
+        const p = parseFloat(prices[i].value) || 0;
+        total += q * p;
+    }
+    
+    document.getElementById('grand-total').textContent = 'KES ' + total.toLocaleString(undefined, {minimumFractionDigits: 2});
+}
+</script>
+{% endblock %}

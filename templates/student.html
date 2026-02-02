@@ -1,89 +1,468 @@
 {% extends "base.html" %}
 {% block content %}
 
-<div class="max-w-2xl mx-auto">
-  <!-- Header -->
-  <div class="mb-6">
-    <h1 class="text-2xl font-bold text-gray-800">👤 Admit New Student</h1>
-    <p class="text-gray-600 mt-1">Register a new student with basic details</p>
+<div class="max-w-4xl mx-auto px-4 py-8">
+  <div class="mb-10 text-center">
+    <div class="inline-flex items-center justify-center w-20 h-20 bg-blue-100 text-blue-600 rounded-3xl mb-4 shadow-sm">
+      <i class="fas fa-user-plus text-3xl"></i>
+    </div>
+    <h1 class="text-4xl font-extrabold text-gray-900 tracking-tight">Admit New Student</h1>
+    <p class="text-gray-500 mt-2 text-lg">Initialize a student record and assign them to a class.</p>
+    
+    <div class="mt-6">
+      <a href="{{ url_for('bulk_admit_students') }}" 
+         class="inline-flex items-center px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-bold text-gray-600 hover:bg-gray-50 transition shadow-sm">
+        <i class="fas fa-file-import mr-2 text-blue-500"></i> Bulk Import Students
+      </a>
+    </div>
   </div>
 
-  <!-- Form Card -->
-  <div class="bg-white border border-gray-200 rounded-lg shadow p-6">
-    <form method="POST" class="space-y-5">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <!-- Main Form Column -->
+    <div class="lg:col-span-2">
+      <div class="bg-white rounded-2xl shadow-xl shadow-blue-900/5 border border-gray-100 overflow-hidden">
+        <form method="POST" class="p-8">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-      <!-- Admission Number -->
-      <div class="bg-blue-50 border-l-4 border-blue-500 p-4">
-        <label class="block text-sm font-bold text-blue-900 mb-2">Admission Number *</label>
-        <input type="text" name="admno" required placeholder="e.g., ADM001, STU-2026-001" 
-               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent font-semibold">
-        <p class="text-xs text-blue-700 mt-2">Enter manually. Must be unique for each student.</p>
+          <div class="space-y-8">
+            <!-- Group: Identity -->
+            <section>
+              <h2 class="text-xs font-bold text-blue-600 uppercase tracking-widest mb-6 flex items-center">
+                <span class="w-8 h-[2px] bg-blue-600 mr-3"></span>
+                1. Student Identity
+              </h2>
+              
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div>
+                  <label class="block text-sm font-bold text-gray-700 mb-2">Admission No <span class="text-red-500">*</span></label>
+                  <div class="relative">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                      <span class="font-mono text-sm">#</span>
+                    </div>
+                    <input type="text" name="admno" required 
+                           class="w-full pl-8 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition font-mono font-bold text-lg"
+                           placeholder="e.g. 20250001">
+                  </div>
+                </div>
+                <div>
+                  <label class="block text-sm font-bold text-gray-700 mb-2">Birth Certificate No</label>
+                  <input type="text" name="birth_cert"
+                         class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition"
+                         placeholder="BC-12345678">
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div>
+                  <label class="block text-sm font-bold text-gray-700 mb-2">First Name <span class="text-red-500">*</span></label>
+                  <input type="text" name="fname" required 
+                         class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition"
+                         placeholder="John">
+                </div>
+                <div>
+                  <label class="block text-sm font-bold text-gray-700 mb-2">Middle Name</label>
+                  <input type="text" name="mname"
+                         class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition"
+                         placeholder="Paul">
+                </div>
+                <div>
+                  <label class="block text-sm font-bold text-gray-700 mb-2">Last Name <span class="text-red-500">*</span></label>
+                  <input type="text" name="lname" required
+                         class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition"
+                         placeholder="Doe">
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label class="block text-sm font-bold text-gray-700 mb-2">Date of Birth</label>
+                  <input type="date" name="dob"
+                         class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition">
+                </div>
+                <div>
+                  <label class="block text-sm font-bold text-gray-700 mb-2">Religion</label>
+                  <select name="religion" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition bg-white">
+                    <option value="Christianity">Christianity</option>
+                    <option value="Islam">Islam</option>
+                    <option value="Hinduism">Hinduism</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-sm font-bold text-gray-700 mb-3">Gender <span class="text-red-500">*</span></label>
+                  <div class="flex gap-2">
+                    <label class="flex-1 relative cursor-pointer group">
+                      <input type="radio" name="gender" value="M" required class="peer sr-only">
+                      <div class="w-full py-2.5 text-center border-2 border-gray-100 rounded-xl group-hover:bg-blue-50 peer-checked:border-blue-600 peer-checked:bg-blue-50 peer-checked:text-blue-700 transition font-bold text-xs">
+                        M
+                      </div>
+                    </label>
+                    <label class="flex-1 relative cursor-pointer group">
+                      <input type="radio" name="gender" value="F" class="peer sr-only">
+                      <div class="w-full py-2.5 text-center border-2 border-gray-100 rounded-xl group-hover:bg-pink-50 peer-checked:border-pink-600 peer-checked:bg-pink-50 peer-checked:text-pink-700 transition font-bold text-xs">
+                        F
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Group: Academic & Category -->
+            <section>
+              <h2 class="text-xs font-bold text-blue-600 uppercase tracking-widest mb-6 flex items-center">
+                <span class="w-8 h-[2px] bg-blue-600 mr-3"></span>
+                2. Placement & Category
+              </h2>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label class="block text-sm font-bold text-gray-700 mb-2">Class Assignment <span class="text-red-500">*</span></label>
+                  <select name="class_id" required 
+                          class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition bg-white font-semibold text-gray-700">
+                    <option value="" disabled selected>-- Select Class & Stream --</option>
+                    {% for c in classes %}
+                    <option value="{{ c.classID }}">{{ c.display_name }}</option>
+                    {% endfor %}
+                  </select>
+                  <p class="mt-1.5 text-[10px] text-gray-400">
+                    <i class="fas fa-info-circle mr-1"></i> Streams are pre-defined in Class Management.
+                  </p>
+                </div>
+                <div>
+                  <label class="block text-sm font-bold text-gray-700 mb-2">Category <span class="text-red-500">*</span></label>
+                  <select name="category" id="student_category" required 
+                          class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition bg-white font-semibold text-gray-700">
+                    <option value="Day">Day Scholar</option>
+                    <option value="Boarding">Boarding</option>
+                    <option value="Transport">Day + Transport</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="mt-6">
+                <label class="block text-sm font-bold text-gray-700 mb-2">Student Group</label>
+                <select name="student_group_id" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition bg-white">
+                  <option value="">— Not Assigned —</option>
+                  {% for g in student_groups %}
+                  <option value="{{ g.id }}">{{ g.name }}</option>
+                  {% endfor %}
+                </select>
+                <p class="mt-1.5 text-[10px] text-gray-400"><i class="fas fa-info-circle mr-1"></i> Groups control which voteheads apply during invoicing.</p>
+              </div>
+
+              <div class="mt-6">
+                <label class="block text-sm font-bold text-gray-700 mb-2">Student Group</label>
+                <select name="student_group_id" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition bg-white">
+                  <option value="">-- None / All --</option>
+                  {% for g in student_groups %}
+                  <option value="{{ g.id }}">{{ g.name }}</option>
+                  {% endfor %}
+                </select>
+                <p class="mt-1 text-[10px] text-gray-400">Used for fee structures and votehead applicability.</p>
+              </div>
+
+              <!-- Transport Route Selection (Dynamic) -->
+              <div id="route_selection" class="mt-6 hidden animate-in fade-in slide-in-from-top-4 duration-300">
+                <div class="bg-blue-50 p-6 rounded-2xl border border-blue-100">
+                  <div class="flex items-center mb-4">
+                    <i class="fas fa-bus text-blue-500 mr-2"></i>
+                    <h3 class="text-sm font-bold text-blue-800">Assign Transport Route</h3>
+                  </div>
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label class="block text-xs font-bold text-gray-400 uppercase mb-1 tracking-widest">Select Route</label>
+                      <select name="route_id" class="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition">
+                        <option value="">-- Choose Route --</option>
+                        {% for route in routes %}
+                        <option value="{{ route.id }}" data-amount="{{ route.amount }}">
+                          {{ route.name }} (KES {{ route.amount|currency }})
+                        </option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div>
+                      <div class="text-[10px] font-bold text-gray-400 uppercase mb-1 tracking-widest">Route Billing Info</div>
+                      <p class="text-sm text-blue-600 bg-blue-100/50 p-2 rounded-lg border border-blue-100 font-medium">
+                        Selected route charge will be automatically debited to the student's fee ledger.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-4">
+                <label class="block text-sm font-bold text-gray-700 mb-2">Alternative Contact (Emergency)</label>
+                <input type="text" name="alt_contact"
+                       class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition"
+                       placeholder="Relationship - Phone Number">
+              </div>
+            </section>
+
+            <!-- Group: Parent Info -->
+            <section class="bg-blue-50/50 p-6 rounded-2xl border border-blue-100">
+              <div class="flex items-center justify-between mb-6">
+                <h2 class="text-xs font-bold text-blue-600 uppercase tracking-widest flex items-center">
+                  <span class="w-8 h-[2px] bg-blue-600 mr-3"></span>
+                  3. Parent/Guardian Information
+                </h2>
+                <div class="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-[10px] font-bold">
+                  <i class="fas fa-mobile-alt mr-1"></i> Phone number identifies siblings
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label class="block text-sm font-bold text-gray-700 mb-2">Primary Phone (SMS Recipient) <span class="text-red-500">*</span></label>
+                  <div class="relative">
+                    <input type="text" name="parent_phone" id="p_phone" required
+                           class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition bg-white font-bold"
+                           placeholder="0712345678">
+                    <div id="phoneStatus" class="absolute right-3 top-1/2 -translate-y-1/2 hidden">
+                      <i class="fas fa-sync-alt fa-spin text-blue-400"></i>
+                    </div>
+                  </div>
+                  <div id="siblingAlert" class="mt-2 text-[10px] font-bold text-green-600 hidden flex items-center">
+                     <i class="fas fa-link mr-1"></i> Sibling match found! Details auto-linked.
+                  </div>
+                  
+                  <div id="siblingList" class="mt-4 hidden p-4 bg-white rounded-xl border border-blue-100 shadow-sm">
+                      <h4 class="text-[10px] font-bold text-gray-400 uppercase mb-3 flex items-center tracking-widest">
+                          <i class="fas fa-users mr-2 text-blue-500"></i> Siblings already in School
+                      </h4>
+                      <div id="siblingItems" class="space-y-2">
+                          <!-- Siblings will be injected here -->
+                      </div>
+                  </div>
+                </div>
+                <div>
+                  <label class="block text-sm font-bold text-gray-700 mb-2">Parent Full Name</label>
+                  <input type="text" name="parent_name" id="p_name"
+                         class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition bg-white"
+                         placeholder="Jane Doe">
+                </div>
+                <div>
+                  <label class="block text-sm font-bold text-gray-700 mb-2">Email Address</label>
+                  <input type="email" name="parent_email" id="p_email"
+                         class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition bg-white"
+                         placeholder="parent@example.com">
+                </div>
+                <div>
+                  <label class="block text-sm font-bold text-gray-700 mb-2">National ID No</label>
+                  <input type="text" name="parent_id_no" id="p_id"
+                         class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition bg-white"
+                         placeholder="12345678">
+                </div>
+                <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label class="block text-sm font-bold text-gray-700 mb-2">Residential Area / Estate</label>
+                    <input type="text" name="residency" id="p_town"
+                           class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition bg-white"
+                           placeholder="Kilimani, Nairobi">
+                  </div>
+                  <div>
+                    <label class="block text-sm font-bold text-gray-700 mb-2">Postal Address</label>
+                    <input type="text" name="home_address" id="p_address"
+                           class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition bg-white"
+                           placeholder="P.O Box 123-00100">
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <div class="pt-6 border-t border-gray-100 flex flex-col md:flex-row gap-4">
+              <button type="submit" class="flex-1 py-4 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 transition font-bold shadow-lg shadow-blue-200 text-lg">
+                <i class="fas fa-check-circle mr-2"></i> Complete Admission
+              </button>
+              <a href="{{ url_for('students_list') }}" class="flex-1 py-4 bg-gray-50 text-gray-500 rounded-2xl hover:bg-gray-100 transition font-bold text-center text-lg">
+                Cancel
+              </a>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Side help cards -->
+    <div class="lg:col-span-1 space-y-6">
+      <div class="bg-indigo-600 rounded-2xl p-6 text-white shadow-xl shadow-indigo-200">
+        <h3 class="font-bold flex items-center mb-4">
+          <i class="fas fa-lightbulb text-indigo-200 mr-2"></i>
+          Expert Tip
+        </h3>
+        <p class="text-indigo-100 text-sm leading-relaxed">
+          Admission numbers are the glue that holds everything together. We recommend using a year-based pattern like <code class="bg-indigo-700 px-1 rounded text-white font-mono">2026/001</code> to maintain historical clarity.
+        </p>
       </div>
 
-      <!-- Student Names -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
-          <input type="text" name="fname" required placeholder="John"
-                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Middle Name</label>
-          <input type="text" name="mname" placeholder="Peter"
-                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Last Name *</label>
-          <input type="text" name="lname" required placeholder="Doe"
-                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500">
-        </div>
+      <div class="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
+        <h3 class="font-bold text-gray-800 mb-4 flex items-center">
+          <i class="fas fa-tasks text-blue-500 mr-2"></i>
+          Next Steps
+        </h3>
+        <ul class="space-y-4">
+          <li class="flex items-start">
+            <div class="w-6 h-6 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-[10px] font-bold mr-3 shrink-0">1</div>
+            <p class="text-xs text-gray-500">Record uniform issuance for the student.</p>
+          </li>
+          <li class="flex items-start">
+            <div class="w-6 h-6 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-[10px] font-bold mr-3 shrink-0">2</div>
+            <p class="text-xs text-gray-500">Enroll the student in class-specific subjects.</p>
+          </li>
+          <li class="flex items-start">
+            <div class="w-6 h-6 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-[10px] font-bold mr-3 shrink-0">3</div>
+            <p class="text-xs text-gray-500">Update parent contact details in the profile.</p>
+          </li>
+        </ul>
       </div>
-
-      <!-- Gender -->
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Gender *</label>
-        <div class="flex gap-4">
-          <label class="flex items-center">
-            <input type="radio" name="gender" value="M" required class="w-4 h-4">
-            <span class="ml-2 text-sm">Male</span>
-          </label>
-          <label class="flex items-center">
-            <input type="radio" name="gender" value="F" class="w-4 h-4">
-            <span class="ml-2 text-sm">Female</span>
-          </label>
-        </div>
-      </div>
-
-      <!-- Class Selection -->
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Assign Class *</label>
-        <select name="class_id" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500">
-          <option value="">-- Select Class --</option>
-          {% for c in classes %}
-          <option value="{{ c.classID }}">{{ c.class_name }}</option>
-          {% endfor %}
-        </select>
-        <p class="text-xs text-gray-500 mt-2">Classes are managed in <a href="{{ url_for('manage_classes') }}" class="text-blue-600 hover:underline">Admin Settings → Manage Classes</a></p>
-      </div>
-
-      <!-- Buttons -->
-      <div class="flex gap-3 pt-4 border-t">
-        <button type="submit" class="flex-1 px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium">
-          ✓ Admit Student
-        </button>
-        <a href="{{ url_for('students_list') }}" class="flex-1 px-6 py-2 bg-gray-400 text-white rounded-md hover:bg-gray-500 text-center font-medium">
-          Cancel
-        </a>
-      </div>
-    </form>
-  </div>
-
-  <!-- Quick Links -->
-  <div class="mt-6 grid grid-cols-2 gap-4 text-center text-sm">
-    <a href="{{ url_for('students_list') }}" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded text-gray-700">📋 View All Students</a>
-    <a href="{{ url_for('manage_classes') }}" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded text-gray-700">⚙️ Manage Classes</a>
+    </div>
   </div>
 </div>
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const pPhone = document.getElementById('p_phone');
+    const pName = document.getElementById('p_name');
+    const pEmail = document.getElementById('p_email');
+    const pId = document.getElementById('p_id');
+    const pTown = document.getElementById('p_town');
+    const pAddress = document.getElementById('p_address');
+    const phoneStatus = document.getElementById('phoneStatus');
+    const siblingAlert = document.getElementById('siblingAlert');
+
+    let phoneTimeout;
+
+    // --- Category Change Logic ---
+    const categorySelect = document.getElementById('student_category');
+    const routeSelection = document.getElementById('route_selection');
+
+    categorySelect.addEventListener('change', function() {
+        if (this.value === 'Transport') {
+            routeSelection.classList.remove('hidden');
+        } else {
+            routeSelection.classList.add('hidden');
+        }
+    });
+
+    // --- Sibling Detection Logic ---
+    pPhone.addEventListener('input', function() {
+        clearTimeout(phoneTimeout);
+        const phone = this.value.trim();
+        
+        if (phone.length < 9) {
+            siblingAlert.classList.add('hidden');
+            document.getElementById('siblingList').classList.add('hidden');
+            return;
+        }
+
+        phoneStatus.classList.remove('hidden');
+
+        phoneTimeout = setTimeout(() => {
+            fetch(`/api/detect-siblings?phone=${encodeURIComponent(phone)}`)
+                .then(res => res.json())
+                .then(data => {
+                    phoneStatus.classList.add('hidden');
+                    
+                    if (data.parent) {
+                        const p = data.parent;
+                        pName.value = p.pName || '';
+                        pEmail.value = p.email || '';
+                        pId.value = p.nationalID || '';
+                        pTown.value = p.hometown || '';
+                        pAddress.value = p.address || '';
+                        
+                        siblingAlert.classList.remove('hidden');
+                    } else {
+                        // Don't clear fields if they've been manually typed, 
+                        // but hide the alert
+                        siblingAlert.classList.add('hidden');
+                    }
+
+                    if (data.siblings && data.siblings.length > 0) {
+                        const list = document.getElementById('siblingList');
+                        const container = document.getElementById('siblingItems');
+                        container.innerHTML = '';
+                        
+                        data.siblings.forEach(s => {
+                            const div = document.createElement('div');
+                            div.className = 'flex items-center justify-between text-xs p-2 hover:bg-gray-50 rounded-lg transition';
+                            div.innerHTML = `
+                                <div class="flex items-center">
+                                    <div class="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mr-2 font-bold">
+                                        ${s.Fullname[0]}
+                                    </div>
+                                    <div>
+                                        <div class="font-bold text-gray-800">${s.Fullname}</div>
+                                        <div class="text-[10px] text-gray-500">${s.CurrentClass}</div>
+                                    </div>
+                                </div>
+                                <span class="text-[10px] bg-gray-100 text-gray-400 px-2 py-0.5 rounded uppercase font-bold">${s.AdmNo}</span>
+                            `;
+                            container.appendChild(div);
+                        });
+                        list.classList.remove('hidden');
+                    } else {
+                        document.getElementById('siblingList').classList.add('hidden');
+                    }
+                })
+                .catch(err => {
+                    console.error('Sibling lookup failed:', err);
+                    phoneStatus.classList.add('hidden');
+                });
+        }, 500);
+    });
+});
+</script>
+                        pTown.value = p.hometown || '';
+                        pAddress.value = p.address || '';
+                        
+                        siblingAlert.classList.remove('hidden');
+                        
+                        // Highlight fields
+                        [pName, pEmail, pId, pTown, pAddress].forEach(el => {
+                            el.classList.add('bg-green-50');
+                            setTimeout(() => el.classList.remove('bg-green-50'), 2000);
+                        });
+                    } else {
+                        siblingAlert.classList.add('hidden');
+                    }
+
+                    // Handle Sibling List
+                    const siblingList = document.getElementById('siblingList');
+                    const siblingItems = document.getElementById('siblingItems');
+                    
+                    if (data.siblings && data.siblings.length > 0) {
+                        siblingItems.innerHTML = '';
+                        data.siblings.forEach(sib => {
+                            const div = document.createElement('div');
+                            div.className = "flex items-center justify-between p-2 bg-blue-50/50 rounded-lg border border-blue-50";
+                            div.innerHTML = `
+                                <div class="flex items-center">
+                                    <div class="w-7 h-7 bg-blue-600 text-white rounded-full flex items-center justify-center text-[10px] font-bold mr-3">
+                                        ${sib.FName[0]}${sib.LName[0]}
+                                    </div>
+                                    <div>
+                                        <div class="text-xs font-bold text-gray-800">${sib.FName} ${sib.LName}</div>
+                                        <div class="text-[9px] text-gray-400 font-bold uppercase">${sib.class_name || 'No Class'}</div>
+                                    </div>
+                                </div>
+                                <span class="text-[9px] font-mono text-blue-600 font-bold">#${sib.AdmNo}</span>
+                            `;
+                            siblingItems.appendChild(div);
+                        });
+                        siblingList.classList.remove('hidden');
+                    } else {
+                        siblingList.classList.add('hidden');
+                    }
+                })
+                .catch(err => {
+                    console.error(err);
+                    phoneStatus.classList.add('hidden');
+                });
+        }, 500);
+    });
+});
+</script>
 {% endblock %}

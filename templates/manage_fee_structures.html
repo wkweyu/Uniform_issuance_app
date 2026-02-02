@@ -1,0 +1,383 @@
+{% extends 'base.html' %}
+
+{% block title %}Fee Structure Engine{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <!-- Header with Breadcrumbs -->
+    <div class="mb-8 font-sans">
+        <nav class="flex mb-3" aria-label="Breadcrumb">
+            <ol class="inline-flex items-center space-x-2 text-sm font-medium text-gray-500">
+                <li><a href="{{ url_for('fees_dashboard') }}" class="hover:text-blue-600">Fees Module</a></li>
+                <li><i class="fas fa-chevron-right text-[10px] opacity-40 mx-1"></i></li>
+                <li class="text-gray-900 font-bold">Structure Builder</li>
+            </ol>
+        </nav>
+            <div class="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+                <div>
+                    <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight">Fee Structure Engine</h1>
+                    <p class="text-gray-600 mt-1">Institutional billing configuration for all academic terms.</p>
+                </div>
+                <div class="flex gap-2">
+                    <a href="{{ url_for('fee_structures_overview') }}" class="bg-blue-50 text-blue-700 px-6 py-3 rounded-2xl text-sm font-black border border-blue-100 hover:bg-blue-100 transition flex items-center shadow-sm">
+                        <i class="fas fa-table mr-2"></i>Matrix Overview
+                    </a>
+                    <a href="{{ url_for('create_yearly_fee_structure_route') }}" class="bg-blue-600 text-white px-8 py-3 rounded-2xl text-sm font-black shadow-xl shadow-blue-500/30 hover:bg-blue-700 transition transform active:scale-95 flex items-center">
+                        <i class="fas fa-wand-magic-sparkles mr-2"></i>Yearly Setup Wizard
+                    </a>
+                </div>
+            </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 font-sans">
+        <!-- Sidebar: Active Structures (4 Cols) -->
+        <div class="lg:col-span-4 space-y-6">
+            <div class="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden flex flex-col h-[700px]">
+                <div class="p-4 bg-gray-50 border-b border-gray-100">
+                    <div class="relative">
+                        <input type="text" id="structureSearch" placeholder="Search structures..." 
+                            class="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 transition"
+                            onkeyup="filterStructures()">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i class="fas fa-search text-gray-400"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex-1 overflow-y-auto p-4 space-y-3" id="structureList">
+                    {% for s in structures %}
+                    <div class="structure-card p-4 rounded-xl border border-gray-100 bg-white hover:border-blue-200 hover:shadow-md transition cursor-pointer group"
+                         data-name="{{ s.class_group_code }} {{ s.label or '' }} {{ s.student_category }} {{ s.year_name }}">
+                        <div class="flex justify-between items-start">
+                            <div class="flex-1">
+                                <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{{ s.year_name }}</span>
+                                <h4 class="font-black text-gray-900 leading-tight mt-1">
+                                    {% if s.class_id %}
+                                        <span class="text-indigo-600"><i class="fas fa-bookmark mr-1"></i>{{ s.label }}</span>
+                                    {% else %}
+                                        {{ s.class_group_code }}
+                                    {% endif %}
+                                </h4>
+                                <div class="flex flex-wrap gap-1 mt-2">
+                                    {% for t in s.terms|sort %}
+                                    <span class="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[9px] font-black uppercase">Term {{ t }}</span>
+                                    {% endfor %}
+                                    <span class="ml-auto text-[10px] text-gray-400 font-bold uppercase tracking-tight self-center">{{ s.student_category }} Profile</span>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-[10px] text-gray-400 font-bold uppercase mb-1">Annual Total</div>
+                                <div class="text-sm font-black text-gray-900">{{ s.total_year | currency }}</div>
+                            </div>
+                        </div>
+                        <div class="mt-3 pt-3 border-t border-gray-100 flex justify-between items-center group-hover:bg-gray-50/50 -mx-4 px-4 py-2 transition rounded-b-xl">
+                             <div class="flex gap-4">
+                                <a href="{{ url_for('fee_structure_card', year_id=s.academic_year_id, group_code=s.class_group_code, class_id=s.class_id or '', category=s.student_category) }}" class="text-[10px] font-black text-emerald-600 uppercase hover:text-emerald-800 flex items-center">
+                                    <i class="fas fa-print mr-1"></i> Full Card (3 Terms)
+                                </a>
+                                <a href="{{ url_for('edit_fee_structure', structure_id=s.id) }}" class="text-[10px] font-black text-blue-600 uppercase hover:text-blue-800 flex items-center">
+                                    <i class="fas fa-edit mr-1"></i> Manage
+                                </a>
+                             </div>
+                             <div class="flex items-center gap-2">
+                                <button onclick="openCopyModal({{ s.id }}, '{{ s.class_group_code }} ({{ s.student_category }})')" class="text-[10px] font-bold text-gray-400 uppercase hover:text-indigo-600 transition">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                                <span class="text-[9px] text-gray-400 font-mono">ID: #{{ s.id }}</span>
+                             </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="flex flex-col items-center justify-center h-full text-center text-gray-400 p-8">
+                        <i class="fas fa-file-invoice text-4xl mb-4 opacity-20"></i>
+                        <p class="text-sm italic">No fee structures defined. Use the wizard to start.</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content: Wizard / Details (8 Cols) -->
+        <div class="lg:col-span-8">
+            <div id="wizardPanel" class="bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden transform transition duration-500">
+                <form action="{{ url_for('manage_fee_structures') }}" method="POST" id="mainForm">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    
+                    <div class="p-8 bg-gradient-to-r from-blue-800 to-blue-700 text-white">
+                        <h2 class="text-2xl font-bold flex items-center">
+                            <i class="fas fa-layer-group mr-3 opacity-50"></i> Fee Structure Wizard
+                        </h2>
+                        <p class="text-blue-100 text-sm mt-1">Configure bulk billing components for current or future academic terms.</p>
+                    </div>
+
+                    <div class="p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <!-- Step 1: Period & Context -->
+                        <div class="space-y-6">
+                            <h3 class="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center">
+                                <span class="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mr-2 text-[10px]">01</span>
+                                Context & Period
+                            </h3>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-700 mb-1">Academic Year</label>
+                                    <select name="year_id" required class="w-full border-gray-200 rounded-xl focus:ring-blue-500 bg-gray-50 text-xs py-2">
+                                        {% for y in years %}
+                                        <option value="{{ y.id }}" {{ 'selected' if y.is_current }}>{{ y.year }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-700 mb-1">Term</label>
+                                    <select name="term_id" required class="w-full border-gray-200 rounded-xl focus:ring-blue-500 bg-gray-50 text-xs py-2">
+                                        {% for t in terms %}
+                                        <option value="{{ t.id }}">Term {{ t.term_number }} ({{ t.year }})</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 mb-2">Target Scope (Select Group OR Specific Classes)</label>
+                                <div class="grid grid-cols-1 gap-4">
+                                    <div class="space-y-2">
+                                        <p class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Class Groups</p>
+                                        <div class="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto p-3 border border-gray-100 rounded-xl bg-gray-50">
+                                            {% for group in class_groups %}
+                                            <label class="flex items-center space-x-2 p-1.5 rounded hover:bg-white cursor-pointer transition">
+                                                <input type="checkbox" name="class_groups" value="{{ group.code }}" class="rounded text-blue-600 border-gray-300">
+                                                <span class="text-xs text-gray-700 font-medium">{{ group.code }}</span>
+                                            </label>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="space-y-2">
+                                        <p class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Specific Classes (Exceptions)</p>
+                                        <div class="grid grid-cols-1 gap-2 max-h-32 overflow-y-auto p-3 border border-gray-100 rounded-xl bg-gray-50">
+                                            {% for c in all_classes %}
+                                            <label class="flex items-center space-x-2 p-1.5 rounded hover:bg-white cursor-pointer transition">
+                                                <input type="checkbox" name="specific_classes" value="{{ c.classID }}" 
+                                                       data-group="{{ c.class_group_code }}"
+                                                       class="class-exception-checkbox rounded text-indigo-600 border-gray-300">
+                                                <span class="text-xs text-gray-700 font-medium">{{ c.display_name }}</span>
+                                            </label>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 mb-2">Student Categories</label>
+                                <div class="flex gap-4">
+                                    {% for cat in categories %}
+                                    <label class="flex items-center space-x-2">
+                                        <input type="checkbox" name="categories" value="{{ cat }}" class="rounded text-blue-600 border-gray-300" checked>
+                                        <span class="text-xs font-bold text-gray-700 uppercase tracking-tighter">{{ cat }}</span>
+                                    </label>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Step 2: Votehead Allocation -->
+                        <div class="space-y-6">
+                            <h3 class="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center">
+                                <span class="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mr-2 text-[10px]">02</span>
+                                Financial Components
+                            </h3>
+                            <div class="bg-gray-50 rounded-2xl p-4 border border-gray-100 h-[350px] overflow-y-auto">
+                                <div class="space-y-3" id="voteheadInputs">
+                                    {% for v in voteheads %}
+                                    <div class="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-100 shadow-sm">
+                                        <div class="flex-1">
+                                            <span class="text-xs font-bold text-gray-700 uppercase tracking-tight">{{ v.name }}</span>
+                                            <input type="hidden" name="votehead_id" value="{{ v.id }}">
+                                        </div>
+                                        <div class="w-32 relative">
+                                            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-[9px] font-bold text-gray-400">KES</span>
+                                            <input type="number" name="amount" step="0.01" min="0" placeholder="0.00" 
+                                                class="vh-amount w-full pl-10 pr-3 py-2 bg-gray-50 border-none rounded-lg text-xs text-right font-black focus:ring-2 focus:ring-blue-500"
+                                                oninput="calculateTotal()">
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+
+                            <div class="bg-blue-900 rounded-2xl p-6 text-white shadow-xl flex justify-between items-center transition-all duration-300" id="totalBox">
+                                <div>
+                                    <p class="text-[10px] font-bold uppercase tracking-widest opacity-60">Structure Total</p>
+                                    <p class="text-3xl font-black" id="liveTotalDisplay">KES 0.00</p>
+                                </div>
+                                <i class="fas fa-calculator text-2xl opacity-20"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="p-8 bg-gray-50 border-t border-gray-100 flex justify-between items-center">
+                        <div class="text-[10px] text-gray-500 italic max-w-xs">
+                            <i class="fas fa-info-circle mr-1"></i> Structures will be applied to all matching students in the selected groups.
+                        </div>
+                        <div class="flex gap-3">
+                            <button type="reset" class="px-6 py-2 text-xs font-bold text-gray-500 hover:text-gray-700">Clear Form</button>
+                            <button type="submit" class="bg-blue-600 text-white px-10 py-3 rounded-xl font-black shadow-xl hover:bg-blue-700 transition transform hover:-translate-y-1 text-sm uppercase">
+                                Deploy Structure(s)
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Copy Structure Modal -->
+<div id="copyModal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+    <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-slideUp font-sans">
+        <form action="{{ url_for('copy_fee_structure') }}" method="POST">
+            <div class="p-8 bg-indigo-900 text-white text-center">
+                <div class="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-copy text-2xl"></i>
+                </div>
+                <h3 class="text-2xl font-bold">Duplicate Structure</h3>
+                <p class="text-indigo-200 text-sm mt-1">Replicate financial components to another period</p>
+            </div>
+            
+            <div class="p-8 space-y-6">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="from_structure_id" id="from_structure_id">
+                
+                <div class="bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                    <p class="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1">Source Context</p>
+                    <p id="source_structure_name" class="font-black text-gray-900 text-lg"></p>
+                </div>
+
+                <div class="grid grid-cols-1 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700 mb-1 tracking-tighter uppercase">Target Academic Year</label>
+                        <select name="target_year_id" required class="w-full border-gray-200 rounded-xl focus:ring-indigo-500 bg-gray-50 text-sm py-2">
+                            {% for y in years %}
+                            <option value="{{ y.id }}">{{ y.year }}{% if y.is_current %} (Current){% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700 mb-1 tracking-tighter uppercase">Target Term</label>
+                        <select name="target_term_id" required class="w-full border-gray-200 rounded-xl focus:ring-indigo-500 bg-gray-50 text-sm py-2">
+                            {% for t in terms %}
+                            <option value="{{ t.id }}">Term {{ t.term_number }} ({{ t.year }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-8 pt-0">
+                <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-2xl shadow-xl transition transform active:scale-95 uppercase text-sm">
+                    Run Duplicate Process
+                </button>
+                <button type="button" onclick="document.getElementById('copyModal').classList.add('hidden')" class="w-full mt-3 text-xs font-bold text-gray-400 hover:text-gray-600 uppercase tracking-widest">Close</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function calculateTotal() {
+    const inputs = document.querySelectorAll('.vh-amount');
+    let total = 0;
+    inputs.forEach(input => {
+        total += parseFloat(input.value || 0);
+    });
+    
+    const display = document.getElementById('liveTotalDisplay');
+    display.innerText = 'KES ' + total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    
+    const box = document.getElementById('totalBox');
+    if (total > 0) {
+        box.classList.remove('bg-blue-900');
+        box.classList.add('bg-green-600');
+    } else {
+        box.classList.add('bg-blue-900');
+        box.classList.remove('bg-green-600');
+    }
+}
+
+function filterStructures() {
+    const query = document.getElementById('structureSearch').value.toLowerCase();
+    const cards = document.querySelectorAll('.structure-card');
+    cards.forEach(card => {
+        const text = card.dataset.name.toLowerCase();
+        if (text.includes(query)) {
+            card.style.display = 'block';
+        } else {
+            card.style.display = 'none';
+        }
+    });
+}
+
+function toggleWizard() {
+    const panel = document.getElementById('wizardPanel');
+    // Minimal effect just to show it's focus
+    window.scrollTo({ top: panel.offsetTop - 50, behavior: 'smooth' });
+}
+
+function openCopyModal(structureId, name) {
+    document.getElementById('from_structure_id').value = structureId;
+    document.getElementById('source_structure_name').textContent = name;
+    document.getElementById('copyModal').classList.remove('hidden');
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    calculateTotal();
+    
+    // Conflict Prevention between class groups and specific classes
+    const classCheckboxes = document.querySelectorAll('.class-exception-checkbox');
+    const groupCheckboxes = document.querySelectorAll('input[name="class_groups"]');
+    
+    classCheckboxes.forEach(cb => {
+        cb.addEventListener('change', function() {
+            if (this.checked) {
+                // If a specific class is selected, clear class group checkboxes to prevent conflict
+                groupCheckboxes.forEach(g => {
+                    g.checked = false;
+                    g.disabled = true;
+                    g.parentElement.classList.add('opacity-30', 'grayscale');
+                });
+                
+                // Show a small notice
+                if (!document.getElementById('conflictNotice')) {
+                    const notice = document.createElement('p');
+                    notice.id = 'conflictNotice';
+                    notice.className = 'text-[9px] text-orange-600 font-bold italic mt-1';
+                    notice.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Class groups disabled while specific classes are selected.';
+                    this.closest('.space-y-2').appendChild(notice);
+                }
+            } else {
+                // Check if any other class is still checked
+                const anyChecked = Array.from(classCheckboxes).some(c => c.checked);
+                if (!anyChecked) {
+                    groupCheckboxes.forEach(g => {
+                        g.disabled = false;
+                        g.parentElement.classList.remove('opacity-30', 'grayscale');
+                    });
+                    const notice = document.getElementById('conflictNotice');
+                    if (notice) notice.remove();
+                }
+            }
+        });
+    });
+});
+</script>
+
+<style>
+@keyframes slideUp {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+.animate-slideUp {
+    animation: slideUp 0.3s ease-out forwards;
+}
+</style>
+{% endblock %}

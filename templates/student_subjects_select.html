@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-4">Select Student for Subject Enrollment</h1>
+<p class="mb-4 text-gray-600">Choose a student below to enroll in subjects.</p>
+<table class="w-full text-sm mb-8">
+  <thead>
+    <tr class="bg-gray-100">
+      <th class="px-4 py-2 text-left">Student Name</th>
+      <th class="px-4 py-2 text-left">Adm No</th>
+      <th class="px-4 py-2 text-left">Class</th>
+      <th class="px-4 py-2 text-center">Action</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for student in students %}
+    <tr class="border-b">
+      <td class="px-4 py-2">{{ student.full_name }}</td>
+      <td class="px-4 py-2">{{ student.admno }}</td>
+      <td class="px-4 py-2">{{ student.display_name }}</td>
+      <td class="px-4 py-2 text-center">
+        <a href="/admin/student/{{ student.admno }}/subjects" class="bg-teal-600 text-white px-3 py-1 rounded hover:bg-teal-700">Enroll Subjects</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

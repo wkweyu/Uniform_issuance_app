@@ -11,91 +11,91 @@
     <title>SkoolTrack Pro</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-<<<<<<< HEAD
-=======
+    <!-- Modern Font Family -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
     <!-- Font Awesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
->>>>>>> 1b584a9 (class module)
     <!-- Local Tailwind CSS -->
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/tailwind.min.css') }}"
     />
-<<<<<<< HEAD
-    <!-- (Fallback CDN link-->
-=======
     <!-- Fallback CDN -->
->>>>>>> 1b584a9 (class module)
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
       onerror="console.error('Failed to load local Tailwind')"
     />
 
-<<<<<<< HEAD
-    <!-- Consistent Print Styling -->
-    <style>
-      @media print {
-        .no-print {
-          display: none !important;
-        }
-        body {
-          background: #fff;
-          margin: 0;
-          padding: 0;
-        }
-        main,
-        header,
-        footer {
-          box-shadow: none;
-          padding: 0;
-          margin: 0;
-        }
-        table,
-        th,
-        td {
-          border: 1px solid #000;
-          border-collapse: collapse;
-        }
-        th,
-        td {
-          padding: 6px;
-        }
-=======
     <!-- Print Styling -->
     <style>
+      body {
+          font-family: 'Inter', sans-serif;
+      }
       @media print {
         .no-print { display: none !important; }
         body { background: #fff; margin: 0; padding: 0; }
         main, header, footer { box-shadow: none; padding: 0; margin: 0; }
         table, th, td { border: 1px solid #000; border-collapse: collapse; }
         th, td { padding: 6px; }
->>>>>>> 1b584a9 (class module)
+      }
+      
+      /* Modern Dropdown Menu */
+      .nav-group:hover .nav-dropdown {
+          display: block;
+          animation: slideDown 0.2s ease-out;
+      }
+      @keyframes slideDown {
+          from { opacity: 0; transform: translateY(-10px); }
+          to { opacity: 1; transform: translateY(0); }
+      }
+      .nav-dropdown {
+          display: none;
+          position: absolute;
+          top: 100%;
+          left: 0;
+          min-width: 220px;
+          background: white;
+          border-radius: 0.75rem;
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+          z-index: 50;
+          padding: 0.5rem;
+          border: 1px solid rgba(0,0,0,0.05);
+      }
+      .nav-dropdown a {
+          display: flex;
+          align-items: center;
+          padding: 0.75rem 1rem;
+          color: #4b5563;
+          font-size: 0.875rem;
+          font-weight: 500;
+          border-radius: 0.5rem;
+          transition: all 0.2s;
+      }
+      .nav-dropdown a:hover {
+          background-color: #f9fafb;
+          color: #2563eb;
+      }
+      .nav-dropdown a i {
+          width: 1.25rem;
+          margin-right: 0.75rem;
+          font-size: 1rem;
+          opacity: 0.7;
+      }
+      .nav-active {
+          color: #fff;
+          background-color: rgba(255,255,255,0.1);
       }
     </style>
   </head>
 
   <body class="bg-gray-50 min-h-screen text-gray-800">
-<<<<<<< HEAD
+
     <!-- App Header -->
-    <header class="bg-blue-800 text-white shadow no-print">
-      <div class="max-w-7xl mx-auto flex justify-between items-center p-4">
-        <h1 class="text-2xl font-bold">🎒 SkoolTrack Pro</h1>
-
-        <nav class="space-x-4 text-sm">
-          <a href="{{ url_for('index') }}" class="hover:underline">Home</a>
-          <a href="{{ url_for('uniform_dashboard') }}" class="hover:underline"
-            >Uniform Dashboard</a
-          >
-          <a href="{{ url_for('fleet_dashboard') }}" class="hover:underline"
-            >Fleet Dashboard</a
-          >
-        </nav>
-      </div>
-=======
-
-    <!-- App Header - FIXED: Single navigation section -->
     <header class="bg-blue-800 text-white shadow no-print">
       <div class="max-w-7xl mx-auto px-4">
         <!-- Top Bar: Logo + User Info -->
@@ -149,46 +149,163 @@
         </div>
 
         <!-- Main Navigation -->
-        <nav class="border-t border-blue-700 py-2 hidden md:block">
-          <div class="flex space-x-6">
+        <nav class="border-t border-blue-700 py-1 hidden md:block">
+          <div class="flex space-x-2 flex-wrap items-center">
             {% if session.get('logged_in') %}
+              <!-- Dashboard -->
               <a href="{{ url_for('index') }}" 
-                 class="hover:text-blue-200 {% if request.endpoint == 'index' %}text-blue-200 font-semibold border-b-2 border-blue-200{% endif %}">
-                <i class="fas fa-home mr-1"></i> Dashboard
+                 class="px-3 py-2 rounded-lg transition hover:bg-blue-700 {% if request.endpoint == 'index' %}nav-active bg-blue-900{% endif %}">
+                <i class="fas fa-home"></i> Home
               </a>
               
-              <a href="{{ url_for('uniform_dashboard') }}" 
-                 class="hover:text-blue-200 {% if 'uniform' in request.endpoint %}text-blue-200 font-semibold border-b-2 border-blue-200{% endif %}">
-                <i class="fas fa-tshirt mr-1"></i> Uniform
-              </a>
+              <!-- Academic Management -->
+              <div class="relative nav-group">
+                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'manage_classes' in request.endpoint or 'allocate_teacher' in request.endpoint or 'promote_students' in request.endpoint or 'manage_streams' in request.endpoint %}nav-active bg-blue-900{% endif %}">
+                  <i class="fas fa-graduation-cap"></i> Academic <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
+                </button>
+                <div class="nav-dropdown">
+                  <a href="{{ url_for('manage_classes') }}"><i class="fas fa-school mr-2 w-5"></i> Manage Classes</a>
+                  <a href="{{ url_for('allocate_teacher') }}"><i class="fas fa-chalkboard-user mr-2 w-5"></i> Teacher Allocations</a>
+                  {% if session.get('is_admin') %}
+                  <div class="border-t my-1"></div>
+                  <a href="{{ url_for('manage_streams') }}"><i class="fas fa-stream mr-2 w-5"></i> Manage Streams</a>
+                  <a href="{{ url_for('promote_students') }}"><i class="fas fa-arrow-up-right-dots mr-2 w-5"></i> Promotions</a>
+                  {% endif %}
+                </div>
+              </div>
+
+              <!-- Exam Management -->
+              <div class="relative nav-group">
+                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'exam' in request.endpoint or 'grading' in request.endpoint %}nav-active bg-blue-900{% endif %}">
+                  <i class="fas fa-award"></i> Exams <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
+                </button>
+                <div class="nav-dropdown">
+                  <a href="{{ url_for('exams_dashboard') }}"><i class="fas fa-file-invoice mr-2 w-5"></i> Exam Dashboard</a>
+                  {% if session.is_admin %}
+                  <a href="{{ url_for('manage_grading_scales') }}"><i class="fas fa-graduation-cap mr-2 w-5"></i> Grading Systems</a>
+                  {% endif %}
+                </div>
+              </div>
+
+              <!-- Student Management -->
+              <div class="relative nav-group">
+                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'student' in request.endpoint %}nav-active bg-blue-900{% endif %}">
+                  <i class="fas fa-users-viewfinder"></i> Students <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
+                </button>
+                <div class="nav-dropdown">
+                  <a href="{{ url_for('students_list') }}"><i class="fas fa-users mr-2 w-5"></i> All Students</a>
+                  <a href="{{ url_for('admit_student') }}"><i class="fas fa-user-plus mr-2 w-5"></i> Admit Student</a>
+                  <a href="/admin/student_subjects_select"><i class="fas fa-book-open-reader mr-2 w-5"></i> Subject Enrollment</a>
+                </div>
+              </div>
+
+              <!-- Fees & Billing -->
+              <div class="relative nav-group">
+                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'fees' in request.endpoint and 'reports' not in request.path or 'invoice' in request.endpoint or 'votehead' in request.endpoint or 'structure' in request.endpoint or 'student_group' in request.endpoint %}nav-active bg-blue-900{% endif %}">
+                  <i class="fas fa-money-check-dollar"></i> Fees <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
+                </button>
+                <div class="nav-dropdown w-72">
+                  <div class="px-3 py-1.5 text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 border-b">Operational Hub</div>
+                  <a href="{{ url_for('fees_dashboard') }}"><i class="fas fa-gauge-high mr-2 w-5 text-blue-600"></i> Fees Overview Hub</a>
+                  <a href="{{ url_for('collect_fees') }}"><i class="fas fa-hand-holding-dollar mr-2 w-5 text-emerald-600"></i> Collect Live Payment</a>
+                  
+                  {% if session.get('is_admin') %}
+                  <div class="px-3 py-1.5 text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 border-b border-t mt-1">Billing & Invoicing</div>
+                  <a href="{{ url_for('bulk_invoice') }}"><i class="fas fa-file-invoice-dollar mr-2 w-5"></i> Bulk Invoicing Engine</a>
+                  <a href="{{ url_for('bulk_debit_term') }}"><i class="fas fa-sack-dollar mr-2 w-5"></i> Bulk Term Debiting</a>
+                  <a href="{{ url_for('bulk_post_fees') }}"><i class="fas fa-cloud-upload-alt mr-2 w-5"></i> Bulk Registry Posting</a>
+                  <a href="{{ url_for('reallocate_fee_payment') }}"><i class="fas fa-arrows-spin mr-2 w-5 text-orange-600"></i> Reallocate Payment</a>
+                  
+                  <div class="px-3 py-1.5 text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 border-b border-t mt-1">Structure Configuration</div>
+                  <a href="{{ url_for('fee_structures_overview') }}"><i class="fas fa-table-list mr-2 w-5 text-indigo-600"></i> View Fee Matrix</a>
+                  <a href="{{ url_for('create_yearly_fee_structure_route') }}"><i class="fas fa-wand-magic-sparkles mr-2 w-5 text-blue-500"></i> Setup Yearly Fees</a>
+                  <a href="{{ url_for('manage_fee_structures') }}"><i class="fas fa-gears mr-2 w-5 text-gray-600"></i> Manage Structures</a>
+                  <a href="{{ url_for('manage_voteheads') }}"><i class="fas fa-list-check mr-2 w-5"></i> Revenue Voteheads</a>
+                  <a href="{{ url_for('manage_student_groups') }}"><i class="fas fa-users-rectangle mr-2 w-5"></i> Billing Categories</a>
+                  <a href="{{ url_for('admin_fees_rollup') }}"><i class="fas fa-arrows-rotate mr-2 w-5"></i> Roll-up Arrears</a>
+                  
+                  <div class="px-3 py-1.5 text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 border-b border-t mt-1">Reconciliation & Aid</div>
+                  <a href="{{ url_for('fees_mpesa_reconcile') }}"><i class="fa-brands fa-m mr-2 w-5 text-green-600"></i> M-Pesa Recon</a>
+                  <a href="{{ url_for('fees_waiver_management') }}"><i class="fas fa-hand-holding-heart mr-2 w-5 text-pink-600"></i> Waivers & Aid</a>
+                  {% endif %}
+                </div>
+              </div>
+
+              <!-- Accounts & Finance -->
+              <div class="relative nav-group">
+                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'finance' in request.endpoint or 'reports' in request.path %}nav-active bg-blue-900{% endif %}">
+                  <i class="fas fa-vault"></i> Finance <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
+                </button>
+                <div class="nav-dropdown">
+                  <a href="{{ url_for('finance_dashboard') }}"><i class="fas fa-chart-pie mr-2 w-5"></i> Finance Hub</a>
+                  <a href="{{ url_for('manage_vouchers') }}"><i class="fas fa-file-invoice mr-2 w-5"></i> Payment Vouchers</a>
+                  <a href="{{ url_for('manage_budgets') }}"><i class="fas fa-chart-pie mr-2 w-5"></i> Budget Management</a>
+                  {% if session.get('is_admin') %}
+                  <div class="border-t my-1 text-[10px] font-bold text-gray-400 px-3 uppercase tracking-widest">Financial Reports</div>
+                  <a href="{{ url_for('fees_collection_report') }}"><i class="fas fa-magnifying-glass-chart mr-2 w-5"></i> Collection Summary</a>
+                  <a href="{{ url_for('fee_balances_report') }}"><i class="fas fa-user-tag mr-2 w-5"></i> Fees Balances</a>
+                  <a href="{{ url_for('trial_balance_report') }}"><i class="fas fa-balance-scale-left mr-2 w-5"></i> Trial Balance</a>
+                  <a href="{{ url_for('income_statement_report') }}"><i class="fas fa-chart-line mr-2 w-5"></i> Income Statement</a>
+                  <a href="{{ url_for('balance_sheet_report') }}"><i class="fas fa-file-signature mr-2 w-5"></i> Balance Sheet</a>
+                  {% endif %}
+                </div>
+              </div>
               
-              <a href="{{ url_for('fleet_dashboard') }}" 
-                 class="hover:text-blue-200 {% if 'fleet' in request.endpoint %}text-blue-200 font-semibold border-b-2 border-blue-200{% endif %}">
-                <i class="fas fa-bus mr-1"></i> Fleet
-              </a>
+              <!-- Uniform Management -->
+              <div class="relative nav-group">
+                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'uniform' in request.endpoint or 'stock' in request.endpoint %}nav-active bg-blue-900{% endif %}">
+                  <i class="fas fa-tshirt"></i> Uniforms <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
+                </button>
+                <div class="nav-dropdown">
+                    <a href="{{ url_for('uniform_dashboard') }}"><i class="fas fa-chart-line mr-2 w-5"></i> Uniform Hub</a>
+                    <a href="{{ url_for('issue_uniform') }}"><i class="fas fa-receipt mr-2 w-5"></i> Issue Uniform</a>
+                    <a href="{{ url_for('manage_stock') }}"><i class="fas fa-boxes-stacked mr-2 w-5"></i> Inventory / Stock</a>
+                    {% if session.get('is_admin') %}
+                    <a href="{{ url_for('manage_uniform_items') }}"><i class="fas fa-tags mr-2 w-5"></i> Pricing & Items</a>
+                    {% endif %}
+                </div>
+              </div>
               
-              <a href="{{ url_for('students_list') }}" 
-                 class="hover:text-blue-200 {% if 'student' in request.endpoint %}text-blue-200 font-semibold border-b-2 border-blue-200{% endif %}">
-                <i class="fas fa-users mr-1"></i> Students
-              </a>
+              <!-- Fleet Management -->
+              <div class="relative nav-group">
+                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'fleet' in request.endpoint or 'fuel' in request.endpoint %}nav-active bg-blue-900{% endif %}">
+                  <i class="fas fa-bus"></i> Fleet <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
+                </button>
+                <div class="nav-dropdown">
+                    <a href="{{ url_for('fleet_dashboard') }}"><i class="fas fa-gauge mr-2 w-5"></i> Fleet Hub</a>
+                    <a href="{{ url_for('record_fuel_invoice') }}"><i class="fas fa-gas-pump mr-2 w-5"></i> Fuel Tracking</a>
+                    <a href="{{ url_for('service_register') }}"><i class="fas fa-wrench mr-2 w-5"></i> Maintenance</a>
+                    {% if session.get('is_admin') %}
+                    <a href="{{ url_for('manage_buses') }}"><i class="fas fa-list mr-2 w-5"></i> Manage Vehicles</a>
+                    <a href="{{ url_for('manage_transport_routes') }}"><i class="fas fa-route mr-2 w-5"></i> Transport Routes</a>
+                    {% endif %}
+                </div>
+              </div>
+
+              <!-- Procurement & Supplies -->
+              <div class="relative nav-group">
+                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'procurement' in request.endpoint or 'po' in request.endpoint %}nav-active bg-blue-900{% endif %}">
+                  <i class="fas fa-truck-ramp-box"></i> Procurement <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
+                </button>
+                <div class="nav-dropdown">
+                    <a href="{{ url_for('procurement_dashboard') }}"><i class="fas fa-clipboard-list mr-2 w-5"></i> Procurement Hub</a>
+                    <a href="{{ url_for('create_purchase_order') }}"><i class="fas fa-file-invoice mr-2 w-5"></i> Create PO</a>
+                    <a href="{{ url_for('manage_suppliers') }}"><i class="fas fa-truck-field mr-2 w-5"></i> Suppliers</a>
+                </div>
+              </div>
               
-              <a href="{{ url_for('reports_dashboard') }}" 
-                 class="hover:text-blue-200 {% if 'report' in request.endpoint %}text-blue-200 font-semibold border-b-2 border-blue-200{% endif %}">
-                <i class="fas fa-chart-bar mr-1"></i> Reports
-              </a>
-              
+              <!-- System Admin -->
               {% if session.get('is_admin') %}
-                <a href="{{ url_for('manage_classes') }}" 
-                   class="hover:text-blue-200 {% if 'manage_classes' in request.endpoint %}text-blue-200 font-semibold border-b-2 border-blue-200{% endif %}">
-                  <i class="fas fa-school mr-1"></i> Classes
-                </a>
-              {% endif %}
-              
-              {% if session.get('is_admin') %}
-                <a href="{{ url_for('manage_users') }}" 
-                   class="hover:text-blue-200 {% if 'manage_users' in request.endpoint %}text-blue-200 font-semibold border-b-2 border-blue-200{% endif %}">
-                  <i class="fas fa-user-cog mr-1"></i> Users
-                </a>
+              <div class="relative nav-group">
+                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'manage_users' in request.endpoint or 'manage_term_dates' in request.endpoint or request.endpoint == 'admin_settings' %}nav-active bg-blue-900{% endif %}">
+                  <i class="fas fa-shield-halved"></i> Admin <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
+                </button>
+                <div class="nav-dropdown">
+                    <a href="{{ url_for('admin_settings') }}"><i class="fas fa-sliders mr-2 w-5"></i> Settings Hub</a>
+                    <a href="{{ url_for('manage_users') }}"><i class="fas fa-user-gear mr-2 w-5"></i> User Management</a>
+                    <a href="{{ url_for('manage_term_dates') }}"><i class="fas fa-calendar-days mr-2 w-5"></i> Term Periods</a>
+                </div>
+              </div>
               {% endif %}
             {% endif %}
           </div>
@@ -197,161 +314,153 @@
 
       <!-- Mobile Menu -->
       <div id="mobile-menu" class="hidden md:hidden bg-blue-700 border-t border-blue-600">
-        <div class="flex flex-col p-4 space-y-3">
+        <div class="flex flex-col p-4 space-y-4">
           {% if session.get('logged_in') %}
-            <a href="{{ url_for('index') }}" class="hover:bg-blue-600 p-2 rounded flex items-center">
-              <i class="fas fa-home w-6"></i> <span class="ml-2">Dashboard</span>
+            <!-- Dashboard -->
+            <a href="{{ url_for('index') }}" class="text-white hover:text-blue-200 border-b border-blue-600 pb-2">
+              <i class="fas fa-home mr-1"></i> Home
             </a>
-            
-            <a href="{{ url_for('uniform_dashboard') }}" class="hover:bg-blue-600 p-2 rounded flex items-center">
-              <i class="fas fa-tshirt w-6"></i> <span class="ml-2">Uniform</span>
-            </a>
-            
-            <a href="{{ url_for('fleet_dashboard') }}" class="hover:bg-blue-600 p-2 rounded flex items-center">
-              <i class="fas fa-bus w-6"></i> <span class="ml-2">Fleet</span>
-            </a>
-            
-            <a href="{{ url_for('students_list') }}" class="hover:bg-blue-600 p-2 rounded flex items-center">
-              <i class="fas fa-users w-6"></i> <span class="ml-2">Students</span>
-            </a>
-            
-            <a href="{{ url_for('reports_dashboard') }}" class="hover:bg-blue-600 p-2 rounded flex items-center">
-              <i class="fas fa-chart-bar w-6"></i> <span class="ml-2">Reports</span>
-            </a>
-            
-            {% if session.get('is_admin') %}
-              <a href="{{ url_for('manage_classes') }}" class="hover:bg-blue-600 p-2 rounded flex items-center">
-                <i class="fas fa-school w-6"></i> <span class="ml-2">Classes</span>
-              </a>
-              
-              <a href="{{ url_for('admin_settings') }}" class="hover:bg-blue-600 p-2 rounded flex items-center">
-                <i class="fas fa-cog w-6"></i> <span class="ml-2">Admin Settings</span>
-              </a>
-              
-              <a href="{{ url_for('manage_users') }}" class="hover:bg-blue-600 p-2 rounded flex items-center">
-                <i class="fas fa-user-cog w-6"></i> <span class="ml-2">User Management</span>
-              </a>
-            {% endif %}
-            
-            <div class="border-t border-blue-600 pt-3 mt-3">
-              <div class="text-sm text-blue-200 px-2">
-                <i class="fas fa-user"></i> {{ session.username }}
-                {% if session.is_admin %}
-                  <span class="bg-red-500 text-xs px-2 py-0.5 rounded ml-2">Admin</span>
+
+            <!-- Academic -->
+            <div class="space-y-2">
+                <div class="text-blue-300 text-[10px] uppercase font-bold tracking-wider">Academic Management</div>
+                <a href="{{ url_for('manage_classes') }}" class="block text-white hover:text-blue-200 pl-2">
+                  <i class="fas fa-school mr-1 w-5"></i> Manage Classes
+                </a>
+                <a href="{{ url_for('allocate_teacher') }}" class="block text-white hover:text-blue-200 pl-2">
+                  <i class="fas fa-chalkboard-user mr-1 w-5"></i> Teacher Allocations
+                </a>
+                {% if session.get('is_admin') %}
+                <a href="{{ url_for('manage_streams') }}" class="block text-white hover:text-blue-200 pl-2">
+                  <i class="fas fa-stream mr-1 w-5"></i> Manage Streams
+                </a>
+                <a href="{{ url_for('promote_students') }}" class="block text-white hover:text-blue-200 pl-2">
+                    <i class="fas fa-arrow-up-right-dots mr-1 w-5"></i> Promotions
+                </a>
                 {% endif %}
-              </div>
             </div>
-            
-            <a href="{{ url_for('logout') }}" class="hover:bg-red-600 bg-red-700 p-2 rounded flex items-center">
-              <i class="fas fa-sign-out-alt w-6"></i> <span class="ml-2">Logout</span>
-            </a>
-          {% else %}
-            <a href="{{ url_for('login') }}" class="hover:bg-blue-600 p-2 rounded flex items-center">
-              <i class="fas fa-sign-in-alt w-6"></i> <span class="ml-2">Login</span>
-            </a>
+
+            <!-- Students -->
+            <div class="space-y-2">
+                <div class="text-blue-300 text-[10px] uppercase font-bold tracking-wider">Student Management</div>
+                <a href="{{ url_for('students_list') }}" class="block text-white hover:text-blue-200 pl-2">
+                  <i class="fas fa-users mr-1 w-5"></i> All Students
+                </a>
+                <a href="{{ url_for('admit_student') }}" class="block text-white hover:text-blue-200 pl-2">
+                  <i class="fas fa-user-plus mr-1 w-5"></i> Admit Student
+                </a>
+                <a href="/admin/student_subjects_select" class="block text-white hover:text-blue-200 pl-2">
+                  <i class="fas fa-book-open-reader mr-1 w-5"></i> Subject Enrollment
+                </a>
+            </div>
+
+            <!-- Uniform -->
+            <div class="space-y-2">
+                <div class="text-blue-300 text-[10px] uppercase font-bold tracking-wider">Uniform System</div>
+                <a href="{{ url_for('uniform_dashboard') }}" class="block text-white hover:text-blue-200 pl-2">
+                  <i class="fas fa-chart-line mr-1 w-5"></i> Uniform Hub
+                </a>
+                <a href="{{ url_for('issue_uniform') }}" class="block text-white hover:text-blue-200 pl-2">
+                    <i class="fas fa-receipt mr-1 w-5"></i> Issue Uniform
+                </a>
+                <a href="{{ url_for('manage_stock') }}" class="block text-white hover:text-blue-200 pl-2">
+                    <i class="fas fa-boxes-stacked mr-1 w-5"></i> Inventory
+                </a>
+            </div>
+
+            <!-- Fleet -->
+            <div class="space-y-2">
+                <div class="text-blue-300 text-[10px] uppercase font-bold tracking-wider">Fleet Management</div>
+                <a href="{{ url_for('fleet_dashboard') }}" class="block text-white hover:text-blue-200 pl-2">
+                  <i class="fas fa-gauge mr-1 w-5"></i> Fleet Hub
+                </a>
+                <a href="{{ url_for('service_register') }}" class="block text-white hover:text-blue-200 pl-2">
+                    <i class="fas fa-wrench mr-1 w-5"></i> Maintenance
+                </a>
+            </div>
+
+            <!-- Fees & Billing -->
+            <div class="space-y-2">
+                <div class="text-blue-300 text-[10px] uppercase font-bold tracking-wider">Fees & Billing</div>
+                <a href="{{ url_for('fees_dashboard') }}" class="block text-white hover:text-blue-200 pl-2">
+                  <i class="fas fa-gauge-high mr-1 w-5"></i> Fees Hub
+                </a>
+                <a href="{{ url_for('collect_fees') }}" class="block text-white hover:text-blue-200 pl-2">
+                  <i class="fas fa-hand-holding-dollar mr-1 w-5"></i> Collect Fees
+                </a>
+                {% if session.get('is_admin') %}
+                <a href="{{ url_for('manage_fee_structures') }}" class="block text-white hover:text-blue-200 pl-2">
+                  <i class="fas fa-gears mr-1 w-5"></i> Fee Structures
+                </a>
+                <a href="{{ url_for('bulk_invoice') }}" class="block text-white hover:text-blue-200 pl-2">
+                  <i class="fas fa-file-invoice-dollar mr-1 w-5"></i> Bulk Invoicing
+                </a>
+                {% endif %}
+            </div>
+
+            <!-- Finance & Accounts -->
+            <div class="space-y-2">
+                <div class="text-blue-300 text-[10px] uppercase font-bold tracking-wider">Accounts & Finance</div>
+                <a href="{{ url_for('finance_dashboard') }}" class="block text-white hover:text-blue-200 pl-2">
+                  <i class="fas fa-vault mr-1 w-5"></i> Finance Hub
+                </a>
+                <a href="{{ url_for('manage_vouchers') }}" class="block text-white hover:text-blue-200 pl-2">
+                  <i class="fas fa-file-invoice mr-1 w-5"></i> Payment Vouchers
+                </a>
+                {% if session.get('is_admin') %}
+                <a href="{{ url_for('income_statement_report') }}" class="block text-white hover:text-blue-200 pl-2">
+                    <i class="fas fa-chart-line mr-1 w-5"></i> Income Statement
+                </a>
+                <a href="{{ url_for('balance_sheet_report') }}" class="block text-white hover:text-blue-200 pl-2">
+                    <i class="fas fa-file-signature mr-1 w-5"></i> Balance Sheet
+                </a>
+                {% endif %}
+            </div>
+
+            <!-- Admin -->
+            {% if session.get('is_admin') %}
+            <div class="space-y-2">
+                <div class="text-blue-300 text-[10px] uppercase font-bold tracking-wider">Administration</div>
+                <a href="{{ url_for('admin_settings') }}" class="block text-white hover:text-blue-200 pl-2">
+                    <i class="fas fa-cog mr-1 w-5"></i> Settings
+                </a>
+                <a href="{{ url_for('manage_users') }}" class="block text-white hover:text-blue-200 pl-2">
+                    <i class="fas fa-user-cog mr-1 w-5"></i> Manage Users
+                </a>
+            </div>
+            {% endif %}
           {% endif %}
         </div>
       </div>
->>>>>>> 1b584a9 (class module)
     </header>
 
     <!-- Flash Messages -->
-    <div class="max-w-7xl mx-auto mt-4 px-4 no-print">
-<<<<<<< HEAD
-      {% with messages = get_flashed_messages() %} {% if messages %}
-      <div
-        class="p-4 mb-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-900 rounded"
-      >
-        {% for message in messages %}
-        <p>{{ message|safe }}</p>
-        {% endfor %}
-      </div>
-      {% endif %} {% endwith %}
-    </div>
-
-    <!-- Main Content -->
-    <main
-      class="max-w-7xl mx-auto p-6 bg-white shadow rounded-lg mt-4 print-area"
-    >
-=======
+    <main class="max-w-7xl mx-auto p-4">
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
           {% for category, message in messages %}
-            <div class="p-4 mb-4 rounded-lg border-l-4 
-              {% if category == 'error' %} 
-                bg-red-50 border-red-500 text-red-800
-              {% elif category == 'success' %}
-                bg-green-50 border-green-500 text-green-800
-              {% elif category == 'warning' %}
-                bg-yellow-50 border-yellow-500 text-yellow-800
-              {% else %}
-                bg-blue-50 border-blue-500 text-blue-800
-              {% endif %}">
-              <div class="flex items-center">
-                <i class="fas 
-                  {% if category == 'error' %} fa-exclamation-circle
-                  {% elif category == 'success' %} fa-check-circle
-                  {% elif category == 'warning' %} fa-exclamation-triangle
-                  {% else %} fa-info-circle {% endif %}
-                  mr-2"></i>
-                {{ message|safe }}
-              </div>
+            <div class="mb-4 p-4 rounded {% if category == 'error' %}bg-red-100 border border-red-400 text-red-700{% elif category == 'warning' %}bg-yellow-100 border border-yellow-400 text-yellow-700{% else %}bg-green-100 border border-green-400 text-green-700{% endif %}">
+              {{ message }}
             </div>
           {% endfor %}
         {% endif %}
       {% endwith %}
-    </div>
 
-    <!-- Main Content -->
-    <main class="max-w-7xl mx-auto p-4 md:p-6 bg-white shadow rounded-lg mt-4 mb-6 print-area">
->>>>>>> 1b584a9 (class module)
+      <!-- Page Content -->
       {% block content %}{% endblock %}
     </main>
 
     <!-- Footer -->
-<<<<<<< HEAD
-    <footer class="text-center text-sm text-gray-500 py-4 no-print">
-      &copy; {{ datetime.utcnow().year }} Mother Kevin Comprehensive School. All
-      rights reserved.
-    </footer>
-  </body>
-</html>
-=======
-    <footer class="text-center text-sm text-gray-500 py-4 no-print border-t border-gray-200 mt-8">
-      <div class="max-w-7xl mx-auto px-4">
-        <div class="flex flex-col md:flex-row justify-between items-center">
-          <div class="mb-2 md:mb-0">
-            &copy; {{ datetime.utcnow().year }} Mother Kevin Comprehensive School. All rights reserved.
-          </div>
-          <div class="text-xs text-gray-400">
-            <span class="hidden md:inline">•</span>
-            <span class="mx-2">SkoolTrack Pro v1.0</span>
-            <span class="hidden md:inline">•</span>
-            {% if session.get('logged_in') %}
-              <span class="mx-2">Logged in as: {{ session.username }}</span>
-            {% endif %}
-          </div>
-        </div>
-      </div>
+    <footer class="bg-gray-900 text-gray-300 text-center py-4 mt-8 no-print">
+      <p>&copy; 2025 SkoolTrack Pro - School Management System</p>
     </footer>
 
-    <!-- Mobile Menu Script -->
     <script>
-      const menuBtn = document.getElementById('menu-btn');
-      const mobileMenu = document.getElementById('mobile-menu');
-
-      menuBtn.addEventListener('click', () => {
-        mobileMenu.classList.toggle('hidden');
-      });
-
-      // Close mobile menu when clicking outside
-      document.addEventListener('click', (event) => {
-        if (!menuBtn.contains(event.target) && !mobileMenu.contains(event.target)) {
-          mobileMenu.classList.add('hidden');
-        }
+      // Mobile menu toggle
+      document.getElementById('menu-btn').addEventListener('click', function() {
+        const menu = document.getElementById('mobile-menu');
+        menu.classList.toggle('hidden');
       });
     </script>
-
   </body>
 </html>
->>>>>>> 1b584a9 (class module)

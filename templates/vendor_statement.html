@@ -1,0 +1,115 @@
+{% extends 'base_report.html' %}
+
+{% block report_title %}Vendor Statement{% endblock %}
+
+{% block content %}
+<div class="no-print mb-6 border-b pb-4">
+    <div class="flex flex-col md:flex-row justify-between items-end gap-3">
+        <form class="flex flex-wrap gap-2 items-end">
+            <div>
+                <label class="block text-[9px] font-black text-gray-400 uppercase mb-1 tracking-widest">Date From</label>
+                <input type="date" name="start_date" value="{{ start_date }}" class="border-gray-300 rounded px-3 py-1.5 text-xs">
+            </div>
+            <div>
+                <label class="block text-[9px] font-black text-gray-400 uppercase mb-1 tracking-widest">Date To</label>
+                <input type="date" name="end_date" value="{{ end_date }}" class="border-gray-300 rounded px-3 py-1.5 text-xs">
+            </div>
+            <button type="submit" class="bg-blue-600 text-white px-5 py-1.5 rounded text-xs font-bold hover:bg-blue-700 transition">
+                Filter Results
+            </button>
+        </form>
+        <button onclick="window.print()" class="bg-gray-800 text-white px-5 py-1.5 rounded text-xs font-bold hover:bg-black transition">
+            Print Statement
+        </button>
+    </div>
+</div>
+
+<!-- Header Info Section -->
+<div class="grid grid-cols-2 gap-4 mb-4 border-b pb-4 print:mb-2">
+    <div>
+        <h3 class="text-[8pt] font-black text-gray-400 uppercase tracking-widest mb-1">Payer Details (Vendor)</h3>
+        <p class="text-base font-black text-gray-900 leading-none uppercase">{{ supplier.company }}</p>
+        <div class="mt-2 text-[8pt] space-y-0.5 text-gray-600">
+            <p><span class="font-bold">Contact:</span> {{ supplier.mobilePhone or 'N/A' }} | {{ supplier.email or 'N/A' }}</p>
+            <p><span class="font-bold">Tax PIN:</span> {{ supplier.pin_no or 'N/A' }} | Cert: {{ supplier.cert_no or 'N/A' }}</p>
+        </div>
+    </div>
+    <div class="text-right flex flex-col justify-center border-l pl-6 print:pl-4 print:border-gray-200">
+        <h3 class="text-[8pt] font-black text-gray-400 uppercase tracking-widest mb-1">Total Payable Balance</h3>
+        {% set total_debit = transactions | map(attribute='debit') | sum %}
+        {% set total_credit = transactions | map(attribute='credit') | sum %}
+        <p class="text-2xl font-black font-mono {% if (total_credit - total_debit) > 0 %}text-red-600{% else %}text-green-700{% endif %}">
+            {{ (total_credit - total_debit) | currency }}
+        </p>
+        <p class="text-[7pt] font-bold text-gray-400 uppercase italic">As of {{ end_date }}</p>
+    </div>
+</div>
+
+<div class="overflow-hidden border border-gray-900 print:border-black">
+    <table class="w-full border-collapse table-fixed">
+        <thead class="bg-gray-900 text-white print:bg-gray-100 print:text-black">
+            <tr class="uppercase text-[7.5pt] font-black tracking-widest leading-none">
+                <th class="px-2 py-2 border-r border-gray-800 print:border-black w-[10%]">Date</th>
+                <th class="px-2 py-2 border-r border-gray-800 print:border-black text-center w-[14%]">Ref No.</th>
+                <th class="px-2 py-2 border-r border-gray-800 print:border-black text-left w-[44%]">Description / Account</th>
+                <th class="px-2 py-2 border-r border-gray-800 print:border-black text-right w-[10%]">Debit</th>
+                <th class="px-2 py-2 border-r border-gray-800 print:border-black text-right w-[10%]">Credit</th>
+                <th class="px-2 py-2 text-right w-[12%]">Balance</th>
+            </tr>
+        </thead>
+        <tbody class="text-[8.5pt]">
+            {% set running_balance = [0] %}
+            {% for txn in transactions %}
+                {% if running_balance.append(running_balance.pop() + txn.credit - txn.debit) %}{% endif %}
+                <tr class="border-b border-gray-200 hover:bg-gray-50 transition-colors">
+                    <td class="px-2 py-1 border-r border-gray-100 print:border-black text-gray-600 font-mono text-[7.5pt] whitespace-nowrap align-top">{{ txn.date }}</td>
+                    <td class="px-2 py-1 border-r border-gray-100 print:border-black text-center font-bold text-gray-500 text-[8pt] whitespace-nowrap align-top">
+                        {{ txn.reference_no }}
+                    </td>
+                    <td class="px-2 py-1 border-r border-gray-100 print:border-black align-top">
+                        <div class="leading-[1.1]">
+                            <span class="font-bold text-gray-900 uppercase text-[8pt]">{{ txn.description }}</span>
+                            <span class="text-[7pt] text-gray-400 font-mono block mt-0.5">Account: {{ txn.account_mapped }}</span>
+                        </div>
+                    </td>
+                    <td class="px-2 py-1 border-r border-gray-100 print:border-black text-right font-mono font-bold text-red-600 align-top">
+                        {% if txn.debit > 0 %}{{ txn.debit | currency }}{% else %}-{% endif %}
+                    </td>
+                    <td class="px-2 py-1 border-r border-gray-100 print:border-black text-right font-mono font-bold text-green-700 align-top">
+                        {% if txn.credit > 0 %}{{ txn.credit | currency }}{% else %}-{% endif %}
+                    </td>
+                    <td class="px-2 py-1 text-right font-mono font-black text-gray-900 bg-gray-50/30 align-top">
+                        {{ running_balance[0] | currency }}
+                    </td>
+                </tr>
+            {% else %}
+                <tr>
+                    <td colspan="6" class="px-4 py-8 text-center text-gray-400 italic bg-white text-[10pt]">
+                        No transactions found for this period.
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot class="border-t-2 border-gray-900 bg-gray-100 font-black text-gray-900 uppercase text-[8pt]">
+            <tr>
+                <td colspan="3" class="px-2 py-2 text-right tracking-widest border-r border-black font-black uppercase">Period Totals:</td>
+                <td class="px-2 py-2 text-right font-mono border-r border-black text-red-700">{{ total_debit | currency }}</td>
+                <td class="px-2 py-2 text-right font-mono border-r border-black text-green-800">{{ total_credit | currency }}</td>
+                <td class="px-2 py-2 text-right font-mono font-black bg-gray-200">{{ (total_credit - total_debit) | currency }}</td>
+            </tr>
+        </tfoot>
+    </table>
+</div>
+
+<!-- Statement Notes -->
+<div class="mt-6 flex justify-between gap-8 items-start">
+    <div class="flex-1 text-[9px] text-gray-400 italic max-w-lg">
+        <p><span class="font-bold not-italic font-black text-gray-600">NOTE:</span> If you find any discrepancy in this statement, please notify the Accounts Office within 14 days. This is a system generated document and does not require a physical signature unless otherwise requested.</p>
+    </div>
+    <div class="w-48 text-right">
+        <p class="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Generated By</p>
+        <p class="text-xs font-bold text-gray-800 uppercase">{{ session.username }}</p>
+    </div>
+</div>
+
+{% endblock %}

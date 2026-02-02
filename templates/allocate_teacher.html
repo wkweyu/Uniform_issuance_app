@@ -57,9 +57,9 @@
             <!-- Subject Selection -->
             <div>
                 <label for="subject_id" class="block text-sm font-medium text-gray-700 mb-2">
-                    Subject *
+                    Subject (optional for class teacher)
                 </label>
-                <select name="subject_id" id="subject_id" required 
+                <select name="subject_id" id="subject_id" 
                         class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
                     <option value="">-- Select Subject --</option>
                     {% for subject in subjects %}
@@ -71,15 +71,27 @@
                 <p class="text-xs text-gray-500 mt-1">ℹ️ Subject must be allocated to the selected class</p>
             </div>
 
-            <!-- Teacher ID -->
+            <!-- Is Class Teacher -->
+            <div class="flex items-center space-x-2">
+                <input type="checkbox" name="is_class_teacher" id="is_class_teacher" class="h-4 w-4 text-blue-600 border-gray-300 rounded">
+                <label for="is_class_teacher" class="text-sm text-gray-700">Assign as Class Teacher (applies to selected Academic Year)</label>
+            </div>
+
+            <!-- Teacher Selection -->
             <div>
                 <label for="teacher_id" class="block text-sm font-medium text-gray-700 mb-2">
-                    Teacher ID *
+                    Teacher *
                 </label>
-                <input type="text" name="teacher_id" id="teacher_id" required 
-                       placeholder="e.g., T001"
-                       class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                <p class="text-xs text-gray-500 mt-1">ℹ️ Enter teacher's ID or reference number</p>
+                <select name="teacher_id" id="teacher_id" required 
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    <option value="">-- Select Teacher --</option>
+                    {% for teacher in teachers %}
+                    <option value="{{ teacher.userNo }}">
+                        {{ teacher.username }}{% if teacher.StaffID %} ({{ teacher.StaffID }}){% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+                <p class="text-xs text-gray-500 mt-1">ℹ️ Only active teachers are shown. Create a new teacher account in Admin → Users if needed.</p>
             </div>
 
             <!-- Allocation Summary -->
@@ -136,8 +148,9 @@
         const subjectText = subjectSelect.options[subjectSelect.selectedIndex].text || 'Not selected';
         const yearSelect = document.getElementById('academic_year_id');
         const yearText = yearSelect.options[yearSelect.selectedIndex].text || 'Not selected';
+        const isClass = document.getElementById('is_class_teacher') && document.getElementById('is_class_teacher').checked;
         
-        document.getElementById('summary_teacher').textContent = teacherId;
+        document.getElementById('summary_teacher').textContent = teacherId + (isClass ? ' (Class Teacher)' : '');
         document.getElementById('summary_class').textContent = classText;
         document.getElementById('summary_subject').textContent = subjectText;
         document.getElementById('summary_year').textContent = yearText;
@@ -147,5 +160,7 @@
     document.getElementById('class_id').addEventListener('change', updateSummary);
     document.getElementById('subject_id').addEventListener('change', updateSummary);
     document.getElementById('academic_year_id').addEventListener('change', updateSummary);
+    const isClassCheckbox = document.getElementById('is_class_teacher');
+    if (isClassCheckbox) isClassCheckbox.addEventListener('change', updateSummary);
 </script>
 {% endblock %}

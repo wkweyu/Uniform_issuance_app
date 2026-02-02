@@ -1,0 +1,3 @@
+admno,fname,mname,lname,gender,dob,class_name,category,religion,parent_name,parent_phone,parent_email,parent_id_no,residency,home_address
+2026/010,John,Paul,Doe,M,2015-05-20,Grade 2,Day,Christianity,Jane Doe,0712345678,jane@example.com,12345678,Nairobi,P.O Box 123
+2026/011,Mary,Ann,Smith,F,2016-08-12,Grade 1,Boarding,Christianity,Peter Smith,0722334455,peter@example.com,87654321,Nakuru,P.O Box 456

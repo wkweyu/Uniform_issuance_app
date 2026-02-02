@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 py-8">
+    
+    <div class="flex justify-between items-center mb-8">
+        <div>
+            <h1 class="text-3xl font-extrabold text-gray-900">Finance & General Ledger</h1>
+            <p class="text-gray-500">Comprehensive school financial management and double-entry accounting.</p>
+        </div>
+        <div class="flex gap-3">
+            <a href="{{ url_for('manage_vouchers') }}" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-xl font-semibold shadow-sm transition flex items-center gap-2">
+                <i class="fas fa-file-invoice-dollar"></i> New Voucher
+            </a>
+            <a href="{{ url_for('trial_balance_report') }}" class="bg-gray-800 hover:bg-black text-white px-5 py-2 rounded-xl font-semibold shadow-sm transition flex items-center gap-2">
+                <i class="fas fa-balance-scale"></i> Trial Balance
+            </a>
+        </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 border-l-4 border-l-green-500">
+            <h4 class="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-2">Income (Month)</h4>
+            <div class="text-2xl font-black text-gray-800">{{ stats.monthly_income | currency }}</div>
+        </div>
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 border-l-4 border-l-red-500">
+            <h4 class="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-2">Expenses (Month)</h4>
+            <div class="text-2xl font-black text-gray-800">{{ stats.monthly_expenses | currency }}</div>
+        </div>
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 border-l-4 border-l-blue-500">
+            <h4 class="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-2">Cash & Bank Balance</h4>
+            <div class="text-2xl font-black text-gray-800">{{ stats.cash_on_hand | currency }}</div>
+        </div>
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 border-l-4 border-l-amber-500">
+            <h4 class="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-2">Pending Payables</h4>
+            <div class="text-2xl font-black text-gray-800">{{ stats.pending_vouchers_amount | currency }}</div>
+            <p class="text-[10px] text-amber-600 font-bold uppercase">{{ stats.pending_vouchers_count }} Vouchers</p>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <!-- Chart of Accounts -->
+        <div class="lg:col-span-1 space-y-6">
+            <div class="flex items-center justify-between">
+                <h2 class="text-xl font-bold text-gray-800">Chart of Accounts</h2>
+                <button class="text-blue-600 text-sm font-bold hover:underline">+ Add Account</button>
+            </div>
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div class="divide-y divide-gray-50 max-h-[500px] overflow-y-auto">
+                    {% for account in accounts %}
+                    <div class="p-4 flex items-center justify-between hover:bg-gray-50 transition">
+                        <div>
+                            <span class="text-[10px] font-mono font-bold bg-gray-100 text-gray-500 px-2 py-0.5 rounded mr-2">{{ account.code }}</span>
+                            <span class="text-sm font-semibold text-gray-800">{{ account.name }}</span>
+                            <p class="text-[10px] text-gray-400 uppercase tracking-tighter">{{ account.type }}</p>
+                        </div>
+                        <i class="fas fa-chevron-right text-gray-300 text-xs"></i>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Transactions -->
+        <div class="lg:col-span-2 space-y-6">
+            <h2 class="text-xl font-bold text-gray-800">Recent Ledger Transactions</h2>
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <table class="w-full text-left">
+                    <thead>
+                        <tr class="bg-gray-50 text-gray-500 text-[10px] uppercase font-bold border-b border-gray-100">
+                            <th class="px-6 py-4">Date</th>
+                            <th class="px-6 py-4">Reference</th>
+                            <th class="px-6 py-4">Description</th>
+                            <th class="px-6 py-4">Created By</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        {% for txn in recent_txns %}
+                        <tr class="hover:bg-gray-50 transition">
+                            <td class="px-6 py-4 text-sm text-gray-600">{{ txn.transaction_date.strftime('%d %b %Y') }}</td>
+                            <td class="px-6 py-4">
+                                <span class="bg-blue-50 text-blue-700 px-2 py-1 rounded-lg text-xs font-mono font-bold">{{ txn.reference_no }}</span>
+                            </td>
+                            <td class="px-6 py-4 text-sm text-gray-500">{{ txn.description }}</td>
+                            <td class="px-6 py-4 text-sm text-gray-400">{{ txn.created_by_name or 'System' }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="4" class="px-6 py-10 text-center text-gray-400 italic">No transactions recorded yet.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

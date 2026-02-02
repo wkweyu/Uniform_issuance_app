@@ -1,0 +1,103 @@
+{% extends 'base_report.html' %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto bg-white p-4">
+    <!-- Student Header Info -->
+    <div class="border-b-2 border-gray-800 pb-4 mb-6">
+        <h2 class="text-3xl font-bold text-center uppercase tracking-wider mb-4">Academic Progress Report</h2>
+        
+        <div class="grid grid-cols-2 gap-y-2 text-sm">
+            <div><span class="font-bold w-32 inline-block">Student Name:</span> {{ info.FName }} {{ info.LName }}</div>
+            <div><span class="font-bold w-32 inline-block">Admission No:</span> {{ info.AdmNo }}</div>
+            <div><span class="font-bold w-32 inline-block">Class/Grade:</span> {{ info.class_name }}</div>
+            <div><span class="font-bold w-32 inline-block">Academic Year:</span> {{ info.academic_year }}</div>
+            <div><span class="font-bold w-32 inline-block">Exam Series:</span> {{ info.exam_name }}</div>
+            <div><span class="font-bold w-32 inline-block">Term:</span> {{ info.term }}</div>
+        </div>
+    </div>
+
+    <!-- Results Table -->
+    <table class="w-full border-collapse border-2 border-gray-800 mb-6 text-sm">
+        <thead>
+            <tr class="bg-gray-100">
+                <th class="border border-gray-800 p-2 text-left">Subject</th>
+                <th class="border border-gray-800 p-2 text-center w-16">Mark (%)</th>
+                <th class="border border-gray-800 p-2 text-center w-12">Grade</th>
+                <th class="border border-gray-800 p-2 text-left">Subject Remarks</th>
+                <th class="border border-gray-800 p-2 text-left">Class Teacher</th>
+                <th class="border border-gray-800 p-2 text-left">Principal</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for sub in results %}
+            <tr>
+                <td class="border border-gray-800 p-2 font-medium">{{ sub.subject_name }}</td>
+                <td class="border border-gray-800 p-2 text-center">
+                    {% if sub.is_absent %}
+                        <span class="text-red-600 font-bold">ABS</span>
+                    {% elif sub.mark is not none %}
+                        {{ sub.mark }}
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+                <td class="border border-gray-800 p-2 text-center font-bold">{{ sub.grade or '-' }}</td>
+                <td class="border border-gray-800 p-2 text-xs italic">{{ sub.remarks or sub.grade_remarks or '-' }}</td>
+                <td class="border border-gray-800 p-2 text-xs italic">{{ sub.ct_remarks or '-' }}</td>
+                <td class="border border-gray-800 p-2 text-xs italic">{{ sub.p_remarks or '-' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot class="bg-gray-50 font-bold">
+            <tr>
+                <td class="border border-gray-800 p-2">TOTAL / AVERAGE</td>
+                <td class="border border-gray-800 p-2 text-center">{{ summary.total_marks }}</td>
+                <td class="border border-gray-800 p-2 text-center">{{ summary.mean_grade }}</td>
+                <td colspan="3" class="border border-gray-800 p-2 text-center text-base">
+                    Average Mark: {{ "%.2f"|format(summary.mean_mark) }}%
+                </td>
+            </tr>
+        </tfoot>
+    </table>
+
+    <!-- Performance Summary -->
+    <div class="grid grid-cols-3 gap-4 mb-8">
+        <div class="border-2 border-gray-800 p-3 text-center">
+            <p class="text-xs uppercase font-bold text-gray-600">Position in Class</p>
+            <p class="text-2xl font-bold">{{ rank }} / {{ class_size }}</p>
+        </div>
+        <div class="border-2 border-gray-800 p-3 text-center">
+            <p class="text-xs uppercase font-bold text-gray-600">Total Marks</p>
+            <p class="text-2xl font-bold">{{ summary.total_marks }}</p>
+        </div>
+        <div class="border-2 border-gray-800 p-3 text-center">
+            <p class="text-xs uppercase font-bold text-gray-600">Mean Grade</p>
+            <p class="text-2xl font-bold text-blue-700">{{ summary.mean_grade }}</p>
+        </div>
+    </div>
+
+    <!-- Signatures Section -->
+    <div class="grid grid-cols-2 gap-8 mt-12 border-t pt-8">
+        <div class="text-center">
+            <div class="border-b border-gray-800 mb-2 w-48 mx-auto h-12"></div>
+            <p class="font-bold text-sm">Class Teacher's Signature</p>
+            <p class="text-xs text-gray-500">Date: ________________</p>
+        </div>
+        <div class="text-center">
+            <div class="border-b border-gray-800 mb-2 w-48 mx-auto h-12"></div>
+            <p class="font-bold text-sm">Principal's Signature & Stamp</p>
+            <p class="text-xs text-gray-500">Date: ________________</p>
+        </div>
+    </div>
+
+    <!-- No-print controls -->
+    <div class="no-print mt-12 p-4 bg-blue-50 border border-blue-200 rounded flex justify-between items-center">
+        <p class="text-blue-800 text-sm">
+            <i class="fas fa-info-circle mr-2"></i> This is a preview of the report card. Use the button to print.
+        </p>
+        <button onclick="window.print()" class="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold shadow">
+            <i class="fas fa-print mr-2"></i> Print Report Card
+        </button>
+    </div>
+</div>
+{% endblock %}

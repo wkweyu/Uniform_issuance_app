@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mx-auto px-4 py-6">
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-800">Requisition: {{ requisition.req_number }}</h1>
+            <p class="text-sm text-gray-600">Department: {{ requisition.department_name }} | Requester: {{ requisition.requester_name }}</p>
+        </div>
+        <div class="flex space-x-2 no-print">
+            <a href="{{ url_for('manage_requisitions') }}" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded">Back to List</a>
+            <button onclick="window.print()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">
+                <i class="fas fa-print mr-2"></i>Print
+            </button>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="md:col-span-2 bg-white rounded-lg shadow p-6">
+            <h2 class="text-lg font-semibold mb-4 border-b pb-2 text-indigo-700">Requisition Items</h2>
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50 text-gray-600 text-xs uppercase font-medium">
+                    <tr>
+                        <th class="px-3 py-2 text-left">#</th>
+                        <th class="px-3 py-2 text-left">Description</th>
+                        <th class="px-3 py-2 text-right">Qty</th>
+                        <th class="px-3 py-2 text-right">Est. Unit Price</th>
+                        <th class="px-3 py-2 text-right">Est. Total</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 italic text-gray-700">
+                    {% for item in requisition['items'] %}
+                    <tr>
+                        <td class="px-3 py-3 text-sm">{{ loop.index }}</td>
+                        <td class="px-3 py-3 text-sm font-medium">{{ item.description }}</td>
+                        <td class="px-3 py-3 text-sm text-right">{{ item.quantity }}</td>
+                        <td class="px-3 py-3 text-sm text-right">{{ item.estimated_unit_price | currency }}</td>
+                        <td class="px-3 py-3 text-sm font-semibold text-right">{{ (item.quantity * item.estimated_unit_price) | currency }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="bg-indigo-50 font-bold">
+                    <tr>
+                        <td colspan="4" class="px-3 py-3 text-right text-indigo-800">ESTIMATED GRAND TOTAL:</td>
+                        <td class="px-3 py-3 text-right text-indigo-900">{{ requisition.total_estimated_amount | currency }}</td>
+                    </tr>
+                </tfoot>
+            </table>
+
+            {% if requisition.justification %}
+            <div class="mt-6 p-4 bg-yellow-50 border border-yellow-100 rounded">
+                <h3 class="font-semibold text-yellow-800 mb-1">Justification / Notes:</h3>
+                <p class="text-sm text-yellow-900">{{ requisition.justification }}</p>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="bg-white rounded-lg shadow p-6 h-fit">
+            <h2 class="text-lg font-semibold mb-4 border-b pb-2 text-indigo-700">Status & Workflow</h2>
+            
+            <div class="mb-4">
+                <label class="text-xs uppercase text-gray-500 font-bold">Status</label>
+                <div class="mt-1">
+                    {% if requisition.status in ['PENDING', 'PENDING_APPROVAL', 'DRAFT'] %}
+                    <span class="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-sm font-bold animate-pulse">PENDING APPROVAL</span>
+                    {% elif requisition.status == 'APPROVED' %}
+                    <span class="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-bold">✓ APPROVED</span>
+                    {% elif requisition.status == 'REJECTED' %}
+                    <span class="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-bold">✕ REJECTED</span>
+                    {% elif requisition.status == 'CONVERTED_TO_PO' %}
+                    <span class="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-bold">CONVERTED TO PO</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label class="text-xs uppercase text-gray-500 font-bold">Timeline</label>
+                <ul class="mt-2 text-sm text-gray-600 space-y-2">
+                    <li class="flex justify-between"><span>Requested:</span> <span>{{ requisition.created_at.strftime('%Y-%m-%d %H:%M') }}</span></li>
+                    {% if requisition.approved_by %}
+                    <li class="flex justify-between text-green-700 font-medium">
+                        <span>Approved By:</span> <span>{{ requisition.approved_by_name }}</span>
+                    </li>
+                    <li class="flex justify-between text-green-700 italic">
+                        <span>Date:</span> <span>{{ requisition.approved_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+
+            <!-- Approval Actions -->
+            <div class="mt-8 pt-6 border-t no-print">
+                {% if requisition.status in ['PENDING', 'PENDING_APPROVAL', 'DRAFT'] %}
+                <div class="space-y-3">
+                    <form action="{{ url_for('approve_requisition', req_id=requisition.id) }}" method="POST" onsubmit="return confirm('Approve this requisition?')">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded">APPROVE REQUISITION</button>
+                    </form>
+                    <form action="{{ url_for('reject_requisition', req_id=requisition.id) }}" method="POST" onsubmit="return confirm('Reject this requisition?')">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 rounded">REJECT REQUISITION</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                {% if requisition.status == 'APPROVED' %}
+                <div class="bg-blue-50 p-4 rounded border border-blue-100">
+                    <h3 class="text-sm font-bold text-blue-800 mb-3 uppercase">Convert to Purchase Order</h3>
+                    <form action="{{ url_for('convert_requisition', req_id=requisition.id) }}" method="POST">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="mb-3">
+                            <label class="block text-xs text-blue-700 font-bold mb-1">Select Supplier</label>
+                            <select name="supplier_id" required class="w-full border p-2 rounded text-sm bg-white">
+                                <option value="">-- Choose Supplier --</option>
+                                {% for s in suppliers %}
+                                <option value="{{ s.supplierID }}">{{ s.company }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded text-sm">CREATE PURCHASE ORDER</button>
+                    </form>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

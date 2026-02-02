@@ -1,0 +1,165 @@
+{% extends "base_report.html" %}
+
+{% block content %}
+<div class="max-w-[98%] mx-auto bg-white p-4">
+    <div class="no-print mb-8">
+        <div class="flex flex-col md:flex-row items-center justify-between gap-4 bg-gray-50 p-4 rounded-xl border border-gray-200">
+            <div class="flex items-center">
+                <a href="{{ url_for('exams_dashboard') }}" class="w-10 h-10 flex items-center justify-center bg-white border border-gray-300 rounded-lg text-blue-600 hover:bg-blue-50 transition mr-4 shadow-sm">
+                    <i class="fas fa-arrow-left"></i>
+                </a>
+                <div>
+                    <h1 class="text-xl font-bold text-gray-800">Class Tabulation Sheet</h1>
+                    <p class="text-xs text-gray-500 uppercase font-bold tracking-wider">{{ exam.name }}</p>
+                </div>
+            </div>
+            
+            <div class="flex flex-wrap gap-2 items-end">
+                {% if tabulation_data %}
+                <a href="{{ url_for('class_exam_report', exam_id=exam.id, class_id=class_id) }}" class="px-6 py-2 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 shadow-md transition transform active:scale-95 text-sm h-[38px] flex items-center">
+                    <i class="fas fa-chart-line mr-2"></i> View Analytics
+                </a>
+                {% endif %}
+                <form action="{{ url_for('exam_tabulation', exam_id=exam.id) }}" method="GET" class="flex flex-wrap gap-2 items-end">
+                <div class="flex flex-col">
+                    <label class="text-[10px] font-black text-gray-400 uppercase mb-1 ml-1">Select Class</label>
+                    <select name="class_id" required class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-sm min-w-[200px]">
+                        <option value="">-- Choose Class --</option>
+                        {% for cls in classes %}
+                        <option value="{{ cls.classID }}" {{ 'selected' if class_id == cls.classID }}>{{ cls.display_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button type="submit" class="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-md transition transform active:scale-95 text-sm h-[38px]">
+                    <i class="fas fa-sync-alt mr-2"></i> Load
+                </button>
+                {% if tabulation_data %}
+                <button onclick="window.print()" class="px-6 py-2 bg-gray-800 text-white font-bold rounded-lg hover:bg-black shadow-md transition transform active:scale-95 text-sm h-[38px]">
+                    <i class="fas fa-print mr-2"></i> Print Report
+                </button>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+
+    {% if tabulation_data %}
+    <div class="print-container">
+        <!-- Report Header (Standardized) -->
+        <div class="text-center mb-8">
+            <h2 class="text-3xl font-black uppercase tracking-widest text-gray-900 border-b-4 border-gray-900 inline-block px-8 py-2 mb-4">{{ exam.name }} - TABULATION SHEET</h2>
+            <div class="flex justify-center gap-12 text-lg font-bold text-gray-700">
+                <span class="bg-gray-100 px-4 py-1 rounded-full border border-gray-200">CLASS: {{ class_info.display_name }}</span>
+                <span class="bg-gray-100 px-4 py-1 rounded-full border border-gray-200">YEAR: {{ exam.academic_year_name }}</span>
+                <span class="bg-gray-100 px-4 py-1 rounded-full border border-gray-200">TERM: {{ exam.term }}</span>
+            </div>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full border-collapse border-2 border-gray-900 text-[10px] shadow-sm">
+                <thead>
+                    <tr class="bg-gray-200 text-gray-900">
+                        <th class="px-2 py-4 border-2 border-gray-900 text-center w-8">POS</th>
+                        <th class="px-2 py-4 border-2 border-gray-900 text-center w-16">ADM NO</th>
+                        <th class="px-2 py-4 border-2 border-gray-900 text-left min-w-[180px]">STUDENT NAME</th>
+                        {% for sub in tabulation_data.subjects %}
+                        <th class="px-1 py-4 border-2 border-gray-900 text-center relative overflow-hidden h-32" title="{{ sub.name }}">
+                            <div class="absolute inset-0 flex items-center justify-center">
+                                <span class="transform -rotate-90 whitespace-nowrap font-black uppercase tracking-tighter text-gray-800">{{ sub.code or sub.name[:4]|upper }}</span>
+                            </div>
+                        </th>
+                        {% endfor %}
+                        <th class="px-2 py-4 border-2 border-gray-900 text-center bg-gray-300 font-black">TOTAL</th>
+                        <th class="px-2 py-4 border-2 border-gray-900 text-center bg-gray-300 font-black">AVG</th>
+                        <th class="px-2 py-4 border-2 border-gray-900 text-center bg-gray-300 font-black">GRD</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in tabulation_data.tabulation %}
+                    <tr class="hover:bg-blue-50/50 transition odd:bg-white even:bg-gray-50/30">
+                        <td class="px-2 py-2 border-2 border-gray-900 text-center font-black text-gray-600 bg-gray-100/50">{{ row.rank }}</td>
+                        <td class="px-2 py-2 border-2 border-gray-900 font-mono text-center font-bold text-gray-700">{{ row.admno }}</td>
+                        <td class="px-2 py-2 border-2 border-gray-900 uppercase font-black text-gray-800">
+                            <a href="/admin/exams/{{ exam.id }}/student/{{ row.admno }}/report" class="hover:text-blue-600 hover:underline print:no-underline print:text-black">
+                                {{ row.name }}
+                            </a>
+                        </td>
+                        {% for m in row.marks %}
+                        <td class="px-1 py-2 border-2 border-gray-900 text-center">
+                            <div class="flex flex-col leading-none">
+                                <span class="font-black text-sm">{{ m.mark or '-' }}</span>
+                                <span class="text-[7px] text-gray-400 font-black uppercase mt-0.5">{{ m.grade or '-' }}</span>
+                            </div>
+                        </td>
+                        {% endfor %}
+                        <td class="px-2 py-2 border-2 border-gray-900 font-black bg-gray-200/50 text-center text-xs text-blue-900">{{ row.total }}</td>
+                        <td class="px-2 py-2 border-2 border-gray-900 font-black bg-gray-200/50 text-center text-xs text-blue-900">{{ "%.1f"|format(row.average) }}</td>
+                        <td class="px-2 py-2 border-2 border-gray-900 font-black bg-yellow-400/20 text-center text-sm text-gray-900">{{ row.grade }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="bg-gray-900 text-white font-black border-t-4 border-gray-900">
+                    <tr>
+                        <td colspan="3" class="px-4 py-4 border-2 border-gray-900 text-right uppercase tracking-wider text-xs">Subject Analysis (Mean Score / Grade)</td>
+                        {% for stat in tabulation_data.subject_stats %}
+                        <td class="px-1 py-4 border-2 border-gray-900 text-center">
+                            <div class="flex flex-col leading-tight">
+                                <span class="text-sm text-yellow-400">{{ "%.1f"|format(stat.average) }}</span>
+                                <span class="text-[7px] text-gray-300 uppercase font-black">{{ stat.grade }}</span>
+                            </div>
+                        </td>
+                        {% endfor %}
+                        <td colspan="3" class="bg-gray-800 border-2 border-gray-900"></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        
+        <!-- Professional Signatures -->
+        <div class="mt-16 grid grid-cols-2 gap-32 print-only">
+            <div class="text-center">
+                <div class="border-b-2 border-gray-900 mb-2 w-full h-8"></div>
+                <p class="font-black uppercase text-sm tracking-widest text-gray-900">Class Teacher's Signature</p>
+                <p class="text-[10px] text-gray-500 font-bold mt-1">Date: ________________________</p>
+            </div>
+            <div class="text-center">
+                <div class="border-b-2 border-gray-900 mb-2 w-full h-8"></div>
+                <p class="font-black uppercase text-sm tracking-widest text-gray-900">Principal's Signature & School Stamp</p>
+                <p class="text-[10px] text-gray-500 font-bold mt-1">Date: ________________________</p>
+            </div>
+        </div>
+
+        <div class="mt-12 pt-6 border-t border-gray-100 no-print flex justify-between items-center text-[10px] text-gray-400 font-bold uppercase tracking-widest">
+            <div class="flex items-center">
+                <i class="fas fa-clock mr-2"></i> Generated: {{ now.strftime('%Y-%m-%d %H:%M:%S') }}
+            </div>
+            <div class="flex items-center italic">
+                <i class="fas fa-print mr-2"></i> Print Layout Optimized: A4 Landscape
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="bg-gray-50 rounded-3xl p-24 text-center border-4 border-dashed border-gray-200">
+        <div class="bg-white w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm border border-gray-100">
+            <i class="fas fa-chart-bar text-4xl text-gray-200"></i>
+        </div>
+        <h3 class="text-xl font-bold text-gray-400 mb-2">No Data Selected</h3>
+        <p class="text-gray-400 max-w-sm mx-auto">Please select a class from the dropdown above to view the performance tabulation sheet.</p>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+@media print {
+    @page { 
+        size: A4 landscape; 
+        margin: 8mm;
+    }
+    body { background: white !important; }
+    .print-container { padding: 0 !important; }
+    table { page-break-inside: auto; width: 100% !important; border-collapse: collapse !important; border: 2px solid black !important; }
+    th, td { border: 1.5px solid black !important; }
+    thead { display: table-header-group; }
+    h2 { margin-top: 0; }
+}
+</style>
+{% endblock %}

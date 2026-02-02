@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="max-w-4xl mx-auto px-4 py-8">
+    <div class="mb-8 text-center">
+        <div class="inline-flex items-center justify-center w-16 h-16 bg-purple-100 text-purple-600 rounded-2xl mb-4">
+            <i class="fas fa-book-reader text-3xl"></i>
+        </div>
+        <h1 class="text-3xl font-bold text-gray-800">Subject Enrollment Hub</h1>
+        <p class="text-gray-600 mt-1">Select a student to manage their academic subject registration.</p>
+    </div>
+
+    <!-- Search Section -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8">
+        <form method="GET" class="flex flex-col md:flex-row gap-4">
+            <div class="flex-1 relative">
+                <i class="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                <input type="text" name="q" value="{{ q }}" placeholder="Search by Admission Number or Name..." 
+                       class="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition text-lg"
+                       autofocus>
+            </div>
+            <button type="submit" class="px-8 py-3 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition font-bold shadow-lg shadow-purple-100">
+                Find Student
+            </button>
+        </form>
+    </div>
+
+    {% if q %}
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-50 flex justify-between items-center bg-gray-50/50">
+                <h2 class="font-bold text-gray-700">Search Results</h2>
+                <span class="text-xs font-bold text-gray-400 uppercase tracking-widest">{{ students|length }} matching</span>
+            </div>
+            
+            {% if students %}
+                <div class="divide-y divide-gray-50">
+                    {% for s in students %}
+                        <div class="px-6 py-4 flex items-center justify-between hover:bg-purple-50/30 transition group">
+                            <div class="flex items-center space-x-4">
+                                <div class="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center text-gray-400 font-bold group-hover:bg-purple-100 group-hover:text-purple-600 transition">
+                                    {{ s.FName[0] }}{{ s.LName[0] }}
+                                </div>
+                                <div>
+                                    <div class="font-bold text-gray-800 group-hover:text-purple-700 transition">
+                                        {{ s.FName }} {% if s.MName %}{{ s.MName }} {% endif %}{{ s.LName }}
+                                    </div>
+                                    <div class="text-xs text-gray-500 flex items-center">
+                                        <span class="font-mono font-bold text-purple-600 mr-2">#{{ s.AdmNo }}</span>
+                                        <i class="fas fa-school mx-1 text-[10px]"></i> {{ s.class_name or 'Not Assigned' }}
+                                    </div>
+                                </div>
+                            </div>
+                            <a href="/admin/student/{{ s.AdmNo }}/subjects" 
+                               class="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:border-purple-300 hover:text-purple-600 transition font-bold text-sm shadow-sm">
+                                Manage Subjects <i class="fas fa-chevron-right ml-1 text-[10px]"></i>
+                            </a>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="p-12 text-center">
+                    <div class="w-16 h-16 bg-red-50 text-red-400 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-user-slash text-2xl"></i>
+                    </div>
+                    <h3 class="font-bold text-gray-800">No student found</h3>
+                    <p class="text-gray-500 text-sm mt-1">We couldn't find any student matching "{{ q }}". Please check the spelling.</p>
+                </div>
+            {% endif %}
+        </div>
+    {% else %}
+        <!-- Empty State / Guide -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pb-20">
+            <div class="bg-indigo-50/50 p-6 rounded-2xl border border-indigo-100/50">
+                <i class="fas fa-info-circle text-indigo-500 mb-3 text-xl"></i>
+                <h3 class="font-bold text-indigo-900">How to Enroll</h3>
+                <p class="text-sm text-indigo-700 mt-2 leading-relaxed">
+                    Search for a student using their admission number or name. Once selected, you'll be able to pick from subjects allocated to their specific class level.
+                </p>
+            </div>
+            <div class="bg-amber-50/50 p-6 rounded-2xl border border-amber-100/50">
+                <i class="fas fa-exclamation-triangle text-amber-500 mb-3 text-xl"></i>
+                <h3 class="font-bold text-amber-900">Missing Classes?</h3>
+                <p class="text-sm text-amber-700 mt-2 leading-relaxed">
+                    If a student doesn't have a class assigned, you must first allocate them to a class via the <a href="{{ url_for('students_list') }}" class="font-bold underline">Students Directory</a>.
+                </p>
+            </div>
+        </div>
+    {% endif %}
+</div>
+
+{% endblock %}

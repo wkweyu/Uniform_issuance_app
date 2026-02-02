@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="mb-8">
+        <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight">Financial Aid & Scholarship Management</h1>
+        <p class="mt-2 text-lg text-gray-600">Administer fee waivers, bursaries, and academic scholarships for eligible students.</p>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <!-- Left: Search & Assign Form -->
+        <div class="lg:col-span-1">
+            <div class="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+                <div class="p-6 bg-indigo-600">
+                    <h2 class="text-xl font-bold text-white">Assign New Waiver</h2>
+                </div>
+                <div class="p-6 space-y-6">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Search Student</label>
+                        <div class="relative">
+                            <input type="text" id="student_search" placeholder="Type Adm No or Name..." 
+                                class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 transition duration-200"
+                                onkeyup="searchStudents(this.value)">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <i class="fas fa-search text-gray-400"></i>
+                            </div>
+                        </div>
+                        <div id="search_results" class="hidden absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-60 overflow-y-auto"></div>
+                        <div id="selected_student_display" class="hidden mt-4 p-4 bg-indigo-50 rounded-xl border border-indigo-100">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-10 h-10 bg-indigo-200 rounded-full flex items-center justify-center text-indigo-700 font-bold" id="stu-initials"></div>
+                                <div>
+                                    <div class="font-bold text-indigo-900" id="stu-name">---</div>
+                                    <div class="text-xs text-indigo-700" id="stu-adm">---</div>
+                                </div>
+                            </div>
+                            <input type="hidden" id="target_admno">
+                        </div>
+                    </div>
+
+                    <form id="waiverForm" method="POST" action="/fees/waiver/assign">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="admno" id="form_admno">
+                        
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-1">Aid Category</label>
+                                <select name="category_id" class="w-full border-gray-300 rounded-xl focus:ring-indigo-500" required>
+                                    <option value="">Select Scholarship/Waiver</option>
+                                    {% for cat in categories %}
+                                    <option value="{{ cat.id }}">{{ cat.name }} ({{ cat.value }}{{ '%' if cat.discount_type == 'PERCENTAGE' else ' Fixed' }})</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-1">Year</label>
+                                    <select name="year_id" class="w-full border-gray-300 rounded-xl focus:ring-indigo-500" required>
+                                        {% for y in years %}
+                                        <option value="{{ y.id }}" {{ 'selected' if y.is_current }}>{{ y.year }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-1">Term</label>
+                                    <select name="term_id" class="w-full border-gray-300 rounded-xl focus:ring-indigo-500" required>
+                                        {% for t in terms %}
+                                        <option value="{{ t.id }}" {{ 'selected' if t.id == current_term.id }}>Term {{ t.term_number }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl shadow-lg transition duration-200 transform hover:-translate-y-1">
+                                <i class="fas fa-check-circle mr-2"></i>Apply Waiver
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: Recent Assignments & Overview -->
+        <div class="lg:col-span-2">
+            <div class="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+                <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                    <h2 class="text-xl font-bold text-gray-800">Recent Disbursements</h2>
+                    <div class="flex space-x-2">
+                        <button class="bg-white border border-gray-200 px-3 py-1 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50 transition">
+                            <i class="fas fa-file-export mr-1"></i>Report
+                        </button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead>
+                            <tr class="bg-gray-50">
+                                <th class="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase">Student</th>
+                                <th class="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase">Type</th>
+                                <th class="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase">Period</th>
+                                <th class="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase">Status</th>
+                                <th class="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase">Applied Date</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-100">
+                            {% for w in recent_waivers %}
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <div class="text-sm font-bold text-gray-900">{{ w.FName }} {{ w.SName }}</div>
+                                    <div class="text-xs text-gray-500">ADM: {{ w.admno }}</div>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <span class="text-sm text-gray-700">{{ w.category_name }}</span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <span class="text-xs font-medium text-gray-500">{{ w.year_name }} - T{{ w.term_number }}</span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <span class="px-2 py-1 text-xs font-bold rounded-full {{ 'bg-green-100 text-green-700' if w.status == 'ACTIVE' else 'bg-red-100 text-red-700' }}">
+                                        {{ w.status }}
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-right text-xs text-gray-400">
+                                    {{ w.created_at.strftime('%d-%m-%Y') }}
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="5" class="px-6 py-12 text-center text-gray-500">
+                                    <i class="fas fa-hand-holding-heart text-4xl mb-4 block opacity-20"></i>
+                                    No scholarship records found for this period.
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let searchTimeout;
+function searchStudents(query) {
+    if (query.length < 3) {
+        document.getElementById('search_results').classList.add('hidden');
+        return;
+    }
+    
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        fetch(`/api/search_students?query=${encodeURIComponent(query)}`)
+            .then(r => r.json())
+            .then(data => {
+                const results = document.getElementById('search_results');
+                results.innerHTML = '';
+                results.classList.remove('hidden');
+                
+                if (data.length === 0) {
+                    results.innerHTML = '<div class="p-4 text-sm text-gray-500">No students found.</div>';
+                    return;
+                }
+                
+                data.forEach(s => {
+                    const div = document.createElement('div');
+                    div.className = 'p-3 hover:bg-indigo-50 cursor-pointer border-b border-gray-100 transition duration-150';
+                    div.innerHTML = `
+                        <div class="font-bold text-gray-900">${s.FName} ${s.SName}</div>
+                        <div class="text-xs text-gray-500">ADM: ${s.AdmNo} | ${s.class_name}</div>
+                    `;
+                    div.onclick = () => selectStudent(s);
+                    results.appendChild(div);
+                });
+            });
+    }, 300);
+}
+
+function selectStudent(s) {
+    document.getElementById('search_results').classList.add('hidden');
+    document.getElementById('selected_student_display').classList.remove('hidden');
+    document.getElementById('stu-name').innerText = `${s.FName} ${s.SName}`;
+    document.getElementById('stu-adm').innerText = `ADM NO: ${s.AdmNo}`;
+    document.getElementById('stu-initials').innerText = s.FName[0] + s.SName[0];
+    document.getElementById('target_admno').value = s.AdmNo;
+    document.getElementById('form_admno').value = s.AdmNo;
+    document.getElementById('student_search').value = '';
+}
+</script>
+{% endblock %}

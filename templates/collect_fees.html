@@ -1,0 +1,328 @@
+{% extends 'base.html' %}
+
+{% block title %}Professional Fee Collection{% endblock %}
+
+{% block content %}
+<div class="bg-slate-50 min-h-screen">
+    <!-- Quick Nav Header -->
+    <div class="bg-white border-b sticky top-0 z-10">
+        <div class="container mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-4">
+                    <a href="{{ url_for('fees_dashboard') }}" class="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-500 hover:bg-indigo-600 hover:text-white transition shadow-sm">
+                        <i class="fas fa-chevron-left"></i>
+                    </a>
+                    <div>
+                        <h1 class="text-xl font-black text-slate-900">Receipting Entry</h1>
+                        <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Direct Ledger Crediting</p>
+                    </div>
+                </div>
+                
+                <div class="flex items-center gap-3">
+                    <div id="statusBadge" class="hidden px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border transition duration-500"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container mx-auto px-6 py-8">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            <!-- Left Panel: Submission Form -->
+            <div class="lg:col-span-4 space-y-6">
+                <form action="{{ url_for('collect_fees') }}" method="POST" id="paymentForm" class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="admno" id="selectedAdmNo" required>
+                    
+                    <div class="px-8 py-6 border-b border-slate-50">
+                        <h2 class="text-xs font-black text-indigo-600 uppercase tracking-widest flex items-center gap-2">
+                            <i class="fas fa-search"></i> Student Selection
+                        </h2>
+                    </div>
+                    
+                    <div class="p-8 space-y-6">
+                        <!-- Search Box -->
+                        <div class="relative">
+                            <input type="text" id="studentSearch" autocomplete="off" placeholder="Search by AdmNo or Name..." 
+                                class="w-full bg-slate-50 border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold focus:ring-indigo-500 focus:border-indigo-500 transition shadow-inner">
+                            <div id="searchResults" class="absolute z-50 w-full mt-2 bg-white border border-slate-200 rounded-2xl shadow-2xl hidden max-h-64 overflow-y-auto overflow-x-hidden divide-y divide-slate-50"></div>
+                        </div>
+
+                        <div id="studentDisplay" class="hidden bg-slate-900 rounded-2xl p-5 text-white shadow-xl relative overflow-hidden group">
+                            <div class="relative z-10">
+                                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Active Selector</p>
+                                <h3 id="studentNameDisplay" class="text-sm font-black mt-1"></h3>
+                                <p id="studentClassDisplay" class="text-[10px] font-bold text-indigo-400 mt-0.5"></p>
+                            </div>
+                            <button type="button" id="clearStudent" class="absolute top-4 right-4 text-slate-500 hover:text-white transition">
+                                <i class="fas fa-times-circle text-lg"></i>
+                            </button>
+                            <i class="fas fa-user-graduate absolute -right-2 -bottom-2 text-6xl opacity-10 group-hover:scale-110 transition duration-500"></i>
+                        </div>
+
+                        <div class="space-y-4 border-t border-slate-100 pt-6">
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 ml-1">Academic Year</label>
+                                    <select name="year_id" required class="w-full bg-slate-50 border-slate-100 rounded-xl px-4 py-3 text-xs font-black focus:ring-indigo-500 transition">
+                                        {% for y in years %}
+                                        <option value="{{ y.id }}" {% if y.id == current_year_id %}selected{% endif %}>{{ y.year }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 ml-1">Period / Term</label>
+                                    <select name="term_id" required class="w-full bg-slate-50 border-slate-100 rounded-xl px-4 py-3 text-xs font-black focus:ring-indigo-500 transition">
+                                        {% for t in terms %}
+                                        <option value="{{ t.id }}" {% if t.id == current_term_id %}selected{% endif %}>Term {{ t.term_number }} - {{ t.year }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 ml-1">Payment Mode</label>
+                                    <select name="mode" required class="w-full bg-slate-50 border-slate-100 rounded-xl px-4 py-3 text-xs font-black focus:ring-indigo-500 transition">
+                                        <option value="CASH">CASH</option>
+                                        <option value="MPESA">M-PESA</option>
+                                        <option value="BANK_TRANSFER">BANK TRANSFER</option>
+                                        <option value="CHEQUE">CHEQUE</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 ml-1">Value Date</label>
+                                    <input type="date" name="date" required value="{{ now.strftime('%Y-%m-%d') }}" class="w-full bg-slate-50 border-slate-100 rounded-xl px-4 py-3 text-xs font-black focus:ring-indigo-500 transition">
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 ml-1">Reference / Slip ID</label>
+                                <input type="text" name="reference" required placeholder="TXN-000000" class="w-full bg-slate-50 border-slate-100 rounded-xl px-4 py-3 text-sm font-black focus:ring-indigo-500 transition">
+                            </div>
+
+                            <div class="bg-indigo-50 rounded-2xl p-6 border border-indigo-100">
+                                <label class="block text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-2 text-center">Amount to Credit (KES)</label>
+                                <div class="flex items-center justify-center">
+                                    <span class="text-xl font-black text-indigo-300 mr-3">KSH</span>
+                                    <input type="number" name="amount" step="0.01" min="1" required placeholder="0.00" 
+                                           class="bg-transparent border-0 border-b-2 border-indigo-200 focus:ring-0 focus:border-indigo-600 text-3xl w-40 text-center font-black placeholder-indigo-100">
+                                </div>
+                            </div>
+                        </div>
+
+                        <button type="submit" id="submitBtn" disabled class="w-full bg-indigo-600 disabled:bg-slate-200 disabled:cursor-not-allowed hover:bg-slate-900 text-white font-black py-4 rounded-2xl shadow-lg shadow-indigo-100 transition duration-300 uppercase tracking-widest text-xs flex items-center justify-center gap-3">
+                            <i class="fas fa-check-double"></i> Commit to Ledger
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Right Panel: Financial Intelligence -->
+            <div class="lg:col-span-8 space-y-6">
+                <!-- Analytics Toggle (Hidden until student selected) -->
+                <div id="intelligencePanel" class="hidden space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="bg-white rounded-3xl p-8 shadow-sm border border-slate-200 relative overflow-hidden h-40 flex flex-col justify-between">
+                            <i class="fas fa-sack-dollar absolute text-8xl -right-8 -bottom-8 opacity-5 text-indigo-600"></i>
+                            <div>
+                                <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 leading-none">Net Ledger Balance</h4>
+                                <div id="currentBalance" class="text-4xl font-black text-slate-900">KES 0.00</div>
+                            </div>
+                            <div id="balanceTrend" class="text-[10px] font-black uppercase tracking-widest"></div>
+                        </div>
+                        
+                        <div class="bg-white rounded-3xl p-8 shadow-sm border border-slate-200 relative overflow-hidden h-40 flex flex-col justify-between group">
+                             <i class="fas fa-clock-rotate-left absolute text-8xl -right-8 -bottom-8 opacity-5 text-indigo-600 group-hover:scale-110 transition duration-500"></i>
+                             <div>
+                                <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 leading-none">Last Payment</h4>
+                                <div id="lastPayment" class="text-4xl font-black text-slate-900">-</div>
+                             </div>
+                             <div id="lastPaymentDate" class="text-[10px] font-black text-indigo-500 uppercase tracking-widest">No history found</div>
+                        </div>
+                    </div>
+
+                    <!-- Enhanced Ledger History -->
+                    <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div class="px-8 py-6 border-b border-slate-100 flex justify-between items-center">
+                            <h2 class="text-sm font-black text-slate-900 uppercase tracking-widest">Transaction Statement</h2>
+                            <div class="flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Live View</span>
+                            </div>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-50/50 text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-100">
+                                        <th class="px-8 py-4">Transaction Details</th>
+                                        <th class="px-8 py-4">Reference</th>
+                                        <th class="px-8 py-4 text-right">Debit</th>
+                                        <th class="px-8 py-4 text-right">Credit</th>
+                                        <th class="px-8 py-4 text-right bg-slate-50/30">Running Bal</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="statementBody" class="divide-y divide-slate-100 text-sm">
+                                    <!-- Rows populated by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Empty State Strategy -->
+                <div id="emptyPanel" class="bg-white rounded-3xl p-16 border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-center">
+                    <div class="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center text-slate-200 mb-6">
+                        <i class="fas fa-fingerprint text-3xl"></i>
+                    </div>
+                    <h3 class="text-lg font-black text-slate-900 mb-2 uppercase tracking-wide">Identify Student</h3>
+                    <p class="text-sm text-slate-400 max-w-xs font-medium">Use the search box on the left to locate a student and view their financial profile before proceeding.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.getElementById('studentSearch');
+    const resultsDiv = document.getElementById('searchResults');
+    const admHidden = document.getElementById('selectedAdmNo');
+    const displayDiv = document.getElementById('studentDisplay');
+    const intelPanel = document.getElementById('intelligencePanel');
+    const emptyPanel = document.getElementById('emptyPanel');
+    const submitBtn = document.getElementById('submitBtn');
+    
+    let debounceTimer;
+
+    searchInput.addEventListener('input', function() {
+        clearTimeout(debounceTimer);
+        const query = this.value.trim();
+        if (query.length < 2) {
+            resultsDiv.classList.add('hidden');
+            return;
+        }
+
+        debounceTimer = setTimeout(() => {
+            fetch(`/api/search_students_fees?q=${encodeURIComponent(query)}`)
+                .then(res => res.json())
+                .then(data => {
+                    resultsDiv.innerHTML = '';
+                    if (data.length > 0) {
+                        resultsDiv.classList.remove('hidden');
+                        data.forEach(student => {
+                            const div = document.createElement('div');
+                            div.className = 'px-6 py-4 hover:bg-slate-50 cursor-pointer flex justify-between items-center transition duration-200';
+                            div.innerHTML = `
+                                <div>
+                                    <div class="text-sm font-black text-slate-900">${student.name}</div>
+                                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">${student.AdmNo}</div>
+                                </div>
+                                <i class="fas fa-chevron-right text-slate-200 text-xs translate-x-0 group-hover:translate-x-1 transition"></i>
+                            `;
+                            div.onclick = () => selectStudent(student);
+                            resultsDiv.appendChild(div);
+                        });
+                    } else {
+                        resultsDiv.classList.add('hidden');
+                    }
+                });
+        }, 300);
+    });
+
+    function selectStudent(student) {
+        admHidden.value = student.AdmNo;
+        document.getElementById('studentNameDisplay').textContent = student.name;
+        document.getElementById('studentClassDisplay').textContent = `ID: ${student.AdmNo}`;
+        
+        displayDiv.classList.remove('hidden');
+        resultsDiv.classList.add('hidden');
+        searchInput.classList.add('hidden');
+        intelPanel.classList.remove('hidden');
+        emptyPanel.classList.add('hidden');
+        submitBtn.disabled = false;
+        
+        loadFinancialData(student.AdmNo);
+    }
+
+    document.getElementById('clearStudent').onclick = () => {
+        admHidden.value = '';
+        displayDiv.classList.add('hidden');
+        searchInput.classList.remove('hidden');
+        searchInput.value = '';
+        intelPanel.classList.add('hidden');
+        emptyPanel.classList.remove('hidden');
+        submitBtn.disabled = true;
+    };
+
+    function loadFinancialData(admno) {
+        const currentYearId = "{{ current_year_id or '' }}";
+        fetch(`/api/fees/statement?admno=${admno}&year_id=${currentYearId}`)
+            .then(res => res.json())
+            .then(data => {
+                const body = document.getElementById('statementBody');
+                body.innerHTML = '';
+                
+                let lastBal = 0;
+                let lastPayVal = 0;
+                let lastPayDate = 'N/A';
+
+                if (data.length === 0) {
+                    body.innerHTML = `<tr><td colspan="5" class="px-8 py-12 text-center text-slate-400 font-bold uppercase text-[10px] tracking-widest italic">No financial history found for this fiscal period</td></tr>`;
+                    document.getElementById('currentBalance').textContent = 'KES 0.00';
+                    document.getElementById('lastPayment').textContent = '-';
+                    return;
+                }
+
+                data.forEach(entry => {
+                    const row = document.createElement('tr');
+                    const isCredit = entry.type === 'PAYMENT';
+                    const amount = parseFloat(entry.amount);
+                    lastBal = parseFloat(entry.balance_after);
+                    
+                    if (isCredit) {
+                        lastPayVal = amount;
+                        lastPayDate = entry.transaction_date;
+                    }
+
+                    row.innerHTML = `
+                        <td class="px-8 py-5">
+                            <div class="font-black text-slate-900 uppercase text-[11px]">${entry.description || (entry.type === 'PAYMENT' ? 'PAYMENT RECEIVED' : 'FEE CHARGE')}</div>
+                            <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">${entry.transaction_date}</div>
+                        </td>
+                        <td class="px-8 py-5 font-mono text-xs font-black text-slate-500">#${entry.reference_no}</td>
+                        <td class="px-8 py-5 text-right font-black text-rose-500">${!isCredit ? amount.toLocaleString('en-US', {minimumFractionDigits:2}) : '-'}</td>
+                        <td class="px-8 py-5 text-right font-black text-emerald-600">${isCredit ? amount.toLocaleString('en-US', {minimumFractionDigits:2}) : '-'}</td>
+                        <td class="px-8 py-5 text-right font-black text-slate-900 bg-slate-50/30">${lastBal.toLocaleString('en-US', {minimumFractionDigits:2})}</td>
+                    `;
+                    body.appendChild(row);
+                });
+
+                // Update Overview Cards
+                document.getElementById('currentBalance').textContent = 'KES ' + lastBal.toLocaleString('en-US', {minimumFractionDigits:2});
+                const balTrend = document.getElementById('balanceTrend');
+                if (lastBal > 0) {
+                    balTrend.className = 'text-[10px] font-black uppercase tracking-widest text-rose-500';
+                    balTrend.innerHTML = '<i class="fas fa-triangle-exclamation"></i> Outstanding Arrears';
+                } else if (lastBal < 0) {
+                    balTrend.className = 'text-[10px] font-black uppercase tracking-widest text-emerald-600';
+                    balTrend.innerHTML = '<i class="fas fa-shield-heart"></i> Overpayment Credit';
+                } else {
+                    balTrend.className = 'text-[10px] font-black uppercase tracking-widest text-slate-400';
+                    balTrend.innerHTML = '<i class="fas fa-check-circle"></i> Account Cleared';
+                }
+
+                document.getElementById('lastPayment').textContent = lastPayVal > 0 ? 'KES ' + lastPayVal.toLocaleString('en-US', {minimumFractionDigits:2}) : '-';
+                document.getElementById('lastPaymentDate').textContent = lastPayDate !== 'N/A' ? `Last Receipted: ${lastPayDate}` : 'No payment records found';
+            });
+    }
+});
+</script>
+
+<style>
+@keyframes slideUp {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.animate-in { animation: slideUp 0.4s ease-out forwards; }
+</style>
+{% endblock %}

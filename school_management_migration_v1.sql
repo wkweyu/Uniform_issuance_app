@@ -79,7 +79,7 @@ ADD COLUMN IF NOT EXISTS `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPD
 
 -- Add keys separately
 ALTER TABLE `classes`
-ADD UNIQUE KEY IF NOT EXISTS `unique_class_per_year` (`academic_year_id`, `class_group_code`, `stream_code`),
+ADD UNIQUE KEY IF NOT EXISTS `unique_class_per_year` (`academic_year_id`, `class_group_code`, `stream_code`, `class_name`),
 ADD KEY IF NOT EXISTS `idx_academic_year` (`academic_year_id`),
 ADD KEY IF NOT EXISTS `idx_class_group_code` (`class_group_code`),
 ADD KEY IF NOT EXISTS `idx_stream_code` (`stream_code`);

@@ -1,0 +1,186 @@
+{% extends 'base.html' %}
+
+{% block title %}Fees Management Hub{% endblock %}
+
+{% block content %}
+<div class="bg-slate-50 min-h-screen">
+    <!-- Header Section -->
+    <div class="bg-white border-b sticky top-0 z-10">
+        <div class="container mx-auto px-6 py-4">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h1 class="text-2xl font-black text-slate-900 flex items-center gap-3">
+                        <div class="bg-indigo-600 p-2 rounded-lg text-white">
+                            <i class="fas fa-file-invoice-dollar"></i>
+                        </div>
+                        Financial Hub
+                    </h1>
+                    <p class="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Fees Management & Revenue Control</p>
+                </div>
+                
+                <div class="flex items-center gap-3">
+                    <a href="{{ url_for('bulk_invoice') }}" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-black transition uppercase tracking-widest border border-slate-200">
+                        Bulk Invoice
+                    </a>
+                    <a href="{{ url_for('collect_fees') }}" class="bg-indigo-600 hover:bg-slate-900 text-white px-6 py-2 rounded-xl text-xs font-black transition shadow-lg shadow-indigo-100 uppercase tracking-widest">
+                        Collect Fees
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container mx-auto px-6 py-8">
+        <!-- Revenue Intelligence -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition">
+                <div class="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Receipted Today</div>
+                <div class="text-2xl font-black text-slate-900">{{ today_total | currency }}</div>
+                <div class="mt-4 flex items-center gap-2">
+                    <span class="bg-emerald-100 text-emerald-700 text-[10px] font-black px-2 py-0.5 rounded-full uppercase">Realtime</span>
+                </div>
+            </div>
+
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition text-slate-900">
+                <div class="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Monthly Yield</div>
+                <div class="text-2xl font-black">{{ monthly_total | currency }}</div>
+                <div class="mt-4 w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div class="h-full bg-indigo-500" style="width: 65%"></div>
+                </div>
+            </div>
+
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition">
+                <div class="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Total Outstanding</div>
+                <div class="text-2xl font-black text-rose-600">{{ total_arrears | currency }}</div>
+                <div class="mt-4 flex items-center gap-2 text-[10px] font-bold text-slate-400 italic">
+                    <i class="fas fa-exclamation-triangle text-amber-500"></i> Active Arrears Account
+                </div>
+            </div>
+
+            <div class="bg-indigo-600 p-6 rounded-2xl shadow-lg shadow-indigo-100 text-white relative overflow-hidden">
+                <i class="fas fa-vault absolute -right-4 -bottom-4 text-8xl opacity-10"></i>
+                <div class="relative z-10">
+                    <div class="text-[10px] font-black uppercase text-indigo-200 tracking-widest mb-1">Fee Collection rate</div>
+                    {% set target = 5000000 %} {# Dynamic target would be better #}
+                    {% set rate = (monthly_total / target * 100) if target > 0 else 0 %}
+                    <div class="text-3xl font-black">{{ rate | round(1) }}%</div>
+                    <p class="text-[10px] font-bold mt-2 text-indigo-100">Against monthly forecast</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <!-- Operational Controls -->
+            <div class="lg:col-span-8">
+                <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="px-8 py-6 border-b border-slate-100 flex justify-between items-center">
+                        <h2 class="text-sm font-black text-slate-900 uppercase tracking-widest">Revenue Management</h2>
+                    </div>
+                    <div class="p-8 grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <a href="{{ url_for('manage_voteheads') }}" class="group bg-slate-50 hover:bg-indigo-600 p-6 rounded-2xl transition shadow-sm border border-slate-100">
+                            <div class="bg-white w-10 h-10 rounded-xl flex items-center justify-center text-indigo-600 group-hover:text-indigo-600 mb-4 shadow-sm">
+                                <i class="fas fa-tags text-sm"></i>
+                            </div>
+                            <div class="font-black text-slate-900 group-hover:text-white text-xs uppercase tracking-widest">Voteheads</div>
+                            <p class="text-[10px] text-slate-400 group-hover:text-indigo-100 mt-1">Configure income categories</p>
+                        </a>
+
+                        <a href="{{ url_for('manage_fee_structures') }}" class="group bg-slate-50 hover:bg-slate-900 p-6 rounded-2xl transition shadow-sm border border-slate-100">
+                            <div class="bg-white w-10 h-10 rounded-xl flex items-center justify-center text-slate-900 mb-4 shadow-sm">
+                                <i class="fas fa-sitemap text-sm"></i>
+                            </div>
+                            <div class="font-black text-slate-900 group-hover:text-white text-xs uppercase tracking-widest">Fee Structures</div>
+                            <p class="text-[10px] text-slate-400 group-hover:text-slate-400 mt-1">Standard periodic billing</p>
+                        </a>
+
+                        <a href="{{ url_for('manage_student_groups') }}" class="group bg-slate-50 hover:bg-slate-900 p-6 rounded-2xl transition shadow-sm border border-slate-100">
+                            <div class="bg-white w-10 h-10 rounded-xl flex items-center justify-center text-slate-900 mb-4 shadow-sm">
+                                <i class="fas fa-users-viewfinder text-sm"></i>
+                            </div>
+                            <div class="font-black text-slate-900 group-hover:text-white text-xs uppercase tracking-widest">Student Groups</div>
+                            <p class="text-[10px] text-slate-400 group-hover:text-slate-400 mt-1">Segmented fee policies</p>
+                        </a>
+
+                        <a href="{{ url_for('reallocate_fee_payment') }}" class="group bg-slate-50 hover:bg-amber-500 p-6 rounded-2xl transition shadow-sm border border-slate-100">
+                            <div class="bg-white w-10 h-10 rounded-xl flex items-center justify-center text-amber-500 mb-4 shadow-sm">
+                                <i class="fas fa-shuffle text-sm"></i>
+                            </div>
+                            <div class="font-black text-slate-900 group-hover:text-white text-xs uppercase tracking-widest">Reallocations</div>
+                            <p class="text-[10px] text-slate-400 group-hover:text-amber-50 mt-1">Correct payment posting errors</p>
+                        </a>
+
+                        <a href="{{ url_for('bulk_post_fees') }}" class="group bg-slate-50 hover:bg-indigo-600 p-6 rounded-2xl transition shadow-sm border border-slate-100">
+                            <div class="bg-white w-10 h-10 rounded-xl flex items-center justify-center text-indigo-600 mb-4 shadow-sm">
+                                <i class="fas fa-receipt text-sm"></i>
+                            </div>
+                            <div class="font-black text-slate-900 group-hover:text-white text-xs uppercase tracking-widest">Bulk Posting</div>
+                            <p class="text-[10px] text-slate-400 group-hover:text-indigo-50 mt-1">Upload external bank slips</p>
+                        </a>
+
+                        <a href="{{ url_for('fee_receipts_register') }}" class="group bg-slate-50 hover:bg-emerald-600 p-6 rounded-2xl transition shadow-sm border border-slate-100">
+                            <div class="bg-white w-10 h-10 rounded-xl flex items-center justify-center text-emerald-600 mb-4 shadow-sm">
+                                <i class="fas fa-file-invoice-dollar text-sm"></i>
+                            </div>
+                            <div class="font-black text-slate-900 group-hover:text-white text-xs uppercase tracking-widest">Receipts Journal</div>
+                            <p class="text-[10px] text-slate-400 group-hover:text-emerald-50 mt-1">Manage, Edit & Void Receipts</p>
+                        </a>
+
+                        <a href="{{ url_for('admin_fees_rollup') }}" class="group bg-slate-50 hover:bg-rose-600 p-6 rounded-2xl transition shadow-sm border border-slate-100 border-dashed">
+                            <div class="bg-white w-10 h-10 rounded-xl flex items-center justify-center text-rose-600 mb-4 shadow-sm">
+                                <i class="fas fa-calendar-check text-sm"></i>
+                            </div>
+                            <div class="font-black text-slate-900 group-hover:text-white text-xs uppercase tracking-widest">Year Rollup</div>
+                            <p class="text-[10px] text-slate-400 group-hover:text-rose-50 mt-1">Move arrears to new period</p>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quantitative Analysis -->
+            <div class="lg:col-span-4">
+                <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden h-full flex flex-col">
+                    <div class="px-8 py-6 border-b border-slate-100">
+                        <h2 class="text-sm font-black text-slate-900 uppercase tracking-widest">Analytical Reports</h2>
+                    </div>
+                    <div class="p-4 space-y-3 flex-grow">
+                        <a href="{{ url_for('fees_collection_report') }}" class="flex items-center justify-between p-4 rounded-2xl hover:bg-slate-50 border border-transparent hover:border-slate-100 transition group">
+                            <div class="flex items-center gap-4">
+                                <div class="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
+                                    <i class="fas fa-chart-line text-sm"></i>
+                                </div>
+                                <div>
+                                    <div class="text-xs font-black text-slate-900 uppercase tracking-widest">Yield Analysis</div>
+                                    <div class="text-[10px] font-bold text-slate-400">Collection by payment mode</div>
+                                </div>
+                            </div>
+                            <i class="fas fa-arrow-right text-slate-300 group-hover:text-indigo-600 transition -translate-x-2 opacity-0 group-hover:opacity-100 group-hover:translate-x-0"></i>
+                        </a>
+
+                        <a href="{{ url_for('fee_balances_report') }}" class="flex items-center justify-between p-4 rounded-2xl hover:bg-slate-50 border border-transparent hover:border-slate-100 transition group">
+                            <div class="flex items-center gap-4">
+                                <div class="w-10 h-10 bg-rose-50 rounded-xl flex items-center justify-center text-rose-600">
+                                    <i class="fas fa-file-invoice text-sm"></i>
+                                </div>
+                                <div>
+                                    <div class="text-xs font-black text-slate-900 uppercase tracking-widest">Arrears Registry</div>
+                                    <div class="text-[10px] font-bold text-slate-400">Aging debt by class/stream</div>
+                                </div>
+                            </div>
+                            <i class="fas fa-arrow-right text-slate-300 group-hover:text-rose-600 transition -translate-x-2 opacity-0 group-hover:opacity-100 group-hover:translate-x-0"></i>
+                        </a>
+
+                        <div class="p-6 mt-6 bg-slate-900 rounded-2xl text-white">
+                            <h3 class="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4">Financial Health Index</h3>
+                            <div class="flex items-end gap-2 mb-2">
+                                <div class="text-4xl font-black">78.4</div>
+                                <div class="text-emerald-400 text-xs font-bold pb-1 underline decoration-2">+2.1%</div>
+                            </div>
+                            <p class="text-[10px] text-slate-400 leading-relaxed font-bold">Historical data indicates steady revenue growth compared to last fiscal period.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
