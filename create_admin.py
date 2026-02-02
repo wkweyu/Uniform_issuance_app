@@ -4,9 +4,9 @@ import urllib.parse as urlparse
 from werkzeug.security import generate_password_hash
 
 # Fetch DB credentials from environment
-DATABASE_URL = os.environ.get('DATABASE_URL')
+DATABASE_URL = os.environ.get('DATABASE_URL') or os.environ.get('DB_HOST')
 
-if DATABASE_URL:
+if DATABASE_URL and '://' in DATABASE_URL:
     # Handle mysql://user:pass@host:port/dbname
     url = urlparse.urlparse(DATABASE_URL)
     DB_HOST = url.hostname

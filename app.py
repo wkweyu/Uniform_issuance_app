@@ -3,13 +3,24 @@ import os
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, make_response, send_file
 from werkzeug.security import generate_password_hash, check_password_hash
 import pymysql, hashlib, csv
+import urllib.parse as urlparse
 
 # Use environment variables for DB credentials
-DB_HOST = os.environ.get('DB_HOST', 'localhost')
-DB_USER = os.environ.get('DB_USER', 'schooluser')
-DB_PASSWORD = os.environ.get('DB_PASSWORD') or os.environ.get('DB_PASS', 'jbs')
-DB_NAME = os.environ.get('DB_NAME', 'schoolmngt')
-DB_PORT = int(os.environ.get('DB_PORT', 3306))
+_db_url = os.environ.get('DATABASE_URL') or os.environ.get('DB_HOST')
+
+if _db_url and '://' in _db_url:
+    url = urlparse.urlparse(_db_url)
+    DB_HOST = url.hostname
+    DB_USER = url.username
+    DB_PASSWORD = url.password
+    DB_NAME = url.path.lstrip('/')
+    DB_PORT = url.port or 3306
+else:
+    DB_HOST = os.environ.get('DB_HOST', 'localhost')
+    DB_USER = os.environ.get('DB_USER', 'schooluser')
+    DB_PASSWORD = os.environ.get('DB_PASSWORD') or os.environ.get('DB_PASS', 'jbs')
+    DB_NAME = os.environ.get('DB_NAME', 'schoolmngt')
+    DB_PORT = int(os.environ.get('DB_PORT', 3306))
 
 # Construct SQLALCHEMY_DATABASE_URI
 DEFAULT_DB_URI = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
