@@ -22,12 +22,17 @@ else:
     DB_NAME = os.environ.get('DB_NAME', 'schoolmngt')
     DB_PORT = int(os.environ.get('DB_PORT', 4018))
 
-# Construct SQLALCHEMY_DATABASE_URI
-DEFAULT_DB_URI = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+# Construct SQLALCHEMY_DATABASE_URI with quoted password
+import urllib.parse
+quoted_password = urllib.parse.quote_plus(DB_PASSWORD)
+DEFAULT_DB_URI = f"mysql+pymysql://{DB_USER}:{quoted_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+
 if 'skysql.com' in DB_HOST.lower():
     ca_path = os.path.join(os.path.dirname(__file__), 'globalsignrootca.pem')
     if os.path.exists(ca_path):
-        DEFAULT_DB_URI += f"?ssl_ca={ca_path}"
+        # Use '&' for subsequent params if quoted_password already contained '?'
+        separator = '&' if '?' in DEFAULT_DB_URI else '?'
+        DEFAULT_DB_URI += f"{separator}ssl_ca={ca_path}"
 
 SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', DEFAULT_DB_URI)
 
@@ -299,13 +304,26 @@ def health_check():
             "error": None,
             "host": DB_HOST,
             "user": DB_USER,
-            "dbname": DB_NAME
+            "dbname": DB_NAME,
+            "no_db_connect": False
         },
         "ssl": {
             "ca_exists": os.path.exists('globalsignrootca.pem')
         }
     }
     try:
+        # Try 1: Connect to server without specific DB first
+        try:
+            conn_test = pymysql.connect(
+                host=DB_HOST, user=DB_USER, password=DB_PASSWORD, port=DB_PORT,
+                ssl={'ca': 'globalsignrootca.pem'} if os.path.exists('globalsignrootca.pem') else None,
+                connect_timeout=5
+            )
+            health_info["database"]["no_db_connect"] = True
+            conn_test.close()
+        except Exception as e2:
+            health_info["database"]["no_db_connect_error"] = str(e2)
+
         connection = get_db_connection()
         with connection.cursor() as cursor:
             cursor.execute("SELECT 1")
