@@ -15,11 +15,11 @@ if DATABASE_URL and '://' in DATABASE_URL:
     DB_NAME = url.path.lstrip('/')
     DB_PORT = url.port or 3306
 else:
-    DB_HOST = os.environ.get('DB_HOST', 'xc4m60.h.filess.io')
-    DB_USER = os.environ.get('DB_USER', 'schoolmngt_ladydotdog')
-    DB_PASSWORD = os.environ.get('DB_PASSWORD') or os.environ.get('DB_PASS', '7b49a61787b9469706bff65533530653ed114b06')
-    DB_NAME = os.environ.get('DB_NAME', 'schoolmngt_ladydotdog')
-    DB_PORT = int(os.environ.get('DB_PORT', 61030))
+    DB_HOST = os.environ.get('DB_HOST', 'serverless-eu-west-3.sysp0000.db1.skysql.com')
+    DB_USER = os.environ.get('DB_USER', 'dbpwf28831395')
+    DB_PASSWORD = os.environ.get('DB_PASSWORD') or os.environ.get('DB_PASS', '4FjBYp4aP0p3g{cx5?GCHbs')
+    DB_NAME = os.environ.get('DB_NAME', 'schoolmngt')
+    DB_PORT = int(os.environ.get('DB_PORT', 4018))
 
 def create_admin():
     if not DB_HOST or DB_HOST == 'localhost' and 'RENDER' in os.environ:
@@ -28,12 +28,18 @@ def create_admin():
 
     print(f"Connecting to {DB_HOST} on port {DB_PORT} as {DB_USER}...")
     try:
+        # Enable SSL for SkySQL
+        ssl_config = None
+        if 'skysql.com' in DB_HOST.lower():
+            ssl_config = {'ssl': {}}
+
         conn = pymysql.connect(
             host=DB_HOST,
             user=DB_USER,
             password=DB_PASSWORD,
             database=DB_NAME,
-            port=DB_PORT
+            port=DB_PORT,
+            ssl=ssl_config
         )
         
         with conn.cursor() as cursor:

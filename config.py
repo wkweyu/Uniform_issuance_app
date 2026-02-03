@@ -1,5 +1,5 @@
-DB_HOST = 'xc4m60.h.filess.io'
-DB_USER = 'schoolmngt_ladydotdog'
-DB_PASSWORD = '7b49a61787b9469706bff65533530653ed114b06'
-DB_NAME = 'schoolmngt_ladydotdog'
-DB_PORT = 61030
+DB_HOST = 'serverless-eu-west-3.sysp0000.db1.skysql.com'
+DB_USER = 'dbpwf28831395'
+DB_PASSWORD = '4FjBYp4aP0p3g{cx5?GCHbs'
+DB_NAME = 'schoolmngt'
+DB_PORT = 4018

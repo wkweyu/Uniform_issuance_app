@@ -2,13 +2,13 @@ import pymysql
 
 try:
     conn = pymysql.connect(
-        host='xc4m60.h.filess.io',
-        port=61030,
-        user='schoolmngt_ladydotdog',
-        password='7b49a61787b9469706bff65533530653ed114b06',
-        database='schoolmngt_ladydotdog'
+        host='serverless-eu-west-3.sysp0000.db1.skysql.com',
+        port=4018,
+        user='dbpwf28831395',
+        password='4FjBYp4aP0p3g{cx5?GCHbs',
+        database='schoolmngt'
     )
-    print("Connection Successful to filess.io!")
+    print("Connection Successful to SkySQL!")
     conn.close()
 except Exception as e:
     print(f"Connection Failed: {e}")

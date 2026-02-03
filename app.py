@@ -16,11 +16,11 @@ if _db_url and '://' in _db_url:
     DB_NAME = url.path.lstrip('/')
     DB_PORT = url.port or 3306
 else:
-    DB_HOST = os.environ.get('DB_HOST', 'xc4m60.h.filess.io')
-    DB_USER = os.environ.get('DB_USER', 'schoolmngt_ladydotdog')
-    DB_PASSWORD = os.environ.get('DB_PASSWORD') or os.environ.get('DB_PASS', '7b49a61787b9469706bff65533530653ed114b06')
-    DB_NAME = os.environ.get('DB_NAME', 'schoolmngt_ladydotdog')
-    DB_PORT = int(os.environ.get('DB_PORT', 61030))
+    DB_HOST = os.environ.get('DB_HOST', 'serverless-eu-west-3.sysp0000.db1.skysql.com')
+    DB_USER = os.environ.get('DB_USER', 'dbpwf28831395')
+    DB_PASSWORD = os.environ.get('DB_PASSWORD') or os.environ.get('DB_PASS', '4FjBYp4aP0p3g{cx5?GCHbs')
+    DB_NAME = os.environ.get('DB_NAME', 'schoolmngt')
+    DB_PORT = int(os.environ.get('DB_PORT', 4018))
 
 # Construct SQLALCHEMY_DATABASE_URI
 DEFAULT_DB_URI = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
@@ -89,14 +89,27 @@ app = create_app()
 
 # DB connection function (can stay outside or inside)
 def get_db_connection():
-    return pymysql.connect(
-        host=DB_HOST,
-        user=DB_USER,
-        password=DB_PASSWORD,
-        database=DB_NAME,
-        port=DB_PORT,
-        cursorclass=pymysql.cursors.DictCursor
-    )
+    try:
+        # SkySQL/MariaDB Cloud often requires SSL
+        ssl_config = None
+        if 'skysql.com' in DB_HOST.lower():
+            ssl_config = {'ssl': {}} # Basic SSL enablement
+        
+        connection = pymysql.connect(
+            host=DB_HOST,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            database=DB_NAME,
+            port=DB_PORT,
+            cursorclass=pymysql.cursors.DictCursor,
+            connect_timeout=10,
+            ssl=ssl_config or ({'ssl': True} if os.environ.get('USE_SSL') == 'true' else None)
+        )
+        return connection
+    except Exception as e:
+        # This will show up in Render Logs
+        print(f"CRITICAL: Database connection failed for {DB_USER}@{DB_HOST}:{DB_PORT}. Error: {e}")
+        raise e
 
 # Add this model definition at the top of your file, after db = SQLAlchemy()
 
@@ -262,8 +275,20 @@ def login():
 @app.route('/logout')
 def logout():
     session.clear()
-    flash("Logged out successfully.", "success")
+    flash("Logged out successfully.", "successfully")
     return redirect(url_for('login'))
+
+@app.route('/health')
+def health_check():
+    try:
+        connection = get_db_connection()
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            result = cursor.fetchone()
+        connection.close()
+        return jsonify({"status": "healthy", "database": "connected", "result": result}), 200
+    except Exception as e:
+        return jsonify({"status": "unhealthy", "error": str(e)}), 500
 
 
 

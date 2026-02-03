@@ -2,11 +2,11 @@ import pymysql
 
 def migrate_db():
     connection = pymysql.connect(
-        host='xc4m60.h.filess.io',
-        user='schoolmngt_ladydotdog',
-        password='7b49a61787b9469706bff65533530653ed114b06',
-        database='schoolmngt_ladydotdog',
-        port=61030,
+        host='serverless-eu-west-3.sysp0000.db1.skysql.com',
+        user='dbpwf28831395',
+        password='4FjBYp4aP0p3g{cx5?GCHbs',
+        database='schoolmngt',
+        port=4018,
         autocommit=True
     )
 
