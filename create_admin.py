@@ -17,7 +17,7 @@ if DATABASE_URL and '://' in DATABASE_URL:
 else:
     DB_HOST = os.environ.get('DB_HOST', 'serverless-eu-west-3.sysp0000.db1.skysql.com')
     DB_USER = os.environ.get('DB_USER', 'dbpwf28831395')
-    DB_PASSWORD = os.environ.get('DB_PASSWORD') or os.environ.get('DB_PASS', '4FjBYp4aP0p3g{cx5?GCHbs')
+    DB_PASSWORD = os.environ.get('DB_PASSWORD') or os.environ.get('DB_PASS', 'Bernice@2026')
     DB_NAME = os.environ.get('DB_NAME', 'schoolmngt')
     DB_PORT = int(os.environ.get('DB_PORT', 4018))
 

@@ -952,7 +952,7 @@ def example_create_class():
     connection = pymysql.connect(
         host='serverless-eu-west-3.sysp0000.db1.skysql.com',
         user='dbpwf28831395',
-        password='4FjBYp4aP0p3g{cx5?GCHbs',
+        password='Bernice@2026',
         database='schoolmngt',
         port=4018
     )
@@ -980,7 +980,7 @@ def example_promote_students():
     connection = pymysql.connect(
         host='serverless-eu-west-3.sysp0000.db1.skysql.com',
         user='dbpwf28831395',
-        password='4FjBYp4aP0p3g{cx5?GCHbs',
+        password='Bernice@2026',
         database='schoolmngt',
         port=4018
     )
