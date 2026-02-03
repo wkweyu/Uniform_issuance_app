@@ -27,14 +27,20 @@ import urllib.parse
 quoted_password = urllib.parse.quote_plus(DB_PASSWORD)
 DEFAULT_DB_URI = f"mysql+pymysql://{DB_USER}:{quoted_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
+# DEBUG: Print masked connection info to Render logs
+print(f"DEBUG: Attempting connection to Host: {DB_HOST}, Port: {DB_PORT}, User: {DB_USER}")
+if 'skysql' in DB_HOST.lower():
+    print("DEBUG: Recognized SkySQL host, applying SSL configuration.")
+
 if 'skysql.com' in DB_HOST.lower():
     ca_path = os.path.join(os.path.dirname(__file__), 'globalsignrootca.pem')
     if os.path.exists(ca_path):
         # Use '&' for subsequent params if quoted_password already contained '?'
         separator = '&' if '?' in DEFAULT_DB_URI else '?'
         DEFAULT_DB_URI += f"{separator}ssl_ca={ca_path}"
-
-SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', DEFAULT_DB_URI)
+        print(f"DEBUG: Found SSL certificate at {ca_path}")
+    else:
+        print("DEBUG: SSL certificate file NOT FOUND! Connection might fail.")
 
 # Ensure the URI uses the correct driver and format
 if SQLALCHEMY_DATABASE_URI.startswith("postgres://"):
@@ -108,9 +114,16 @@ def get_db_connection():
         if 'skysql.com' in DB_HOST.lower():
             ca_path = os.path.join(os.path.dirname(__file__), 'globalsignrootca.pem')
             if os.path.exists(ca_path):
-                ssl_config = {'ca': ca_path}
+                # MariaDB SkySQL needs the CA and sometimes check_hostname=False if verify_identity is tricky
+                ssl_config = {
+                    'ca': ca_path,
+                }
             else:
                 ssl_config = True # Fallback to basic SSL
+        
+        # Use a nested dict if necessary for older/newer pymysql compatibility
+        # Some versions expect ssl={"ca": "..."} while others might need ssl_ca parameter
+        # but in pymysql 1.0+, ssl={'ca': ca_path} is the documented way.
         
         connection = pymysql.connect(
             host=DB_HOST,
@@ -120,12 +133,16 @@ def get_db_connection():
             port=DB_PORT,
             cursorclass=pymysql.cursors.DictCursor,
             connect_timeout=10,
-            ssl=ssl_config or ({'ssl': True} if os.environ.get('USE_SSL') == 'true' else None)
+            ssl=ssl_config
         )
         return connection
     except Exception as e:
-        # This will show up in Render Logs
-        print(f"CRITICAL: Database connection failed for {DB_USER}@{DB_HOST}:{DB_PORT}. Error: {e}")
+        # Mask password in log
+        safe_pass = DB_PASSWORD[:2] + "****" + DB_PASSWORD[-2:] if DB_PASSWORD else "None"
+        print(f"CRITICAL: Connection failed for {DB_USER}@{DB_HOST}:{DB_PORT} (DB: {DB_NAME})")
+        print(f"DEBUG: Using password: {safe_pass} (Length: {len(DB_PASSWORD) if DB_PASSWORD else 0})")
+        print(f"DEBUG: SSL Config: {ssl_config}")
+        print(f"CRITICAL Error: {e}")
         raise e
 
 # Add this model definition at the top of your file, after db = SQLAlchemy()
