@@ -33,9 +33,9 @@ def create_admin():
         if 'skysql.com' in DB_HOST.lower():
             ca_path = os.path.join(os.path.dirname(__file__), 'globalsignrootca.pem')
             if os.path.exists(ca_path):
-                ssl_config = {'ssl': {'ca': ca_path}}
+                ssl_config = {'ca': ca_path}
             else:
-                ssl_config = {'ssl': {}}
+                ssl_config = True
 
         conn = pymysql.connect(
             host=DB_HOST,

@@ -108,9 +108,9 @@ def get_db_connection():
         if 'skysql.com' in DB_HOST.lower():
             ca_path = os.path.join(os.path.dirname(__file__), 'globalsignrootca.pem')
             if os.path.exists(ca_path):
-                ssl_config = {'ssl': {'ca': ca_path}}
+                ssl_config = {'ca': ca_path}
             else:
-                ssl_config = {'ssl': {}} # Fallback to basic SSL
+                ssl_config = True # Fallback to basic SSL
         
         connection = pymysql.connect(
             host=DB_HOST,

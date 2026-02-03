@@ -11,12 +11,22 @@ DB_PORT = int(os.environ.get('DB_PORT', 4018))
 def fix_database():
     print(f"Connecting to fix database: {DB_NAME}...")
     try:
+        # Enable SSL for SkySQL
+        ssl_config = None
+        if 'skysql.com' in DB_HOST.lower():
+            ca_path = os.path.join(os.path.dirname(__file__), 'globalsignrootca.pem')
+            if os.path.exists(ca_path):
+                ssl_config = {'ca': ca_path}
+            else:
+                ssl_config = True
+
         conn = pymysql.connect(
             host=DB_HOST,
             user=DB_USER,
             password=DB_PASSWORD,
             database=DB_NAME,
-            port=DB_PORT
+            port=DB_PORT,
+            ssl=ssl_config
         )
         
         with conn.cursor() as cursor:

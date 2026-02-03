@@ -27,9 +27,22 @@ def setup_database():
         if 'skysql.com' in DB_HOST.lower():
             ca_path = os.path.join(os.path.dirname(__file__), 'globalsignrootca.pem')
             if os.path.exists(ca_path):
-                ssl_config = {'ssl': {'ca': ca_path}}
+                ssl_config = {'ca': ca_path}
             else:
-                ssl_config = {'ssl': {}}
+                ssl_config = True
+
+        # First connect without database name to ensure it exists
+        temp_conn = pymysql.connect(
+            host=DB_HOST,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            port=DB_PORT,
+            ssl=ssl_config
+        )
+        with temp_conn.cursor() as cursor:
+            print(f"Ensuring database '{DB_NAME}' exists...")
+            cursor.execute(f"CREATE DATABASE IF NOT EXISTS {DB_NAME}")
+        temp_conn.close()
 
         conn = pymysql.connect(
             host=DB_HOST,
