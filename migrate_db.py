@@ -6,7 +6,7 @@ def migrate_db():
     ssl_config = None
     ca_path = 'globalsignrootca.pem'
     if os.path.exists(ca_path):
-        ssl_config = {'ca': ca_path}
+        ssl_config = {'ca': ca_path, 'check_hostname': False}
     else:
         ssl_config = True
 

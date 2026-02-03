@@ -114,12 +114,13 @@ def get_db_connection():
         if 'skysql.com' in DB_HOST.lower():
             ca_path = os.path.join(os.path.dirname(__file__), 'globalsignrootca.pem')
             if os.path.exists(ca_path):
-                # MariaDB SkySQL needs the CA and sometimes check_hostname=False if verify_identity is tricky
+                # Standard SkySQL/MariaDB Cloud SSL configuration
                 ssl_config = {
                     'ca': ca_path,
+                    'check_hostname': False  # Avoid SNI/Hostname mismatch issues
                 }
             else:
-                ssl_config = True # Fallback to basic SSL
+                ssl_config = True # Fallback
         
         # Use a nested dict if necessary for older/newer pymysql compatibility
         # Some versions expect ssl={"ca": "..."} while others might need ssl_ca parameter
