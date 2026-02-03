@@ -950,10 +950,11 @@ def example_create_class():
     import pymysql
     
     connection = pymysql.connect(
-        host='localhost',
-        user='schooluser',
-        password='jbs',
-        database='schoolmngt'
+        host='xc4m60.h.filess.io',
+        user='schoolmngt_ladydotdog',
+        password='7b49a61787b9469706bff65533530653ed114b06',
+        database='schoolmngt_ladydotdog',
+        port=61030
     )
     
     service = ClassManagementService(connection)
@@ -977,10 +978,11 @@ def example_promote_students():
     import pymysql
     
     connection = pymysql.connect(
-        host='localhost',
-        user='schooluser',
-        password='jbs',
-        database='schoolmngt'
+        host='xc4m60.h.filess.io',
+        user='schoolmngt_ladydotdog',
+        password='7b49a61787b9469706bff65533530653ed114b06',
+        database='schoolmngt_ladydotdog',
+        port=61030
     )
     
     service = ClassManagementService(connection)

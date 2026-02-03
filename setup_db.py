@@ -13,11 +13,11 @@ if DATABASE_URL and '://' in DATABASE_URL:
     DB_NAME = url.path.lstrip('/')
     DB_PORT = url.port or 3306
 else:
-    DB_HOST = os.environ.get('DB_HOST', 'localhost')
-    DB_USER = os.environ.get('DB_USER', 'schooluser')
-    DB_PASSWORD = os.environ.get('DB_PASSWORD') or os.environ.get('DB_PASS', 'jbs')
-    DB_NAME = os.environ.get('DB_NAME', 'schoolmngt')
-    DB_PORT = int(os.environ.get('DB_PORT', 3306))
+    DB_HOST = os.environ.get('DB_HOST', 'xc4m60.h.filess.io')
+    DB_USER = os.environ.get('DB_USER', 'schoolmngt_ladydotdog')
+    DB_PASSWORD = os.environ.get('DB_PASSWORD') or os.environ.get('DB_PASS', '7b49a61787b9469706bff65533530653ed114b06')
+    DB_NAME = os.environ.get('DB_NAME', 'schoolmngt_ladydotdog')
+    DB_PORT = int(os.environ.get('DB_PORT', 61030))
 
 def setup_database():
     print(f"Connecting to {DB_HOST} on port {DB_PORT} as {DB_USER}...")
