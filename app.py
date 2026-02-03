@@ -24,6 +24,11 @@ else:
 
 # Construct SQLALCHEMY_DATABASE_URI
 DEFAULT_DB_URI = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+if 'skysql.com' in DB_HOST.lower():
+    ca_path = os.path.join(os.path.dirname(__file__), 'globalsignrootca.pem')
+    if os.path.exists(ca_path):
+        DEFAULT_DB_URI += f"?ssl_ca={ca_path}"
+
 SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', DEFAULT_DB_URI)
 
 # Ensure the URI uses the correct driver and format
@@ -61,9 +66,12 @@ def create_app():
     app.config['WTF_CSRF_TIME_LIMIT'] = None  # CSRF token doesn't expire
     
     # Initialize extensions with app
-    db.init_app(app)
-    migrate.init_app(app, db)
-    csrf.init_app(app)
+    try:
+        db.init_app(app)
+        migrate.init_app(app, db)
+        csrf.init_app(app)
+    except Exception as e:
+        print(f"ERROR during extension initialization: {e}")
     
     # Custom filters and globals
     def format_currency(value):
@@ -90,10 +98,14 @@ app = create_app()
 # DB connection function (can stay outside or inside)
 def get_db_connection():
     try:
-        # SkySQL/MariaDB Cloud often requires SSL
+        # SkySQL/MariaDB Cloud requires SSL with a CA certificate
         ssl_config = None
         if 'skysql.com' in DB_HOST.lower():
-            ssl_config = {'ssl': {}} # Basic SSL enablement
+            ca_path = os.path.join(os.path.dirname(__file__), 'globalsignrootca.pem')
+            if os.path.exists(ca_path):
+                ssl_config = {'ssl': {'ca': ca_path}}
+            else:
+                ssl_config = {'ssl': {}} # Fallback to basic SSL
         
         connection = pymysql.connect(
             host=DB_HOST,
@@ -280,15 +292,32 @@ def logout():
 
 @app.route('/health')
 def health_check():
+    health_info = {
+        "status": "unknown",
+        "database": {
+            "connected": False,
+            "error": None,
+            "host": DB_HOST,
+            "user": DB_USER,
+            "dbname": DB_NAME
+        },
+        "ssl": {
+            "ca_exists": os.path.exists('globalsignrootca.pem')
+        }
+    }
     try:
         connection = get_db_connection()
         with connection.cursor() as cursor:
             cursor.execute("SELECT 1")
             result = cursor.fetchone()
         connection.close()
-        return jsonify({"status": "healthy", "database": "connected", "result": result}), 200
+        health_info["status"] = "healthy"
+        health_info["database"]["connected"] = True
+        return jsonify(health_info), 200
     except Exception as e:
-        return jsonify({"status": "unhealthy", "error": str(e)}), 500
+        health_info["status"] = "unhealthy"
+        health_info["database"]["error"] = str(e)
+        return jsonify(health_info), 500
 
 
 

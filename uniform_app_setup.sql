@@ -99,14 +99,9 @@ CREATE TABLE IF NOT EXISTS `fuel_invoices` (
 
 -- classes
 CREATE TABLE IF NOT EXISTS `classes` (
-<<<<<<< HEAD
-  `classID` INT(11) NOT NULL,
-  `class_name` VARCHAR(50) NOT NULL COLLATE 'latin1_swedish_ci',
-=======
   `classID` INT(11) NOT NULL AUTO_INCREMENT,
   `class_name` VARCHAR(50) NOT NULL COLLATE 'latin1_swedish_ci',
   `class_group` VARCHAR(50) NOT NULL DEFAULT 'Grade 1-3' COLLATE 'latin1_swedish_ci',
->>>>>>> 1b584a9 (class module)
   PRIMARY KEY (`classID`) USING BTREE
 ) ENGINE=InnoDB COLLATE='latin1_swedish_ci';
 

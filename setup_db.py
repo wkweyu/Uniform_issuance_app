@@ -22,10 +22,14 @@ else:
 def setup_database():
     print(f"Connecting to {DB_HOST} on port {DB_PORT} as {DB_USER}...")
     try:
-        # Enable SSL for SkySQL
+        # Enable SSL for SkySQL with CA cert
         ssl_config = None
         if 'skysql.com' in DB_HOST.lower():
-            ssl_config = {'ssl': {}}
+            ca_path = os.path.join(os.path.dirname(__file__), 'globalsignrootca.pem')
+            if os.path.exists(ca_path):
+                ssl_config = {'ssl': {'ca': ca_path}}
+            else:
+                ssl_config = {'ssl': {}}
 
         conn = pymysql.connect(
             host=DB_HOST,
