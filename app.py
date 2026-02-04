@@ -42,6 +42,9 @@ if 'skysql.com' in DB_HOST.lower():
     else:
         print("DEBUG: SSL certificate file NOT FOUND! Connection might fail.")
 
+# Final SQLAlchemy URI: prefer explicit env var, fall back to constructed default
+SQLALCHEMY_DATABASE_URI = os.environ.get("SQLALCHEMY_DATABASE_URI", DEFAULT_DB_URI)
+
 # Ensure the URI uses the correct driver and format
 if SQLALCHEMY_DATABASE_URI.startswith("postgres://"):
     SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace("postgres://", "postgresql://", 1)
