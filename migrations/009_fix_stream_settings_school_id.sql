@@ -10,7 +10,7 @@ UPDATE `stream_settings` SET `school_id` = 1 WHERE `school_id` IS NULL;
 
 -- Make school_id NOT NULL with default 1
 ALTER TABLE `stream_settings`
-  MODIFY COLUMN `school_id` INT(11) NOT NULL DEFAULT 1;
+  MODIFY COLUMN `school_id` INT UNSIGNED NOT NULL DEFAULT 1;
 
 -- Reinforce unique-per-school constraint (drop and recreate to be safe)
 ALTER TABLE `stream_settings`

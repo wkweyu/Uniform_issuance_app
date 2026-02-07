@@ -7,7 +7,7 @@ VALUES (1, 'Default School', 'DEFAULT', 1);
 
 -- Add school_id with default 1 for existing subjects
 ALTER TABLE `subjects`
-  ADD COLUMN `school_id` INT(11) NOT NULL DEFAULT 1 AFTER `subjectNo`;
+  ADD COLUMN `school_id` INT UNSIGNED NOT NULL DEFAULT 1 AFTER `subjectNo`;
 
 -- Index for tenant lookups
 ALTER TABLE `subjects`

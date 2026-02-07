@@ -7,7 +7,7 @@ VALUES (1, 'Default School', 'DEFAULT', 1);
 
 -- Add school_id column with default 1 so existing term records are attached to the default school
 ALTER TABLE `uniform_term_dates`
-  ADD COLUMN `school_id` INT(11) NOT NULL DEFAULT 1;
+  ADD COLUMN `school_id` INT UNSIGNED NOT NULL DEFAULT 1;
 
 -- Index for tenant-scoped lookups
 ALTER TABLE `uniform_term_dates`
