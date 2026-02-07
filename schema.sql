@@ -129,8 +129,6 @@ CREATE TABLE IF NOT EXISTS oil_records (
   total_amount DECIMAL(10,2),
   FOREIGN KEY (bus_id) REFERENCES buses(id)
 );
-<<<<<<< HEAD
-=======
 
 -- Add item_stock table
 CREATE TABLE IF NOT EXISTS item_stock (
@@ -163,4 +161,3 @@ CREATE TABLE IF NOT EXISTS stock_movements (
 ALTER TABLE uniform_prices 
 ADD COLUMN item_id INT,
 ADD FOREIGN KEY (item_id) REFERENCES item_stock(item_id) ON DELETE CASCADE;
->>>>>>> 1b584a9 (class module)

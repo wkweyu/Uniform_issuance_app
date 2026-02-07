@@ -18,6 +18,15 @@
             <!-- FIXED: Add CSRF token as hidden input -->
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             
+                        <div class="mb-4">
+                                <input
+                                        type="text"
+                                        name="school_code"
+                                        placeholder="School Code"
+                                        class="w-full px-4 py-2 border rounded focus:outline-none focus:ring"
+                                        required>
+                        </div>
+            
             <div class="mb-4">
                 <input
                     type="text"

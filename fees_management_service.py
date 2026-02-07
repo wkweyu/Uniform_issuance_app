@@ -28,9 +28,10 @@ class FeesError(Exception):
     pass
 
 class FeesService:
-    def __init__(self, connection: pymysql.Connection):
+    def __init__(self, connection: pymysql.Connection, school_id: int = 1):
         self.connection = connection
         self.cursor = connection.cursor(pymysql.cursors.DictCursor)
+        self.school_id = school_id
 
     # =========================================================================
     # 1. SETUP & CONFIGURATION (Voteheads & Structures)
@@ -38,38 +39,37 @@ class FeesService:
 
     def get_student_groups(self, active_only: bool = True) -> List[Dict]:
         """Fetch all student groups."""
-        query = "SELECT * FROM student_groups"
+        query = "SELECT * FROM student_groups WHERE school_id = %s"
         if active_only:
-            query += " WHERE is_active = TRUE"
+            query += " AND is_active = TRUE"
         query += " ORDER BY name"
-        self.cursor.execute(query)
+        self.cursor.execute(query, (self.school_id,))
         return self.cursor.fetchall()
 
     def get_voteheads(self, active_only: bool = True, group_id: Optional[int] = None) -> List[Dict]:
         """Fetch all fee voteheads with optional group filter."""
         query = "SELECT v.*, g.name as group_name FROM fee_voteheads v LEFT JOIN student_groups g ON v.applicable_student_group_id = g.id"
-        conditions = []
+        conditions = ["v.school_id = %s"]
+        params = [self.school_id]
         if active_only:
             conditions.append("v.is_active = TRUE")
         if group_id:
             conditions.append("(v.applicable_student_group_id IS NULL OR v.applicable_student_group_id = %s)")
+            params.append(group_id)
             
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY v.priority ASC, v.name ASC"
         
-        if group_id:
-            self.cursor.execute(query, (group_id,))
-        else:
-            self.cursor.execute(query)
+        self.cursor.execute(query, tuple(params))
         return self.cursor.fetchall()
 
     def create_votehead(self, name: str, priority: int = 99, group_id: Optional[int] = None, description: str = "") -> int:
         """Create a new fee votehead."""
         try:
             self.cursor.execute(
-                "INSERT INTO fee_voteheads (name, priority, applicable_student_group_id, description) VALUES (%s, %s, %s, %s)",
-                (name, priority, group_id, description)
+                "INSERT INTO fee_voteheads (name, priority, applicable_student_group_id, description, school_id) VALUES (%s, %s, %s, %s, %s)",
+                (name, priority, group_id, description, self.school_id)
             )
             self.connection.commit()
             return self.cursor.lastrowid
@@ -80,13 +80,13 @@ class FeesService:
         """Copy an existing fee structure to a new year/term."""
         try:
             # 1. Get original structure
-            self.cursor.execute("SELECT * FROM fee_structures WHERE id = %s", (from_structure_id,))
+            self.cursor.execute("SELECT * FROM fee_structures WHERE id = %s AND school_id = %s", (from_structure_id, self.school_id))
             old = self.cursor.fetchone()
             if not old:
                 raise FeesError("Source structure not found.")
             
             # 2. Get items
-            self.cursor.execute("SELECT * FROM fee_structure_items WHERE fee_structure_id = %s", (from_structure_id,))
+            self.cursor.execute("SELECT * FROM fee_structure_items WHERE fee_structure_id = %s AND school_id = %s", (from_structure_id, self.school_id))
             items = self.cursor.fetchall()
             
             # 3. Create new structure
@@ -112,17 +112,17 @@ class FeesService:
             total_amount = sum(Decimal(str(item['amount'])) for item in items)
             
             self.cursor.execute("""
-                INSERT INTO fee_structures (academic_year_id, term_id, class_id, class_group_code, student_category, total_amount, created_by)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """, (year_id, term_id, class_id, class_group, category, total_amount, user_id))
+                INSERT INTO fee_structures (academic_year_id, term_id, class_id, class_group_code, student_category, total_amount, created_by, school_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """, (year_id, term_id, class_id, class_group, category, total_amount, user_id, self.school_id))
             
             structure_id = self.cursor.lastrowid
             
             for item in items:
                 self.cursor.execute("""
-                    INSERT INTO fee_structure_items (fee_structure_id, votehead_id, amount)
-                    VALUES (%s, %s, %s)
-                """, (structure_id, item['votehead_id'], item['amount']))
+                    INSERT INTO fee_structure_items (fee_structure_id, votehead_id, amount, school_id)
+                    VALUES (%s, %s, %s, %s)
+                """, (structure_id, item['votehead_id'], item['amount'], self.school_id))
             
             self.connection.commit()
             return structure_id
@@ -141,7 +141,7 @@ class FeesService:
         if class_ids:
             for c_id in class_ids:
                 # Fetch class group for this class to maintain category mapping
-                self.cursor.execute("SELECT class_group_code FROM classes WHERE classID = %s", (c_id,))
+                self.cursor.execute("SELECT class_group_code FROM classes WHERE classID = %s AND school_id = %s", (c_id, self.school_id))
                 c_row = self.cursor.fetchone()
                 group = c_row['class_group_code'] if c_row else "Unknown"
                 
@@ -169,9 +169,9 @@ class FeesService:
         """Delete a fee structure. Only allowed if not yet invoiced (optional safety)."""
         try:
             # Check if invoiced (optional but recommended for ERP standards)
-            # self.cursor.execute("SELECT id FROM fee_ledger WHERE reference_no LIKE %s", (f"INV-%-{structure_id}",))
+            # self.cursor.execute("SELECT id FROM fee_ledger WHERE reference_no LIKE %s AND school_id = %s", (f"INV-%-{structure_id}", self.school_id))
             
-            self.cursor.execute("DELETE FROM fee_structures WHERE id = %s", (structure_id,))
+            self.cursor.execute("DELETE FROM fee_structures WHERE id = %s AND school_id = %s", (structure_id, self.school_id))
             self.connection.commit()
             return True
         except Exception as e:
@@ -186,10 +186,11 @@ class FeesService:
             JOIN academic_years ay ON fs.academic_year_id = ay.id
             JOIN uniform_term_dates utd ON fs.term_id = utd.id
             LEFT JOIN classes c ON fs.class_id = c.classID
+            WHERE fs.school_id = %s
         """
-        params = []
+        params = [self.school_id]
         if year_id:
-            query += " WHERE fs.academic_year_id = %s"
+            query += " AND fs.academic_year_id = %s"
             params.append(year_id)
         
         query += " ORDER BY ay.year DESC, utd.term_number DESC, c.display_name"
@@ -205,8 +206,8 @@ class FeesService:
             JOIN academic_years ay ON fs.academic_year_id = ay.id
             JOIN uniform_term_dates utd ON fs.term_id = utd.id
             LEFT JOIN classes c ON fs.class_id = c.classID
-            WHERE fs.id = %s
-        """, (structure_id,))
+            WHERE fs.id = %s AND fs.school_id = %s
+        """, (structure_id, self.school_id))
         struct = self.cursor.fetchone()
         
         if struct:
@@ -214,9 +215,9 @@ class FeesService:
                 SELECT fsi.*, fv.name as votehead_name
                 FROM fee_structure_items fsi
                 JOIN fee_voteheads fv ON fsi.votehead_id = fv.id
-                WHERE fsi.fee_structure_id = %s
+                WHERE fsi.fee_structure_id = %s AND fsi.school_id = %s
                 ORDER BY fv.priority ASC
-            """, (structure_id,))
+            """, (structure_id, self.school_id))
             struct['items'] = self.cursor.fetchall()
             
         return struct
@@ -227,13 +228,13 @@ class FeesService:
             self.connection.begin()
             
             # 1. Check if locked
-            self.cursor.execute("SELECT is_locked FROM fee_structures WHERE id = %s", (structure_id,))
+            self.cursor.execute("SELECT is_locked FROM fee_structures WHERE id = %s AND school_id = %s", (structure_id, self.school_id))
             res = self.cursor.fetchone()
             if res and res['is_locked']:
                 raise FeesError("This structure is locked and cannot be modified.")
 
             # 2. Clear existing items
-            self.cursor.execute("DELETE FROM fee_structure_items WHERE fee_structure_id = %s", (structure_id,))
+            self.cursor.execute("DELETE FROM fee_structure_items WHERE fee_structure_id = %s AND school_id = %s", (structure_id, self.school_id))
             
             # 3. Insert new items
             total_amount = Decimal("0.00")
@@ -241,13 +242,13 @@ class FeesService:
                 amt = Decimal(str(item['amount']))
                 if amt > 0:
                     self.cursor.execute("""
-                        INSERT INTO fee_structure_items (fee_structure_id, votehead_id, amount)
-                        VALUES (%s, %s, %s)
-                    """, (structure_id, item['votehead_id'], amt))
+                        INSERT INTO fee_structure_items (fee_structure_id, votehead_id, amount, school_id)
+                        VALUES (%s, %s, %s, %s)
+                    """, (structure_id, item['votehead_id'], amt, self.school_id))
                     total_amount += amt
             
             # 4. Update total
-            self.cursor.execute("UPDATE fee_structures SET total_amount = %s WHERE id = %s", (total_amount, structure_id))
+            self.cursor.execute("UPDATE fee_structures SET total_amount = %s WHERE id = %s AND school_id = %s", (total_amount, structure_id, self.school_id))
             
             self.connection.commit()
             return True
@@ -263,9 +264,9 @@ class FeesService:
         """Calculate current running balance for a student."""
         self.cursor.execute("""
             SELECT balance_after FROM fee_ledger 
-            WHERE admno = %s 
+            WHERE admno = %s AND school_id = %s
             ORDER BY id DESC LIMIT 1
-        """, (admno,))
+        """, (admno, self.school_id))
         result = self.cursor.fetchone()
         return Decimal(str(result['balance_after'])) if result else Decimal("0.00")
 
@@ -273,9 +274,9 @@ class FeesService:
         """Apply a fee structure or custom items to a student's ledger."""
         try:
             # Get period details for description
-            self.cursor.execute("SELECT year FROM academic_years WHERE id = %s", (year_id,))
+            self.cursor.execute("SELECT year FROM academic_years WHERE id = %s AND school_id = %s", (year_id, self.school_id))
             y_name = self.cursor.fetchone()['year']
-            self.cursor.execute("SELECT term_number FROM uniform_term_dates WHERE id = %s", (term_id,))
+            self.cursor.execute("SELECT term_number FROM uniform_term_dates WHERE id = %s AND school_id = %s", (term_id, self.school_id))
             t_num = self.cursor.fetchone()['term_number']
 
             # Check if using structure or custom items
@@ -289,8 +290,8 @@ class FeesService:
                 self.cursor.execute("""
                     SELECT id FROM fee_ledger 
                     WHERE admno = %s AND academic_year_id = %s AND term_id = %s AND type = 'CHARGE'
-                    AND reference_no LIKE 'INV-%%' AND reference_no NOT LIKE 'INV-SPEC-%%'
-                """, (admno, year_id, term_id))
+                    AND reference_no LIKE 'INV-%%' AND reference_no NOT LIKE 'INV-SPEC-%%' AND school_id = %s
+                """, (admno, year_id, term_id, self.school_id))
                 if self.cursor.fetchone():
                     raise FeesError(f"Student {admno} already invoiced for this term.")
 
@@ -299,8 +300,8 @@ class FeesService:
                     SELECT fsi.*, fv.name as votehead_name
                     FROM fee_structure_items fsi
                     JOIN fee_voteheads fv ON fsi.votehead_id = fv.id
-                    WHERE fsi.fee_structure_id = %s
-                """, (structure_id,))
+                    WHERE fsi.fee_structure_id = %s AND fsi.school_id = %s
+                """, (structure_id, self.school_id))
                 items = self.cursor.fetchall()
                 invoice_ref = f"INV-{admno}-{year_id}-{term_id}"
             
@@ -320,7 +321,7 @@ class FeesService:
                 # Fetch votehead name if not provided
                 v_name = item.get('votehead_name')
                 if not v_name:
-                    self.cursor.execute("SELECT name FROM fee_voteheads WHERE id = %s", (item['votehead_id'],))
+                    self.cursor.execute("SELECT name FROM fee_voteheads WHERE id = %s AND school_id = %s", (item['votehead_id'], self.school_id))
                     v_res = self.cursor.fetchone()
                     v_name = v_res['name'] if v_res else "System Charge"
 
@@ -331,9 +332,9 @@ class FeesService:
                     desc = f"Term {t_num} Fees - {y_name}"
 
                 self.cursor.execute("""
-                    INSERT INTO fee_ledger (admno, academic_year_id, term_id, type, votehead_id, amount, balance_after, description, reference_no, transaction_date, created_by)
-                    VALUES (%s, %s, %s, 'CHARGE', %s, %s, %s, %s, %s, CURDATE(), %s)
-                """, (admno, year_id, term_id, item['votehead_id'], amount, current_balance, desc, invoice_ref, user_id))
+                    INSERT INTO fee_ledger (admno, academic_year_id, term_id, type, votehead_id, amount, balance_after, description, reference_no, transaction_date, created_by, school_id)
+                    VALUES (%s, %s, %s, 'CHARGE', %s, %s, %s, %s, %s, CURDATE(), %s, %s)
+                """, (admno, year_id, term_id, item['votehead_id'], amount, current_balance, desc, invoice_ref, user_id, self.school_id))
                 transaction_ids.append(self.cursor.lastrowid)
 
             self.connection.commit()
@@ -351,21 +352,21 @@ class FeesService:
         query = f"""
             SELECT ca.student_id, si.category, c.class_group_code, ca.class_id
             FROM class_allocation ca
-            JOIN studentinfo si ON ca.student_id = si.AdmNo
-            JOIN classes c ON ca.class_id = c.classID
-            WHERE ca.class_id IN ({placeholders}) AND ca.is_current = TRUE
+            JOIN studentinfo si ON ca.student_id = si.AdmNo AND ca.school_id = si.school_id
+            JOIN classes c ON ca.class_id = c.classID AND ca.school_id = c.school_id
+            WHERE ca.class_id IN ({placeholders}) AND ca.is_current = TRUE AND ca.school_id = %s
             
             UNION
             
             SELECT lca.AdmNo as student_id, si.category, c.class_group_code, lca.classID as class_id
             FROM classallocation lca
-            JOIN studentinfo si ON lca.AdmNo = si.AdmNo
-            JOIN classes c ON lca.classID = c.classID
-            JOIN academic_years ay ON ay.year = lca.thisYear
-            WHERE lca.classID IN ({placeholders}) AND ay.id = %s
-            AND lca.AdmNo NOT IN (SELECT student_id FROM class_allocation WHERE is_current = TRUE)
+            JOIN studentinfo si ON lca.AdmNo = si.AdmNo AND lca.school_id = si.school_id
+            JOIN classes c ON lca.classID = c.classID AND lca.school_id = c.school_id
+            JOIN academic_years ay ON ay.year = lca.thisYear AND lca.school_id = ay.school_id
+            WHERE lca.classID IN ({placeholders}) AND ay.id = %s AND lca.school_id = %s
+            AND lca.AdmNo NOT IN (SELECT student_id FROM class_allocation WHERE is_current = TRUE AND school_id = %s)
         """
-        params = list(class_ids) + list(class_ids) + [year_id]
+        params = list(class_ids) + [self.school_id] + list(class_ids) + [year_id, self.school_id, self.school_id]
         self.cursor.execute(query, params)
         students = self.cursor.fetchall()
         
@@ -392,26 +393,26 @@ class FeesService:
                     # 1. Try class-specific structure
                     self.cursor.execute("""
                         SELECT id FROM fee_structures 
-                        WHERE academic_year_id = %s AND term_id = %s AND class_id = %s AND student_category = %s
-                    """, (year_id, term_id, class_id, category))
+                        WHERE academic_year_id = %s AND term_id = %s AND class_id = %s AND student_category = %s AND school_id = %s
+                    """, (year_id, term_id, class_id, category, self.school_id))
                     res = self.cursor.fetchone()
 
                     # 2. Try class-group specific category
                     if not res:
                         self.cursor.execute("""
                             SELECT id FROM fee_structures 
-                            WHERE academic_year_id = %s AND term_id = %s AND class_group_code = %s AND student_category = %s
+                            WHERE academic_year_id = %s AND term_id = %s AND class_group_code = %s AND student_category = %s AND school_id = %s
                             AND (class_id IS NULL OR class_id = 0)
-                        """, (year_id, term_id, group, category))
+                        """, (year_id, term_id, group, category, self.school_id))
                         res = self.cursor.fetchone()
                     
                     # 3. Try 'all' as fallback if not found
                     if not res:
                         self.cursor.execute("""
                             SELECT id FROM fee_structures 
-                            WHERE academic_year_id = %s AND term_id = %s AND class_group_code = 'all' AND student_category = %s
+                            WHERE academic_year_id = %s AND term_id = %s AND class_group_code = 'all' AND student_category = %s AND school_id = %s
                             AND (class_id IS NULL OR class_id = 0)
-                        """, (year_id, term_id, category))
+                        """, (year_id, term_id, category, self.school_id))
                         res = self.cursor.fetchone()
                     
                     structures_cache[cache_key] = res['id'] if res else None
@@ -442,16 +443,16 @@ class FeesService:
             
             # 1. Ledger Entry (Main Payment Record)
             self.cursor.execute("""
-                INSERT INTO fee_ledger (admno, academic_year_id, term_id, type, amount, balance_after, description, reference_no, transaction_date, created_by)
-                VALUES (%s, %s, %s, 'PAYMENT', %s, %s, %s, %s, %s, %s)
-            """, (admno, year_id, term_id, amount, new_balance, f"Payment via {mode}", reference, date, user_id))
+                INSERT INTO fee_ledger (admno, academic_year_id, term_id, type, amount, balance_after, description, reference_no, transaction_date, created_by, school_id)
+                VALUES (%s, %s, %s, 'PAYMENT', %s, %s, %s, %s, %s, %s, %s)
+            """, (admno, year_id, term_id, amount, new_balance, f"Payment via {mode}", reference, date, user_id, self.school_id))
             ledger_id = self.cursor.lastrowid
             
             # 2. Payment Detail
             self.cursor.execute("""
-                INSERT INTO fee_payments (ledger_id, admno, payment_mode, reference_number, bank_name, payment_date, amount, received_by)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """, (ledger_id, admno, mode, reference, bank, date, amount, user_id))
+                INSERT INTO fee_payments (ledger_id, admno, payment_mode, reference_number, bank_name, payment_date, amount, received_by, school_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (ledger_id, admno, mode, reference, bank, date, amount, user_id, self.school_id))
             payment_id = self.cursor.lastrowid
             
             # 3. Votehead Distribution (Double-Entry Allocation)
@@ -459,11 +460,11 @@ class FeesService:
             self.cursor.execute("""
                 SELECT votehead_id, SUM(CASE WHEN type='CHARGE' THEN amount ELSE -amount END) as outstanding
                 FROM fee_ledger 
-                WHERE admno = %s 
+                WHERE admno = %s AND school_id = %s 
                 GROUP BY votehead_id
                 HAVING outstanding > 0
-                ORDER BY (SELECT priority FROM fee_voteheads WHERE id = votehead_id) ASC
-            """, (admno,))
+                ORDER BY (SELECT priority FROM fee_voteheads WHERE id = votehead_id AND school_id = %s) ASC
+            """, (admno, self.school_id, self.school_id))
             liabilities = self.cursor.fetchall()
             
             for liab in liabilities:
@@ -473,28 +474,28 @@ class FeesService:
                 pay_amount = min(remaining_payment, Decimal(str(liab['outstanding'])))
                 if pay_amount > 0:
                     self.cursor.execute("""
-                        INSERT INTO fee_payment_allocations (payment_id, votehead_id, amount)
-                        VALUES (%s, %s, %s)
-                    """, (payment_id, liab['votehead_id'], pay_amount))
+                        INSERT INTO fee_payment_allocations (payment_id, votehead_id, amount, school_id)
+                        VALUES (%s, %s, %s, %s)
+                    """, (payment_id, liab['votehead_id'], pay_amount, self.school_id))
                     remaining_payment -= pay_amount
 
             # If still remaining (Advance Payment / Arrears clearing without specific votehead)
             if remaining_payment > 0:
                 # Assign to tuition by default or general if tuition not in list
-                self.cursor.execute("SELECT id FROM fee_voteheads WHERE name = 'Tuition' LIMIT 1")
+                self.cursor.execute("SELECT id FROM fee_voteheads WHERE name = 'Tuition' AND school_id = %s LIMIT 1", (self.school_id,))
                 tuition = self.cursor.fetchone()
                 vid = tuition['id'] if tuition else 1 # Fallback to first votehead
                 self.cursor.execute("""
-                    INSERT INTO fee_payment_allocations (payment_id, votehead_id, amount)
-                    VALUES (%s, %s, %s)
-                """, (payment_id, vid, remaining_payment))
+                    INSERT INTO fee_payment_allocations (payment_id, votehead_id, amount, school_id)
+                    VALUES (%s, %s, %s, %s)
+                """, (payment_id, vid, remaining_payment, self.school_id))
 
             # 4. Generate Receipt Number
             receipt_no = f"RCP-{datetime.now().year}-{str(payment_id).zfill(5)}"
             self.cursor.execute("""
-                INSERT INTO fee_receipts (payment_id, receipt_no, issued_by)
-                VALUES (%s, %s, %s)
-            """, (payment_id, receipt_no, user_id))
+                INSERT INTO fee_receipts (payment_id, receipt_no, issued_by, school_id)
+                VALUES (%s, %s, %s, %s)
+            """, (payment_id, receipt_no, user_id, self.school_id))
             
             self.connection.commit()
             return {
@@ -515,20 +516,20 @@ class FeesService:
             self.connection.begin()
             
             # 1. Fetch payment
-            self.cursor.execute("SELECT * FROM fee_payments WHERE reference_number = %s AND admno = %s", (reference_no, from_admno))
+            self.cursor.execute("SELECT * FROM fee_payments WHERE reference_number = %s AND admno = %s AND school_id = %s", (reference_no, from_admno, self.school_id))
             payment = self.cursor.fetchone()
             if not payment:
                 raise FeesError("Payment record not found.")
             
             # 2. Record in audit trail
             self.cursor.execute("""
-                INSERT INTO fee_reallocation_log (original_admno, new_admno, reference_no, amount, reason, reallocated_by)
-                VALUES (%s, %s, %s, %s, %s, %s)
-            """, (from_admno, to_admno, reference_no, payment['amount'], reason, user_id))
+                INSERT INTO fee_reallocation_log (original_admno, new_admno, reference_no, amount, reason, reallocated_by, school_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (from_admno, to_admno, reference_no, payment['amount'], reason, user_id, self.school_id))
             
             # 3. Update main records
-            self.cursor.execute("UPDATE fee_payments SET admno = %s WHERE id = %s", (to_admno, payment['id']))
-            self.cursor.execute("UPDATE fee_ledger SET admno = %s WHERE id = %s", (to_admno, payment['ledger_id']))
+            self.cursor.execute("UPDATE fee_payments SET admno = %s WHERE id = %s AND school_id = %s", (to_admno, payment['id'], self.school_id))
+            self.cursor.execute("UPDATE fee_ledger SET admno = %s WHERE id = %s AND school_id = %s", (to_admno, payment['ledger_id'], self.school_id))
             
             # Logic for updating running balance (Complexity high, better to trigger a full balance recalculation)
             # For simplicity in this demo, we shift the records and expect the system to re-read balances.
@@ -562,11 +563,11 @@ class FeesService:
                 MAX(fv.name) as votehead_name, 
                 MAX(u.username) as created_by_name
             FROM fee_ledger fl
-            LEFT JOIN fee_voteheads fv ON fl.votehead_id = fv.id
-            LEFT JOIN users u ON fl.created_by = u.userNo
-            WHERE fl.admno = %s
+            LEFT JOIN fee_voteheads fv ON fl.votehead_id = fv.id AND fl.school_id = fv.school_id
+            LEFT JOIN users u ON fl.created_by = u.userNo AND fl.school_id = u.school_id
+            WHERE fl.admno = %s AND fl.school_id = %s
         """
-        params = [admno]
+        params = [admno, self.school_id]
         if year_id:
             query += " AND fl.academic_year_id = %s"
             params.append(year_id)
@@ -582,12 +583,12 @@ class FeesService:
             """
             SELECT fp.*, fr.receipt_no
             FROM fee_payments fp
-            LEFT JOIN fee_receipts fr ON fp.id = fr.payment_id
-            WHERE fp.admno = %s
+            LEFT JOIN fee_receipts fr ON fp.id = fr.payment_id AND fp.school_id = fr.school_id
+            WHERE fp.admno = %s AND fp.school_id = %s
             ORDER BY fp.payment_date DESC, fp.id DESC
             LIMIT %s
             """,
-            (admno, limit)
+            (admno, self.school_id, limit)
         )
         return self.cursor.fetchall()
 
@@ -597,15 +598,15 @@ class FeesService:
             SELECT fp.*, fr.receipt_no, si.FName, si.SName, ay.year as year_name, utd.term_number,
                    u.username as received_by_name
             FROM fee_payments fp
-            JOIN fee_receipts fr ON fp.id = fr.payment_id
-            JOIN studentinfo si ON fp.admno = si.AdmNo
-            JOIN fee_ledger fl ON fp.ledger_id = fl.id
-            JOIN academic_years ay ON fl.academic_year_id = ay.id
-            JOIN uniform_term_dates utd ON fl.term_id = utd.id
-            LEFT JOIN users u ON fp.received_by = u.userNo
-            WHERE 1=1
+            JOIN fee_receipts fr ON fp.id = fr.payment_id AND fp.school_id = fr.school_id
+            JOIN studentinfo si ON fp.admno = si.AdmNo AND fp.school_id = si.school_id
+            JOIN fee_ledger fl ON fp.ledger_id = fl.id AND fp.school_id = fl.school_id
+            JOIN academic_years ay ON fl.academic_year_id = ay.id AND fl.school_id = ay.school_id
+            JOIN uniform_term_dates utd ON fl.term_id = utd.id AND fl.school_id = utd.school_id
+            LEFT JOIN users u ON fp.received_by = u.userNo AND fp.school_id = u.school_id
+            WHERE fp.school_id = %s
         """
-        params = []
+        params = [self.school_id]
         if start_date:
             query += " AND fp.payment_date >= %s"
             params.append(start_date)
@@ -630,16 +631,16 @@ class FeesService:
                    ay.year as year_name, utd.term_number, c.display_name as class_name,
                    u.username as issued_by_name, fl.academic_year_id, fl.term_id
             FROM fee_payments fp
-            JOIN fee_receipts fr ON fp.id = fr.payment_id
-            JOIN studentinfo si ON fp.admno = si.AdmNo
-            JOIN fee_ledger fl ON fp.ledger_id = fl.id
-            JOIN academic_years ay ON fl.academic_year_id = ay.id
-            JOIN uniform_term_dates utd ON fl.term_id = utd.id
-            LEFT JOIN class_allocation ca ON si.AdmNo = ca.student_id AND ca.is_current = TRUE
-            LEFT JOIN classes c ON ca.class_id = c.classID
-            LEFT JOIN users u ON fp.received_by = u.userNo
-            WHERE fp.id = %s
-        """, (payment_id,))
+            JOIN fee_receipts fr ON fp.id = fr.payment_id AND fp.school_id = fr.school_id
+            JOIN studentinfo si ON fp.admno = si.AdmNo AND fp.school_id = si.school_id
+            JOIN fee_ledger fl ON fp.ledger_id = fl.id AND fp.school_id = fl.school_id
+            JOIN academic_years ay ON fl.academic_year_id = ay.id AND fl.school_id = ay.school_id
+            JOIN uniform_term_dates utd ON fl.term_id = utd.id AND fl.school_id = utd.school_id
+            LEFT JOIN class_allocation ca ON si.AdmNo = ca.student_id AND ca.is_current = TRUE AND si.school_id = ca.school_id
+            LEFT JOIN classes c ON ca.class_id = c.classID AND ca.school_id = c.school_id
+            LEFT JOIN users u ON fp.received_by = u.userNo AND fp.school_id = u.school_id
+            WHERE fp.id = %s AND fp.school_id = %s
+        """, (payment_id, self.school_id))
         receipt = self.cursor.fetchone()
         
         if receipt:
@@ -647,9 +648,9 @@ class FeesService:
             self.cursor.execute("""
                 SELECT fpa.*, fv.name as votehead_name
                 FROM fee_payment_allocations fpa
-                JOIN fee_voteheads fv ON fpa.votehead_id = fv.id
-                WHERE fpa.payment_id = %s
-            """, (payment_id,))
+                JOIN fee_voteheads fv ON fpa.votehead_id = fv.id AND fpa.school_id = fv.school_id
+                WHERE fpa.payment_id = %s AND fpa.school_id = %s
+            """, (payment_id, self.school_id))
             receipt['allocations'] = self.cursor.fetchall()
             
         return receipt
@@ -660,7 +661,7 @@ class FeesService:
             self.connection.begin()
             
             # Check if payment exists and isn't voided
-            self.cursor.execute("SELECT ledger_id, status FROM fee_payments WHERE id = %s", (payment_id,))
+            self.cursor.execute("SELECT ledger_id, status FROM fee_payments WHERE id = %s AND school_id = %s", (payment_id, self.school_id))
             payment = self.cursor.fetchone()
             if not payment:
                 raise FeesError("Payment record not found.")
@@ -671,15 +672,15 @@ class FeesService:
             self.cursor.execute("""
                 UPDATE fee_payments 
                 SET payment_mode = %s, reference_number = %s, bank_name = %s, payment_date = %s
-                WHERE id = %s
-            """, (mode, reference, bank, date, payment_id))
+                WHERE id = %s AND school_id = %s
+            """, (mode, reference, bank, date, payment_id, self.school_id))
             
             # Update fee_ledger description and reference
             self.cursor.execute("""
                 UPDATE fee_ledger 
                 SET description = %s, reference_no = %s, transaction_date = %s
-                WHERE id = %s
-            """, (f"Payment via {mode}", reference, date, payment['ledger_id']))
+                WHERE id = %s AND school_id = %s
+            """, (f"Payment via {mode}", reference, date, payment['ledger_id'], self.school_id))
             
             self.connection.commit()
             return True
@@ -693,7 +694,7 @@ class FeesService:
             self.connection.begin()
             
             # 1. Fetch original payment
-            self.cursor.execute("SELECT * FROM fee_payments WHERE id = %s", (payment_id,))
+            self.cursor.execute("SELECT * FROM fee_payments WHERE id = %s AND school_id = %s", (payment_id, self.school_id))
             payment = self.cursor.fetchone()
             if not payment:
                 raise FeesError("Payment record not found.")
@@ -704,7 +705,7 @@ class FeesService:
             amount = Decimal(str(payment['amount']))
             
             # 2. Get period details from original ledger entry
-            self.cursor.execute("SELECT academic_year_id, term_id FROM fee_ledger WHERE id = %s", (payment['ledger_id'],))
+            self.cursor.execute("SELECT academic_year_id, term_id FROM fee_ledger WHERE id = %s AND school_id = %s", (payment['ledger_id'], self.school_id))
             ledger = self.cursor.fetchone()
             
             # 3. Create reversal ledger entry
@@ -713,13 +714,13 @@ class FeesService:
             
             void_ref = f"VOID-{payment['reference_number']}"
             self.cursor.execute("""
-                INSERT INTO fee_ledger (admno, academic_year_id, term_id, type, amount, balance_after, description, reference_no, transaction_date, created_by)
-                VALUES (%s, %s, %s, 'ADJUSTMENT', %s, %s, %s, %s, CURDATE(), %s)
+                INSERT INTO fee_ledger (admno, academic_year_id, term_id, type, amount, balance_after, description, reference_no, transaction_date, created_by, school_id)
+                VALUES (%s, %s, %s, 'ADJUSTMENT', %s, %s, %s, %s, CURDATE(), %s, %s)
             """, (admno, ledger['academic_year_id'], ledger['term_id'], amount, new_balance, 
-                 f"VOID RECEIPT: {reason} (Ref: {payment['reference_number']})", void_ref, user_id))
+                 f"VOID RECEIPT: {reason} (Ref: {payment['reference_number']})", void_ref, user_id, self.school_id))
             
             # 4. Update payment status
-            self.cursor.execute("UPDATE fee_payments SET status = 'CANCELLED' WHERE id = %s", (payment_id,))
+            self.cursor.execute("UPDATE fee_payments SET status = 'CANCELLED' WHERE id = %s AND school_id = %s", (payment_id, self.school_id))
             
             # 5. Delete allocations
             # self.cursor.execute("DELETE FROM fee_payment_allocations WHERE payment_id = %s", (payment_id,))
@@ -744,22 +745,22 @@ class FeesService:
                 SUM(amount) as total_amount,
                 COUNT(*) as count
             FROM fee_payments
-            WHERE payment_date BETWEEN %s AND %s AND status = 'COMPLETED'
+            WHERE payment_date BETWEEN %s AND %s AND status = 'COMPLETED' AND school_id = %s
             GROUP BY payment_mode
-        """, (start_date, end_date))
+        """, (start_date, end_date, self.school_id))
         return self.cursor.fetchall()
 
     def get_arrears_report(self, class_id: Optional[int] = None) -> List[Dict]:
         """Get list of students with outstanding balances."""
         query = """
             SELECT si.AdmNo, si.FName, si.SName, c.display_name,
-                   (SELECT balance_after FROM fee_ledger WHERE admno = si.AdmNo ORDER BY id DESC LIMIT 1) as balance
+                   (SELECT balance_after FROM fee_ledger WHERE admno = si.AdmNo AND school_id = %s ORDER BY id DESC LIMIT 1) as balance
             FROM studentinfo si
-            JOIN class_allocation ca ON si.AdmNo = ca.student_id AND ca.is_current = TRUE
-            JOIN classes c ON ca.class_id = c.classID
-            WHERE si.blocked = 'NO'
+            JOIN class_allocation ca ON si.AdmNo = ca.student_id AND ca.is_current = TRUE AND si.school_id = ca.school_id
+            JOIN classes c ON ca.class_id = c.classID AND ca.school_id = c.school_id
+            WHERE si.blocked = 'NO' AND si.school_id = %s
         """
-        params = []
+        params = [self.school_id, self.school_id]
         if class_id:
             query += " AND ca.class_id = %s"
             params.append(class_id)
@@ -777,9 +778,10 @@ class FeesService:
         try:
             # 1. Find all students with outstanding balances
             self.cursor.execute("""
-                SELECT AdmNo, (SELECT balance_after FROM fee_ledger WHERE admno = studentinfo.AdmNo ORDER BY id DESC LIMIT 1) as balance
+                SELECT AdmNo, (SELECT balance_after FROM fee_ledger WHERE admno = studentinfo.AdmNo AND school_id = %s ORDER BY id DESC LIMIT 1) as balance
                 FROM studentinfo
-            """)
+                WHERE school_id = %s
+            """, (self.school_id, self.school_id))
             debtors = [d for d in self.cursor.fetchall() if d['balance'] and Decimal(str(d['balance'])) != 0]
             
             if not debtors:
@@ -788,7 +790,7 @@ class FeesService:
             self.connection.begin()
             
             # Find or create Arrears votehead
-            self.cursor.execute("SELECT id FROM fee_voteheads WHERE name = 'Arrears' LIMIT 1")
+            self.cursor.execute("SELECT id FROM fee_voteheads WHERE name = 'Arrears' AND school_id = %s LIMIT 1", (self.school_id,))
             arrears_vh = self.cursor.fetchone()
             vh_id = arrears_vh['id'] if arrears_vh else self.create_votehead("Arrears", priority=0)
 
@@ -797,9 +799,9 @@ class FeesService:
                 balance = Decimal(str(student['balance']))
                 # Post to new year
                 self.cursor.execute("""
-                    INSERT INTO fee_ledger (admno, academic_year_id, term_id, type, votehead_id, amount, balance_after, description, reference_no, transaction_date, created_by)
-                    VALUES (%s, %s, %s, 'CHARGE', %s, %s, %s, %s, %s, CURDATE(), %s)
-                """, (student['AdmNo'], new_year_id, new_term_id, vh_id, balance, balance, "Carried forward balance (Arrears)", f"ROLLUP-{old_year_id}", user_id))
+                    INSERT INTO fee_ledger (admno, academic_year_id, term_id, type, votehead_id, amount, balance_after, description, reference_no, transaction_date, created_by, school_id)
+                    VALUES (%s, %s, %s, 'CHARGE', %s, %s, %s, %s, %s, CURDATE(), %s, %s)
+                """, (student['AdmNo'], new_year_id, new_term_id, vh_id, balance, balance, "Carried forward balance (Arrears)", f"ROLLUP-{old_year_id}", user_id, self.school_id))
                 count += 1
 
             self.connection.commit()
@@ -811,13 +813,13 @@ class FeesService:
     def get_fee_balances_report(self, academic_year_id: Optional[int] = None, class_id: Optional[int] = None, stream: Optional[str] = None) -> List[Dict]:
         """Detailed report of student balances with filtering."""
         # Query that unions current and legacy allocations to ensure all students are captured
-        allocation_query = """
-            SELECT student_id, class_id, is_current, academic_year_id FROM class_allocation
+        allocation_query = f"""
+            SELECT student_id, class_id, is_current, academic_year_id, school_id FROM class_allocation WHERE school_id = %s
             UNION ALL
-            SELECT lca.AdmNo as student_id, lca.classID as class_id, ay.is_current as is_current, ay.id as academic_year_id
+            SELECT lca.AdmNo as student_id, lca.classID as class_id, ay.is_current as is_current, ay.id as academic_year_id, lca.school_id
             FROM classallocation lca
-            JOIN academic_years ay ON lca.thisYear = ay.year
-            WHERE lca.AdmNo NOT IN (SELECT student_id FROM class_allocation)
+            JOIN academic_years ay ON lca.thisYear = ay.year AND lca.school_id = ay.school_id
+            WHERE lca.school_id = %s AND lca.AdmNo NOT IN (SELECT student_id FROM class_allocation WHERE school_id = %s)
         """
         
         query = f"""
@@ -827,13 +829,13 @@ class FeesService:
                 si.SName, 
                 c.display_name as class_name,
                 c.stream_code,
-                (SELECT balance_after FROM fee_ledger WHERE admno = si.AdmNo ORDER BY id DESC LIMIT 1) as current_balance
+                (SELECT balance_after FROM fee_ledger WHERE admno = si.AdmNo AND school_id = %s ORDER BY id DESC LIMIT 1) as current_balance
             FROM studentinfo si
-            JOIN ({allocation_query}) ca ON si.AdmNo = ca.student_id
-            JOIN classes c ON ca.class_id = c.classID
-            WHERE si.blocked = 'NO'
+            JOIN ({allocation_query}) ca ON si.AdmNo = ca.student_id AND si.school_id = ca.school_id
+            JOIN classes c ON ca.class_id = c.classID AND ca.school_id = c.school_id
+            WHERE si.blocked = 'NO' AND si.school_id = %s
         """
-        params = []
+        params = [self.school_id, self.school_id, self.school_id, self.school_id, self.school_id, self.school_id]
         
         if academic_year_id:
             query += " AND c.academic_year_id = %s"
@@ -860,17 +862,17 @@ class FeesService:
         query = """
             SELECT 
                 si.AdmNo, si.FName, si.SName, c.display_name as class_name,
-                (SELECT balance_after FROM fee_ledger WHERE admno = si.AdmNo ORDER BY id DESC LIMIT 1) as total_balance,
-                (SELECT SUM(amount) FROM fee_ledger WHERE admno = si.AdmNo AND type = 'CHARGE' AND term_id = (SELECT id FROM uniform_term_dates WHERE curdate() BETWEEN start_date AND end_date)) as current_term_charges,
-                (SELECT SUM(amount) FROM fee_payments WHERE admno = si.AdmNo AND status = 'COMPLETED') as total_paid
+                (SELECT balance_after FROM fee_ledger WHERE admno = si.AdmNo AND school_id = %s ORDER BY id DESC LIMIT 1) as total_balance,
+                (SELECT SUM(amount) FROM fee_ledger WHERE admno = si.AdmNo AND type = 'CHARGE' AND term_id = (SELECT id FROM uniform_term_dates WHERE curdate() BETWEEN start_date AND end_date AND school_id = %s) AND school_id = %s) as current_term_charges,
+                (SELECT SUM(amount) FROM fee_payments WHERE admno = si.AdmNo AND status = 'COMPLETED' AND school_id = %s) as total_paid
             FROM studentinfo si
-            JOIN class_allocation ca ON si.AdmNo = ca.student_id AND ca.is_current = TRUE
-            JOIN classes c ON ca.class_id = c.classID
-            WHERE si.blocked = 'NO'
+            JOIN class_allocation ca ON si.AdmNo = ca.student_id AND ca.is_current = TRUE AND si.school_id = ca.school_id
+            JOIN classes c ON ca.class_id = c.classID AND ca.school_id = c.school_id
+            WHERE si.blocked = 'NO' AND si.school_id = %s
             HAVING total_balance > 0
             ORDER BY total_balance DESC
         """
-        self.cursor.execute(query)
+        self.cursor.execute(query, (self.school_id, self.school_id, self.school_id, self.school_id, self.school_id))
         results = self.cursor.fetchall()
         
         # Post-process for aging (simplified logic for demonstration)
@@ -904,15 +906,15 @@ class FeesService:
         for tx in transactions:
             try:
                 # Check if exists
-                self.cursor.execute("SELECT id FROM mpesa_verifications WHERE transaction_no = %s", (tx['transaction_no'],))
+                self.cursor.execute("SELECT id FROM mpesa_verifications WHERE transaction_no = %s AND school_id = %s", (tx['transaction_no'], self.school_id))
                 if self.cursor.fetchone():
                     skipped += 1
                     continue
                 
                 self.cursor.execute("""
-                    INSERT INTO mpesa_verifications (transaction_no, amount, sender_name, sender_phone, transaction_time)
-                    VALUES (%s, %s, %s, %s, %s)
-                """, (tx['transaction_no'], tx['amount'], tx['sender_name'], tx['sender_phone'], tx['transaction_time']))
+                    INSERT INTO mpesa_verifications (transaction_no, amount, sender_name, sender_phone, transaction_time, school_id)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (tx['transaction_no'], tx['amount'], tx['sender_name'], tx['sender_phone'], tx['transaction_time'], self.school_id))
                 imported += 1
             except Exception as e:
                 logger.error(f"Error importing M-Pesa TX {tx.get('transaction_no')}: {str(e)}")
@@ -940,10 +942,11 @@ class FeesService:
                     ELSE 'DISCREPANCY'
                 END as status
             FROM mpesa_verifications mv
-            LEFT JOIN fee_ledger fl ON mv.transaction_no = fl.reference_no AND fl.type = 'PAYMENT'
+            LEFT JOIN fee_ledger fl ON mv.transaction_no = fl.reference_no AND fl.type = 'PAYMENT' AND mv.school_id = fl.school_id
+            WHERE mv.school_id = %s
             ORDER BY mv.transaction_time DESC
         """
-        self.cursor.execute(query)
+        self.cursor.execute(query, (self.school_id,))
         return self.cursor.fetchall()
 
     # =========================================================================
@@ -952,10 +955,11 @@ class FeesService:
 
     def get_waiver_categories(self, active_only: bool = True) -> List[Dict]:
         """Fetch all fee waiver categories."""
-        query = "SELECT * FROM fee_waiver_categories"
+        query = "SELECT * FROM fee_waiver_categories WHERE school_id = %s"
+        params = [self.school_id]
         if active_only:
-            query += " WHERE is_active = TRUE"
-        self.cursor.execute(query)
+            query += " AND is_active = TRUE"
+        self.cursor.execute(query, params)
         return self.cursor.fetchall()
 
     def assign_waiver_to_student(self, admno: int, category_id: int, year_id: int, term_id: int, user_id: int) -> int:
@@ -964,13 +968,13 @@ class FeesService:
             # 1. Check if already assigned for this term
             self.cursor.execute("""
                 SELECT id FROM student_waivers 
-                WHERE admno = %s AND academic_year_id = %s AND term_id = %s AND status = 'ACTIVE'
-            """, (admno, year_id, term_id))
+                WHERE admno = %s AND academic_year_id = %s AND term_id = %s AND status = 'ACTIVE' AND school_id = %s
+            """, (admno, year_id, term_id, self.school_id))
             if self.cursor.fetchone():
                 raise FeesError("Student already has an active waiver for this term.")
 
             # 2. Get category details
-            self.cursor.execute("SELECT * FROM fee_waiver_categories WHERE id = %s", (category_id,))
+            self.cursor.execute("SELECT * FROM fee_waiver_categories WHERE id = %s AND school_id = %s", (category_id, self.school_id))
             cat = self.cursor.fetchone()
             if not cat:
                 raise FeesError("Invalid waiver category.")
@@ -979,9 +983,9 @@ class FeesService:
 
             # 3. Create assignment record
             self.cursor.execute("""
-                INSERT INTO student_waivers (admno, category_id, academic_year_id, term_id, assigned_by)
-                VALUES (%s, %s, %s, %s, %s)
-            """, (admno, category_id, year_id, term_id, user_id))
+                INSERT INTO student_waivers (admno, category_id, academic_year_id, term_id, assigned_by, school_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (admno, category_id, year_id, term_id, user_id, self.school_id))
             assignment_id = self.cursor.lastrowid
 
             # 4. Calculate amount
@@ -990,8 +994,9 @@ class FeesService:
             self.cursor.execute("""
                 SELECT amount FROM fee_ledger 
                 WHERE admno = %s AND academic_year_id = %s AND term_id = %s AND type = 'CHARGE'
-                AND votehead_id = (SELECT id FROM fee_voteheads WHERE name = 'Tuition' LIMIT 1)
-            """, (admno, year_id, term_id))
+                AND votehead_id = (SELECT id FROM fee_voteheads WHERE name = 'Tuition' AND school_id = %s LIMIT 1)
+                AND school_id = %s
+            """, (admno, year_id, term_id, self.school_id, self.school_id))
             res = self.cursor.fetchone()
             tuition_amount = Decimal(str(res['amount'])) if res else Decimal("0.00")
 
@@ -1006,9 +1011,9 @@ class FeesService:
             new_balance = current_balance - waiver_amount
 
             self.cursor.execute("""
-                INSERT INTO fee_ledger (admno, academic_year_id, term_id, type, amount, balance_after, description, reference_no, transaction_date, created_by)
-                VALUES (%s, %s, %s, 'CREDIT', %s, %s, %s, %s, CURDATE(), %s)
-            """, (admno, year_id, term_id, waiver_amount, new_balance, f"Waiver Application: {cat['name']}", f"WVR-{assignment_id}", user_id))
+                INSERT INTO fee_ledger (admno, academic_year_id, term_id, type, amount, balance_after, description, reference_no, transaction_date, created_by, school_id)
+                VALUES (%s, %s, %s, 'CREDIT', %s, %s, %s, %s, CURDATE(), %s, %s)
+            """, (admno, year_id, term_id, waiver_amount, new_balance, f"Waiver Application: {cat['name']}", f"WVR-{assignment_id}", user_id, self.school_id))
 
             self.connection.commit()
             return assignment_id
@@ -1021,12 +1026,12 @@ class FeesService:
         self.cursor.execute("""
             SELECT sw.*, fwc.name as category_name, ay.year as year_name, utd.term_number
             FROM student_waivers sw
-            JOIN fee_waiver_categories fwc ON sw.category_id = fwc.id
-            JOIN academic_years ay ON sw.academic_year_id = ay.id
-            JOIN uniform_term_dates utd ON sw.term_id = utd.id
-            WHERE sw.admno = %s
+            JOIN fee_waiver_categories fwc ON sw.category_id = fwc.id AND sw.school_id = fwc.school_id
+            JOIN academic_years ay ON sw.academic_year_id = ay.id AND sw.school_id = ay.school_id
+            JOIN uniform_term_dates utd ON sw.term_id = utd.id AND sw.school_id = utd.school_id
+            WHERE sw.admno = %s AND sw.school_id = %s
             ORDER BY sw.created_at DESC
-        """, (admno,))
+        """, (admno, self.school_id))
         return self.cursor.fetchall()
 
     # =========================================================================
@@ -1042,10 +1047,10 @@ class FeesService:
         self.cursor.execute("""
             SELECT si.category, ca.class_id, c.class_group_code
             FROM studentinfo si
-            JOIN class_allocation ca ON si.AdmNo = ca.student_id AND ca.is_current = TRUE
-            JOIN classes c ON ca.class_id = c.classID
-            WHERE si.AdmNo = %s
-        """, (admno,))
+            JOIN class_allocation ca ON si.AdmNo = ca.student_id AND ca.is_current = TRUE AND si.school_id = ca.school_id
+            JOIN classes c ON ca.class_id = c.classID AND ca.school_id = c.school_id
+            WHERE si.AdmNo = %s AND si.school_id = %s
+        """, (admno, self.school_id))
         student = self.cursor.fetchone()
         
         # Fallback for legacy students if not in class_allocation
@@ -1053,11 +1058,11 @@ class FeesService:
             self.cursor.execute("""
                 SELECT si.category, lca.classID as class_id, c.class_group_code
                 FROM studentinfo si
-                JOIN classallocation lca ON si.AdmNo = lca.AdmNo
-                JOIN classes c ON lca.classID = c.classID
-                JOIN academic_years ay ON ay.year = lca.thisYear AND ay.is_current = TRUE
-                WHERE si.AdmNo = %s
-            """, (admno,))
+                JOIN classallocation lca ON si.AdmNo = lca.AdmNo AND si.school_id = lca.school_id
+                JOIN classes c ON lca.classID = c.classID AND lca.school_id = c.school_id
+                JOIN academic_years ay ON ay.year = lca.thisYear AND ay.is_current = TRUE AND lca.school_id = ay.school_id
+                WHERE si.AdmNo = %s AND si.school_id = %s
+            """, (admno, self.school_id))
             student = self.cursor.fetchone()
 
         if not student:
@@ -1065,7 +1070,7 @@ class FeesService:
 
         # Find current term if not provided
         if not term_id:
-            self.cursor.execute("SELECT id FROM uniform_term_dates WHERE CURDATE() BETWEEN start_date AND end_date LIMIT 1")
+            self.cursor.execute("SELECT id FROM uniform_term_dates WHERE CURDATE() BETWEEN start_date AND end_date AND school_id = %s LIMIT 1", (self.school_id,))
             term_res = self.cursor.fetchone()
             term_id = term_res['id'] if term_res else None
         
@@ -1080,26 +1085,26 @@ class FeesService:
         # 1. Specific Class
         self.cursor.execute("""
             SELECT id FROM fee_structures 
-            WHERE term_id = %s AND class_id = %s AND student_category = %s
-        """, (term_id, class_id, category))
+            WHERE term_id = %s AND class_id = %s AND student_category = %s AND school_id = %s
+        """, (term_id, class_id, category, self.school_id))
         res = self.cursor.fetchone()
 
         if not res:
             # 2. Class Group
             self.cursor.execute("""
                 SELECT id FROM fee_structures 
-                WHERE term_id = %s AND class_group_code = %s AND student_category = %s
+                WHERE term_id = %s AND class_group_code = %s AND student_category = %s AND school_id = %s
                 AND (class_id IS NULL OR class_id = 0)
-            """, (term_id, group, category))
+            """, (term_id, group, category, self.school_id))
             res = self.cursor.fetchone()
         
         if not res:
             # 3. 'all' fallback
             self.cursor.execute("""
                 SELECT id FROM fee_structures 
-                WHERE term_id = %s AND class_group_code = 'all' AND student_category = %s
+                WHERE term_id = %s AND class_group_code = 'all' AND student_category = %s AND school_id = %s
                 AND (class_id IS NULL OR class_id = 0)
-            """, (term_id, category))
+            """, (term_id, category, self.school_id))
             res = self.cursor.fetchone()
 
         if not res:
@@ -1109,10 +1114,10 @@ class FeesService:
         self.cursor.execute("""
             SELECT fsi.amount, fv.name as votehead_name, fv.id as votehead_id, fv.priority, fv.is_mandatory
             FROM fee_structure_items fsi
-            JOIN fee_voteheads fv ON fsi.votehead_id = fv.id
-            WHERE fsi.fee_structure_id = %s
+            JOIN fee_voteheads fv ON fsi.votehead_id = fv.id AND fsi.school_id = fv.school_id
+            WHERE fsi.fee_structure_id = %s AND fsi.school_id = %s
             ORDER BY fv.priority ASC
-        """, (res['id'],))
+        """, (res['id'], self.school_id))
         return self.cursor.fetchall()
 
     def calculate_term_total(self, admno: int, term_id: int) -> Decimal:
@@ -1124,7 +1129,7 @@ class FeesService:
         """Get per-votehead totals for the entire year for a student."""
         # This requires summing across all terms for the year
         if not year_id:
-            self.cursor.execute("SELECT id FROM academic_years WHERE is_current = TRUE LIMIT 1")
+            self.cursor.execute("SELECT id FROM academic_years WHERE is_current = TRUE AND school_id = %s LIMIT 1", (self.school_id,))
             y_res = self.cursor.fetchone()
             year_id = y_res['id'] if y_res else None
 
@@ -1132,7 +1137,7 @@ class FeesService:
             return []
 
         # Fetch all terms for the year
-        self.cursor.execute("SELECT id FROM uniform_term_dates WHERE academic_year_id = %s", (year_id,))
+        self.cursor.execute("SELECT id FROM uniform_term_dates WHERE academic_year_id = %s AND school_id = %s", (year_id, self.school_id))
         terms = self.cursor.fetchall()
         
         breakdown = {}
@@ -1155,7 +1160,7 @@ class FeesService:
             self.connection.begin()
             
             # 1. Get terms for the year
-            self.cursor.execute("SELECT id, term_number FROM uniform_term_dates WHERE academic_year_id = %s ORDER BY term_number", (year_id,))
+            self.cursor.execute("SELECT id, term_number FROM uniform_term_dates WHERE academic_year_id = %s AND school_id = %s ORDER BY term_number", (year_id, self.school_id))
             terms = self.cursor.fetchall()
             term_map = {t['term_number']: t['id'] for t in terms}
 
@@ -1168,7 +1173,8 @@ class FeesService:
                     AND (class_id = %s OR (class_id IS NULL AND %s IS NULL))
                     AND (class_group_code = %s)
                     AND student_category = %s
-                """, (year_id, t_id, class_id, class_id, group_code, category))
+                    AND school_id = %s
+                """, (year_id, t_id, class_id, class_id, group_code, category, self.school_id))
                 existing = self.cursor.fetchone()
                 
                 if existing and existing['is_locked']:
@@ -1180,13 +1186,13 @@ class FeesService:
                     struct_id = existing['id']
                     logger.info(f"Updating existing structure ID {struct_id} for Term {t_num}")
                     # Clear items for fresh insert
-                    self.cursor.execute("DELETE FROM fee_structure_items WHERE fee_structure_id = %s", (struct_id,))
+                    self.cursor.execute("DELETE FROM fee_structure_items WHERE fee_structure_id = %s AND school_id = %s", (struct_id, self.school_id))
                 else:
                     logger.info(f"Creating new structure for Term {t_num}")
                     self.cursor.execute("""
-                        INSERT INTO fee_structures (academic_year_id, term_id, class_id, class_group_code, student_category, created_by)
-                        VALUES (%s, %s, %s, %s, %s, %s)
-                    """, (year_id, t_id, class_id, group_code, category, user_id))
+                        INSERT INTO fee_structures (academic_year_id, term_id, class_id, class_group_code, student_category, created_by, school_id)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """, (year_id, t_id, class_id, group_code, category, user_id, self.school_id))
                     struct_id = self.cursor.lastrowid
                 
                 total_term = Decimal("0.00")
@@ -1199,13 +1205,13 @@ class FeesService:
                         
                     if amt > 0:
                         self.cursor.execute("""
-                            INSERT INTO fee_structure_items (fee_structure_id, votehead_id, amount)
-                            VALUES (%s, %s, %s)
-                        """, (struct_id, vid, amt))
+                            INSERT INTO fee_structure_items (fee_structure_id, votehead_id, amount, school_id)
+                            VALUES (%s, %s, %s, %s)
+                        """, (struct_id, vid, amt, self.school_id))
                         total_term += amt
                 
                 # Update total
-                self.cursor.execute("UPDATE fee_structures SET total_amount = %s WHERE id = %s", (total_term, struct_id))
+                self.cursor.execute("UPDATE fee_structures SET total_amount = %s WHERE id = %s AND school_id = %s", (total_term, struct_id, self.school_id))
 
             self.connection.commit()
         except Exception as e:
@@ -1214,5 +1220,5 @@ class FeesService:
 
     def toggle_structure_lock(self, structure_id: int, lock: bool):
         """Lock or unlock a structure to prevent edits."""
-        self.cursor.execute("UPDATE fee_structures SET is_locked = %s WHERE id = %s", (1 if lock else 0, structure_id))
+        self.cursor.execute("UPDATE fee_structures SET is_locked = %s WHERE id = %s AND school_id = %s", (1 if lock else 0, structure_id, self.school_id))
         self.connection.commit()

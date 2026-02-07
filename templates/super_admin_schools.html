@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="max-w-5xl mx-auto p-6 space-y-8">
+  <div class="bg-white shadow rounded p-6">
+    <h1 class="text-2xl font-semibold mb-4">Super Admin &mdash; Schools</h1>
+    <form method="POST" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+      <div>
+        <label class="block text-sm font-medium text-gray-700">Name</label>
+        <input type="text" name="name" class="mt-1 block w-full border rounded px-3 py-2" required>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700">Code</label>
+        <input type="text" name="code" class="mt-1 block w-full border rounded px-3 py-2" required>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700">Subscription End (YYYY-MM-DD)</label>
+        <input type="date" name="subscription_end" class="mt-1 block w-full border rounded px-3 py-2">
+      </div>
+      <div class="flex items-center space-x-2">
+        <input type="checkbox" name="is_active" id="is_active" class="h-4 w-4" checked>
+        <label for="is_active" class="text-sm font-medium text-gray-700">Active</label>
+      </div>
+      <div class="md:col-span-4">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded">Create School</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="bg-white shadow rounded p-6">
+    <h2 class="text-xl font-semibold mb-4">Existing Schools</h2>
+    <div class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-4 py-2 text-left font-medium text-gray-700">Name</th>
+            <th class="px-4 py-2 text-left font-medium text-gray-700">Code</th>
+            <th class="px-4 py-2 text-left font-medium text-gray-700">Active</th>
+            <th class="px-4 py-2 text-left font-medium text-gray-700">Subscription End</th>
+            <th class="px-4 py-2 text-left font-medium text-gray-700">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200">
+          {% for school in schools %}
+          <tr>
+            <td class="px-4 py-2">{{ school.name }}</td>
+            <td class="px-4 py-2">{{ school.code }}</td>
+            <td class="px-4 py-2">
+              {% if school.is_active %}
+                <span class="text-green-700 font-semibold">Active</span>
+              {% else %}
+                <span class="text-red-700 font-semibold">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-2">{{ school.subscription_end or 'None' }}</td>
+            <td class="px-4 py-2 space-y-1">
+              <form method="POST" action="{{ url_for('update_school_status', school_id=school.id) }}" class="inline-block">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="{{ 'deactivate' if school.is_active else 'activate' }}">
+                <button type="submit" class="px-3 py-1 rounded border">
+                  {{ 'Deactivate' if school.is_active else 'Activate' }}
+                </button>
+              </form>
+              <form method="POST" action="{{ url_for('update_school_subscription', school_id=school.id) }}" class="inline-block ml-2">
+                <input type="date" name="subscription_end" value="{{ school.subscription_end }}" class="border rounded px-2 py-1 text-sm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="px-3 py-1 rounded border">Update Subscription</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td class="px-4 py-2" colspan="5">No schools found.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

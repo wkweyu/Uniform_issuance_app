@@ -1,56 +1,11 @@
-
 import os
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, make_response, send_file
-from werkzeug.security import generate_password_hash, check_password_hash
-import pymysql, hashlib, csv
+import csv
+import hashlib
+import pymysql
 import urllib.parse as urlparse
 
-# Use environment variables for DB credentials
-_db_url = os.environ.get('DATABASE_URL') or os.environ.get('DB_HOST')
-
-if _db_url and '://' in _db_url:
-    url = urlparse.urlparse(_db_url)
-    DB_HOST = url.hostname
-    DB_USER = url.username
-    DB_PASSWORD = url.password
-    DB_NAME = url.path.lstrip('/')
-    DB_PORT = url.port or 3306
-else:
-    DB_HOST = os.environ.get('DB_HOST', 'serverless-eu-west-3.sysp0000.db1.skysql.com')
-    DB_USER = os.environ.get('DB_USER', 'dbpwf28831395')
-    DB_PASSWORD = os.environ.get('DB_PASSWORD') or os.environ.get('DB_PASS', 'Bernice@2026')
-    DB_NAME = os.environ.get('DB_NAME', 'schoolmngt')
-    DB_PORT = int(os.environ.get('DB_PORT', 4018))
-
-# Construct SQLALCHEMY_DATABASE_URI with quoted password
-import urllib.parse
-quoted_password = urllib.parse.quote_plus(DB_PASSWORD)
-DEFAULT_DB_URI = f"mysql+pymysql://{DB_USER}:{quoted_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-
-# DEBUG: Print masked connection info to Render logs
-print(f"DEBUG: Attempting connection to Host: {DB_HOST}, Port: {DB_PORT}, User: {DB_USER}")
-if 'skysql' in DB_HOST.lower():
-    print("DEBUG: Recognized SkySQL host, applying SSL configuration.")
-
-if 'skysql.com' in DB_HOST.lower():
-    ca_path = os.path.join(os.path.dirname(__file__), 'globalsignrootca.pem')
-    if os.path.exists(ca_path):
-        # Use '&' for subsequent params if quoted_password already contained '?'
-        separator = '&' if '?' in DEFAULT_DB_URI else '?'
-        DEFAULT_DB_URI += f"{separator}ssl_ca={ca_path}"
-        print(f"DEBUG: Found SSL certificate at {ca_path}")
-    else:
-        print("DEBUG: SSL certificate file NOT FOUND! Connection might fail.")
-
-# Final SQLAlchemy URI: prefer explicit env var, fall back to constructed default
-SQLALCHEMY_DATABASE_URI = os.environ.get("SQLALCHEMY_DATABASE_URI", DEFAULT_DB_URI)
-
-# Ensure the URI uses the correct driver and format
-if SQLALCHEMY_DATABASE_URI.startswith("postgres://"):
-    SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace("postgres://", "postgresql://", 1)
-elif SQLALCHEMY_DATABASE_URI.startswith("mysql://"):
-    SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace("mysql://", "mysql+pymysql://", 1)
-
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, make_response, send_file, g
+from werkzeug.security import generate_password_hash, check_password_hash
 from io import StringIO, BytesIO
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -58,27 +13,59 @@ from functools import wraps
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
+
 from class_management_service import ClassManagementService, ValidationError, PromotionError
 from fees_management_service import FeesService, FeesError
 from exam_management_service import ExamManagementService, ExamManagementError
 from finance_management_service import FinanceService, FinanceError
 from procurement_service import ProcurementService, ProcurementError
 
+import config
+
+# Database configuration
+DB_HOST = os.environ.get('DB_HOST', config.DB_HOST)
+DB_PORT = int(os.environ.get('DB_PORT', config.DB_PORT))
+DB_USER = os.environ.get('DB_USER', config.DB_USER)
+DB_PASSWORD = os.environ.get('DB_PASSWORD', config.DB_PASSWORD)
+DB_NAME = os.environ.get('DB_NAME', config.DB_NAME)
+
+quoted_password = urlparse.quote_plus(DB_PASSWORD)
+DEFAULT_DB_URI = f"mysql+pymysql://{DB_USER}:{quoted_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+
+# DEBUG: Print masked connection info to logs
+print(f"DEBUG: Attempting connection to Host: {DB_HOST}, Port: {DB_PORT}, User: {DB_USER}")
+if 'skysql' in DB_HOST.lower():
+    print("DEBUG: Recognized SkySQL host, applying SSL configuration.")
+
+if 'skysql.com' in DB_HOST.lower():
+    ca_path = os.path.join(os.path.dirname(__file__), 'globalsignrootca.pem')
+    if os.path.exists(ca_path):
+        separator = '&' if '?' in DEFAULT_DB_URI else '?'
+        DEFAULT_DB_URI += f"{separator}ssl_ca={ca_path}"
+        print(f"DEBUG: Found SSL certificate at {ca_path}")
+    else:
+        print("DEBUG: SSL certificate file NOT FOUND! Connection might fail.")
+
+SQLALCHEMY_DATABASE_URI = os.environ.get("SQLALCHEMY_DATABASE_URI", DEFAULT_DB_URI)
+if SQLALCHEMY_DATABASE_URI.startswith("postgres://"):
+    SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace("postgres://", "postgresql://", 1)
+elif SQLALCHEMY_DATABASE_URI.startswith("mysql://"):
+    SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace("mysql://", "mysql+pymysql://", 1)
+
 db = SQLAlchemy()
 csrf = CSRFProtect()
 migrate = Migrate()
 
 
-
 def create_app():
     app = Flask(__name__, static_folder='static')
-    
+
     # Configuration
     app.secret_key = os.environ.get('SECRET_KEY', 'your_secret_key_please_change_in_production')
     app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['WTF_CSRF_TIME_LIMIT'] = None  # CSRF token doesn't expire
-    
+
     # Initialize extensions with app
     try:
         db.init_app(app)
@@ -86,7 +73,7 @@ def create_app():
         csrf.init_app(app)
     except Exception as e:
         print(f"ERROR during extension initialization: {e}")
-    
+
     # Custom filters and globals
     def format_currency(value):
         try:
@@ -96,39 +83,41 @@ def create_app():
             return "{:,.2f}".format(num)
         except (ValueError, TypeError):
             return "0.00"
-    
+
     app.jinja_env.filters['currency'] = format_currency
     app.jinja_env.globals['datetime'] = datetime
-    
-    # Make csrf_token available in all templates
+
     from flask_wtf.csrf import generate_csrf
     app.jinja_env.globals['csrf_token'] = generate_csrf
-    
+
     return app
 
-# Create the app
+
 app = create_app()
 
-# DB connection function (can stay outside or inside)
+
+def current_school_id():
+    """Return the current tenant's school_id from the session."""
+    return session.get("school_id")
+
+
+@app.before_request
+def load_tenant_context():
+    """Populate g.school_id for every request based on the logged-in session."""
+    g.school_id = current_school_id()
+
+
 def get_db_connection():
+    """Create a pymysql connection with optional SkySQL SSL."""
+    ssl_config = None
     try:
-        # SkySQL/MariaDB Cloud requires SSL with a CA certificate
-        ssl_config = None
         if 'skysql.com' in DB_HOST.lower():
             ca_path = os.path.join(os.path.dirname(__file__), 'globalsignrootca.pem')
             if os.path.exists(ca_path):
-                # Standard SkySQL/MariaDB Cloud SSL configuration
-                ssl_config = {
-                    'ca': ca_path,
-                    'check_hostname': False  # Avoid SNI/Hostname mismatch issues
-                }
+                ssl_config = {'ca': ca_path, 'check_hostname': False}
             else:
-                ssl_config = True # Fallback
-        
-        # Use a nested dict if necessary for older/newer pymysql compatibility
-        # Some versions expect ssl={"ca": "..."} while others might need ssl_ca parameter
-        # but in pymysql 1.0+, ssl={'ca': ca_path} is the documented way.
-        
+                ssl_config = True  # permissive fallback
+
         connection = pymysql.connect(
             host=DB_HOST,
             user=DB_USER,
@@ -141,7 +130,6 @@ def get_db_connection():
         )
         return connection
     except Exception as e:
-        # Mask password in log
         safe_pass = DB_PASSWORD[:2] + "****" + DB_PASSWORD[-2:] if DB_PASSWORD else "None"
         print(f"CRITICAL: Connection failed for {DB_USER}@{DB_HOST}:{DB_PORT} (DB: {DB_NAME})")
         print(f"DEBUG: Using password: {safe_pass} (Length: {len(DB_PASSWORD) if DB_PASSWORD else 0})")
@@ -149,7 +137,31 @@ def get_db_connection():
         print(f"CRITICAL Error: {e}")
         raise e
 
-# Add this model definition at the top of your file, after db = SQLAlchemy()
+
+class School(db.Model):
+    __tablename__ = 'schools'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False)
+    code = db.Column(db.String(20), unique=True, index=True)
+    is_active = db.Column(db.Boolean, default=True)
+    subscription_end = db.Column(db.Date)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class User(db.Model):
+    __tablename__ = 'users'
+    userNo = db.Column(db.Integer, primary_key=True)
+    StaffID = db.Column(db.String(6))
+    username = db.Column(db.String(32))
+    pwd = db.Column(db.String(32), default='123456')
+    domainID = db.Column(db.Integer)
+    access_flag = db.Column(db.SmallInteger, default=1)
+    dateReg = db.Column(db.String(32))
+    RegStaffID = db.Column(db.String(6))
+    TA = db.Column(db.SmallInteger, default=0)
+    _date = db.Column(db.DateTime)
+    school_id = db.Column(db.Integer, db.ForeignKey("schools.id"), index=True)
+
 
 class UniformPrice(db.Model):
     __tablename__ = 'uniform_prices'
@@ -157,12 +169,9 @@ class UniformPrice(db.Model):
     item_name = db.Column(db.String(255))
     class_group = db.Column(db.String(255))
     price = db.Column(db.Numeric(10, 2))
+    school_id = db.Column(db.Integer, db.ForeignKey("schools.id"), index=True)
 
-# Then in your route, use the class name (not table name):
-# existing = db.session.query(UniformPrice).filter_by(item_name=item_name).first()
-
-
-# Rest of your routes...
+# Class group mapping
 # Class group mapping
 CLASS_GROUPS = {
     'Playgroup': 'Playgroup-PP2',
@@ -183,20 +192,21 @@ def get_current_term_and_year():
     today = datetime.now().date()
     connection = get_db_connection()
     cursor = connection.cursor(pymysql.cursors.DictCursor)
+    # Tenant-scoped current term lookup
+    school_id = getattr(g, 'school_id', 1)
     cursor.execute("""
         SELECT term_number, year 
         FROM uniform_term_dates 
         WHERE %s BETWEEN start_date AND end_date 
+              AND school_id = %s
         ORDER BY year DESC, term_number DESC LIMIT 1
-    """, (today,))
+    """, (today, school_id))
     result = cursor.fetchone()
     connection.close()
     if result:
         return result['term_number'], result['year']
     else:
         return None, None  # or raise an error or default
-
-from werkzeug.security import generate_password_hash, check_password_hash
 
 def verify_legacy_password(input_password, stored_password, user_id=None):
     """
@@ -208,36 +218,24 @@ def verify_legacy_password(input_password, stored_password, user_id=None):
     if not stored_password:
         return False
 
-    # 1. Primary: Secure Hash check (Werkzeug default)
-    if stored_password.startswith(('pbkdf2:sha256:', 'scrypt:', 'bcrypt:')):
-        return check_password_hash(stored_password, input_password)
+    # Modern hashes (Werkzeug/Flask generate_password_hash)
+    try:
+        if check_password_hash(stored_password, input_password):
+            return True
+    except ValueError:
+        # Not a werkzeug hash, fall through
+        pass
 
-    # 2. Legacy: Plain text match
-    is_match = False
-    if input_password == stored_password:
-        is_match = True
-    
-    # 3. Legacy: MD5 match
-    if not is_match:
-        md5_pass = hashlib.md5(input_password.encode()).hexdigest()
-        if md5_pass == stored_password:
-            is_match = True
+    # Legacy MD5
+    md5_hash = hashlib.md5(input_password.encode()).hexdigest()
+    if stored_password == md5_hash:
+        return True
 
-    # Auto-Upgrade logic
-    if is_match and user_id:
-        try:
-            secure_hash = generate_password_hash(input_password)
-            connection = get_db_connection()
-            with connection.cursor() as cursor:
-                cursor.execute("UPDATE users SET pwd = %s WHERE userNo = %s", (secure_hash, user_id))
-            connection.commit()
-            connection.close()
-            print(f"DEBUG: Password for user {user_id} upgraded to secure hash.")
-        except Exception as e:
-            print(f"DEBUG: Password upgrade failed: {e}")
+    # Plain text legacy
+    if stored_password == input_password:
+        return True
 
-    return is_match
-
+    return False
 from urllib.parse import quote
 
 def login_required(f):
@@ -261,6 +259,20 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated
 
+
+def super_admin_required(f):
+    """Guard for platform-level super admins (SaaS controls)."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if 'userNo' not in session:
+            next_url = quote(request.url)
+            return redirect(url_for('login', next=next_url))
+        if not session.get('is_super_admin', False):
+            flash("Access denied. Super admin privileges required.", "error")
+            return redirect(url_for('index'))
+        return f(*args, **kwargs)
+    return decorated
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if 'userNo' in session:
@@ -269,41 +281,51 @@ def login():
     next_url = request.args.get('next')
 
     if request.method == 'POST':
+        school_code = request.form.get('school_code')
         username = request.form.get('username')
         password = request.form.get('password')
 
-        connection = get_db_connection()
-        cursor = connection.cursor()
+        # STEP 3: Tenant-aware login using school code
+        if not school_code:
+            flash("School code is required.", "error")
+            return redirect(url_for('login'))
 
-        cursor.execute("""
-            SELECT userNo, username, pwd, access_flag, TA, StaffID
-            FROM users
-            WHERE username=%s
-            LIMIT 1
-        """, (username,))
-        user = cursor.fetchone()
-        connection.close()
+        school = School.query.filter_by(code=school_code).first()
+        if not school:
+            flash("Invalid school code.", "error")
+            return redirect(url_for('login'))
 
-        if not user or user['access_flag'] != 1:
+        # Check school is active and subscription is valid
+        today = datetime.utcnow().date()
+        if not school.is_active or (school.subscription_end and school.subscription_end < today):
+            flash("School is inactive or subscription has expired.", "error")
+            return redirect(url_for('login'))
+
+        # Authenticate user within this school only
+        user = User.query.filter_by(username=username, school_id=school.id).first()
+
+        if not user or user.access_flag != 1:
             flash("Invalid username or password.", "error")
             return redirect(url_for('login'))
 
-        if not verify_legacy_password(password, user['pwd'], user['userNo']):
+        if not verify_legacy_password(password, user.pwd, user.userNo):
             flash("Invalid username or password.", "error")
             return redirect(url_for('login'))
 
         # ✅ Login success
-        session['userNo'] = user['userNo']
-        session['username'] = user['username']
-        session['staff_id'] = user['StaffID']
-        session['is_admin'] = bool(user['TA'])
+        session['userNo'] = user.userNo
+        session['username'] = user.username
+        session['staff_id'] = user.StaffID
+        session['is_admin'] = bool(user.TA)
+        session['is_super_admin'] = bool(user.TA == 2)
+        session['school_id'] = school.id
         session['logged_in'] = True  # Add this flag
 
         # Set session to expire after 8 hours
         session.permanent = True
         app.permanent_session_lifetime = timedelta(hours=8)
 
-        flash(f"Welcome {user['username']}", "success")
+        flash(f"Welcome {user.username}", "success")
 
         return redirect(next_url or url_for('index'))
 
@@ -315,6 +337,100 @@ def logout():
     session.clear()
     flash("Logged out successfully.", "successfully")
     return redirect(url_for('login'))
+
+
+# ============================================================================
+# SUPER ADMIN (SaaS Controls)
+# ============================================================================
+
+
+@app.route('/super_admin/schools', methods=['GET', 'POST'])
+@login_required
+@super_admin_required
+def manage_schools():
+    """Platform-level school management (create, list)."""
+    if request.method == 'POST':
+        name = (request.form.get('name') or '').strip()
+        code = (request.form.get('code') or '').strip()
+        subscription_end_str = request.form.get('subscription_end') or ''
+        is_active = bool(request.form.get('is_active'))
+
+        if not name or not code:
+            flash("Name and code are required.", "error")
+            return redirect(url_for('manage_schools'))
+
+        existing = School.query.filter_by(code=code).first()
+        if existing:
+            flash("School code already exists.", "error")
+            return redirect(url_for('manage_schools'))
+
+        subscription_end = None
+        if subscription_end_str:
+            try:
+                subscription_end = datetime.strptime(subscription_end_str, "%Y-%m-%d").date()
+            except ValueError:
+                flash("Invalid subscription end date.", "error")
+                return redirect(url_for('manage_schools'))
+
+        school = School(
+            name=name,
+            code=code,
+            is_active=is_active,
+            subscription_end=subscription_end
+        )
+        db.session.add(school)
+        db.session.commit()
+        flash("School created successfully.", "success")
+
+    schools = School.query.order_by(School.created_at.desc()).all()
+    return render_template('super_admin_schools.html', schools=schools)
+
+
+@app.route('/super_admin/schools/<int:school_id>/status', methods=['POST'])
+@login_required
+@super_admin_required
+def update_school_status(school_id):
+    action = request.form.get('action')
+    school = School.query.filter_by(id=school_id).first()
+    if not school:
+        flash("School not found.", "error")
+        return redirect(url_for('manage_schools'))
+
+    if action == 'activate':
+        school.is_active = True
+    elif action == 'deactivate':
+        school.is_active = False
+    else:
+        flash("Invalid action.", "error")
+        return redirect(url_for('manage_schools'))
+
+    db.session.commit()
+    flash("School status updated.", "success")
+    return redirect(url_for('manage_schools'))
+
+
+@app.route('/super_admin/schools/<int:school_id>/subscription', methods=['POST'])
+@login_required
+@super_admin_required
+def update_school_subscription(school_id):
+    subscription_end_str = request.form.get('subscription_end') or ''
+    school = School.query.filter_by(id=school_id).first()
+    if not school:
+        flash("School not found.", "error")
+        return redirect(url_for('manage_schools'))
+
+    subscription_end = None
+    if subscription_end_str:
+        try:
+            subscription_end = datetime.strptime(subscription_end_str, "%Y-%m-%d").date()
+        except ValueError:
+            flash("Invalid date format. Use YYYY-MM-DD.", "error")
+            return redirect(url_for('manage_schools'))
+
+    school.subscription_end = subscription_end
+    db.session.commit()
+    flash("Subscription updated.", "success")
+    return redirect(url_for('manage_schools'))
 
 @app.route('/health')
 def health_check():
@@ -363,15 +479,15 @@ def health_check():
 def get_class_group(class_name):
     return CLASS_GROUPS.get(class_name)
 
-def generate_receipt_number(year):
+def generate_receipt_number(year, school_id):
     connection = get_db_connection()
     cursor = connection.cursor()
 
     cursor.execute("""
         SELECT receipt_no FROM uniform_receipts 
-        WHERE yr = %s AND receipt_no IS NOT NULL 
+        WHERE yr = %s AND school_id = %s AND receipt_no IS NOT NULL 
         ORDER BY id DESC LIMIT 1
-    """, (year,))
+    """, (year, school_id))
     last_receipt = cursor.fetchone()
 
     if last_receipt and last_receipt['receipt_no']:
@@ -396,34 +512,36 @@ def generate_receipt_number(year):
 def index():
     connection = get_db_connection()
     cursor = connection.cursor()
+    school_id = g.school_id or 1
 
     # Active buses
-    cursor.execute("SELECT COUNT(*) AS count FROM buses WHERE active=1")
+    cursor.execute("SELECT COUNT(*) AS count FROM buses WHERE active=1 AND school_id = %s", (school_id,))
     active_buses = cursor.fetchone()['count']
 
     # Today's fuel vouchers
-    cursor.execute("SELECT COUNT(*) AS count FROM fuel_vouchers WHERE DATE(issued_on) = CURDATE()")
+    cursor.execute("SELECT COUNT(*) AS count FROM fuel_vouchers WHERE DATE(issued_on) = CURDATE() AND school_id = %s", (school_id,))
     vouchers_today = cursor.fetchone()['count']
 
     # Student Count
-    cursor.execute("SELECT COUNT(*) AS count FROM studentinfo")
+    cursor.execute("SELECT COUNT(*) AS count FROM studentinfo WHERE school_id = %s", (school_id,))
     total_students = cursor.fetchone()['count']
 
     # Staff Count
-    cursor.execute("SELECT COUNT(*) AS count FROM users")
+    cursor.execute("SELECT COUNT(*) AS count FROM users WHERE school_id = %s", (school_id,))
     total_staff = cursor.fetchone()['count']
 
     # Active Classes
-    cursor.execute("SELECT COUNT(*) AS count FROM classes")
+    cursor.execute("SELECT COUNT(*) AS count FROM classes WHERE school_id = %s", (school_id,))
     total_classes = cursor.fetchone()['count']
 
-    # Get current term_number and year from uniform_term_dates
+    # Get current term_number and year from uniform_term_dates (tenant-scoped)
     cursor.execute("""
         SELECT term_number, year 
         FROM uniform_term_dates 
         WHERE CURDATE() BETWEEN start_date AND end_date
+          AND school_id = %s
         LIMIT 1
-    """)
+    """, (school_id,))
     term_info = cursor.fetchone()
 
     if term_info:
@@ -438,12 +556,12 @@ def index():
         cursor.execute("""
             SELECT COUNT(*) AS count 
             FROM uniform_receipts 
-            WHERE term=%s AND yr=%s
-        """, (term_number, year))
+            WHERE term=%s AND yr=%s AND school_id = %s
+        """, (term_number, year, school_id))
         uniform_issued = cursor.fetchone()['count']
         
         # Total Collections Today
-        cursor.execute("SELECT SUM(total) AS total FROM uniform_receipts WHERE DATE(issued_on) = CURDATE()")
+        cursor.execute("SELECT SUM(total) AS total FROM uniform_receipts WHERE DATE(issued_on) = CURDATE() AND school_id = %s", (school_id,))
         today_collections = cursor.fetchone()['total'] or 0
     else:
         uniform_issued = 0
@@ -485,14 +603,15 @@ def issue_uniform():
 
         connection = get_db_connection()
         with connection.cursor() as cursor:
-            # Fetch student info
+            school_id = g.school_id or 1
+            # Fetch student info (tenant-scoped)
             cursor.execute("""
                 SELECT s.FName, c.class_name 
                 FROM studentinfo s 
-                JOIN classallocation ca ON s.AdmNo = ca.AdmNo 
+                JOIN classallocation ca ON s.AdmNo = ca.AdmNo AND s.school_id = ca.school_id
                 JOIN classes c ON ca.classID = c.classID 
-                WHERE s.AdmNo = %s AND ca.thisYear = %s
-            """, (admno, year))
+                WHERE s.AdmNo = %s AND ca.thisYear = %s AND s.school_id = %s
+            """, (admno, year, school_id))
             student = cursor.fetchone()
             
             if not student:
@@ -547,7 +666,7 @@ def submit_issuance():
         
         with connection.cursor() as cursor:
             # 1. Generate receipt number
-            receipt_no = generate_receipt_number(data['year'])
+            receipt_no = generate_receipt_number(data['year'], g.school_id)
             total_amount = 0
             issuance_items = []
             
@@ -556,8 +675,8 @@ def submit_issuance():
                 if item['quantity'] > 0:
                     cursor.execute("""
                         SELECT current_stock FROM item_stock 
-                        WHERE item_name = %s
-                    """, (item['item_name'],))
+                        WHERE item_name = %s AND school_id = %s
+                    """, (item['item_name'], g.school_id))
                     stock_info = cursor.fetchone()
                     
                     if not stock_info:
@@ -586,8 +705,8 @@ def submit_issuance():
                 # Insert into uniform_receipts
                 cursor.execute("""
                     INSERT INTO uniform_receipts 
-                    (AdmNo, student_name, class_name, item_name, quantity, price, total, yr, term, receipt_no, issued_by)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (AdmNo, student_name, class_name, item_name, quantity, price, total, yr, term, receipt_no, issued_by, school_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     data['admno'],
                     data['student_name'],
@@ -599,7 +718,8 @@ def submit_issuance():
                     data['year'],
                     data['term'],
                     receipt_no,
-                    session.get('username', 'System')
+                    session.get('username', 'System'),
+                    g.school_id
                 ))
                 
                 # Deduct from stock and record movement
@@ -607,22 +727,22 @@ def submit_issuance():
                     UPDATE item_stock 
                     SET current_stock = current_stock - %s,
                         updated_at = NOW()
-                    WHERE item_name = %s
-                """, (item['quantity'], item['name']))
+                    WHERE item_name = %s AND school_id = %s
+                """, (item['quantity'], item['name'], g.school_id))
                 
                 # Get the updated stock level
                 cursor.execute("""
-                    SELECT current_stock FROM item_stock WHERE item_name = %s
-                """, (item['name'],))
+                    SELECT current_stock FROM item_stock WHERE item_name = %s AND school_id = %s
+                """, (item['name'], g.school_id))
                 new_stock = cursor.fetchone()['current_stock']
                 
                 # Record stock movement
                 cursor.execute("""
                     INSERT INTO stock_movements 
-                    (item_id, movement_type, quantity, previous_stock, new_stock, reference_no, student_admno, user_id, notes)
-                    SELECT item_id, 'ISSUANCE', %s, current_stock + %s, %s, %s, %s, %s, %s
+                    (item_id, movement_type, quantity, previous_stock, new_stock, reference_no, student_admno, user_id, notes, school_id)
+                    SELECT item_id, 'ISSUANCE', %s, current_stock + %s, %s, %s, %s, %s, %s, %s
                     FROM item_stock 
-                    WHERE item_name = %s
+                    WHERE item_name = %s AND school_id = %s
                 """, (
                     item['quantity'],
                     item['quantity'],  # previous stock = new_stock + quantity
@@ -631,7 +751,9 @@ def submit_issuance():
                     data['admno'],
                     session.get('userNo'),
                     f"Issued to {data['student_name']} ({data['class_name']})",
-                    item['name']
+                    g.school_id,
+                    item['name'],
+                    g.school_id
                 ))
             
             # 4. Update fodebit (legacy logic) + fee_ledger (modern logic)
@@ -639,36 +761,36 @@ def submit_issuance():
                 # 4.1 Update fodebit (legacy tracking)
                 cursor.execute("""
                     SELECT amount FROM fodebit 
-                    WHERE AdmNo=%s AND yr=%s AND term=%s AND r_for='Uniform'
-                """, (data['admno'], data['year'], data['term']))
+                    WHERE AdmNo=%s AND yr=%s AND term=%s AND r_for='Uniform' AND school_id = %s
+                """, (data['admno'], data['year'], data['term'], g.school_id))
                 existing = cursor.fetchone()
 
                 if existing:
                     new_amount = existing['amount'] + total_amount
                     cursor.execute("""
                         UPDATE fodebit SET amount=%s, _date=NOW() 
-                        WHERE AdmNo=%s AND yr=%s AND term=%s AND r_for='Uniform'
-                    """, (new_amount, data['admno'], data['year'], data['term']))
+                        WHERE AdmNo=%s AND yr=%s AND term=%s AND r_for='Uniform' AND school_id = %s
+                    """, (new_amount, data['admno'], data['year'], data['term'], g.school_id))
                 else:
                     cursor.execute("""
                         INSERT INTO fodebit 
-                        (AdmNo, yr, term, r_for, amount, state, _date, acc, cmode, ccode)
-                        VALUES (%s, %s, %s, 'Uniform', %s, 0, NOW(), 1, 'UniformApp', '0')
-                    """, (data['admno'], data['year'], data['term'], total_amount))
+                        (AdmNo, yr, term, r_for, amount, state, _date, acc, cmode, ccode, school_id)
+                        VALUES (%s, %s, %s, 'Uniform', %s, 0, NOW(), 1, 'UniformApp', '0', %s)
+                    """, (data['admno'], data['year'], data['term'], total_amount, g.school_id))
 
                 # 4.2 Update fee_ledger (modern integration)
                 try:
                     # Get academic_year_id and term_id
-                    cursor.execute("SELECT id FROM academic_years WHERE year = %s", (data['year'],))
+                    cursor.execute("SELECT id FROM academic_years WHERE year = %s AND school_id = %s", (data['year'], g.school_id))
                     ay_row = cursor.fetchone()
                     ay_id = ay_row['id'] if ay_row else 1 # Fallback if not configured
 
-                    cursor.execute("SELECT id FROM uniform_term_dates WHERE term_number = %s AND year = %s", (data['term'], data['year']))
+                    cursor.execute("SELECT id FROM uniform_term_dates WHERE term_number = %s AND year = %s AND school_id = %s", (data['term'], data['year'], g.school_id))
                     term_row = cursor.fetchone()
                     term_id = term_row['id'] if term_row else 1 # Fallback if not configured
 
                     # Calculate running balance
-                    cursor.execute("SELECT balance_after FROM fee_ledger WHERE admno = %s ORDER BY id DESC LIMIT 1", (data['admno'],))
+                    cursor.execute("SELECT balance_after FROM fee_ledger WHERE admno = %s AND school_id = %s ORDER BY id DESC LIMIT 1", (data['admno'], g.school_id))
                     bal_row = cursor.fetchone()
                     
                     # Convert to Decimal for safety
@@ -676,9 +798,9 @@ def submit_issuance():
                     new_balance = prev_balance + Decimal(str(total_amount))
 
                     cursor.execute("""
-                        INSERT INTO fee_ledger (admno, academic_year_id, term_id, type, amount, balance_after, description, reference_no, transaction_date, created_by)
-                        VALUES (%s, %s, %s, 'CHARGE', %s, %s, %s, %s, CURDATE(), %s)
-                    """, (data['admno'], ay_id, term_id, total_amount, new_balance, f"Uniform Issuance: {receipt_no}", receipt_no, session.get('userNo')))
+                        INSERT INTO fee_ledger (admno, academic_year_id, term_id, type, amount, balance_after, description, reference_no, transaction_date, created_by, school_id)
+                        VALUES (%s, %s, %s, 'CHARGE', %s, %s, %s, %s, CURDATE(), %s, %s)
+                    """, (data['admno'], ay_id, term_id, total_amount, new_balance, f"Uniform Issuance: {receipt_no}", receipt_no, session.get('userNo'), g.school_id))
                 except Exception as e:
                     print(f"Fee ledger sync error: {e}")
                     # Don't fail the whole issuance if ledger sync fails, but log it
@@ -721,20 +843,12 @@ def submit_issuance():
 def get_uniform_items_for_class(class_name):
     connection = get_db_connection()
     cursor = connection.cursor()  # removed dictionary=True
+    school_id = g.school_id
 
     # Map class_name to class_group
-    if class_name in ['Playgroup', 'PP1', 'PP2']:
-        class_group = 'Playgroup-PP2'
-    elif class_name in ['Grade 1', 'Grade 2', 'Grade 3']:
-        class_group = 'Grade 1-3'
-    elif class_name in ['Grade 4', 'Grade 5', 'Grade 6']:
-        class_group = 'Grade 4-6'
-    elif class_name in ['Grade 7', 'Grade 8', 'Grade 9']:
-        class_group = 'Grade 7-9'
-    else:
-        class_group = 'Other'
+    class_group = get_class_group(class_name)
 
-    cursor.execute("SELECT item_name, price FROM uniform_prices WHERE class_group = %s", (class_group,))
+    cursor.execute("SELECT item_name, price FROM uniform_prices WHERE class_group = %s AND school_id = %s", (class_group, school_id))
     items = cursor.fetchall()
 
     cursor.close()
@@ -751,6 +865,7 @@ def receipt():
     class_name = request.form['class_name']
     year = request.form['yr']
     term = 2  # or dynamic if needed
+    school_id = g.school_id
 
     items = get_uniform_items_for_class(class_name)
     total_amount = 0
@@ -765,9 +880,9 @@ def receipt():
 
         if quantity > 0:
             cursor.execute("""
-                INSERT INTO uniform_receipts (AdmNo, yr, term, item_name, price, quantity, total, issued_on)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
-            """, (admno, year, term, item['item_name'], price, quantity, item_total))
+                INSERT INTO uniform_receipts (AdmNo, yr, term, item_name, price, quantity, total, issued_on, school_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), %s)
+            """, (admno, year, term, item['item_name'], price, quantity, item_total, school_id))
 
             total_amount += item_total
 
@@ -778,21 +893,21 @@ def receipt():
     # Update or insert in fodebit
     cursor.execute("""
         SELECT amount FROM fodebit 
-        WHERE AdmNo=%s AND yr=%s AND term=%s AND r_for='Uniform'
-    """, (admno, year, term))
+        WHERE AdmNo=%s AND yr=%s AND term=%s AND r_for='Uniform' AND school_id = %s
+    """, (admno, year, term, school_id))
     result = cursor.fetchone()
 
     if result:
         new_amount = result['amount'] + total_amount
         cursor.execute("""
             UPDATE fodebit SET amount=%s, _date=NOW() 
-            WHERE AdmNo=%s AND yr=%s AND term=%s AND r_for='Uniform'
-        """, (new_amount, admno, year, term))
+            WHERE AdmNo=%s AND yr=%s AND term=%s AND r_for='Uniform' AND school_id = %s
+        """, (new_amount, admno, year, term, school_id))
     else:
         cursor.execute("""
-            INSERT INTO fodebit (AdmNo, yr, term, r_for, amount, state, _date, acc, cmode, ccode)
-            VALUES (%s, %s, %s, 'Uniform', %s, 0, NOW(), 1, 'UniformApp', '0')
-        """, (admno, year, term, total_amount))
+            INSERT INTO fodebit (AdmNo, yr, term, r_for, amount, state, _date, acc, cmode, ccode, school_id)
+            VALUES (%s, %s, %s, 'Uniform', %s, 0, NOW(), 1, 'UniformApp', '0', %s)
+        """, (admno, year, term, total_amount, school_id))
 
     connection.commit()
     cursor.close()
@@ -803,13 +918,14 @@ def receipt():
 
 def get_class_name(cursor, admno, year):
     try:
+        school_id = g.school_id or 1
         cursor.execute("""
             SELECT c.class_name 
             FROM classallocation a 
             JOIN classes c ON a.classID = c.classID 
-            WHERE a.AdmNo = %s AND a.thisYear = %s
+            WHERE a.AdmNo = %s AND a.thisYear = %s AND a.school_id = %s AND c.school_id = %s
             LIMIT 1
-        """, (admno, year))
+        """, (admno, year, school_id, school_id))
         class_row = cursor.fetchone()
         if class_row:
             return class_row['class_name']
@@ -835,8 +951,10 @@ def print_receipt():
         connection = get_db_connection()
         cursor = connection.cursor()
 
-        # Fetch student info
-        cursor.execute("SELECT FName FROM studentinfo WHERE AdmNo = %s", (admno,))
+        school_id = g.school_id or 1
+
+        # Fetch student info (tenant-scoped)
+        cursor.execute("SELECT FName FROM studentinfo WHERE AdmNo = %s AND school_id = %s", (admno, school_id))
         student = cursor.fetchone()
         if not student:
             return f"No student found with AdmNo {admno}", 404
@@ -890,16 +1008,17 @@ def manage_prices():
         return redirect(url_for('index'))
     
     connection = get_db_connection()
+    school_id = g.school_id
     
     try:
         with connection.cursor() as cursor:
             # Get all uniform items
-            cursor.execute("SELECT DISTINCT item_name FROM uniform_prices ORDER BY item_name")
+            cursor.execute("SELECT DISTINCT item_name FROM uniform_prices WHERE school_id = %s ORDER BY item_name", (school_id,))
             items = cursor.fetchall()
             uniform_items = [row['item_name'] for row in items]
             
             # Get all class groups
-            cursor.execute("SELECT DISTINCT class_group FROM uniform_prices ORDER BY class_group")
+            cursor.execute("SELECT DISTINCT class_group FROM uniform_prices WHERE school_id = %s ORDER BY class_group", (school_id,))
             groups = cursor.fetchall()
             class_groups = [row['class_group'] for row in groups]
             
@@ -912,10 +1031,10 @@ def manage_prices():
                             try:
                                 price_val = float(price)
                                 cursor.execute("""
-                                    INSERT INTO uniform_prices (item_name, class_group, price)
-                                    VALUES (%s, %s, %s)
+                                    INSERT INTO uniform_prices (item_name, class_group, price, school_id)
+                                    VALUES (%s, %s, %s, %s)
                                     ON DUPLICATE KEY UPDATE price = VALUES(price)
-                                """, (item, group, price_val))
+                                """, (item, group, price_val, school_id))
                             except ValueError:
                                 continue
                 
@@ -924,7 +1043,7 @@ def manage_prices():
                 return redirect(url_for('manage_prices'))
             
             # Fetch existing prices
-            cursor.execute("SELECT * FROM uniform_prices")
+            cursor.execute("SELECT * FROM uniform_prices WHERE school_id = %s", (school_id,))
             price_rows = cursor.fetchall()
             
             # Map prices for easy access in template
@@ -958,6 +1077,7 @@ def manage_uniform_items():
         return redirect(url_for('index'))
     
     connection = get_db_connection()
+    school_id = g.school_id
     
     try:
         with connection.cursor() as cursor:
@@ -973,10 +1093,11 @@ def manage_uniform_items():
                     COALESCE(ist.current_stock, 0) as current_stock,
                     COALESCE(ist.reorder_level, 10) as reorder_level
                 FROM uniform_prices up
-                LEFT JOIN item_stock ist ON up.item_name = ist.item_name
+                LEFT JOIN item_stock ist ON up.item_name = ist.item_name AND up.school_id = ist.school_id
+                WHERE up.school_id = %s
                 GROUP BY up.item_name
                 ORDER BY up.item_name;
-            """)
+            """, (school_id,))
             
             items = cursor.fetchall()
             
@@ -998,6 +1119,7 @@ def add_uniform_item():
         flash("Admin access required.", "error")
         return redirect(url_for('index'))
     
+    school_id = g.school_id
     try:
         item_name = request.form.get('item_name').strip()
         class_groups = request.form.getlist('class_groups[]')
@@ -1013,7 +1135,7 @@ def add_uniform_item():
         # Check for duplicate item (generic name only)
         connection = get_db_connection()
         with connection.cursor() as cursor:
-            cursor.execute("SELECT COUNT(*) as count FROM uniform_prices WHERE item_name = %s", (item_name,))
+            cursor.execute("SELECT COUNT(*) as count FROM uniform_prices WHERE item_name = %s AND school_id = %s", (item_name, school_id))
             existing = cursor.fetchone()['count']
             
             if existing > 0:
@@ -1025,9 +1147,9 @@ def add_uniform_item():
             
             # 1. Insert into item_stock
             cursor.execute("""
-                INSERT INTO item_stock (item_name, current_stock, reorder_level)
-                VALUES (%s, 0, 10)
-            """, (item_name,))
+                INSERT INTO item_stock (item_name, current_stock, reorder_level, school_id)
+                VALUES (%s, 0, 10, %s)
+            """, (item_name, school_id))
             
             item_id = cursor.lastrowid
             
@@ -1041,9 +1163,9 @@ def add_uniform_item():
                     price = 0.0
                 
                 cursor.execute("""
-                    INSERT INTO uniform_prices (item_name, class_group, price, item_id)
-                    VALUES (%s, %s, %s, %s)
-                """, (item_name, group, price, item_id))
+                    INSERT INTO uniform_prices (item_name, class_group, price, item_id, school_id)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (item_name, group, price, item_id, school_id))
             
             connection.commit()
             flash(f"Item '{item_name}' added successfully with {len(class_groups)} class group(s)", "success")
@@ -1066,6 +1188,7 @@ def update_uniform_price():
     if not session.get('is_admin'):
         return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     
+    school_id = g.school_id
     try:
         data = request.get_json()
         item_name = data.get('item_name')
@@ -1077,8 +1200,8 @@ def update_uniform_price():
             cursor.execute("""
                 UPDATE uniform_prices 
                 SET price = %s 
-                WHERE item_name = %s AND class_group = %s
-            """, (price, item_name, class_group))
+                WHERE item_name = %s AND class_group = %s AND school_id = %s
+            """, (price, item_name, class_group, school_id))
             
             connection.commit()
             
@@ -1104,6 +1227,7 @@ def add_class_group_to_item():
     if not session.get('is_admin'):
         return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     
+    school_id = g.school_id
     try:
         item_name = request.form.get('item_name')
         class_group = request.form.get('class_group')
@@ -1118,8 +1242,8 @@ def add_class_group_to_item():
             # Check if already exists
             cursor.execute("""
                 SELECT id FROM uniform_prices 
-                WHERE item_name = %s AND class_group = %s
-            """, (item_name, class_group))
+                WHERE item_name = %s AND class_group = %s AND school_id = %s
+            """, (item_name, class_group, school_id))
             
             if cursor.fetchone():
                 return jsonify({
@@ -1128,7 +1252,7 @@ def add_class_group_to_item():
                 })
             
             # Get item_id from stock table
-            cursor.execute("SELECT item_id FROM item_stock WHERE item_name = %s", (item_name,))
+            cursor.execute("SELECT item_id FROM item_stock WHERE item_name = %s AND school_id = %s", (item_name, school_id))
             stock_item = cursor.fetchone()
             
             if not stock_item:
@@ -1139,9 +1263,9 @@ def add_class_group_to_item():
             
             # Add the new class group
             cursor.execute("""
-                INSERT INTO uniform_prices (item_name, class_group, price, item_id)
-                VALUES (%s, %s, %s, %s)
-            """, (item_name, class_group, price, stock_item['item_id']))
+                INSERT INTO uniform_prices (item_name, class_group, price, item_id, school_id)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (item_name, class_group, price, stock_item['item_id'], school_id))
             
             connection.commit()
             
@@ -1167,6 +1291,7 @@ def remove_class_group_from_item():
     if not session.get('is_admin'):
         return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     
+    school_id = g.school_id
     try:
         item_name = request.form.get('item_name')
         class_group = request.form.get('class_group')
@@ -1176,8 +1301,8 @@ def remove_class_group_from_item():
             # Check if this is the last class group
             cursor.execute("""
                 SELECT COUNT(*) as count FROM uniform_prices 
-                WHERE item_name = %s
-            """, (item_name,))
+                WHERE item_name = %s AND school_id = %s
+            """, (item_name, school_id))
             
             group_count = cursor.fetchone()['count']
             
@@ -1190,8 +1315,8 @@ def remove_class_group_from_item():
             # Remove the class group
             cursor.execute("""
                 DELETE FROM uniform_prices 
-                WHERE item_name = %s AND class_group = %s
-            """, (item_name, class_group))
+                WHERE item_name = %s AND class_group = %s AND school_id = %s
+            """, (item_name, class_group, school_id))
             
             connection.commit()
             
@@ -1215,56 +1340,40 @@ def remove_class_group_from_item():
 def delete_uniform_item():
     """Delete uniform item completely"""
     if not session.get('is_admin'):
-        flash("Admin access required.", "error")
-        return redirect(url_for('index'))
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
     
+    school_id = g.school_id
     try:
-        item_name = request.form.get('item_name')
+        data = request.get_json()
+        item_name = data.get('item_name')
         
         connection = get_db_connection()
         with connection.cursor() as cursor:
-            # Check if item has been issued
-            cursor.execute("""
-                SELECT COUNT(*) as count FROM uniform_receipts 
-                WHERE item_name = %s
-            """, (item_name,))
+            # 1. Delete all prices
+            cursor.execute("DELETE FROM uniform_prices WHERE item_name = %s AND school_id = %s", (item_name, school_id))
             
-            issued_count = cursor.fetchone()['count']
+            # 2. Delete stock entry
+            cursor.execute("DELETE FROM item_stock WHERE item_name = %s AND school_id = %s", (item_name, school_id))
             
-            if issued_count > 0:
-                flash(f'Cannot delete "{item_name}" - it has been issued to {issued_count} student(s)', 'error')
-                return redirect(url_for('manage_uniform_items'))
-            
-            # Start transaction
-            connection.begin()
-            
-            # Get item_id for cleanup
-            cursor.execute("SELECT item_id FROM item_stock WHERE item_name = %s", (item_name,))
-            stock_item = cursor.fetchone()
-            
-            if stock_item:
-                # Delete from uniform_prices
-                cursor.execute("DELETE FROM uniform_prices WHERE item_name = %s", (item_name,))
-                
-                # Delete from item_stock
-                cursor.execute("DELETE FROM item_stock WHERE item_id = %s", (stock_item['item_id'],))
-                
-                # Delete from stock_movements
-                cursor.execute("DELETE FROM stock_movements WHERE item_id = %s", (stock_item['item_id'],))
+            # 3. Delete movements (optional but recommended for orphan cleanup)
+            cursor.execute("DELETE FROM stock_movements WHERE item_name = %s AND school_id = %s", (item_name, school_id))
             
             connection.commit()
-            flash(f'Item "{item_name}" deleted successfully', 'success')
+            
+            return jsonify({
+                'success': True,
+                'message': f'Uniform item {item_name} deleted successfully'
+            })
             
     except Exception as e:
-        if 'connection' in locals():
-            connection.rollback()
-        app.logger.error(f"Error deleting item: {str(e)}")
-        flash(f'Error deleting item: {str(e)}', 'error')
+        app.logger.error(f"Error deleting items: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Error deleting items: {str(e)}'
+        }), 500
     finally:
         if 'connection' in locals():
             connection.close()
-    
-    return redirect(url_for('manage_uniform_items'))
 
 # Clean up duplicate items function
 @app.route('/admin/cleanup_duplicate_items')
@@ -1308,7 +1417,7 @@ def cleanup_duplicate_items():
                 generic_name = generic_name.replace(' Playgroup-PP2', '').strip()
                 
                 # Check if generic item exists
-                cursor.execute("SELECT COUNT(*) as count FROM uniform_prices WHERE item_name = %s", (generic_name,))
+                cursor.execute("SELECT COUNT(*) as count FROM uniform_prices WHERE item_name = %s AND school_id = %s", (generic_name, school_id))
                 generic_exists = cursor.fetchone()['count'] > 0
                 
                 if not generic_exists:
@@ -1326,24 +1435,24 @@ def cleanup_duplicate_items():
                     
                     if class_group:
                         # Get price from duplicate
-                        cursor.execute("SELECT price FROM uniform_prices WHERE item_name = %s LIMIT 1", (duplicate,))
+                        cursor.execute("SELECT price FROM uniform_prices WHERE item_name = %s AND school_id = %s LIMIT 1", (duplicate, school_id))
                         price_row = cursor.fetchone()
                         
                         if price_row:
                             # Create generic item
                             cursor.execute("""
-                                INSERT IGNORE INTO item_stock (item_name, current_stock, reorder_level)
-                                VALUES (%s, 0, 10)
-                            """, (generic_name,))
+                                INSERT IGNORE INTO item_stock (item_name, current_stock, reorder_level, school_id)
+                                VALUES (%s, 0, 10, %s)
+                            """, (generic_name, school_id))
                             
-                            cursor.execute("SELECT item_id FROM item_stock WHERE item_name = %s", (generic_name,))
+                            cursor.execute("SELECT item_id FROM item_stock WHERE item_name = %s AND school_id = %s", (generic_name, school_id))
                             stock_item = cursor.fetchone()
                             
                             if stock_item:
                                 cursor.execute("""
-                                    INSERT INTO uniform_prices (item_name, class_group, price, item_id)
-                                    VALUES (%s, %s, %s, %s)
-                                """, (generic_name, class_group, price_row['price'], stock_item['item_id']))
+                                    INSERT INTO uniform_prices (item_name, class_group, price, item_id, school_id)
+                                    VALUES (%s, %s, %s, %s, %s)
+                                """, (generic_name, class_group, price_row['price'], stock_item['item_id'], school_id))
             
             connection.commit()
             flash("Duplicate items cleaned up successfully", "success")
@@ -1367,14 +1476,16 @@ def export_prices():
         flash("Admin access required.", "error")
         return redirect(url_for('index'))
     
+    school_id = g.school_id
     connection = get_db_connection()
     cursor = connection.cursor()
     
     cursor.execute("""
         SELECT item_name, class_group, price 
         FROM uniform_prices 
+        WHERE school_id = %s
         ORDER BY item_name, class_group
-    """)
+    """, (school_id,))
     prices = cursor.fetchall()
     connection.close()
     
@@ -1413,14 +1524,14 @@ def import_prices():
         flash("Admin access required.", "error")
         return redirect(url_for('index'))
     
+    school_id = g.school_id
     connection = get_db_connection()
     try:
         with connection.cursor() as cursor:
             # Fetch constants needed for the dashboard/form
-            cursor.execute("SELECT DISTINCT item_name FROM item_stock")
+            cursor.execute("SELECT DISTINCT item_name FROM item_stock WHERE school_id = %s", (school_id,))
             uniform_items = [row['item_name'] for row in cursor.fetchall()]
             
-            cursor.execute("SELECT DISTINCT class_group FROM uniform_term_dates") # Sample fallback or usage
             # Actually use the predefined class groups
             class_groups = ['Playgroup-PP2', 'Grade 1-3', 'Grade 4-6', 'Grade 7-9']
 
@@ -1430,16 +1541,16 @@ def import_prices():
                         price = request.form.get(f'price_{item}_{group}')
                         if price is not None and price.strip() != '':
                             cursor.execute("""
-                                INSERT INTO uniform_prices (item_name, class_group, price)
-                                VALUES (%s, %s, %s)
+                                INSERT INTO uniform_prices (item_name, class_group, price, school_id)
+                                VALUES (%s, %s, %s, %s)
                                 ON DUPLICATE KEY UPDATE price = VALUES(price)
-                            """, (item, group, price))
+                            """, (item, group, price, school_id))
                 connection.commit()
                 flash("Prices updated successfully.")
                 return redirect(url_for('manage_prices'))
 
             # Fetch existing prices
-            cursor.execute("SELECT * FROM uniform_prices")
+            cursor.execute("SELECT * FROM uniform_prices WHERE school_id = %s", (school_id,))
             price_rows = cursor.fetchall()
 
             # Map prices for easy access in template
@@ -1481,10 +1592,10 @@ def issued_summary():
                 SUM(quantity) AS total_qty, 
                 SUM(total) AS total_value
             FROM uniform_receipts
-            WHERE issued_on BETWEEN %s AND %s
+            WHERE issued_on BETWEEN %s AND %s AND school_id = %s
             GROUP BY item_name
             ORDER BY item_name
-        """, (date_from, to_datetime))
+        """, (date_from, to_datetime, g.school_id))
         summary_data = cursor.fetchall()
 
     if summary_data:
@@ -1510,13 +1621,14 @@ def reports_dashboard():
 @login_required
 def student_history(admno):
     connection = get_db_connection()
+    school_id = g.school_id
     with connection.cursor() as cursor:
         cursor.execute("""
             SELECT receipt_no, item_name, quantity, price, total, yr, term, issued_on
             FROM uniform_receipts
-            WHERE AdmNo = %s
+            WHERE AdmNo = %s AND school_id = %s
             ORDER BY issued_on DESC
-        """, (admno,))
+        """, (admno, school_id))
         records = cursor.fetchall()
 
     connection.close()
@@ -1528,6 +1640,7 @@ def student_history(admno):
 @login_required
 def item_totals():
     connection = get_db_connection()
+    school_id = g.school_id
     with connection.cursor() as cursor:
         cursor.execute("""
             SELECT 
@@ -1535,9 +1648,10 @@ def item_totals():
                 SUM(quantity) AS total_issued, 
                 SUM(total) AS total_value 
             FROM uniform_receipts
+            WHERE school_id = %s
             GROUP BY item_name
             ORDER BY item_name
-        """)
+        """, (school_id,))
         totals = cursor.fetchall()
     connection.close()
 
@@ -1562,9 +1676,9 @@ def receipts_register():
             receipt_no, AdmNo, student_name, class_name, yr, term, 
             SUM(total) AS total_amount, issued_on 
         FROM uniform_receipts
-        WHERE 1=1
+        WHERE school_id = %s
     """
-    params = []
+    params = [g.school_id]
 
     # Dynamic filters
     if filters["admno"]:
@@ -1618,17 +1732,19 @@ def student_search():
         cursor = connection.cursor()
         try:
             # Search by admission number or name
+            school_id = g.school_id or 1
             cursor.execute("""
                 SELECT DISTINCT s.AdmNo, s.FName, s.MName, s.SName, 
-                       c.class_name, a.thisYear
+                                 c.class_name, a.thisYear
                 FROM studentinfo s
-                LEFT JOIN classallocation a ON s.AdmNo = a.AdmNo
-                LEFT JOIN classes c ON a.classID = c.classID
-                WHERE s.AdmNo LIKE %s 
-                   OR CONCAT(s.FName, ' ', COALESCE(s.MName, ''), ' ', s.SName) LIKE %s
+                LEFT JOIN classallocation a ON s.AdmNo = a.AdmNo AND s.school_id = a.school_id
+                LEFT JOIN classes c ON a.classID = c.classID AND a.school_id = c.school_id
+                WHERE (s.AdmNo LIKE %s 
+                     OR CONCAT(s.FName, ' ', COALESCE(s.MName, ''), ' ', s.SName) LIKE %s)
+                  AND s.school_id = %s
                 ORDER BY s.FName, s.SName
                 LIMIT 50
-            """, (f"%{search_term}%", f"%{search_term}%"))
+            """, (f"%{search_term}%", f"%{search_term}%", school_id))
             results = cursor.fetchall()
         finally:
             connection.close()
@@ -1643,12 +1759,14 @@ def cancel_receipt(receipt_no):
     cursor = connection.cursor()
 
     try:
-        # 1. Get current date and active term
+        # 1. Get current date and active term (tenant-scoped)
         today = datetime.now().date()
+        school_id = getattr(g, 'school_id', 1)
         cursor.execute("""
             SELECT term_number FROM uniform_term_dates 
             WHERE %s BETWEEN start_date AND end_date
-        """, (today,))
+              AND school_id = %s
+        """, (today, school_id))
         term_row = cursor.fetchone()
 
         if not term_row:
@@ -1656,12 +1774,13 @@ def cancel_receipt(receipt_no):
 
         current_term = term_row['term_number']
 
-        # 2. Fetch receipt info — NO GROUP BY needed
+        # 2. Fetch receipt info
         cursor.execute("""
             SELECT AdmNo, yr, term, SUM(total) AS total_amount 
             FROM uniform_receipts 
-            WHERE receipt_no = %s
-        """, (receipt_no,))
+            WHERE receipt_no = %s AND school_id = %s
+            GROUP BY AdmNo, yr, term
+        """, (receipt_no, school_id))
         receipt = cursor.fetchone()
 
         if not receipt:
@@ -1676,13 +1795,13 @@ def cancel_receipt(receipt_no):
         total_amount = Decimal(str(receipt['total_amount']))
 
         # 3. Delete records in uniform_receipts
-        cursor.execute("DELETE FROM uniform_receipts WHERE receipt_no = %s", (receipt_no,))
+        cursor.execute("DELETE FROM uniform_receipts WHERE receipt_no = %s AND school_id = %s", (receipt_no, school_id))
 
         # 4. Adjust fodebit (legacy) + fee_ledger (modern)
         cursor.execute("""
             SELECT amount FROM fodebit 
-            WHERE AdmNo=%s AND yr=%s AND term=%s AND r_for='Uniform'
-        """, (admno, year, term))
+            WHERE AdmNo=%s AND yr=%s AND term=%s AND r_for='Uniform' AND school_id = %s
+        """, (admno, year, term, school_id))
         fodebit = cursor.fetchone()
 
         if fodebit:
@@ -1691,35 +1810,35 @@ def cancel_receipt(receipt_no):
             if new_amount > 0:
                 cursor.execute("""
                     UPDATE fodebit SET amount=%s, _date=NOW() 
-                    WHERE AdmNo=%s AND yr=%s AND term=%s AND r_for='Uniform'
-                """, (new_amount, admno, year, term))
+                    WHERE AdmNo=%s AND yr=%s AND term=%s AND r_for='Uniform' AND school_id = %s
+                """, (new_amount, admno, year, term, school_id))
             else:
                 cursor.execute("""
                     DELETE FROM fodebit 
-                    WHERE AdmNo=%s AND yr=%s AND term=%s AND r_for='Uniform'
-                """, (admno, year, term))
+                    WHERE AdmNo=%s AND yr=%s AND term=%s AND r_for='Uniform' AND school_id = %s
+                """, (admno, year, term, school_id))
         
         # Modern integration: Add ADJUSTMENT to ledger to reverse the charge
         try:
-            cursor.execute("SELECT id FROM academic_years WHERE year = %s", (year,))
+            cursor.execute("SELECT id FROM academic_years WHERE year = %s AND school_id = %s", (year, school_id))
             ay_row = cursor.fetchone()
             ay_id = ay_row['id'] if ay_row else 1
             
-            cursor.execute("SELECT id FROM uniform_term_dates WHERE term_number = %s AND year = %s", (term, year))
+            cursor.execute("SELECT id FROM uniform_term_dates WHERE term_number = %s AND year = %s AND school_id = %s", (term, year, school_id))
             term_row = cursor.fetchone()
             term_id = term_row['id'] if term_row else 1
             
-            cursor.execute("SELECT balance_after FROM fee_ledger WHERE admno = %s ORDER BY id DESC LIMIT 1", (admno,))
+            cursor.execute("SELECT balance_after FROM fee_ledger WHERE admno = %s AND school_id = %s ORDER BY id DESC LIMIT 1", (admno, school_id))
             bal_row = cursor.fetchone()
             prev_balance = Decimal(str(bal_row['balance_after'])) if bal_row and bal_row['balance_after'] else Decimal("0.00")
             new_balance = prev_balance - total_amount # Reducing the debt because charge is cancelled
             
             cursor.execute("""
-                INSERT INTO fee_ledger (admno, academic_year_id, term_id, type, amount, balance_after, description, reference_no, transaction_date, created_by)
-                VALUES (%s, %s, %s, 'ADJUSTMENT', %s, %s, %s, %s, CURDATE(), %s)
-            """, (admno, ay_id, term_id, total_amount, new_balance, f"VOID UNIFORM RECEIPT: {receipt_no}", f"VOID-{receipt_no}", session.get('userNo')))
+                INSERT INTO fee_ledger (admno, academic_year_id, term_id, type, amount, balance_after, description, reference_no, transaction_date, created_by, school_id)
+                VALUES (%s, %s, %s, 'ADJUSTMENT', %s, %s, %s, %s, CURDATE(), %s, %s)
+            """, (admno, ay_id, term_id, total_amount, new_balance, f"VOID UNIFORM RECEIPT: {receipt_no}", f"VOID-{receipt_no}", session.get('userNo'), school_id))
         except Exception as ledger_err:
-            print(f"Fee ledger reversal error: {ledger_err}")
+            app.logger.error(f"Fee ledger reversal error: {ledger_err}")
 
         connection.commit()
         return jsonify({'success': True, 'message': f'Receipt {receipt_no} cancelled successfully.'})
@@ -1770,7 +1889,7 @@ def record_service():
         mileage = int(request.form.get('mileage_at_service'))
 
         # Get current mileage
-        cursor.execute("SELECT current_mileage FROM buses WHERE id=%s", (bus_id,))
+        cursor.execute("SELECT current_mileage FROM buses WHERE id=%s AND school_id = %s", (bus_id, g.school_id))
         bus = cursor.fetchone()
         if not bus:
             flash("Invalid bus selected.", "error")
@@ -1784,12 +1903,12 @@ def record_service():
 
         # Insert service record
         cursor.execute("""
-            INSERT INTO service_records (bus_id, service_date, service_type, description, cost, garage_name, mileage_at_service)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, (bus_id, service_date, service_type, description, cost, garage_name, mileage))
+            INSERT INTO service_records (bus_id, service_date, service_type, description, cost, garage_name, mileage_at_service, school_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """, (bus_id, service_date, service_type, description, cost, garage_name, mileage, g.school_id))
 
         # Update bus current mileage
-        cursor.execute("UPDATE buses SET current_mileage=%s WHERE id=%s", (mileage, bus_id))
+        cursor.execute("UPDATE buses SET current_mileage=%s WHERE id=%s AND school_id = %s", (mileage, bus_id, g.school_id))
 
         connection.commit()
         connection.close()
@@ -1798,7 +1917,7 @@ def record_service():
         return redirect(url_for('service_register'))
 
     # Load buses for dropdown
-    cursor.execute("SELECT id, reg_no FROM buses WHERE active=1 ORDER BY reg_no")
+    cursor.execute("SELECT id, reg_no FROM buses WHERE active=1 AND school_id = %s ORDER BY reg_no", (g.school_id,))
     buses = cursor.fetchall()
     connection.close()
 
@@ -1811,7 +1930,7 @@ def fleet_dashboard():
     connection = get_db_connection()
     cursor = connection.cursor()
 
-    cursor.execute("SELECT id, reg_no FROM buses WHERE active=1 ORDER BY reg_no")
+    cursor.execute("SELECT id, reg_no FROM buses WHERE active=1 AND school_id = %s ORDER BY reg_no", (g.school_id,))
     buses = cursor.fetchall()
     connection.close()
 
@@ -1834,21 +1953,21 @@ def manage_buses():
         current_mileage = request.form.get('current_mileage')
 
         # Check if reg_no already exists
-        cursor.execute("SELECT COUNT(*) AS count FROM buses WHERE reg_no = %s", (reg_no,))
+        cursor.execute("SELECT COUNT(*) AS count FROM buses WHERE reg_no = %s AND school_id = %s", (reg_no, g.school_id))
         existing = cursor.fetchone()['count']
 
         if existing > 0:
             flash(f'A bus with registration number {reg_no} already exists.', 'error')
         else:
             cursor.execute("""
-                INSERT INTO buses (reg_no, make, capacity, driver_name,current_mileage)
-                VALUES (%s, %s, %s, %s,%s)
-            """, (reg_no, make, capacity, driver,current_mileage))
+                INSERT INTO buses (reg_no, make, capacity, driver_name,current_mileage, school_id)
+                VALUES (%s, %s, %s, %s,%s, %s)
+            """, (reg_no, make, capacity, driver,current_mileage, g.school_id))
             connection.commit()
             flash('Bus added successfully.', 'success')
 
     # Fetch buses for display
-    cursor.execute("SELECT * FROM buses WHERE active=1")
+    cursor.execute("SELECT * FROM buses WHERE active=1 AND school_id = %s", (g.school_id,))
     buses = cursor.fetchall()
 
     connection.close()
@@ -1878,8 +1997,8 @@ def edit_bus(bus_id):
         # Check for duplicate reg_no (excluding current bus)
         cursor.execute("""
             SELECT COUNT(*) AS count FROM buses 
-            WHERE reg_no = %s AND id != %s
-        """, (reg_no, bus_id))
+            WHERE reg_no = %s AND id != %s AND school_id = %s
+        """, (reg_no, bus_id, g.school_id))
         existing = cursor.fetchone()['count']
 
         if existing > 0:
@@ -1888,13 +2007,13 @@ def edit_bus(bus_id):
             cursor.execute("""
                 UPDATE buses 
                 SET reg_no=%s, make=%s, capacity=%s, driver_name=%s,current_mileage=%s 
-                WHERE id=%s
-            """, (reg_no, make, capacity, driver,current_mileage, bus_id))
+                WHERE id=%s AND school_id = %s
+            """, (reg_no, make, capacity, driver,current_mileage, bus_id, g.school_id))
             connection.commit()
             flash('Bus details updated successfully.', 'success')
             return redirect(url_for('manage_buses'))
 
-    cursor.execute("SELECT * FROM buses WHERE id=%s AND active=1", (bus_id,))
+    cursor.execute("SELECT * FROM buses WHERE id=%s AND active=1 AND school_id = %s", (bus_id, g.school_id))
     bus = cursor.fetchone()
     connection.close()
 
@@ -1912,7 +2031,7 @@ def delete_bus(bus_id):
     connection = get_db_connection()
     cursor = connection.cursor()
 
-    cursor.execute("UPDATE buses SET active=0 WHERE id=%s", (bus_id,))
+    cursor.execute("UPDATE buses SET active=0 WHERE id=%s AND school_id = %s", (bus_id, g.school_id))
     connection.commit()
     connection.close()
 
@@ -1932,15 +2051,15 @@ def issue_fuel():
         issued_by = 'System'
 
         # Generate voucher number
-        cursor.execute("SELECT COUNT(*) as count FROM fuel_vouchers")
+        cursor.execute("SELECT COUNT(*) as count FROM fuel_vouchers WHERE school_id = %s", (g.school_id,))
         count = cursor.fetchone()['count']
         voucher_no = f'FUEL-{count + 1:04d}'
 
         # 🔧 Fixed: Removed driver_name from INSERT statement
         cursor.execute("""
-            INSERT INTO fuel_vouchers (voucher_no, bus_id, issued_by, remarks)
-            VALUES (%s, %s, %s, %s)
-        """, (voucher_no, bus_id, issued_by, remarks))
+            INSERT INTO fuel_vouchers (voucher_no, bus_id, issued_by, remarks, school_id)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (voucher_no, bus_id, issued_by, remarks, g.school_id))
 
         connection.commit()
         connection.close()
@@ -1949,7 +2068,7 @@ def issue_fuel():
         return redirect(url_for('issue_fuel'))
 
     # Load buses for dropdown
-    cursor.execute("SELECT id, reg_no, driver_name FROM buses WHERE active=1")
+    cursor.execute("SELECT id, reg_no, driver_name FROM buses WHERE active=1 AND school_id = %s", (g.school_id,))
     buses = cursor.fetchall()
 
     connection.close()
@@ -1965,9 +2084,9 @@ def print_voucher(voucher_no):
     cursor.execute("""
         SELECT fv.*, b.reg_no, b.driver_name 
         FROM fuel_vouchers fv
-        JOIN buses b ON fv.bus_id = b.id
-        WHERE fv.voucher_no = %s
-    """, (voucher_no,))
+        JOIN buses b ON fv.bus_id = b.id AND fv.school_id = b.school_id
+        WHERE fv.voucher_no = %s AND fv.school_id = %s
+    """, (voucher_no, g.school_id))
     voucher = cursor.fetchone()
 
     if not voucher:
@@ -1977,14 +2096,15 @@ def print_voucher(voucher_no):
     connection.close()
     return render_template('print_fuel_voucher.html', voucher=voucher)
 #Fuel voucher number generation function
-def generate_voucher_no():
+def generate_voucher_no(school_id):
     connection = get_db_connection()
     cursor = connection.cursor()
 
     cursor.execute("""
         SELECT voucher_no FROM fuel_vouchers 
+        WHERE school_id = %s
         ORDER BY id DESC LIMIT 1
-    """)
+    """, (school_id,))
     last_voucher = cursor.fetchone()
 
     if last_voucher and last_voucher['voucher_no']:
@@ -2038,11 +2158,11 @@ def voucher_register():
             b.driver_name,
             CASE WHEN fi.id IS NOT NULL THEN 'Yes' ELSE 'No' END AS invoiced
         FROM fuel_vouchers fv
-        JOIN buses b ON fv.bus_id = b.id
-        LEFT JOIN fuel_invoices fi ON fv.id = fi.voucher_id
-        WHERE fv.issued_on BETWEEN %s AND %s
+        JOIN buses b ON fv.bus_id = b.id AND fv.school_id = b.school_id
+        LEFT JOIN fuel_invoices fi ON fv.id = fi.voucher_id AND fv.school_id = fi.school_id
+        WHERE fv.school_id = %s AND fv.issued_on BETWEEN %s AND %s
     """
-    params = [date_from, to_datetime]
+    params = [g.school_id, date_from, to_datetime]
 
     if filters.get('reg_no'):
         query += " AND b.reg_no = %s"
@@ -2086,9 +2206,10 @@ def oil_register():
         cursor.execute("""
             SELECT o.*, b.reg_no 
             FROM oil_records o 
-            JOIN buses b ON o.bus_id = b.id
+            JOIN buses b ON o.bus_id = b.id AND o.school_id = b.school_id
+            WHERE o.school_id = %s
             ORDER BY o.date DESC
-        """)
+        """, (g.school_id,))
         records = cursor.fetchall()
     connection.close()
 
@@ -2114,7 +2235,7 @@ def record_fuel_invoice():
             connection.begin()
 
             # 1. Get bus_id and validate voucher
-            cursor.execute("SELECT bus_id FROM fuel_vouchers WHERE id=%s", (voucher_id,))
+            cursor.execute("SELECT bus_id FROM fuel_vouchers WHERE id=%s AND school_id = %s", (voucher_id, g.school_id))
             bus_row = cursor.fetchone()
             if not bus_row:
                 flash("Invalid voucher selected.", "error")
@@ -2125,9 +2246,9 @@ def record_fuel_invoice():
             cursor.execute("""
                 SELECT MAX(fi.odometer_reading) AS last_odometer
                 FROM fuel_invoices fi
-                JOIN fuel_vouchers fv ON fi.voucher_id = fv.id
-                WHERE fv.bus_id = %s
-            """, (bus_id,))
+                JOIN fuel_vouchers fv ON fi.voucher_id = fv.id AND fi.school_id = fv.school_id
+                WHERE fv.bus_id = %s AND fi.school_id = %s
+            """, (bus_id, g.school_id))
             last_odometer = cursor.fetchone()['last_odometer'] or 0
 
             if odometer_reading and odometer_reading.isdigit():
@@ -2142,17 +2263,17 @@ def record_fuel_invoice():
             # 3. Record the invoice
             cursor.execute("""
                 INSERT INTO fuel_invoices 
-                (voucher_id, date, actual_litres, amount_paid, petrol_station, odometer_reading, remarks)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """, (voucher_id, date, actual_litres, amount_paid, petrol_station, odometer_reading, remarks))
+                (voucher_id, date, actual_litres, amount_paid, petrol_station, odometer_reading, remarks, school_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """, (voucher_id, date, actual_litres, amount_paid, petrol_station, odometer_reading, remarks, g.school_id))
 
             # 4. Update the voucher (removed last_updated column)
             cursor.execute("""
                 UPDATE fuel_vouchers 
                 SET litres = %s, 
                     total_cost = %s
-                WHERE id = %s
-            """, (actual_litres, amount_paid, voucher_id))
+                WHERE id = %s AND school_id = %s
+            """, (actual_litres, amount_paid, voucher_id, g.school_id))
 
             connection.commit()
             flash('Fuel invoice recorded and voucher updated successfully!', 'success')
@@ -2169,12 +2290,12 @@ def record_fuel_invoice():
     cursor.execute("""
         SELECT fv.id, fv.voucher_no, b.reg_no 
         FROM fuel_vouchers fv
-        JOIN buses b ON fv.bus_id = b.id
-        WHERE NOT EXISTS (
-            SELECT 1 FROM fuel_invoices WHERE voucher_id = fv.id
+        JOIN buses b ON fv.bus_id = b.id AND fv.school_id = b.school_id
+        WHERE fv.school_id = %s AND NOT EXISTS (
+            SELECT 1 FROM fuel_invoices WHERE voucher_id = fv.id AND school_id = fv.school_id
         )
         ORDER BY fv.issued_on DESC
-    """)
+    """, (g.school_id,))
     vouchers = cursor.fetchall()
     connection.close()
     
@@ -2210,12 +2331,12 @@ def fuel_consumption_report():
             IFNULL(SUM(fi.actual_litres),0) AS total_litres,
             IFNULL(SUM(fi.amount_paid),0) AS total_amount
         FROM buses b
-        LEFT JOIN fuel_vouchers fv ON b.id = fv.bus_id
-        LEFT JOIN fuel_invoices fi ON fv.id = fi.voucher_id
-        WHERE fv.issued_on BETWEEN %s AND %s
+        LEFT JOIN fuel_vouchers fv ON b.id = fv.bus_id AND b.school_id = fv.school_id
+        LEFT JOIN fuel_invoices fi ON fv.id = fi.voucher_id AND fv.school_id = fi.school_id
+        WHERE b.school_id = %s AND fv.issued_on BETWEEN %s AND %s
         GROUP BY b.id
         ORDER BY b.reg_no
-    """, (from_date, f"{to_date} 23:59:59"))
+    """, (g.school_id, from_date, f"{to_date} 23:59:59"))
 
     report = cursor.fetchall()
     connection.close()
@@ -2242,7 +2363,7 @@ def fuel_consumption_report():
 def get_driver(bus_id):
     connection = get_db_connection()
     with connection.cursor() as cursor:
-        cursor.execute("SELECT driver_name FROM buses WHERE id=%s AND active=1", (bus_id,))
+        cursor.execute("SELECT driver_name FROM buses WHERE id=%s AND school_id = %s AND active=1", (bus_id, g.school_id))
         bus = cursor.fetchone()
     connection.close()
     return jsonify({'driver_name': bus['driver_name'] if bus else ''})
@@ -2257,9 +2378,10 @@ def service_register():
     cursor.execute("""
         SELECT s.id, b.reg_no, s.service_date, s.service_type, s.description, s.cost, s.garage_name, s.mileage_at_service
         FROM service_records s
-        JOIN buses b ON s.bus_id = b.id
+        JOIN buses b ON s.bus_id = b.id AND s.school_id = b.school_id
+        WHERE s.school_id = %s
         ORDER BY s.service_date DESC
-    """)
+    """, (g.school_id,))
     services = cursor.fetchall()
     connection.close()
 
@@ -2279,11 +2401,12 @@ def service_reminders():
                DATEDIFF(CURDATE(), MAX(s.service_date)) as days_since_service,
                MAX(s.mileage_at_service) + 5000 as next_service_mileage
         FROM service_records s
-        JOIN buses b ON s.bus_id = b.id
+        JOIN buses b ON s.bus_id = b.id AND s.school_id = b.school_id
+        WHERE b.school_id = %s
         GROUP BY b.id
         HAVING next_service_mileage <= b.current_mileage OR days_since_service >= 180
         ORDER BY b.reg_no
-    """)
+    """, (g.school_id,))
     reminders = cursor.fetchall()
     connection.close()
 
@@ -2306,12 +2429,12 @@ def service_costs_report():
             COUNT(s.id) AS service_count,
             SUM(s.cost) AS total_service_cost
         FROM service_records s
-        JOIN buses b ON s.bus_id = b.id
-        WHERE s.service_date BETWEEN %s AND %s
+        JOIN buses b ON s.bus_id = b.id AND s.school_id = b.school_id
+        WHERE s.school_id = %s AND s.service_date BETWEEN %s AND %s
         GROUP BY b.id
         ORDER BY b.reg_no
     """
-    cursor.execute(query, (date_from, date_to))
+    cursor.execute(query, (g.school_id, date_from, date_to))
     services = cursor.fetchall()
 
     connection.close()
@@ -2340,7 +2463,7 @@ def fuel_consumption_efficiency():
    
 
 
-    # Fetch all fuel invoices sorted by bus and date
+    # Fetch all fuel invoices sorted by bus and date for current school
     cursor.execute("""
         SELECT 
             b.reg_no,
@@ -2348,11 +2471,12 @@ def fuel_consumption_efficiency():
             fi.actual_litres,
             fi.odometer_reading
         FROM fuel_invoices fi
-        JOIN fuel_vouchers fv ON fi.voucher_id = fv.id
-        JOIN buses b ON fv.bus_id = b.id
-        WHERE b.active = 1
+        JOIN fuel_vouchers fv ON fi.voucher_id = fv.id AND fi.school_id = fv.school_id
+        JOIN buses b ON fv.bus_id = b.id AND fv.school_id = b.school_id
+        WHERE fi.school_id = %s AND b.active = 1
+          AND fi.date BETWEEN %s AND %s
         ORDER BY b.reg_no, fi.date ASC
-    """)
+    """, (g.school_id, date_from, date_to))
 
     records = cursor.fetchall()
 
@@ -2440,13 +2564,13 @@ def fuel_efficiency_report():
             (MAX(fi.odometer_reading) - MIN(fi.odometer_reading)) AS distance_covered,
             (MAX(fi.odometer_reading) - MIN(fi.odometer_reading)) / SUM(fi.actual_litres) AS km_per_litre
         FROM fuel_invoices fi
-        JOIN fuel_vouchers fv ON fi.voucher_id = fv.id
-        JOIN buses b ON fv.bus_id = b.id
-        WHERE fi.date BETWEEN %s AND %s
+        JOIN fuel_vouchers fv ON fi.voucher_id = fv.id AND fi.school_id = fv.school_id
+        JOIN buses b ON fv.bus_id = b.id AND fv.school_id = b.school_id
+        WHERE fi.school_id = %s AND fi.date BETWEEN %s AND %s
         GROUP BY b.reg_no
         ORDER BY b.reg_no
     """
-    cursor.execute(query, (date_from, date_to))
+    cursor.execute(query, (g.school_id, date_from, date_to))
     records = cursor.fetchall()
 
     connection.close()
@@ -2472,11 +2596,12 @@ def fuel_consumption_chart():
     cursor.execute("""
         SELECT b.reg_no, SUM(fi.actual_litres) AS total_litres
         FROM fuel_invoices fi
-        JOIN fuel_vouchers fv ON fi.voucher_id = fv.id
-        JOIN buses b ON fv.bus_id = b.id
+        JOIN fuel_vouchers fv ON fi.voucher_id = fv.id AND fi.school_id = fv.school_id
+        JOIN buses b ON fv.bus_id = b.id AND fv.school_id = b.school_id
+        WHERE fi.school_id = %s
         GROUP BY b.reg_no
         ORDER BY b.reg_no
-    """)
+    """, (g.school_id,))
     data = cursor.fetchall()
     connection.close()
 
@@ -2501,12 +2626,12 @@ def print_fuel_consumption_report():
             IFNULL(SUM(fi.actual_litres),0) AS total_litres,
             IFNULL(SUM(fi.amount_paid),0) AS total_amount
         FROM buses b
-        LEFT JOIN fuel_vouchers fv ON b.id = fv.bus_id
-        LEFT JOIN fuel_invoices fi ON fv.id = fi.voucher_id
-        WHERE fv.issued_on BETWEEN %s AND %s
+        LEFT JOIN fuel_vouchers fv ON b.id = fv.bus_id AND b.school_id = fv.school_id
+        LEFT JOIN fuel_invoices fi ON fv.id = fi.voucher_id AND fv.school_id = fi.school_id
+        WHERE b.school_id = %s AND fv.issued_on BETWEEN %s AND %s
         GROUP BY b.id
         ORDER BY b.reg_no
-    """, (from_date, f"{to_date} 23:59:59"))
+    """, (g.school_id, from_date, f"{to_date} 23:59:59"))
 
     report = cursor.fetchall()
     connection.close()
@@ -2537,12 +2662,12 @@ def fuel_expenses_report():
             COUNT(fv.id) AS vouchers_issued,
             IFNULL(SUM(fv.total_cost), 0) AS total_expense
         FROM fuel_vouchers fv
-        JOIN buses b ON fv.bus_id = b.id
-        WHERE fv.issued_on BETWEEN %s AND %s
+        JOIN buses b ON fv.bus_id = b.id AND fv.school_id = b.school_id
+        WHERE fv.school_id = %s AND fv.issued_on BETWEEN %s AND %s
         GROUP BY b.id
         ORDER BY b.reg_no
     """
-    cursor.execute(query, (date_from, f"{date_to} 23:59:59"))
+    cursor.execute(query, (g.school_id, date_from, f"{date_to} 23:59:59"))
     expenses = cursor.fetchall()
 
     connection.close()
@@ -2569,12 +2694,12 @@ def get_fuel_invoices(reg_no, from_date, to_date):
             fi.petrol_station, 
             fi.odometer_reading
         FROM fuel_invoices fi
-        JOIN fuel_vouchers fv ON fi.voucher_id = fv.id
-        JOIN buses b ON fv.bus_id = b.id
-        WHERE b.reg_no = %s AND fi.date BETWEEN %s AND %s
+        JOIN fuel_vouchers fv ON fi.voucher_id = fv.id AND fi.school_id = fv.school_id
+        JOIN buses b ON fv.bus_id = b.id AND fv.school_id = b.school_id
+        WHERE b.reg_no = %s AND fi.school_id = %s AND fi.date BETWEEN %s AND %s
         ORDER BY fi.date ASC
     """
-    cursor.execute(query, (reg_no, from_date, to_date))
+    cursor.execute(query, (reg_no, g.school_id, from_date, to_date))
     invoices = cursor.fetchall()
     connection.close()
 
@@ -2605,7 +2730,7 @@ def bus_statement():
 
 
     # Fetch bus info
-    cursor.execute("SELECT reg_no FROM buses WHERE id=%s", (bus_id,))
+    cursor.execute("SELECT reg_no FROM buses WHERE id=%s AND school_id = %s", (bus_id, g.school_id))
     bus = cursor.fetchone()
     if not bus:
         flash("Bus not found.", "error")
@@ -2617,21 +2742,21 @@ def bus_statement():
     cursor.execute("""
     SELECT fi.date, fi.actual_litres, fi.amount_paid, fi.petrol_station, fi.odometer_reading
     FROM fuel_invoices fi
-    JOIN fuel_vouchers fv ON fi.voucher_id = fv.id
-    WHERE fv.bus_id = %s
+    JOIN fuel_vouchers fv ON fi.voucher_id = fv.id AND fi.school_id = fv.school_id
+    WHERE fv.bus_id = %s AND fi.school_id = %s
       AND fi.date BETWEEN %s AND %s
     ORDER BY fi.date ASC
-""", (bus_id, from_date, to_date))
+""", (bus_id, g.school_id, from_date, to_date))
     fuel_records = cursor.fetchall()
 
     # Fetch service records
     cursor.execute("""
     SELECT service_date, service_type, description, cost, garage_name, mileage_at_service
     FROM service_records
-    WHERE bus_id = %s
+    WHERE bus_id = %s AND school_id = %s
       AND service_date BETWEEN %s AND %s
     ORDER BY service_date ASC
-""", (bus_id, from_date, to_date))
+""", (bus_id, g.school_id, from_date, to_date))
 
     service_records = cursor.fetchall()
 
@@ -2655,12 +2780,12 @@ def edit_invoice(voucher_id):
     cursor.execute("""
         SELECT fi.*, b.reg_no, fv.voucher_no
         FROM fuel_invoices fi
-        JOIN fuel_vouchers fv ON fi.voucher_id = fv.id
-        JOIN buses b ON fv.bus_id = b.id
-        WHERE fv.id = %s
+        JOIN fuel_vouchers fv ON fi.voucher_id = fv.id AND fi.school_id = fv.school_id
+        JOIN buses b ON fv.bus_id = b.id AND fv.school_id = b.school_id
+        WHERE fv.id = %s AND fi.school_id = %s
         ORDER BY fi.date DESC
         LIMIT 1
-    """, (voucher_id,))
+    """, (voucher_id, g.school_id))
     invoice = cursor.fetchone()
 
     if not invoice:
@@ -2700,10 +2825,10 @@ def print_invoice(voucher_id):
     cursor.execute("""
         SELECT fi.*, b.reg_no, fv.voucher_no
         FROM fuel_invoices fi
-        JOIN fuel_vouchers fv ON fi.voucher_id = fv.id
-        JOIN buses b ON fv.bus_id = b.id
-        WHERE fv.id = %s
-    """, (voucher_id,))
+        JOIN fuel_vouchers fv ON fi.voucher_id = fv.id AND fi.school_id = fv.school_id
+        JOIN buses b ON fv.bus_id = b.id AND fv.school_id = b.school_id
+        WHERE fv.id = %s AND fi.school_id = %s
+    """, (voucher_id, g.school_id))
     invoice = cursor.fetchone()
     connection.close()
 
@@ -2721,7 +2846,8 @@ def delete_invoice(voucher_id):
     connection = get_db_connection()
     cursor = connection.cursor()
 
-    cursor.execute("DELETE FROM fuel_invoices WHERE voucher_id = %s", (voucher_id,))
+    school_id = g.school_id or 1
+    cursor.execute("DELETE FROM fuel_invoices WHERE voucher_id = %s AND school_id = %s", (voucher_id, school_id))
     connection.commit()
     connection.close()
 
@@ -2734,9 +2860,10 @@ def delete_invoice(voucher_id):
 def edit_service(service_id):
     connection = get_db_connection()
     cursor = connection.cursor()
+    school_id = g.school_id or 1
 
     # Fetch the service record
-    cursor.execute("SELECT * FROM service_records WHERE id = %s", (service_id,))
+    cursor.execute("SELECT * FROM service_records WHERE id = %s AND school_id = %s", (service_id, school_id))
     service = cursor.fetchone()
     if not service:
         flash("Service record not found.", "error")
@@ -2773,7 +2900,8 @@ def delete_service(service_id):
     connection = get_db_connection()
     cursor = connection.cursor()
 
-    cursor.execute("DELETE FROM service_records WHERE id = %s", (service_id,))
+    school_id = g.school_id or 1
+    cursor.execute("DELETE FROM service_records WHERE id = %s AND school_id = %s", (service_id, school_id))
     connection.commit()
     connection.close()
 
@@ -2822,7 +2950,8 @@ def admit_student():
         year = datetime.now().year
 
         # Get stream and academic year from classes table based on selected class_id to maintain sync
-        cursor.execute("SELECT stream_code, academic_year_id FROM classes WHERE classID = %s", (class_id,))
+        school_id = g.school_id or 1
+        cursor.execute("SELECT stream_code, academic_year_id FROM classes WHERE classID = %s AND school_id = %s", (class_id, school_id))
         class_data = cursor.fetchone()
         stream = class_data['stream_code'] if class_data else ''
         academic_year_id = class_data['academic_year_id'] if class_data else None
@@ -2837,7 +2966,9 @@ def admit_student():
         
         try:
             # Check if admission number already exists
-            cursor.execute("SELECT AdmNo FROM studentinfo WHERE AdmNo = %s", (admno,))
+            school_id = g.school_id or 1
+
+            cursor.execute("SELECT AdmNo FROM studentinfo WHERE AdmNo = %s AND school_id = %s", (admno, school_id))
             if cursor.fetchone():
                 flash(f"Admission number {admno} already exists!", "error")
             else:
@@ -2848,80 +2979,84 @@ def admit_student():
                 
                 # Search for existing parent by mobile number (phone1)
                 if p_phone:
+                    school_id = g.school_id or 1
                     cursor.execute("""
                         SELECT parentid FROM parentinfo 
-                        WHERE phone1 = %s 
+                        WHERE phone1 = %s AND school_id = %s
                         ORDER BY _date DESC LIMIT 1
-                    """, (p_phone,))
+                    """, (p_phone, school_id))
                     existing_parent = cursor.fetchone()
                     if existing_parent:
                         final_parent_id = existing_parent['parentid']
 
                 if final_parent_id == 0:
                     # No existing parent found by phone, generate new ID
-                    cursor.execute("SELECT COALESCE(MAX(parentid), 0) + 1 as next_id FROM parentinfo")
+                    cursor.execute("SELECT COALESCE(MAX(parentid), 0) + 1 as next_id FROM parentinfo WHERE school_id = %s", (school_id,))
                     final_parent_id = cursor.fetchone()['next_id']
 
                 # Insert basics student info with expanded data
                 cursor.execute("""
                     INSERT INTO studentinfo (
                         AdmNo, parentID, FName, MName, SName, Sex, DoB, birth, Religion, 
-                        boarding, category, route_id, alt_contact, stream, blocked, Date_Adm, student_group_id
+                        boarding, category, route_id, alt_contact, stream, blocked, Date_Adm, student_group_id, school_id
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, NOW(), %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, NOW(), %s, %s)
                 """, (
                     admno, final_parent_id, fname, mname, lname, gender, dob, birth_cert, religion,
                     'YES' if category == 'Boarding' else 'NO', 
                     category, route_id if category == 'Transport' else None, alt_contact, stream,
-                    int(student_group_id) if student_group_id else None
+                    int(student_group_id) if student_group_id else None,
+                    school_id
                 ))
 
                 # Handle Parent Info
                 if p_name:
+                    school_id = g.school_id or 1
                     cursor.execute("""
-                        INSERT INTO parentinfo (parentid, admno, pName, phone1, email, nationalID, address, hometown, regDate)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                        INSERT INTO parentinfo (parentid, admno, pName, phone1, email, nationalID, address, hometown, regDate, school_id)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s)
                         ON DUPLICATE KEY UPDATE 
                         pName=%s, phone1=%s, email=%s, nationalID=%s, address=%s, hometown=%s
                     """, (
-                        final_parent_id, admno, p_name, p_phone, p_email, p_id, p_address, p_residency,
+                        final_parent_id, admno, p_name, p_phone, p_email, p_id, p_address, p_residency, school_id,
                         p_name, p_phone, p_email, p_id, p_address, p_residency
                     ))
 
                 # Academic Years & Classes
                 cursor.execute("""
-                    INSERT INTO class_allocation (student_id, class_id, academic_year_id, allocation_date, is_current)
-                    VALUES (%s, %s, %s, NOW(), TRUE)
-                """, (admno, class_id, academic_year_id))
+                    INSERT INTO class_allocation (student_id, class_id, academic_year_id, school_id, allocation_date, is_current)
+                    VALUES (%s, %s, %s, %s, NOW(), TRUE)
+                """, (admno, class_id, academic_year_id, school_id))
 
                 # -----------------------------------------------------------
                 # DEBIT TRANSPORT CHARGES (IF APPLICABLE)
                 # -----------------------------------------------------------
                 if category == 'Transport' and route_id:
-                    cursor.execute("SELECT name, amount FROM transport_routes WHERE id = %s", (route_id,))
+                    cursor.execute("SELECT name, amount FROM transport_routes WHERE id = %s AND school_id = %s", (route_id, school_id))
                     route_data = cursor.fetchone()
                     
                     if route_data:
                         # Find or create Transport votehead
                         votehead_name = f"Transport-{route_data['name']}"
-                        cursor.execute("SELECT id FROM fee_voteheads WHERE name = %s", (votehead_name,))
+                        cursor.execute("SELECT id FROM fee_voteheads WHERE name = %s AND school_id = %s", (votehead_name, school_id))
                         vh_res = cursor.fetchone()
                         
                         if vh_res:
                             votehead_id = vh_res['id']
                         else:
-                            cursor.execute("INSERT INTO fee_voteheads (name, description) VALUES (%s, %s)", 
-                                         (votehead_name, f"Charges for route: {route_data['name']}"))
+                            cursor.execute("INSERT INTO fee_voteheads (name, description, school_id) VALUES (%s, %s, %s)", 
+                                         (votehead_name, f"Charges for route: {route_data['name']}", school_id))
                             votehead_id = cursor.lastrowid
                         
-                        # Get current term ID
-                        cursor.execute("SELECT id FROM uniform_term_dates WHERE CURDATE() BETWEEN start_date AND end_date LIMIT 1")
+                        # Get current term ID (tenant-scoped)
+                        school_id = getattr(g, 'school_id', 1)
+                        cursor.execute("SELECT id FROM uniform_term_dates WHERE CURDATE() BETWEEN start_date AND end_date AND school_id = %s LIMIT 1", (school_id,))
                         term_res = cursor.fetchone()
                         term_id = term_res['id'] if term_res else None
                         
                         if academic_year_id and term_id:
                             # Use FeesService to handle ledger
-                            fees_service = FeesService(connection)
+                            fees_service = FeesService(connection, school_id=g.school_id or 1)
                             fees_service.invoice_student(
                                 admno=admno,
                                 year_id=academic_year_id,
@@ -2944,14 +3079,15 @@ def admit_student():
             flash(f"Error during admission: {str(e)}", "error")
 
     # Get data for form
-    cursor.execute("SELECT classID, display_name FROM classes WHERE is_active = TRUE ORDER BY display_name")
+    school_id = g.school_id
+    cursor.execute("SELECT classID, display_name FROM classes WHERE is_active = TRUE AND school_id = %s ORDER BY display_name", (school_id,))
     classes = cursor.fetchall()
     
-    cursor.execute("SELECT id, name, amount FROM transport_routes WHERE is_active = TRUE ORDER BY name")
+    cursor.execute("SELECT id, name, amount FROM transport_routes WHERE is_active = TRUE AND school_id = %s ORDER BY name", (school_id,))
     routes = cursor.fetchall()
     
     # Fetch student groups for selection
-    fees_service = FeesService(connection)
+    fees_service = FeesService(connection, school_id=school_id)
     student_groups = fees_service.get_student_groups(active_only=True)
     connection.close()
     return render_template('student.html', classes=classes, routes=routes, student_groups=student_groups)
@@ -2961,9 +3097,10 @@ def admit_student():
 def bulk_admit_students():
     connection = get_db_connection()
     cursor = connection.cursor()
+    school_id = g.school_id
     
     # Get all active classes for mapping in preview
-    cursor.execute("SELECT classID, display_name FROM classes WHERE is_active = TRUE ORDER BY display_name")
+    cursor.execute("SELECT classID, display_name FROM classes WHERE is_active = TRUE AND school_id = %s ORDER BY display_name", (school_id,))
     available_classes = cursor.fetchall()
 
     if request.method == 'GET':
@@ -2997,7 +3134,7 @@ def bulk_admit_students():
             class_id = None
             
             # 1. Check AdmNo Duplicates
-            cursor.execute("SELECT AdmNo FROM studentinfo WHERE AdmNo = %s", (admno,))
+            cursor.execute("SELECT AdmNo FROM studentinfo WHERE AdmNo = %s AND school_id = %s", (admno, school_id))
             if cursor.fetchone():
                 validation_errors.append(f"Admission number '{admno}' already exists in system.")
 
@@ -3039,7 +3176,8 @@ def bulk_admit_students():
             p_phone = row.get('parent_phone', '').strip()
             sibling_found = False
             if p_phone:
-                cursor.execute("SELECT pName FROM parentinfo WHERE phone1 = %s LIMIT 1", (p_phone,))
+                school_id = g.school_id or 1
+                cursor.execute("SELECT pName FROM parentinfo WHERE phone1 = %s AND school_id = %s LIMIT 1", (p_phone, school_id))
                 existing_p = cursor.fetchone()
                 if existing_p:
                     sibling_found = True
@@ -3086,13 +3224,14 @@ def finalize_bulk_import():
     error_count = 0
     
     try:
+        school_id = g.school_id
         for i in range(len(admnos)):
             admno = admnos[i].strip()
             if not admno: continue
             
             try:
                 # Re-validate critically important fields in transaction
-                cursor.execute("SELECT AdmNo FROM studentinfo WHERE AdmNo = %s", (admno,))
+                cursor.execute("SELECT AdmNo FROM studentinfo WHERE AdmNo = %s AND school_id = %s", (admno, school_id))
                 if cursor.fetchone():
                     error_count += 1
                     continue
@@ -3103,20 +3242,22 @@ def finalize_bulk_import():
                     continue
                 
                 # Get stream and year from classes
-                cursor.execute("SELECT stream_code, academic_year_id FROM classes WHERE classID = %s", (class_id,))
+                school_id = g.school_id or 1
+                cursor.execute("SELECT stream_code, academic_year_id FROM classes WHERE classID = %s AND school_id = %s", (class_id, school_id))
                 class_info = cursor.fetchone()
                 
                 # Parent logic
                 p_phone = p_phones[i].strip()
                 final_parent_id = 0
                 if p_phone:
-                    cursor.execute("SELECT parentid FROM parentinfo WHERE phone1 = %s ORDER BY _date DESC LIMIT 1", (p_phone,))
+                    school_id = g.school_id or 1
+                    cursor.execute("SELECT parentid FROM parentinfo WHERE phone1 = %s AND school_id = %s ORDER BY _date DESC LIMIT 1", (p_phone, school_id))
                     existing_p = cursor.fetchone()
                     if existing_p:
                         final_parent_id = existing_p['parentid']
                 
                 if final_parent_id == 0:
-                    cursor.execute("SELECT COALESCE(MAX(parentid), 0) + 1 as next_id FROM parentinfo")
+                    cursor.execute("SELECT COALESCE(MAX(parentid), 0) + 1 as next_id FROM parentinfo WHERE school_id = %s", (school_id,))
                     final_parent_id = cursor.fetchone()['next_id']
 
                 connection.begin()
@@ -3127,33 +3268,35 @@ def finalize_bulk_import():
                 cursor.execute("""
                     INSERT INTO studentinfo (
                         AdmNo, parentID, FName, MName, SName, Sex, DoB, Religion, 
-                        boarding, category, stream, blocked, Date_Adm
+                        boarding, category, stream, blocked, Date_Adm, school_id
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, NOW())
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, NOW(), %s)
                 """, (
                     admno, final_parent_id, fnames[i], mnames[i], lnames[i],
                     genders[i][:1].upper() if genders[i] else 'M',
                     dobs[i] if dobs[i] else None, religions[i],
-                    'YES' if cat == 'Boarding' else 'NO', cat, class_info['stream_code']
+                    'YES' if cat == 'Boarding' else 'NO', cat, class_info['stream_code'],
+                    school_id
                 ))
 
                 # Insert/Update Parent with current child link
                 pn = p_names[i].strip()
                 if pn:
+                    school_id = g.school_id or 1
                     cursor.execute("""
-                        INSERT INTO parentinfo (parentid, admno, pName, phone1, email, nationalID, address, hometown, regDate)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                        INSERT INTO parentinfo (parentid, admno, pName, phone1, email, nationalID, address, hometown, regDate, school_id)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s)
                         ON DUPLICATE KEY UPDATE pName=%s
                     """, (
                         final_parent_id, admno, pn, p_phone, p_emails[i],
-                        p_ids[i], p_addresses[i], p_residencies[i], pn
+                        p_ids[i], p_addresses[i], p_residencies[i], school_id, pn
                     ))
 
                 # Allocate Class
                 cursor.execute("""
-                    INSERT INTO class_allocation (student_id, class_id, academic_year_id, allocation_date, is_current)
-                    VALUES (%s, %s, %s, NOW(), TRUE)
-                """, (admno, class_id, class_info['academic_year_id']))
+                    INSERT INTO class_allocation (student_id, class_id, academic_year_id, school_id, allocation_date, is_current)
+                    VALUES (%s, %s, %s, %s, NOW(), TRUE)
+                """, (admno, class_id, class_info['academic_year_id'], school_id))
 
                 connection.commit()
                 success_count += 1
@@ -3180,6 +3323,7 @@ def print_admission_form(admno):
     
     try:
         # 1. Fetch student and basic info
+        school_id = g.school_id or 1
         cursor.execute("""
             SELECT 
                 s.*, 
@@ -3191,8 +3335,8 @@ def print_admission_form(admno):
             LEFT JOIN class_allocation ca ON s.AdmNo = ca.student_id AND ca.is_current = TRUE
             LEFT JOIN classes c ON ca.class_id = c.classID
             LEFT JOIN transport_routes tr ON s.route_id = tr.id
-            WHERE s.AdmNo = %s
-        """, (admno,))
+            WHERE s.AdmNo = %s AND s.school_id = %s
+        """, (admno, school_id))
         student_res = cursor.fetchone()
         
         if not student_res:
@@ -3225,13 +3369,14 @@ def print_admission_form(admno):
         }
 
         # 2. Parent Info
+        school_id = g.school_id or 1
         cursor.execute("""
             SELECT pName, phone1, phone2, email, address, hometown
-            FROM parentinfo WHERE admno = %s
-        """, (admno,))
+            FROM parentinfo WHERE admno = %s AND school_id = %s
+        """, (admno, school_id))
         parent = cursor.fetchone()
         if not parent and student_res['parentID']:
-            cursor.execute("SELECT pName, phone1, phone2, email, address, hometown FROM parentinfo WHERE parentid = %s LIMIT 1", (student_res['parentID'],))
+            cursor.execute("SELECT pName, phone1, phone2, email, address, hometown FROM parentinfo WHERE parentid = %s AND school_id = %s LIMIT 1", (student_res['parentID'], school_id))
             parent = cursor.fetchone()
         
         # 3. Route Info
@@ -3305,9 +3450,10 @@ def edit_student(admno):
 
         try:
             connection.begin()
+            school_id = g.school_id or 1
 
             # Get new stream and academic year based on selected class
-            cursor.execute("SELECT stream_code, academic_year_id FROM classes WHERE classID = %s", (class_id,))
+            cursor.execute("SELECT stream_code, academic_year_id FROM classes WHERE classID = %s AND school_id = %s", (class_id, school_id))
             class_data_row = cursor.fetchone()
             new_stream = class_data_row['stream_code'] if class_data_row else ''
             academic_year_id = class_data_row['academic_year_id'] if class_data_row else None
@@ -3328,33 +3474,35 @@ def edit_student(admno):
 
             # 2. Update parentinfo (ON DUPLICATE KEY UPDATE via admno)
             if p_name or p_phone:
+                school_id = g.school_id or 1
                 cursor.execute("""
-                    INSERT INTO parentinfo (admno, pName, phone1, email, nationalID, address, hometown, regDate, parentid)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), 0)
+                    INSERT INTO parentinfo (admno, pName, phone1, email, nationalID, address, hometown, regDate, parentid, school_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), 0, %s)
                     ON DUPLICATE KEY UPDATE 
                     pName=%s, phone1=%s, email=%s, nationalID=%s, address=%s, hometown=%s
                 """, (
-                    admno, p_name, p_phone, p_email, p_id, p_address, p_residency,
+                    admno, p_name, p_phone, p_email, p_id, p_address, p_residency, school_id,
                     p_name, p_phone, p_email, p_id, p_address, p_residency
                 ))
 
             # 3. Update Academic Placement (Class Allocation)
             # --- Legacy Table Sync ---
             current_year = datetime.now().year
+            school_id = g.school_id or 1
             cursor.execute("""
-                SELECT allocationID FROM classallocation WHERE AdmNo = %s AND thisYear = %s
-            """, (admno, current_year))
+                SELECT allocationID FROM classallocation WHERE AdmNo = %s AND thisYear = %s AND school_id = %s
+            """, (admno, current_year, school_id))
             allocation = cursor.fetchone()
 
             if allocation:
                 cursor.execute("""
-                    UPDATE classallocation SET classID = %s WHERE allocationID = %s
-                """, (class_id, allocation['allocationID']))
+                    UPDATE classallocation SET classID = %s WHERE allocationID = %s AND school_id = %s
+                """, (class_id, allocation['allocationID'], school_id))
             else:
                 cursor.execute("""
-                    INSERT INTO classallocation (AdmNo, classID, thisYear, AllcDate)
-                    VALUES (%s, %s, %s, NOW())
-                """, (admno, class_id, current_year))
+                    INSERT INTO classallocation (AdmNo, classID, thisYear, AllcDate, school_id)
+                    VALUES (%s, %s, %s, NOW(), %s)
+                """, (admno, class_id, current_year, school_id))
 
             # --- Modern Table Sync ---
             if academic_year_id:
@@ -3367,14 +3515,14 @@ def edit_student(admno):
 
                 if modern_allocation:
                     cursor.execute("""
-                        UPDATE class_allocation SET class_id = %s WHERE id = %s
-                    """, (class_id, modern_allocation['id']))
+                        UPDATE class_allocation SET class_id = %s WHERE id = %s AND school_id = %s
+                    """, (class_id, modern_allocation['id'], school_id))
                 else:
                     # If this is a mistake or reassignment for the current year
                     cursor.execute("""
-                        INSERT INTO class_allocation (student_id, class_id, academic_year_id, allocation_date, is_current)
-                        VALUES (%s, %s, %s, NOW(), TRUE)
-                    """, (admno, class_id, academic_year_id))
+                        INSERT INTO class_allocation (student_id, class_id, academic_year_id, school_id, allocation_date, is_current)
+                        VALUES (%s, %s, %s, %s, NOW(), TRUE)
+                    """, (admno, class_id, academic_year_id, school_id))
 
             connection.commit()
             flash(f"✓ Student profile for {fname} {lname} updated successfully.", "success")
@@ -3385,6 +3533,7 @@ def edit_student(admno):
             flash(f"Error updating profile: {str(e)}", "error")
 
     # GET Request: Fetch all info
+    school_id = g.school_id or 1
     cursor.execute("""
         SELECT s.*, 
                p.pName as parent_name, 
@@ -3394,9 +3543,9 @@ def edit_student(admno):
                p.hometown as residency,
                p.nationalID as parent_id
         FROM studentinfo s
-        LEFT JOIN parentinfo p ON s.AdmNo = p.admno
-        WHERE s.AdmNo = %s
-    """, (admno,))
+        LEFT JOIN parentinfo p ON s.AdmNo = p.admno AND s.school_id = p.school_id
+        WHERE s.AdmNo = %s AND s.school_id = %s
+    """, (admno, school_id))
     student = cursor.fetchone()
 
     if not student:
@@ -3404,20 +3553,21 @@ def edit_student(admno):
         return redirect(url_for('students_list'))
 
     # Get current class ID
+    school_id = g.school_id or 1
     cursor.execute("""
         SELECT classID FROM classallocation 
-        WHERE AdmNo = %s 
+        WHERE AdmNo = %s AND school_id = %s
         ORDER BY thisYear DESC, AllcDate DESC LIMIT 1
-    """, (admno,))
+    """, (admno, school_id))
     class_row = cursor.fetchone()
     current_class_id = class_row['classID'] if class_row else None
 
     # Get available classes
     cursor.execute("""
         SELECT classID, display_name FROM classes 
-        WHERE is_active = TRUE 
+        WHERE is_active = TRUE AND school_id = %s
         ORDER BY display_name
-    """)
+    """, (school_id,))
     classes = cursor.fetchall()
 
     connection.close()
@@ -3431,6 +3581,7 @@ def edit_student(admno):
 def students_list():
     connection = get_db_connection()
     cursor = connection.cursor()
+    school_id = g.school_id or 1
 
     # Get current year
     term_cur, year_cur = get_current_term_and_year()
@@ -3451,37 +3602,41 @@ def students_list():
                     s.blocked AS Status,
                     COALESCE(
                         (SELECT display_name FROM classes WHERE classID = (
-                            SELECT class_id FROM class_allocation WHERE student_id = s.AdmNo AND is_current = TRUE LIMIT 1
-                        ) LIMIT 1),
+                            SELECT class_id FROM class_allocation WHERE student_id = s.AdmNo AND is_current = TRUE AND school_id = %s LIMIT 1
+                        ) AND school_id = %s LIMIT 1),
                         (SELECT class_name FROM classes WHERE classID = (
-                            SELECT classID FROM classallocation WHERE AdmNo = s.AdmNo AND thisYear = %s LIMIT 1
-                        ) LIMIT 1),
+                            SELECT classID FROM classallocation WHERE AdmNo = s.AdmNo AND thisYear = %s AND school_id = %s LIMIT 1
+                        ) AND school_id = %s LIMIT 1),
                         (SELECT class_name FROM classes WHERE classID = (
-                            SELECT classID FROM classallocation WHERE AdmNo = s.AdmNo ORDER BY thisYear DESC LIMIT 1
-                        ) LIMIT 1)
+                            SELECT classID FROM classallocation WHERE AdmNo = s.AdmNo AND school_id = %s ORDER BY thisYear DESC LIMIT 1
+                        ) AND school_id = %s LIMIT 1)
                     ) AS class_name,
                     COALESCE(
                         (SELECT class_group FROM classes WHERE classID = (
-                            SELECT class_id FROM class_allocation WHERE student_id = s.AdmNo AND is_current = TRUE LIMIT 1
-                        ) LIMIT 1),
+                            SELECT class_id FROM class_allocation WHERE student_id = s.AdmNo AND is_current = TRUE AND school_id = %s LIMIT 1
+                        ) AND school_id = %s LIMIT 1),
                         (SELECT class_group FROM classes WHERE classID = (
-                            SELECT classID FROM classallocation WHERE AdmNo = s.AdmNo AND thisYear = %s LIMIT 1
-                        ) LIMIT 1),
+                            SELECT classID FROM classallocation WHERE AdmNo = s.AdmNo AND thisYear = %s AND school_id = %s LIMIT 1
+                        ) AND school_id = %s LIMIT 1),
                         (SELECT class_group FROM classes WHERE classID = (
-                            SELECT classID FROM classallocation WHERE AdmNo = s.AdmNo ORDER BY thisYear DESC LIMIT 1
-                        ) LIMIT 1)
+                            SELECT classID FROM classallocation WHERE AdmNo = s.AdmNo AND school_id = %s ORDER BY thisYear DESC LIMIT 1
+                        ) AND school_id = %s LIMIT 1)
                     ) AS class_group,
                     COALESCE(
-                        (SELECT academic_year_id FROM class_allocation WHERE student_id = s.AdmNo AND is_current = TRUE LIMIT 1),
-                        (SELECT thisYear FROM classallocation WHERE AdmNo = s.AdmNo AND thisYear = %s LIMIT 1),
-                        (SELECT thisYear FROM classallocation WHERE AdmNo = s.AdmNo ORDER BY thisYear DESC LIMIT 1)
+                        (SELECT academic_year_id FROM class_allocation WHERE student_id = s.AdmNo AND is_current = TRUE AND school_id = %s LIMIT 1),
+                        (SELECT thisYear FROM classallocation WHERE AdmNo = s.AdmNo AND thisYear = %s AND school_id = %s LIMIT 1),
+                        (SELECT thisYear FROM classallocation WHERE AdmNo = s.AdmNo AND school_id = %s ORDER BY thisYear DESC LIMIT 1)
                     ) AS thisYear
                 FROM studentinfo s
-                WHERE s.AdmNo LIKE %s
-                   OR CONCAT(s.FName, ' ', COALESCE(s.MName, ''), ' ', s.SName) LIKE %s
+                WHERE (s.AdmNo LIKE %s
+                   OR CONCAT(s.FName, ' ', COALESCE(s.MName, ''), ' ', s.SName) LIKE %s)
+                  AND s.school_id = %s
                 ORDER BY s.FName, s.SName
                 LIMIT 200
-            """, (year_cur, year_cur, year_cur, f"%{q}%", f"%{q}%"))
+            """, (school_id, school_id, year_cur, school_id, school_id, school_id, school_id,
+                  school_id, school_id, year_cur, school_id, school_id, school_id, school_id,
+                  school_id, year_cur, school_id, school_id,
+                  f"%{q}%", f"%{q}%", school_id))
         else:
             # If no current year, get most recent year
             # No current year defined - use most recent allocation per student
@@ -3495,30 +3650,34 @@ def students_list():
                     s.blocked AS Status,
                     COALESCE(
                         (SELECT display_name FROM classes WHERE classID = (
-                            SELECT class_id FROM class_allocation WHERE student_id = s.AdmNo AND is_current = TRUE LIMIT 1
-                        ) LIMIT 1),
+                            SELECT class_id FROM class_allocation WHERE student_id = s.AdmNo AND is_current = TRUE AND school_id = %s LIMIT 1
+                        ) AND school_id = %s LIMIT 1),
                         (SELECT class_name FROM classes WHERE classID = (
-                            SELECT classID FROM classallocation WHERE AdmNo = s.AdmNo ORDER BY thisYear DESC LIMIT 1
-                        ) LIMIT 1)
+                            SELECT classID FROM classallocation WHERE AdmNo = s.AdmNo AND school_id = %s ORDER BY thisYear DESC LIMIT 1
+                        ) AND school_id = %s LIMIT 1)
                     ) AS class_name,
                     COALESCE(
                         (SELECT class_group FROM classes WHERE classID = (
-                            SELECT class_id FROM class_allocation WHERE student_id = s.AdmNo AND is_current = TRUE LIMIT 1
-                        ) LIMIT 1),
+                            SELECT class_id FROM class_allocation WHERE student_id = s.AdmNo AND is_current = TRUE AND school_id = %s LIMIT 1
+                        ) AND school_id = %s LIMIT 1),
                         (SELECT class_group FROM classes WHERE classID = (
-                            SELECT classID FROM classallocation WHERE AdmNo = s.AdmNo ORDER BY thisYear DESC LIMIT 1
-                        ) LIMIT 1)
+                            SELECT classID FROM classallocation WHERE AdmNo = s.AdmNo AND school_id = %s ORDER BY thisYear DESC LIMIT 1
+                        ) AND school_id = %s LIMIT 1)
                     ) AS class_group,
                     COALESCE(
-                        (SELECT academic_year_id FROM class_allocation WHERE student_id = s.AdmNo AND is_current = TRUE LIMIT 1),
-                        (SELECT thisYear FROM classallocation WHERE AdmNo = s.AdmNo ORDER BY thisYear DESC LIMIT 1)
+                        (SELECT academic_year_id FROM class_allocation WHERE student_id = s.AdmNo AND is_current = TRUE AND school_id = %s LIMIT 1),
+                        (SELECT thisYear FROM classallocation WHERE AdmNo = s.AdmNo AND school_id = %s ORDER BY thisYear DESC LIMIT 1)
                     ) AS thisYear
                 FROM studentinfo s
-                WHERE s.AdmNo LIKE %s
-                   OR CONCAT(s.FName, ' ', COALESCE(s.MName, ''), ' ', s.SName) LIKE %s
+                WHERE (s.AdmNo LIKE %s
+                   OR CONCAT(s.FName, ' ', COALESCE(s.MName, ''), ' ', s.SName) LIKE %s)
+                  AND s.school_id = %s
                 ORDER BY s.FName, s.SName
                 LIMIT 200
-            """, (f"%{q}%", f"%{q}%"))
+            """, (school_id, school_id, school_id, school_id, 
+                  school_id, school_id, school_id, school_id,
+                  school_id, school_id,
+                  f"%{q}%", f"%{q}%", school_id))
 
         students = cursor.fetchall()
         connection.close()
@@ -3536,53 +3695,59 @@ def students_list():
                 s.blocked AS Status,
                 COALESCE(
                     (SELECT display_name FROM classes WHERE classID = (
-                        SELECT class_id FROM class_allocation WHERE student_id = s.AdmNo AND is_current = TRUE LIMIT 1
-                    ) LIMIT 1),
+                        SELECT class_id FROM class_allocation WHERE student_id = s.AdmNo AND is_current = TRUE AND school_id = %s LIMIT 1
+                    ) AND school_id = %s LIMIT 1),
                     (SELECT class_name FROM classes WHERE classID = (
-                        SELECT classID FROM classallocation WHERE AdmNo = s.AdmNo AND thisYear = %s LIMIT 1
-                    ) LIMIT 1),
+                        SELECT classID FROM classallocation WHERE AdmNo = s.AdmNo AND thisYear = %s AND school_id = %s LIMIT 1
+                    ) AND school_id = %s LIMIT 1),
                     (SELECT class_name FROM classes WHERE classID = (
-                        SELECT classID FROM classallocation WHERE AdmNo = s.AdmNo ORDER BY thisYear DESC LIMIT 1
-                    ) LIMIT 1)
+                        SELECT classID FROM classallocation WHERE AdmNo = s.AdmNo AND school_id = %s ORDER BY thisYear DESC LIMIT 1
+                    ) AND school_id = %s LIMIT 1)
                 ) AS class_name,
                 COALESCE(
                     (SELECT class_group FROM classes WHERE classID = (
-                        SELECT class_id FROM class_allocation WHERE student_id = s.AdmNo AND is_current = TRUE LIMIT 1
-                    ) LIMIT 1),
+                        SELECT class_id FROM class_allocation WHERE student_id = s.AdmNo AND is_current = TRUE AND school_id = %s LIMIT 1
+                    ) AND school_id = %s LIMIT 1),
                     (SELECT class_group FROM classes WHERE classID = (
-                        SELECT classID FROM classallocation WHERE AdmNo = s.AdmNo AND thisYear = %s LIMIT 1
-                    ) LIMIT 1),
+                        SELECT classID FROM classallocation WHERE AdmNo = s.AdmNo AND thisYear = %s AND school_id = %s LIMIT 1
+                    ) AND school_id = %s LIMIT 1),
                     (SELECT class_group FROM classes WHERE classID = (
-                        SELECT classID FROM classallocation WHERE AdmNo = s.AdmNo ORDER BY thisYear DESC LIMIT 1
-                    ) LIMIT 1)
+                        SELECT classID FROM classallocation WHERE AdmNo = s.AdmNo AND school_id = %s ORDER BY thisYear DESC LIMIT 1
+                    ) AND school_id = %s LIMIT 1)
                 ) AS class_group,
                 COALESCE(
-                    (SELECT academic_year_id FROM class_allocation WHERE student_id = s.AdmNo AND is_current = TRUE LIMIT 1),
-                    (SELECT thisYear FROM classallocation WHERE AdmNo = s.AdmNo AND thisYear = %s LIMIT 1),
-                    (SELECT thisYear FROM classallocation WHERE AdmNo = s.AdmNo ORDER BY thisYear DESC LIMIT 1)
+                    (SELECT academic_year_id FROM class_allocation WHERE student_id = s.AdmNo AND is_current = TRUE AND school_id = %s LIMIT 1),
+                    (SELECT thisYear FROM classallocation WHERE AdmNo = s.AdmNo AND thisYear = %s AND school_id = %s LIMIT 1),
+                    (SELECT thisYear FROM classallocation WHERE AdmNo = s.AdmNo AND school_id = %s ORDER BY thisYear DESC LIMIT 1)
                 ) AS thisYear
             FROM studentinfo s
+            WHERE s.school_id = %s
             ORDER BY s.FName, s.SName
             LIMIT 20
-        """, (year_cur, year_cur, year_cur))
+        """, (school_id, school_id, year_cur, school_id, school_id, school_id, school_id,
+              school_id, school_id, year_cur, school_id, school_id, school_id, school_id,
+              school_id, year_cur, school_id, school_id,
+              school_id))
     else:
-        cursor.execute("""
-            SELECT 
-                s.AdmNo,
-                s.FName,
-                s.MName,
-                s.SName AS LName,
-                s.Sex AS Gender,
-                s.blocked AS Status, 
-                c.class_name,
-                c.class_group,
-                a.thisYear
-            FROM studentinfo s
-            LEFT JOIN classallocation a ON s.AdmNo = a.AdmNo
-            LEFT JOIN classes c ON a.classID = c.classID
-            ORDER BY a.AllcDate DESC, s.FName
-            LIMIT 20
-        """)
+            school_id = g.school_id or 1
+            cursor.execute("""
+                SELECT
+                    s.AdmNo,
+                    s.FName,
+                    s.MName,
+                    s.SName AS LName,
+                    s.Sex AS Gender,
+                    s.blocked AS Status, 
+                    c.class_name,
+                    c.class_group,
+                    a.thisYear
+                FROM studentinfo s
+                LEFT JOIN classallocation a ON s.AdmNo = a.AdmNo
+                LEFT JOIN classes c ON a.classID = c.classID
+                WHERE s.school_id = %s
+                ORDER BY a.AllcDate DESC, s.FName
+                LIMIT 20
+            """, (school_id,))
     students = cursor.fetchall()
 
     connection.close()
@@ -3595,6 +3760,7 @@ def student_profile(admno):
     cursor = connection.cursor()
     
     # 1. Basic Student Info + Parent Info
+    school_id = g.school_id or 1
     cursor.execute("""
         SELECT s.*, 
                p.pName as parent_name, 
@@ -3604,9 +3770,9 @@ def student_profile(admno):
                p.hometown as residency,
                p.nationalID as parent_id
         FROM studentinfo s
-        LEFT JOIN parentinfo p ON s.AdmNo = p.admno
-        WHERE s.AdmNo = %s
-    """, (admno,))
+        LEFT JOIN parentinfo p ON s.AdmNo = p.admno AND p.school_id = %s
+        WHERE s.AdmNo = %s AND s.school_id = %s
+    """, (school_id, admno, school_id))
     student = cursor.fetchone()
     
     if not student:
@@ -3656,32 +3822,33 @@ def student_profile(admno):
         FROM student_subjects ss
         JOIN subjects s ON ss.subject_id = s.subjectNo
         JOIN class_allocation ca ON ss.class_allocation_id = ca.id
-        WHERE ca.student_id = %s AND ca.is_current = TRUE
-    """, (admno,))
+        WHERE ca.student_id = %s AND ca.is_current = TRUE AND s.school_id = %s
+    """, (admno, school_id))
     subjects = cursor.fetchall()
 
     # 6. Fetch Siblings (sharing same parent phone number)
     siblings = []
     if student and student.get('parent_phone'):
+        school_id = g.school_id or 1
         cursor.execute("""
             SELECT s.AdmNo, s.FName, s.MName, s.SName as LName, c.class_name
             FROM studentinfo s
-            JOIN parentinfo p ON s.AdmNo = p.admno
+            JOIN parentinfo p ON s.AdmNo = p.admno AND s.school_id = p.school_id
             LEFT JOIN classallocation ca ON s.AdmNo = ca.AdmNo
             LEFT JOIN classes c ON ca.classID = c.classID
-            WHERE p.phone1 = %s AND s.AdmNo != %s
+            WHERE p.phone1 = %s AND s.AdmNo != %s AND s.school_id = %s
             GROUP BY s.AdmNo
-        """, (student['parent_phone'], admno))
+        """, (student['parent_phone'], admno, school_id))
         siblings = cursor.fetchall()
 
     # 7. Fetch Fee History & Ledger Summary
     # Use the definitive Ledger system instead of legacy fees table
     cursor.execute("""
         SELECT 
-            (SELECT SUM(amount) FROM fee_ledger WHERE admno = %s AND type = 'CHARGE') as total_billed,
-            (SELECT SUM(amount) FROM fee_payments WHERE admno = %s AND status = 'COMPLETED') as total_paid,
-            (SELECT balance_after FROM fee_ledger WHERE admno = %s ORDER BY id DESC LIMIT 1) as current_balance
-    """, (admno, admno, admno))
+            (SELECT SUM(amount) FROM fee_ledger WHERE admno = %s AND type = 'CHARGE' AND school_id = %s) as total_billed,
+            (SELECT SUM(amount) FROM fee_payments WHERE admno = %s AND status = 'COMPLETED' AND school_id = %s) as total_paid,
+            (SELECT balance_after FROM fee_ledger WHERE admno = %s AND school_id = %s ORDER BY id DESC LIMIT 1) as current_balance
+    """, (admno, school_id, admno, school_id, admno, school_id))
     ledger_summary = cursor.fetchone()
     
     total_billed = ledger_summary['total_billed'] or 0
@@ -3700,12 +3867,12 @@ def student_profile(admno):
             fp.status,
             ay.year as fncYear
         FROM fee_payments fp
-        JOIN fee_ledger fl ON fp.ledger_id = fl.id
-        JOIN fee_receipts fr ON fp.id = fr.payment_id
-        JOIN academic_years ay ON fl.academic_year_id = ay.id
-        WHERE fp.admno = %s
+        JOIN fee_ledger fl ON fp.ledger_id = fl.id AND fp.school_id = fl.school_id
+        JOIN fee_receipts fr ON fp.id = fr.payment_id AND fp.school_id = fr.school_id
+        JOIN academic_years ay ON fl.academic_year_id = ay.id AND fl.school_id = ay.school_id
+        WHERE fp.admno = %s AND fp.school_id = %s
         ORDER BY fp.payment_date DESC, fp.id DESC
-    """, (admno,))
+    """, (admno, g.school_id or 1))
     fee_history = cursor.fetchall()
 
     # 8. Fetch Exam Results - GROUPED and SUMMARIZED
@@ -3725,7 +3892,7 @@ def student_profile(admno):
     exam_summaries = cursor.fetchall()
     
     # Apply grading logic to each summary
-    exam_service = ExamManagementService(connection)
+    exam_service = ExamManagementService(connection, g.school_id)
     
     for summary in exam_summaries:
         scale_id = exam_service.get_class_grading_scale_id(student.get('classID'))
@@ -3758,25 +3925,27 @@ def detect_siblings():
     cursor = connection.cursor()
     try:
         # 1. Get Siblings
+        school_id = g.school_id or 1
         cursor.execute("""
             SELECT s.AdmNo, s.FName, s.SName as LName, c.class_name
             FROM studentinfo s
-            JOIN parentinfo p ON s.AdmNo = p.admno
+            JOIN parentinfo p ON s.AdmNo = p.admno AND s.school_id = p.school_id
             LEFT JOIN classallocation ca ON s.AdmNo = ca.AdmNo
             LEFT JOIN classes c ON ca.classID = c.classID
-            WHERE p.phone1 = %s
+            WHERE p.phone1 = %s AND s.school_id = %s
             GROUP BY s.AdmNo
-        """, (phone,))
+        """, (phone, school_id))
         siblings = cursor.fetchall()
         
         # 2. Get Parent Info (from most recent entry)
+        school_id = g.school_id or 1
         cursor.execute("""
             SELECT pName, email, phone1, address, hometown, nationalID
             FROM parentinfo
-            WHERE phone1 = %s
+            WHERE phone1 = %s AND school_id = %s
             ORDER BY regDate DESC
             LIMIT 1
-        """, (phone,))
+        """, (phone, school_id))
         parent = cursor.fetchone()
         
         return jsonify({
@@ -3800,12 +3969,14 @@ def search_parents():
     connection = get_db_connection()
     cursor = connection.cursor()
     try:
+        school_id = g.school_id or 1
         cursor.execute("""
             SELECT DISTINCT parentid, pName, phone1, email, address, hometown, nationalID
             FROM parentinfo
-            WHERE pName LIKE %s OR phone1 LIKE %s OR nationalID LIKE %s
+            WHERE (pName LIKE %s OR phone1 LIKE %s OR nationalID LIKE %s)
+              AND school_id = %s
             LIMIT 10
-        """, (f"%{q}%", f"%{q}%", f"%{q}%"))
+        """, (f"%{q}%", f"%{q}%", f"%{q}%", school_id))
         parents = cursor.fetchall()
         return jsonify(parents)
     except Exception as e:
@@ -3819,8 +3990,10 @@ def toggle_student_status(admno):
     connection = get_db_connection()
     cursor = connection.cursor()
     try:
+        school_id = g.school_id or 1
+
         # Get current status
-        cursor.execute("SELECT blocked FROM studentinfo WHERE AdmNo = %s", (admno,))
+        cursor.execute("SELECT blocked FROM studentinfo WHERE AdmNo = %s AND school_id = %s", (admno, school_id))
         row = cursor.fetchone()
         if not row:
             flash("Student not found", "error")
@@ -3828,7 +4001,7 @@ def toggle_student_status(admno):
 
         new_status = 'YES' if row['blocked'] == 'NO' else 'NO'
         
-        cursor.execute("UPDATE studentinfo SET blocked = %s WHERE AdmNo = %s", (new_status, admno))
+        cursor.execute("UPDATE studentinfo SET blocked = %s WHERE AdmNo = %s AND school_id = %s", (new_status, admno, school_id))
         connection.commit()
         
         msg = f"Student {'blocked' if new_status == 'YES' else 'unblocked'} successfully."
@@ -3944,6 +4117,7 @@ def manage_term_dates():
     
     connection = get_db_connection()
     cursor = connection.cursor()
+    school_id = g.school_id or 1
     
     now = datetime.now()
 
@@ -3960,14 +4134,14 @@ def manage_term_dates():
             if start_date >= end_date:
                 flash("End date must be after start date.", "error")
             else:
-                cursor.execute("SELECT id FROM academic_years WHERE year = %s", (year,))
+                cursor.execute("SELECT id FROM academic_years WHERE year = %s AND school_id = %s", (year, school_id))
                 ay_row = cursor.fetchone()
                 academic_year_id = ay_row['id'] if ay_row else None
                 
                 cursor.execute("""
-                    INSERT INTO uniform_term_dates (term_number, year, academic_year_id, start_date, end_date)
-                    VALUES (%s, %s, %s, %s, %s)
-                """, (term_number, year, academic_year_id, start_date, end_date))
+                    INSERT INTO uniform_term_dates (term_number, year, academic_year_id, start_date, end_date, school_id)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (term_number, year, academic_year_id, start_date, end_date, school_id))
                 flash("Term date added successfully.", "success")
         
         elif action == 'edit':
@@ -3977,20 +4151,20 @@ def manage_term_dates():
             start_date = request.form.get('start_date')
             end_date = request.form.get('end_date')
             
-            cursor.execute("SELECT id FROM academic_years WHERE year = %s", (year,))
+            cursor.execute("SELECT id FROM academic_years WHERE year = %s AND school_id = %s", (year, school_id))
             ay_row = cursor.fetchone()
             academic_year_id = ay_row['id'] if ay_row else None
             
             cursor.execute("""
                 UPDATE uniform_term_dates 
                 SET term_number=%s, year=%s, academic_year_id=%s, start_date=%s, end_date=%s
-                WHERE id=%s
-            """, (term_number, year, academic_year_id, start_date, end_date, term_id))
+                WHERE id=%s AND school_id=%s
+            """, (term_number, year, academic_year_id, start_date, end_date, term_id, school_id))
             flash("Term date updated successfully.", "success")
         
         elif action == 'delete':
             term_id = request.form.get('term_id')
-            cursor.execute("DELETE FROM uniform_term_dates WHERE id=%s", (term_id,))
+            cursor.execute("DELETE FROM uniform_term_dates WHERE id=%s AND school_id=%s", (term_id, school_id))
             flash("Term date deleted.", "success")
         
         connection.commit()
@@ -3998,8 +4172,9 @@ def manage_term_dates():
     # Get all term dates
     cursor.execute("""
         SELECT * FROM uniform_term_dates 
+        WHERE school_id = %s
         ORDER BY year DESC, term_number DESC
-    """)
+    """, (school_id,))
     term_dates = cursor.fetchall()
     
     connection.close()
@@ -4017,17 +4192,19 @@ def current_term_status():
     
     connection = get_db_connection()
     cursor = connection.cursor()
+    school_id = g.school_id or 1
     
     today = datetime.now().date()
     
     cursor.execute("""
         SELECT * FROM uniform_term_dates 
         WHERE %s BETWEEN start_date AND end_date
+          AND school_id = %s
         LIMIT 1
-    """, (today,))
+    """, (today, school_id))
     current_term = cursor.fetchone()
     
-    cursor.execute("SELECT COUNT(*) as total FROM uniform_term_dates")
+    cursor.execute("SELECT COUNT(*) as total FROM uniform_term_dates WHERE school_id = %s", (school_id,))
     total_terms = cursor.fetchone()['total']
     
     connection.close()
@@ -4046,28 +4223,29 @@ def manage_classes():
     connection = None
     try:
         connection = get_db_connection()
-        service = ClassManagementService(connection)
+        service = ClassManagementService(connection, school_id=g.school_id or 1)
+        school_id = g.school_id or 1
         
         # Get statistics
         with connection.cursor() as cursor:
             # Academic years
-            cursor.execute("SELECT COUNT(*) as count FROM academic_years")
+            cursor.execute("SELECT COUNT(*) as count FROM academic_years WHERE school_id = %s", (school_id,))
             academic_years_count = cursor.fetchone()['count']
             
             # Total classes
-            cursor.execute("SELECT COUNT(*) as count FROM classes")
+            cursor.execute("SELECT COUNT(*) as count FROM classes WHERE school_id = %s", (school_id,))
             total_classes = cursor.fetchone()['count']
             
             # Total students
-            cursor.execute("SELECT COUNT(*) as count FROM class_allocation WHERE is_current = TRUE")
+            cursor.execute("SELECT COUNT(*) as count FROM class_allocation WHERE is_current = TRUE AND school_id = %s", (school_id,))
             total_students = cursor.fetchone()['count']
             
-            # Total subjects
-            cursor.execute("SELECT COUNT(*) as count FROM subjects")
+            # Total subjects (tenant-scoped)
+            cursor.execute("SELECT COUNT(*) as count FROM subjects WHERE school_id = %s", (school_id,))
             total_subjects = cursor.fetchone()['count']
             
             # Current year
-            cursor.execute("SELECT year FROM academic_years WHERE is_current = TRUE LIMIT 1")
+            cursor.execute("SELECT year FROM academic_years WHERE is_current = TRUE AND school_id = %s LIMIT 1", (school_id,))
             result = cursor.fetchone()
             current_year = result['year'] if result else None
             
@@ -4078,18 +4256,18 @@ def manage_classes():
                 FROM classes c
                 LEFT JOIN academic_years a ON c.academic_year_id = a.id
                 LEFT JOIN class_allocation ca ON c.classID = ca.class_id AND ca.is_current = TRUE
-                WHERE a.is_current = TRUE
+                WHERE a.is_current = TRUE AND c.school_id = %s
                 GROUP BY c.classID
                 ORDER BY c.class_name ASC
-            """)
+            """, (school_id,))
             classes = cursor.fetchall()
             
             # Get all streams
             cursor.execute("""
                 SELECT id, code, name, is_active FROM stream_settings 
-                WHERE is_active = TRUE
+                WHERE is_active = TRUE AND school_id = %s
                 ORDER BY code
-            """)
+            """, (school_id,))
             streams = cursor.fetchall()
         
             # Classes missing subject allocation (wrapped in try-except)
@@ -4098,12 +4276,12 @@ def manage_classes():
                 cursor.execute("""
                     SELECT c.display_name
                     FROM classes c
-                    LEFT JOIN class_subjects cs ON c.classID = cs.class_id AND cs.is_active = TRUE
+                    LEFT JOIN class_subjects cs ON c.classID = cs.class_id AND cs.is_active = TRUE AND cs.school_id = %s
                     LEFT JOIN academic_years ay ON c.academic_year_id = ay.id
-                    WHERE ay.is_current = TRUE AND c.is_active = TRUE
+                    WHERE ay.is_current = TRUE AND c.is_active = TRUE AND c.school_id = %s
                     GROUP BY c.classID
                     HAVING COUNT(cs.subject_id) = 0
-                """)
+                """, (school_id, school_id))
                 missing_subject_classes = [row['display_name'] for row in cursor.fetchall()]
             except Exception as e:
                 app.logger.warning(f"Could not fetch classes missing subjects: {str(e)}")
@@ -4116,11 +4294,11 @@ def manage_classes():
                     SELECT c.display_name
                     FROM classes c
                     LEFT JOIN academic_years ay ON c.academic_year_id = ay.id
-                    LEFT JOIN class_teachers ct ON c.classID = ct.class_id AND ct.academic_year_id = ay.id AND ct.is_active = TRUE
-                    WHERE ay.is_current = TRUE AND c.is_active = TRUE
+                    LEFT JOIN class_teachers ct ON c.classID = ct.class_id AND ct.academic_year_id = ay.id AND ct.is_active = TRUE AND ct.school_id = %s
+                    WHERE ay.is_current = TRUE AND c.is_active = TRUE AND c.school_id = %s
                     GROUP BY c.classID
                     HAVING COUNT(ct.teacher_id) = 0
-                """)
+                """, (school_id, school_id))
                 missing_class_teachers = [row['display_name'] for row in cursor.fetchall()]
             except Exception:
                 # Fallback to older teacher_allocations if class_teachers doesn't exist
@@ -4128,12 +4306,12 @@ def manage_classes():
                     cursor.execute("""
                         SELECT c.display_name
                         FROM classes c
-                        LEFT JOIN teacher_allocations ta ON c.classID = ta.class_id AND ta.is_active = TRUE
+                        LEFT JOIN teacher_allocations ta ON c.classID = ta.class_id AND ta.is_active = TRUE AND ta.school_id = %s
                         LEFT JOIN academic_years ay ON c.academic_year_id = ay.id
-                        WHERE ay.is_current = TRUE AND c.is_active = TRUE
+                        WHERE ay.is_current = TRUE AND c.is_active = TRUE AND c.school_id = %s
                         GROUP BY c.classID
                         HAVING COUNT(ta.teacher_id) = 0
-                    """)
+                    """, (school_id, school_id))
                     missing_class_teachers = [row['display_name'] for row in cursor.fetchall()]
                 except Exception as e:
                     app.logger.warning(f"Could not fetch classes missing teachers: {str(e)}")
@@ -4142,33 +4320,33 @@ def manage_classes():
             # Class-subjects missing subject teacher
             missing_subject_teachers = []
             try:
-                # Try new schema first
                 cursor.execute("""
                     SELECT c.display_name, s.name as subject_name
                     FROM classes c
-                    JOIN class_subjects cs ON c.classID = cs.class_id AND cs.is_active = TRUE
-                    JOIN subjects s ON cs.subject_id = s.id
-                    LEFT JOIN teacher_allocations ta ON c.classID = ta.class_id AND cs.subject_id = ta.subject_id AND ta.is_active = TRUE
+                    JOIN class_subjects cs ON c.classID = cs.class_id AND cs.is_active = TRUE AND cs.school_id = %s
+                    JOIN subjects s ON cs.subject_id = s.id AND s.school_id = %s
+                    LEFT JOIN teacher_allocations ta ON c.classID = ta.class_id AND cs.subject_id = ta.subject_id AND ta.is_active = TRUE AND ta.school_id = %s
                     LEFT JOIN academic_years ay ON c.academic_year_id = ay.id
                     WHERE ay.is_current = TRUE AND c.is_active = TRUE
+                      AND c.school_id = %s
                     GROUP BY c.classID, cs.subject_id
                     HAVING COUNT(ta.teacher_id) = 0
-                """)
+                """, (school_id, school_id, school_id, school_id))
                 missing_subject_teachers = [f"{row['display_name']} - {row['subject_name']}" for row in cursor.fetchall()]
             except Exception:
                 try:
-                    # Fallback to legacy schema (subjectNo, subjName)
                     cursor.execute("""
                         SELECT c.display_name, s.subjName as subject_name
                         FROM classes c
-                        JOIN class_subjects cs ON c.classID = cs.class_id AND cs.is_active = TRUE
-                        JOIN subjects s ON cs.subject_id = s.subjectNo
-                        LEFT JOIN teacher_allocations ta ON c.classID = ta.class_id AND cs.subject_id = ta.subject_id AND ta.is_active = TRUE
+                        JOIN class_subjects cs ON c.classID = cs.class_id AND cs.is_active = TRUE AND cs.school_id = %s
+                        JOIN subjects s ON cs.subject_id = s.subjectNo AND s.school_id = %s
+                        LEFT JOIN teacher_allocations ta ON c.classID = ta.class_id AND cs.subject_id = ta.subject_id AND ta.is_active = TRUE AND ta.school_id = %s
                         LEFT JOIN academic_years ay ON c.academic_year_id = ay.id
                         WHERE ay.is_current = TRUE AND c.is_active = TRUE
+                          AND c.school_id = %s
                         GROUP BY c.classID, cs.subject_id
                         HAVING COUNT(ta.teacher_id) = 0
-                    """)
+                    """, (school_id, school_id, school_id, school_id))
                     missing_subject_teachers = [f"{row['display_name']} - {row['subject_name']}" for row in cursor.fetchall()]
                 except Exception as e:
                     app.logger.warning(f"Could not fetch subject-teacher assignments: {str(e)}")
@@ -4275,6 +4453,7 @@ def manage_transport_routes():
     """Manage transport routes and charges."""
     connection = get_db_connection()
     cursor = connection.cursor()
+    school_id = g.school_id
 
     if request.method == 'POST':
         action = request.form.get('action')
@@ -4286,9 +4465,9 @@ def manage_transport_routes():
             
             try:
                 cursor.execute("""
-                    INSERT INTO transport_routes (name, amount, description)
-                    VALUES (%s, %s, %s)
-                """, (name, amount, description))
+                    INSERT INTO transport_routes (name, amount, description, school_id)
+                    VALUES (%s, %s, %s, %s)
+                """, (name, amount, description, school_id))
                 connection.commit()
                 flash(f"✅ Route '{name}' added successfully", "success")
             except Exception as e:
@@ -4304,8 +4483,8 @@ def manage_transport_routes():
                 cursor.execute("""
                     UPDATE transport_routes 
                     SET name = %s, amount = %s, description = %s 
-                    WHERE id = %s
-                """, (name, amount, description, route_id))
+                    WHERE id = %s AND school_id = %s
+                """, (name, amount, description, route_id, school_id))
                 connection.commit()
                 flash("✅ Route updated successfully", "success")
             except Exception as e:
@@ -4313,15 +4492,15 @@ def manage_transport_routes():
 
         elif action == 'toggle':
             route_id = request.form.get('route_id')
-            cursor.execute("SELECT is_active FROM transport_routes WHERE id = %s", (route_id,))
+            cursor.execute("SELECT is_active FROM transport_routes WHERE id = %s AND school_id = %s", (route_id, school_id))
             res = cursor.fetchone()
             if res:
                 new_status = not res['is_active']
-                cursor.execute("UPDATE transport_routes SET is_active = %s WHERE id = %s", (new_status, route_id))
+                cursor.execute("UPDATE transport_routes SET is_active = %s WHERE id = %s AND school_id = %s", (new_status, route_id, school_id))
                 connection.commit()
                 flash("✅ Route status updated", "success")
 
-    cursor.execute("SELECT * FROM transport_routes ORDER BY name")
+    cursor.execute("SELECT * FROM transport_routes WHERE school_id = %s ORDER BY name", (school_id,))
     routes = cursor.fetchall()
     connection.close()
     return render_template('manage_routes.html', routes=routes)
@@ -4332,13 +4511,14 @@ def manage_transport_routes():
 def delete_route(route_id):
     connection = get_db_connection()
     cursor = connection.cursor()
+    school_id = g.school_id
     try:
         # Check if route is in use
-        cursor.execute("SELECT COUNT(*) as count FROM studentinfo WHERE route_id = %s", (route_id,))
+        cursor.execute("SELECT COUNT(*) as count FROM studentinfo WHERE route_id = %s AND school_id = %s", (route_id, school_id))
         if cursor.fetchone()['count'] > 0:
             return jsonify({'success': False, 'message': 'Route is in use by students and cannot be deleted.'}), 400
             
-        cursor.execute("DELETE FROM transport_routes WHERE id = %s", (route_id,))
+        cursor.execute("DELETE FROM transport_routes WHERE id = %s AND school_id = %s", (route_id, school_id))
         connection.commit()
         return jsonify({'success': True, 'message': '✓ Route deleted successfully.'})
     except Exception as e:
@@ -4356,6 +4536,7 @@ def manage_users():
     
     connection = get_db_connection()
     cursor = connection.cursor()
+    school_id = g.school_id or 1
     
     if request.method == 'POST':
         action = request.form.get('action')
@@ -4385,12 +4566,12 @@ def manage_users():
                 connection.close()
                 return redirect(url_for('manage_users'))
             
-            # Check if username already exists
-            cursor.execute("SELECT COUNT(*) as count FROM users WHERE username = %s", (username,))
+            # Check if username already exists in THIS school
+            cursor.execute("SELECT COUNT(*) as count FROM users WHERE username = %s AND school_id = %s", (username, school_id))
             existing_user = cursor.fetchone()['count']
             
             if existing_user > 0:
-                flash(f"Username '{username}' already exists.", "error")
+                flash(f"Username '{username}' already exists in this school.", "error")
                 connection.close()
                 return redirect(url_for('manage_users'))
             
@@ -4400,9 +4581,9 @@ def manage_users():
             
             # Create user
             cursor.execute("""
-                INSERT INTO users (username, pwd, access_flag, TA, StaffID)
-                VALUES (%s, %s, %s, %s, %s)
-            """, (username, hashed_password, is_active, is_admin, staff_id))
+                INSERT INTO users (username, pwd, access_flag, TA, StaffID, school_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (username, hashed_password, is_active, is_admin, staff_id, school_id))
             
             flash(f"User '{username}' created successfully.", "success")
         
@@ -4414,12 +4595,12 @@ def manage_users():
             is_admin = 1 if request.form.get('is_admin') == 'on' else 0
             is_active = 1 if request.form.get('is_active') == 'on' else 0
             
-            # Update user
+            # Update user (scoped by school_id)
             cursor.execute("""
                 UPDATE users 
                 SET username = %s, TA = %s, access_flag = %s, StaffID = %s
-                WHERE userNo = %s
-            """, (username, is_admin, is_active, staff_id, user_no))
+                WHERE userNo = %s AND school_id = %s
+            """, (username, is_admin, is_active, staff_id, user_no, school_id))
             
             flash(f"User '{username}' updated successfully.", "success")
         
@@ -4438,11 +4619,11 @@ def manage_users():
             hashed_password = hashlib.md5(new_password.encode()).hexdigest()
             
             cursor.execute("""
-                UPDATE users SET pwd = %s WHERE userNo = %s
-            """, (hashed_password, user_no))
+                UPDATE users SET pwd = %s WHERE userNo = %s AND school_id = %s
+            """, (hashed_password, user_no, school_id))
             
             # Get username for message
-            cursor.execute("SELECT username FROM users WHERE userNo = %s", (user_no,))
+            cursor.execute("SELECT username FROM users WHERE userNo = %s AND school_id = %s", (user_no, school_id))
             user = cursor.fetchone()
             flash(f"Password for '{user['username']}' changed successfully.", "success")
         
@@ -4453,11 +4634,11 @@ def manage_users():
             cursor.execute("""
                 UPDATE users 
                 SET access_flag = NOT access_flag 
-                WHERE userNo = %s
-            """, (user_no,))
+                WHERE userNo = %s AND school_id = %s
+            """, (user_no, school_id))
             
             # Get username for message
-            cursor.execute("SELECT username FROM users WHERE userNo = %s", (user_no,))
+            cursor.execute("SELECT username FROM users WHERE userNo = %s AND school_id = %s", (user_no, school_id))
             user = cursor.fetchone()
             flash(f"User status for '{user['username']}' updated.", "success")
         
@@ -4472,16 +4653,16 @@ def manage_users():
                 return redirect(url_for('manage_users'))
             
             # Get username before deletion
-            cursor.execute("SELECT username FROM users WHERE userNo = %s", (user_no,))
+            cursor.execute("SELECT username FROM users WHERE userNo = %s AND school_id = %s", (user_no, school_id))
             user = cursor.fetchone()
             username = user['username'] if user else 'Unknown'
             
-            cursor.execute("DELETE FROM users WHERE userNo = %s", (user_no,))
+            cursor.execute("DELETE FROM users WHERE userNo = %s AND school_id = %s", (user_no, school_id))
             flash(f"User '{username}' deleted.", "success")
         
         connection.commit()
     
-    # Get all users
+    # Get all users for THIS school
     cursor.execute("""
         SELECT userNo, username, StaffID, TA as is_admin, access_flag as is_active,
                CASE 
@@ -4489,12 +4670,13 @@ def manage_users():
                  ELSE 0 
                END as is_current_user
         FROM users 
+        WHERE school_id = %s
         ORDER BY username
-    """, (session['userNo'],))
+    """, (session['userNo'], school_id))
     
     users = cursor.fetchall()
     
-    # Get user statistics
+    # Get user statistics for THIS school
     cursor.execute("""
         SELECT 
             COUNT(*) as total_users,
@@ -4502,7 +4684,8 @@ def manage_users():
             SUM(access_flag) as active_count,
             SUM(CASE WHEN TA = 0 THEN 1 ELSE 0 END) as staff_count
         FROM users
-    """)
+        WHERE school_id = %s
+    """, (school_id,))
     stats = cursor.fetchone()
     
     connection.close()
@@ -4519,11 +4702,12 @@ def edit_user_modal(user_no):
     
     connection = get_db_connection()
     cursor = connection.cursor()
+    school_id = g.school_id or 1
     
     cursor.execute("""
         SELECT userNo, username, StaffID, TA as is_admin, access_flag as is_active
-        FROM users WHERE userNo = %s
-    """, (user_no,))
+        FROM users WHERE userNo = %s AND school_id = %s
+    """, (user_no, school_id))
     
     user = cursor.fetchone()
     connection.close()
@@ -4547,6 +4731,7 @@ def user_activity_log():
     
     connection = get_db_connection()
     cursor = connection.cursor()
+    school_id = g.school_id or 1
     
     cursor.execute("""
         SELECT 
@@ -4555,11 +4740,11 @@ def user_activity_log():
             MAX(ur.issued_on) as last_activity,
             SUM(ur.total) as total_value
         FROM uniform_receipts ur
-        WHERE ur.issued_by IS NOT NULL
+        WHERE ur.issued_by IS NOT NULL AND ur.school_id = %s
         GROUP BY ur.issued_by
         ORDER BY last_activity DESC
         LIMIT 20
-    """)
+    """, (school_id,))
     
     activities = cursor.fetchall()
     connection.close()
@@ -4677,15 +4862,16 @@ def manage_stock():
                 supplier = request.form.get('supplier', '')
                 purchase_ref = request.form.get('purchase_ref', '')
                 
+                school_id = g.school_id
                 with connection.cursor() as cursor:
                     # Ensure item_stock row exists for this item (create if missing)
-                    cursor.execute("SELECT item_id FROM item_stock WHERE item_name = %s", (item_name,))
+                    cursor.execute("SELECT item_id FROM item_stock WHERE item_name = %s AND school_id = %s", (item_name, school_id))
                     stock_row = cursor.fetchone()
                     if not stock_row:
-                        cursor.execute("INSERT INTO item_stock (item_name, current_stock, reorder_level, updated_at) VALUES (%s, 0, 10, NOW())", (item_name,))
+                        cursor.execute("INSERT INTO item_stock (item_name, current_stock, reorder_level, updated_at, school_id) VALUES (%s, 0, 10, NOW(), %s)", (item_name, school_id))
                         # ensure row is available for subsequent SELECTs
                         connection.commit()
-                        cursor.execute("SELECT item_id FROM item_stock WHERE item_name = %s", (item_name,))
+                        cursor.execute("SELECT item_id FROM item_stock WHERE item_name = %s AND school_id = %s", (item_name, school_id))
                         stock_row = cursor.fetchone()
                     # Update stock
                     cursor.execute("""
@@ -4693,17 +4879,17 @@ def manage_stock():
                         SET current_stock = current_stock + %s,
                             last_restock_date = CURDATE(),
                             updated_at = NOW()
-                        WHERE item_name = %s
-                    """, (quantity, item_name))
+                        WHERE item_name = %s AND school_id = %s
+                    """, (quantity, item_name, school_id))
                     
                     # Record movement
                     cursor.execute("""
                         INSERT INTO stock_movements 
-                        (item_id, movement_type, quantity, reference_no, notes, user_id)
-                        SELECT item_id, 'PURCHASE', %s, %s, %s, %s
+                        (item_id, movement_type, quantity, reference_no, notes, user_id, school_id)
+                        SELECT item_id, 'PURCHASE', %s, %s, %s, %s, %s
                         FROM item_stock 
-                        WHERE item_name = %s
-                    """, (quantity, purchase_ref, f"Restock from {supplier}", session.get('userNo'), item_name))
+                        WHERE item_name = %s AND school_id = %s
+                    """, (quantity, purchase_ref, f"Purchased from {supplier}", session.get('userNo'), school_id, item_name, school_id))
                     
                     connection.commit()
                     flash(f'Added {quantity} units to {item_name}', 'success')
@@ -4716,14 +4902,14 @@ def manage_stock():
                 with connection.cursor() as cursor:
                     # Get current stock
                     cursor.execute("""
-                        SELECT current_stock FROM item_stock WHERE item_name = %s
-                    """, (item_name,))
+                        SELECT current_stock, item_id FROM item_stock WHERE item_name = %s AND school_id = %s
+                    """, (item_name, school_id))
                     current = cursor.fetchone()
                     # If no item_stock row exists, create it with 0 current_stock
                     if not current:
-                        cursor.execute("INSERT INTO item_stock (item_name, current_stock, reorder_level, updated_at) VALUES (%s, 0, 10, NOW())", (item_name,))
+                        cursor.execute("INSERT INTO item_stock (item_name, current_stock, reorder_level, updated_at, school_id) VALUES (%s, 0, 10, NOW(), %s)", (item_name, school_id))
                         connection.commit()
-                        cursor.execute("SELECT current_stock FROM item_stock WHERE item_name = %s", (item_name,))
+                        cursor.execute("SELECT current_stock, item_id FROM item_stock WHERE item_name = %s AND school_id = %s", (item_name, school_id))
                         current = cursor.fetchone()
 
                     if current:
@@ -4734,17 +4920,17 @@ def manage_stock():
                             UPDATE item_stock 
                             SET current_stock = %s,
                                 updated_at = NOW()
-                            WHERE item_name = %s
-                        """, (new_quantity, item_name))
+                            WHERE item_name = %s AND school_id = %s
+                        """, (new_quantity, item_name, school_id))
                         
                         # Record adjustment
                         cursor.execute("""
                             INSERT INTO stock_movements 
-                            (item_id, movement_type, quantity, previous_stock, new_stock, notes, user_id)
-                            SELECT item_id, 'ADJUSTMENT', %s, %s, %s, %s, %s
+                            (item_id, movement_type, quantity, previous_stock, new_stock, notes, user_id, school_id)
+                            SELECT item_id, 'ADJUSTMENT', %s, %s, %s, %s, %s, %s
                             FROM item_stock 
-                            WHERE item_name = %s
-                        """, (adjustment, current['current_stock'], new_quantity, reason, session.get('userNo'), item_name))
+                            WHERE item_name = %s AND school_id = %s
+                        """, (adjustment, current['current_stock'], new_quantity, reason, session.get('userNo'), school_id, item_name, school_id))
                         
                         connection.commit()
                         flash(f'Stock adjusted for {item_name}', 'success')
@@ -4755,16 +4941,17 @@ def manage_stock():
         with connection.cursor() as cursor:
             # ONLY show items that are in uniform_prices or specifically tagged as inventory
             cursor.execute("""
-                SELECT up.item_name, 
-                       GROUP_CONCAT(DISTINCT up.class_group ORDER BY up.class_group) as class_groups,
-                       COALESCE(ist.current_stock, 0) as current_stock,
-                       COALESCE(ist.reorder_level, 10) as reorder_level,
-                       ist.last_restock_date
-                FROM uniform_prices up
-                LEFT JOIN item_stock ist ON up.item_name = ist.item_name
-                GROUP BY up.item_name, ist.current_stock, ist.reorder_level, ist.last_restock_date
-                ORDER BY up.item_name
-            """)
+                  SELECT up.item_name, 
+                      GROUP_CONCAT(DISTINCT up.class_group ORDER BY up.class_group) as class_groups,
+                      COALESCE(ist.current_stock, 0) as current_stock,
+                      COALESCE(ist.reorder_level, 10) as reorder_level,
+                      ist.last_restock_date
+                  FROM uniform_prices up
+                  LEFT JOIN item_stock ist ON up.item_name = ist.item_name AND up.school_id = ist.school_id
+                  WHERE up.school_id = %s
+                  GROUP BY up.item_name, ist.current_stock, ist.reorder_level, ist.last_restock_date
+                  ORDER BY up.item_name
+                 """, (g.school_id or 1,))
             items = cursor.fetchall()
             
             # Get low stock items
@@ -4816,11 +5003,11 @@ def stock_report():
                        sm.reference_no, sm.student_admno, sm.notes,
                        u.username
                 FROM stock_movements sm
-                JOIN item_stock is ON sm.item_id = is.item_id
-                LEFT JOIN users u ON sm.user_id = u.id
-                WHERE 1=1
+                JOIN item_stock is ON sm.item_id = is.item_id AND sm.school_id = is.school_id
+                LEFT JOIN users u ON sm.user_id = u.id AND u.school_id = sm.school_id
+                WHERE sm.school_id = %s
             """
-            params = []
+            params = [g.school_id or 1]
             
             if start_date:
                 query += " AND DATE(sm.movement_date) >= %s"
@@ -4842,7 +5029,8 @@ def stock_report():
                     SUM(CASE WHEN current_stock <= reorder_level THEN 1 ELSE 0 END) as low_stock_count,
                     SUM(current_stock) as total_stock_value
                 FROM item_stock
-            """)
+                WHERE school_id = %s
+            """, (g.school_id or 1,))
             summary = cursor.fetchone()
             
             return render_template('stock_report.html',
@@ -4908,8 +5096,9 @@ def stock_ledger():
             # Get list of items
             cursor.execute("""
                 SELECT DISTINCT item_name FROM uniform_prices 
+                WHERE school_id = %s
                 ORDER BY item_name
-            """)
+            """, (g.school_id or 1,))
             items = cursor.fetchall()
             
             # Get ledger data for selected item
@@ -4931,11 +5120,11 @@ def stock_ledger():
                         sm.notes,
                         u.username
                     FROM stock_movements sm
-                    JOIN item_stock ist ON sm.item_id = ist.item_id
-                    LEFT JOIN users u ON sm.user_id = u.userNo
-                    WHERE ist.item_name = %s
+                    JOIN item_stock ist ON sm.item_id = ist.item_id AND sm.school_id = ist.school_id
+                    LEFT JOIN users u ON sm.user_id = u.userNo AND u.school_id = sm.school_id
+                    WHERE ist.item_name = %s AND sm.school_id = %s
                 """
-                params = [item_name]
+                params = [item_name, g.school_id or 1]
                 
                 if date_from:
                     query += " AND DATE(sm.movement_date) >= %s"
@@ -4971,7 +5160,7 @@ def stock_ledger():
                     ledger_data.append(row_dict)
                 
                 # Get current stock
-                cursor.execute("SELECT current_stock FROM item_stock WHERE item_name = %s", (item_name,))
+                cursor.execute("SELECT current_stock FROM item_stock WHERE item_name = %s AND school_id = %s", (item_name, g.school_id or 1))
                 stock_info = cursor.fetchone()
                 current_balance = stock_info['current_stock'] if stock_info else 0
                 
@@ -5015,14 +5204,15 @@ def class_subjects_select():
     """Page to select a class for subject allocation."""
     connection = None
     try:
+        school_id = getattr(g, 'school_id', 1)
         connection = get_db_connection()
         with connection.cursor() as cursor:
             cursor.execute("""
                 SELECT classID, display_name, academic_year_id, class_group_code, stream_code
                 FROM classes
-                WHERE is_active = TRUE
+                WHERE is_active = TRUE AND school_id = %s
                 ORDER BY display_name
-            """)
+            """, (school_id,))
             classes = cursor.fetchall()
         return render_template('class_subjects_select.html', classes=classes)
     except Exception as e:
@@ -5041,6 +5231,7 @@ def student_subjects_select():
     """Page to select a student for subject enrollment."""
     connection = None
     try:
+        school_id = getattr(g, 'school_id', 1)
         connection = get_db_connection()
         with connection.cursor() as cursor:
             cursor.execute("""
@@ -5048,9 +5239,9 @@ def student_subjects_select():
                 FROM students s
                 JOIN class_allocation ca ON s.admno = ca.student_id AND ca.is_current = TRUE
                 JOIN classes c ON ca.class_id = c.classID
-                WHERE s.is_active = TRUE
+                WHERE s.is_active = TRUE AND s.school_id = %s AND c.school_id = %s
                 ORDER BY s.full_name
-            """)
+            """, (school_id, school_id))
             students = cursor.fetchall()
         return render_template('student_subjects_select.html', students=students)
     except Exception as e:
@@ -5070,25 +5261,28 @@ def class_reports():
     connection = None
     try:
         connection = get_db_connection()
+        school_id = g.school_id or 1
         with connection.cursor() as cursor:
             # Classes per year
             cursor.execute("""
                 SELECT c.display_name, ay.year, COUNT(ca.id) as students
                 FROM classes c
-                LEFT JOIN class_allocation ca ON c.classID = ca.class_id AND ca.is_current = TRUE
-                JOIN academic_years ay ON c.academic_year_id = ay.id
+                LEFT JOIN class_allocation ca ON c.classID = ca.class_id AND ca.is_current = TRUE AND ca.school_id = c.school_id
+                JOIN academic_years ay ON c.academic_year_id = ay.id AND ay.school_id = c.school_id
+                WHERE c.school_id = %s
                 GROUP BY c.classID, ay.year
                 ORDER BY ay.year DESC, c.display_name
-            """)
+            """, (school_id,))
             class_summary = cursor.fetchall()
 
             # Promotion history
             cursor.execute("""
                 SELECT old_class_id, new_class_id, student_count, promotion_date
                 FROM class_promotion_log
+                WHERE school_id = %s
                 ORDER BY promotion_date DESC
                 LIMIT 20
-            """)
+            """, (school_id,))
             promotions = cursor.fetchall()
         return render_template('class_reports.html', class_summary=class_summary, promotions=promotions)
     except Exception as e:
@@ -5107,7 +5301,7 @@ def create_class():
     connection = None
     try:
         connection = get_db_connection()
-        service = ClassManagementService(connection)
+        service = ClassManagementService(connection, school_id=g.school_id or 1)
         
         if request.method == 'POST':
             # Validate and create class
@@ -5164,7 +5358,7 @@ def promote_students():
     connection = None
     try:
         connection = get_db_connection()
-        service = ClassManagementService(connection)
+        service = ClassManagementService(connection, school_id=g.school_id or 1)
         
         if request.method == 'POST':
             old_class_id = int(request.form.get('old_class_id'))
@@ -5206,6 +5400,7 @@ def manage_streams():
     connection = None
     try:
         connection = get_db_connection()
+        school_id = g.school_id or 1
         
         with connection.cursor() as cursor:
             if request.method == 'POST':
@@ -5223,8 +5418,8 @@ def manage_streams():
                         try:
                             cursor.execute("""
                                 INSERT INTO stream_settings (school_id, code, name, is_active)
-                                VALUES (1, %s, %s, TRUE)
-                            """, (stream_code, stream_name))
+                                VALUES (%s, %s, %s, TRUE)
+                            """, (school_id, stream_code, stream_name))
                             connection.commit()
                             flash(f'✅ Stream {stream_code} added successfully', 'success')
                         except pymysql.IntegrityError:
@@ -5232,12 +5427,12 @@ def manage_streams():
                 
                 elif action == 'toggle':
                     stream_id = int(request.form.get('stream_id'))
-                    cursor.execute("SELECT is_active FROM stream_settings WHERE id = %s", (stream_id,))
+                    cursor.execute("SELECT is_active FROM stream_settings WHERE id = %s AND school_id = %s", (stream_id, school_id))
                     result = cursor.fetchone()
                     if result:
                         new_status = not result['is_active']
-                        cursor.execute("UPDATE stream_settings SET is_active = %s WHERE id = %s", 
-                                     (new_status, stream_id))
+                        cursor.execute("UPDATE stream_settings SET is_active = %s WHERE id = %s AND school_id = %s", 
+                                     (new_status, stream_id, school_id))
                         connection.commit()
                         status_text = "activated" if new_status else "deactivated"
                         flash(f'✅ Stream {status_text} successfully', 'success')
@@ -5245,11 +5440,16 @@ def manage_streams():
                 elif action == 'delete':
                     stream_id = int(request.form.get('stream_id'))
                     # Check if stream is in use
-                    cursor.execute("SELECT COUNT(*) as count FROM classes WHERE stream_code = (SELECT code FROM stream_settings WHERE id = %s)", (stream_id,))
+                    cursor.execute("""
+                        SELECT COUNT(*) as count 
+                        FROM classes 
+                        WHERE school_id = %s 
+                          AND stream_code = (SELECT code FROM stream_settings WHERE id = %s AND school_id = %s)
+                    """, (school_id, stream_id, school_id))
                     if cursor.fetchone()['count'] > 0:
                         flash('Cannot delete stream - it is currently in use by classes', 'error')
                     else:
-                        cursor.execute("DELETE FROM stream_settings WHERE id = %s", (stream_id,))
+                        cursor.execute("DELETE FROM stream_settings WHERE id = %s AND school_id = %s", (stream_id, school_id))
                         connection.commit()
                         flash('✅ Stream deleted successfully', 'success')
             
@@ -5257,9 +5457,9 @@ def manage_streams():
             cursor.execute("""
                 SELECT id, code, name, is_active 
                 FROM stream_settings 
-                WHERE school_id = 1
+                WHERE school_id = %s
                 ORDER BY code
-            """)
+            """, (school_id,))
             streams = cursor.fetchall()
         
         return render_template('manage_streams.html', streams=streams)
@@ -5281,7 +5481,8 @@ def manage_class_subjects(class_id):
     connection = None
     try:
         connection = get_db_connection()
-        service = ClassManagementService(connection)
+        service = ClassManagementService(connection, school_id=g.school_id or 1)
+        school_id = g.school_id or 1
         
         if request.method == 'POST':
             subject_ids = request.form.getlist('subject_ids')
@@ -5300,19 +5501,19 @@ def manage_class_subjects(class_id):
         # GET: Show form with available subjects
         with connection.cursor() as cursor:
             try:
-                cursor.execute("SELECT id, code, name FROM subjects WHERE is_active = TRUE ORDER BY code")
+                cursor.execute("SELECT id, code, name FROM subjects WHERE is_active = TRUE AND school_id = %s ORDER BY code", (school_id,))
                 subjects = cursor.fetchall()
             except Exception:
                 try:
-                    cursor.execute("SELECT id, code, name FROM subjects ORDER BY code")
+                    cursor.execute("SELECT id, code, name FROM subjects WHERE school_id = %s ORDER BY code", (school_id,))
                     subjects = cursor.fetchall()
                 except Exception:
                     # Fallback to legacy schema
-                    cursor.execute("SELECT subjectNo as id, code, subjName as name FROM subjects ORDER BY code")
+                    cursor.execute("SELECT subjectNo as id, code, subjName as name FROM subjects WHERE school_id = %s ORDER BY code", (school_id,))
                     subjects = cursor.fetchall()
             
             # Get already allocated subjects
-            cursor.execute("SELECT subject_id FROM class_subjects WHERE class_id = %s AND is_active = TRUE", (class_id,))
+            cursor.execute("SELECT subject_id FROM class_subjects WHERE class_id = %s AND is_active = TRUE AND school_id = %s", (class_id, school_id))
             allocated = [row['subject_id'] for row in cursor.fetchall()]
         
         return render_template('manage_class_subjects.html',
@@ -5337,7 +5538,8 @@ def allocate_teacher():
     connection = None
     try:
         connection = get_db_connection()
-        service = ClassManagementService(connection)
+        service = ClassManagementService(connection, school_id=g.school_id or 1)
+        school_id = g.school_id or 1
         
         if request.method == 'POST':
             teacher_id = int(request.form.get('teacher_id'))
@@ -5353,13 +5555,13 @@ def allocate_teacher():
                         cursor.execute("""
                             UPDATE class_teachers
                             SET is_active = FALSE
-                            WHERE class_id = %s AND academic_year_id = %s
-                        """, (class_id, academic_year_id))
+                            WHERE class_id = %s AND academic_year_id = %s AND school_id = %s
+                        """, (class_id, academic_year_id, school_id))
 
                         cursor.execute("""
-                            INSERT INTO class_teachers (teacher_id, class_id, academic_year_id, is_active)
-                            VALUES (%s, %s, %s, TRUE)
-                        """, (teacher_id, class_id, academic_year_id))
+                            INSERT INTO class_teachers (teacher_id, class_id, academic_year_id, is_active, school_id)
+                            VALUES (%s, %s, %s, TRUE, %s)
+                        """, (teacher_id, class_id, academic_year_id, school_id))
 
                     connection.commit()
 
@@ -5389,7 +5591,7 @@ def allocate_teacher():
                 return redirect(url_for('manage_classes'))
         
         # GET: Show form with dropdowns
-        service_obj = ClassManagementService(connection)
+        service_obj = ClassManagementService(connection, school_id=g.school_id or 1)
         years = service_obj.get_all_academic_years()
         
         with connection.cursor() as cursor:
@@ -5397,29 +5599,29 @@ def allocate_teacher():
             cursor.execute("""
                 SELECT userNo, username, StaffID 
                 FROM users 
-                WHERE access_flag = 1 
+                WHERE access_flag = 1 AND school_id = %s
                 ORDER BY username
-            """)
+            """, (school_id,))
             teachers = cursor.fetchall()
             
             # Some deployments may not have `is_active` on these tables.
             try:
-                cursor.execute("SELECT classID, display_name, class_group_code, stream_code FROM classes WHERE is_active = TRUE ORDER BY display_name")
+                cursor.execute("SELECT classID, display_name, class_group_code, stream_code FROM classes WHERE is_active = TRUE AND school_id = %s ORDER BY display_name", (school_id,))
             except Exception:
-                cursor.execute("SELECT classID, class_name as display_name FROM classes ORDER BY class_name")
+                cursor.execute("SELECT classID, class_name as display_name FROM classes WHERE school_id = %s ORDER BY class_name", (school_id,))
             classes = cursor.fetchall()
 
             # Try new schema first, fallback to legacy schema
             try:
-                cursor.execute("SELECT id, code, name FROM subjects WHERE is_active = TRUE ORDER BY code")
+                cursor.execute("SELECT id, code, name FROM subjects WHERE is_active = TRUE AND school_id = %s ORDER BY code", (school_id,))
                 subjects = cursor.fetchall()
             except Exception:
                 try:
-                    cursor.execute("SELECT id, code, name FROM subjects ORDER BY code")
+                    cursor.execute("SELECT id, code, name FROM subjects WHERE school_id = %s ORDER BY code", (school_id,))
                     subjects = cursor.fetchall()
                 except Exception:
                     # Fallback to legacy schema: subjectNo as id, subjName as name
-                    cursor.execute("SELECT subjectNo as id, code, subjName as name FROM subjects ORDER BY code")
+                    cursor.execute("SELECT subjectNo as id, code, subjName as name FROM subjects WHERE school_id = %s ORDER BY code", (school_id,))
                     subjects = cursor.fetchall()
         
         return render_template('allocate_teacher.html',
@@ -5445,13 +5647,14 @@ def get_teachers():
     connection = None
     try:
         connection = get_db_connection()
+        school_id = g.school_id or 1
         with connection.cursor() as cursor:
             cursor.execute("""
                 SELECT userNo, username, StaffID 
                 FROM users 
-                WHERE access_flag = 1 
+                WHERE access_flag = 1 AND school_id = %s
                 ORDER BY username
-            """)
+            """, (school_id,))
             teachers = cursor.fetchall()
         return jsonify({'success': True, 'teachers': teachers})
     except Exception as e:
@@ -5468,6 +5671,7 @@ def allocate_teacher_debug():
     connection = None
     try:
         connection = get_db_connection()
+        school_id = g.school_id or 1
         with connection.cursor() as cursor:
             # Try to fetch academic years
             try:
@@ -5483,13 +5687,13 @@ def allocate_teacher_debug():
             except Exception as e:
                 classes = {'error': str(e)}
 
-            # Subjects
+            # Subjects (tenant-scoped)
             try:
-                cursor.execute("SELECT id, code, name FROM subjects ORDER BY code")
+                cursor.execute("SELECT id, code, name FROM subjects WHERE school_id = %s ORDER BY code", (school_id,))
                 subjects = cursor.fetchall()
             except Exception as e:
                 try:
-                    cursor.execute("SELECT subjectNo as id, code, subjName as name FROM subjects ORDER BY code")
+                    cursor.execute("SELECT subjectNo as id, code, subjName as name FROM subjects WHERE school_id = %s ORDER BY code", (school_id,))
                     subjects = cursor.fetchall()
                 except Exception as e2:
                     subjects = {'error': str(e2)}
@@ -5512,16 +5716,18 @@ def select_student_for_subjects():
     if q:
         connection = get_db_connection()
         cursor = connection.cursor()
+        school_id = g.school_id or 1
         # Search by admno or name
         cursor.execute("""
             SELECT s.AdmNo, s.FName, s.MName, s.SName as LName, c.class_name
             FROM studentinfo s
-            LEFT JOIN classallocation ca ON s.AdmNo = ca.AdmNo
-            LEFT JOIN classes c ON ca.classID = c.classID
-            WHERE s.AdmNo LIKE %s OR s.FName LIKE %s OR s.SName LIKE %s
+            LEFT JOIN classallocation ca ON s.AdmNo = ca.AdmNo AND s.school_id = ca.school_id
+            LEFT JOIN classes c ON ca.classID = c.classID AND ca.school_id = c.school_id
+            WHERE (s.AdmNo LIKE %s OR s.FName LIKE %s OR s.SName LIKE %s)
+              AND s.school_id = %s
             GROUP BY s.AdmNo
             LIMIT 20
-        """, (f"%{q}%", f"%{q}%", f"%{q}%"))
+        """, (f"%{q}%", f"%{q}%", f"%{q}%", school_id))
         students = cursor.fetchall()
         connection.close()
     
@@ -5535,7 +5741,8 @@ def enroll_student_subjects(student_id):
     connection = None
     try:
         connection = get_db_connection()
-        service = ClassManagementService(connection)
+        service = ClassManagementService(connection, school_id=g.school_id or 1)
+        school_id = g.school_id or 1
         
         if request.method == 'POST':
             class_allocation_id = int(request.form.get('class_allocation_id'))
@@ -5574,8 +5781,9 @@ def enroll_student_subjects(student_id):
                     FROM class_subjects cs
                     JOIN subjects s ON cs.subject_id = s.id
                     WHERE cs.class_id = %s AND cs.is_active = TRUE
+                      AND cs.school_id = %s AND s.school_id = %s
                     ORDER BY s.code
-                """, (allocation['class_id'],))
+                                """, (allocation['class_id'], school_id, school_id))
                 available_subjects = cursor.fetchall()
             except Exception:
                 # Fallback to legacy schema
@@ -5584,8 +5792,9 @@ def enroll_student_subjects(student_id):
                     FROM class_subjects cs
                     JOIN subjects s ON cs.subject_id = s.subjectNo
                     WHERE cs.class_id = %s AND cs.is_active = TRUE
+                      AND cs.school_id = %s AND s.school_id = %s
                     ORDER BY s.code
-                """, (allocation['class_id'],))
+                                """, (allocation['class_id'], school_id, school_id))
                 available_subjects = cursor.fetchall()
             
             # Get already enrolled subjects
@@ -5618,7 +5827,8 @@ def manage_class_hub(class_id):
     connection = None
     try:
         connection = get_db_connection()
-        service = ClassManagementService(connection)
+        service = ClassManagementService(connection, school_id=g.school_id or 1)
+        school_id = g.school_id or 1
         
         with connection.cursor() as cursor:
             # 1. Get Class Details
@@ -5661,9 +5871,9 @@ def manage_class_hub(class_id):
                     LEFT JOIN teacher_allocations ta ON ta.class_id = cs.class_id 
                         AND ta.subject_id = s.id AND ta.is_active = TRUE
                     LEFT JOIN users u ON ta.teacher_id = u.userNo
-                    WHERE cs.class_id = %s AND cs.is_active = TRUE
+                    WHERE cs.class_id = %s AND cs.is_active = TRUE AND cs.school_id = %s AND s.school_id = %s
                     ORDER BY s.name
-                """, (class_id,))
+                """, (class_id, school_id, school_id))
                 subjects = cursor.fetchall()
             except Exception:
                 try:
@@ -5678,9 +5888,9 @@ def manage_class_hub(class_id):
                         LEFT JOIN teacher_allocations ta ON ta.class_id = cs.class_id 
                             AND ta.subject_id = s.subjectNo AND ta.is_active = TRUE
                         LEFT JOIN users u ON ta.teacher_id = u.userNo
-                        WHERE cs.class_id = %s AND cs.is_active = TRUE
+                        WHERE cs.class_id = %s AND cs.is_active = TRUE AND cs.school_id = %s AND s.school_id = %s
                         ORDER BY s.subjName
-                    """, (class_id,))
+                    """, (class_id, school_id, school_id))
                     subjects = cursor.fetchall()
                 except Exception as e:
                     app.logger.warning(f"Class Hub Subject Fetch Error: {str(e)}")
@@ -5691,9 +5901,9 @@ def manage_class_hub(class_id):
                 SELECT si.AdmNo, si.FName, si.SName, si.Sex as Gender, ca.id as allocation_id
                 FROM class_allocation ca
                 JOIN studentinfo si ON ca.student_id = si.AdmNo
-                WHERE ca.class_id = %s AND ca.is_current = TRUE
+                WHERE ca.class_id = %s AND ca.is_current = TRUE AND si.school_id = %s
                 ORDER BY si.FName, si.SName
-            """, (class_id,))
+            """, (class_id, school_id))
             students = cursor.fetchall()
             
             # 6. Metadata for Selects (All Teachers, All Subjects, Available Students)
@@ -5702,16 +5912,16 @@ def manage_class_hub(class_id):
             
             try:
                 # Try new schema first
-                cursor.execute("SELECT id, code, name FROM subjects WHERE is_active = TRUE ORDER BY name")
+                cursor.execute("SELECT id, code, name FROM subjects WHERE is_active = TRUE AND school_id = %s ORDER BY name", (school_id,))
                 all_subjects = cursor.fetchall()
             except Exception:
                 try:
                     # Try without is_active
-                    cursor.execute("SELECT id, code, name FROM subjects ORDER BY name")
+                    cursor.execute("SELECT id, code, name FROM subjects WHERE school_id = %s ORDER BY name", (school_id,))
                     all_subjects = cursor.fetchall()
                 except Exception:
                     # Try legacy schema
-                    cursor.execute("SELECT subjectNo as id, code, subjName as name FROM subjects ORDER BY subjName")
+                    cursor.execute("SELECT subjectNo as id, code, subjName as name FROM subjects WHERE school_id = %s ORDER BY subjName", (school_id,))
                     all_subjects = cursor.fetchall()
             
             available_students = service.get_available_students(academic_year_id)
@@ -5743,7 +5953,7 @@ def api_update_class_subjects(class_id):
     connection = None
     try:
         connection = get_db_connection()
-        service = ClassManagementService(connection)
+        service = ClassManagementService(connection, school_id=g.school_id or 1)
         service.allocate_subjects_to_class(class_id, [int(sid) for sid in subject_ids])
         return jsonify({'success': True, 'message': 'Subjects updated successfully'})
     except Exception as e:
@@ -5763,11 +5973,11 @@ def api_assign_teacher(class_id):
     connection = None
     try:
         connection = get_db_connection()
-        service = ClassManagementService(connection)
+        service = ClassManagementService(connection, school_id=g.school_id or 1)
         
         # Get academic year for the class
         with connection.cursor() as cursor:
-            cursor.execute("SELECT academic_year_id FROM classes WHERE classID = %s", (class_id,))
+            cursor.execute("SELECT academic_year_id FROM classes WHERE classID = %s AND school_id = %s", (class_id, g.school_id or 1))
             ay_id = cursor.fetchone()['academic_year_id']
             
         if is_class_teacher:
@@ -5791,10 +6001,10 @@ def api_add_students(class_id):
     connection = None
     try:
         connection = get_db_connection()
-        service = ClassManagementService(connection)
+        service = ClassManagementService(connection, school_id=g.school_id or 1)
         
         with connection.cursor() as cursor:
-            cursor.execute("SELECT academic_year_id FROM classes WHERE classID = %s", (class_id,))
+            cursor.execute("SELECT academic_year_id FROM classes WHERE classID = %s AND school_id = %s", (class_id, g.school_id or 1))
             ay_id = cursor.fetchone()['academic_year_id']
             
         count = service.allocate_students_to_class(class_id, [int(sid) for sid in student_ids], ay_id)
@@ -5811,9 +6021,10 @@ def api_get_student_subjects(allocation_id):
     connection = None
     try:
         connection = get_db_connection()
+        school_id = g.school_id or 1
         with connection.cursor() as cursor:
             # Get current enrollments
-            cursor.execute("SELECT subject_id FROM student_subjects WHERE class_allocation_id = %s AND is_active = TRUE", (allocation_id,))
+            cursor.execute("SELECT subject_id FROM student_subjects WHERE class_allocation_id = %s AND is_active = TRUE AND school_id = %s", (allocation_id, school_id))
             enrolled = [row['subject_id'] for row in cursor.fetchall()]
             return jsonify({'success': True, 'enrolled_subject_ids': enrolled})
     except Exception as e:
@@ -5832,11 +6043,12 @@ def api_update_student_subjects():
     connection = None
     try:
         connection = get_db_connection()
-        service = ClassManagementService(connection)
+        school_id = g.school_id or 1
+        service = ClassManagementService(connection, school_id=school_id)
         
         # Clear existing
         with connection.cursor() as cursor:
-            cursor.execute("UPDATE student_subjects SET is_active = FALSE WHERE class_allocation_id = %s", (allocation_id,))
+            cursor.execute("UPDATE student_subjects SET is_active = FALSE WHERE class_allocation_id = %s AND school_id = %s", (allocation_id, school_id))
             connection.commit()
             
         # Add new
@@ -5857,7 +6069,7 @@ def api_batch_enroll_subjects(class_id):
     connection = None
     try:
         connection = get_db_connection()
-        service = ClassManagementService(connection)
+        service = ClassManagementService(connection, school_id=g.school_id or 1)
         count = service.enroll_all_students_in_class_subjects(class_id, subject_ids)
         return jsonify({'success': True, 'message': f'Successfully enrolled students in {count} instances'})
     except Exception as e:
@@ -5872,7 +6084,7 @@ def api_remove_student(allocation_id):
     connection = None
     try:
         connection = get_db_connection()
-        service = ClassManagementService(connection)
+        service = ClassManagementService(connection, school_id=g.school_id or 1)
         service.remove_student_from_class(allocation_id)
         return jsonify({'success': True, 'message': 'Student removed from class'})
     except Exception as e:
@@ -5887,17 +6099,19 @@ def get_class_subjects(class_id):
     connection = None
     try:
         connection = get_db_connection()
+        school_id = g.school_id or 1
         
         with connection.cursor() as cursor:
             try:
                 # Try new schema first
                 cursor.execute("""
-                    SELECT s.subjectNo as id, s.code, s.subjName as name
+                    SELECT s.id as id, s.code, s.name
                     FROM class_subjects cs
-                    JOIN subjects s ON cs.subject_id = s.subjectNo
+                    JOIN subjects s ON cs.subject_id = s.id
                     WHERE cs.class_id = %s AND cs.is_active = TRUE
+                      AND cs.school_id = %s AND s.school_id = %s
                     ORDER BY s.code
-                """, (class_id,))
+                                """, (class_id, school_id, school_id))
                 subjects = cursor.fetchall()
             except Exception:
                 # Fallback to legacy schema
@@ -5906,8 +6120,9 @@ def get_class_subjects(class_id):
                     FROM class_subjects cs
                     JOIN subjects s ON cs.subject_id = s.subjectNo
                     WHERE cs.class_id = %s AND cs.is_active = TRUE
+                      AND cs.school_id = %s AND s.school_id = %s
                     ORDER BY s.code
-                """, (class_id,))
+                                """, (class_id, school_id, school_id))
                 subjects = cursor.fetchall()
         
         return jsonify({'success': True, 'subjects': subjects})
@@ -5933,12 +6148,13 @@ def get_classes_by_year():
         connection = get_db_connection()
         
         with connection.cursor() as cursor:
+            school_id = g.school_id or 1
             cursor.execute("""
                 SELECT classID, display_name, class_group_code, stream_code
                 FROM classes
-                WHERE academic_year_id = %s AND is_active = TRUE
+                WHERE academic_year_id = %s AND is_active = TRUE AND school_id = %s
                 ORDER BY display_name
-            """, (year_id,))
+            """, (year_id, school_id))
             classes = cursor.fetchall()
         
         return jsonify({'success': True, 'classes': classes})
@@ -5957,20 +6173,32 @@ def get_exam_subjects_status(exam_id, class_id):
     connection = None
     try:
         connection = get_db_connection()
+        school_id = g.school_id or 1
         with connection.cursor() as cursor:
             # Get total students in class
-            cursor.execute("SELECT COUNT(*) as total FROM class_allocation WHERE class_id = %s AND is_current = TRUE", (class_id,))
+            cursor.execute("SELECT COUNT(*) as total FROM class_allocation WHERE class_id = %s AND is_current = TRUE AND school_id = %s", (class_id, school_id))
             res_total = cursor.fetchone()
             total_students = res_total['total'] if res_total else 0
             
             # Get subjects for class
-            cursor.execute("""
-                SELECT s.subjectNo as id, s.subjName as name, s.code
-                FROM subjects s
-                JOIN class_subjects cs ON s.subjectNo = cs.subject_id
-                WHERE cs.class_id = %s AND cs.is_active = TRUE
-            """, (class_id,))
-            subjects = cursor.fetchall()
+            try:
+                cursor.execute("""
+                    SELECT s.id as id, s.name, s.code
+                    FROM subjects s
+                    JOIN class_subjects cs ON s.id = cs.subject_id
+                    WHERE cs.class_id = %s AND cs.is_active = TRUE
+                      AND cs.school_id = %s AND s.school_id = %s
+                                """, (class_id, school_id, school_id))
+                subjects = cursor.fetchall()
+            except Exception:
+                cursor.execute("""
+                    SELECT s.subjectNo as id, s.subjName as name, s.code
+                    FROM subjects s
+                    JOIN class_subjects cs ON s.subjectNo = cs.subject_id
+                    WHERE cs.class_id = %s AND cs.is_active = TRUE
+                      AND cs.school_id = %s AND s.school_id = %s
+                                """, (class_id, school_id, school_id))
+                subjects = cursor.fetchall()
             
             # For each subject, count entered marks in this exam
             for sub in subjects:
@@ -6005,7 +6233,7 @@ def get_exam_subjects_status(exam_id, class_id):
 @admin_required
 def manage_grading_scales():
     connection = get_db_connection()
-    service = ExamManagementService(connection)
+    service = ExamManagementService(connection, g.school_id)
     scales = service.get_all_grading_scales()
     connection.close()
     return render_template('manage_grading_scales.html', scales=scales)
@@ -6019,7 +6247,7 @@ def add_grading_scale():
     is_default = request.form.get('is_default') == 'on'
     
     connection = get_db_connection()
-    service = ExamManagementService(connection)
+    service = ExamManagementService(connection, g.school_id)
     try:
         service.create_grading_scale(name, description, is_default)
         flash(f"Grading scale '{name}' created successfully.", "success")
@@ -6034,7 +6262,7 @@ def add_grading_scale():
 @admin_required
 def edit_grading_scale(scale_id):
     connection = get_db_connection()
-    service = ExamManagementService(connection)
+    service = ExamManagementService(connection, g.school_id)
     scale = service.get_grading_scale(scale_id)
     grades = service.get_grading_details(scale_id)
     connection.close()
@@ -6069,7 +6297,7 @@ def save_grading_details(scale_id):
             })
     
     connection = get_db_connection()
-    service = ExamManagementService(connection)
+    service = ExamManagementService(connection, g.school_id)
     try:
         service.save_grading_details(scale_id, grades)
         flash("Grading details updated successfully.", "success")
@@ -6084,10 +6312,11 @@ def save_grading_details(scale_id):
 @admin_required
 def assign_class_grading():
     connection = get_db_connection()
-    service = ExamManagementService(connection)
+    service = ExamManagementService(connection, g.school_id)
     
     cursor = connection.cursor()
-    cursor.execute("SELECT classID, display_name, class_group, grading_scale_id FROM classes WHERE is_active = TRUE ORDER BY display_name")
+    school_id = g.school_id or 1
+    cursor.execute("SELECT classID, display_name, class_group, grading_scale_id FROM classes WHERE is_active = TRUE AND school_id = %s ORDER BY display_name", (school_id,))
     classes = cursor.fetchall()
     
     scales = service.get_all_grading_scales()
@@ -6099,12 +6328,13 @@ def assign_class_grading():
 @admin_required
 def save_class_grading_assignments():
     connection = get_db_connection()
-    service = ExamManagementService(connection)
+    service = ExamManagementService(connection, g.school_id)
     
     try:
         # Loop through all classes to find their assigned scales in the form
         cursor = connection.cursor()
-        cursor.execute("SELECT classID FROM classes WHERE is_active = TRUE")
+        school_id = g.school_id or 1
+        cursor.execute("SELECT classID FROM classes WHERE is_active = TRUE AND school_id = %s", (school_id,))
         classes = cursor.fetchall()
         
         for cls in classes:
@@ -6127,7 +6357,7 @@ def exams_dashboard():
     connection = None
     try:
         connection = get_db_connection()
-        service = ExamManagementService(connection)
+        service = ExamManagementService(connection, g.school_id)
         exams = service.get_all_exams()
         return render_template('exams_dashboard.html', exams=exams)
     except Exception as e:
@@ -6146,8 +6376,8 @@ def create_exam():
     connection = None
     try:
         connection = get_db_connection()
-        service = ExamManagementService(connection)
-        class_service = ClassManagementService(connection)
+        service = ExamManagementService(connection, g.school_id)
+        class_service = ClassManagementService(connection, school_id=g.school_id or 1)
         
         if request.method == 'POST':
             name = request.form.get('name', '').strip()
@@ -6172,7 +6402,8 @@ def create_exam():
         years = class_service.get_all_academic_years()
         # Get active classes
         with connection.cursor() as cursor:
-            cursor.execute("SELECT classID, display_name FROM classes WHERE is_active = TRUE ORDER BY display_name")
+            school_id = g.school_id or 1
+            cursor.execute("SELECT classID, display_name FROM classes WHERE is_active = TRUE AND school_id = %s ORDER BY display_name", (school_id,))
             all_classes = cursor.fetchall()
 
         return render_template('create_exam.html', years=years, all_classes=all_classes)
@@ -6192,7 +6423,7 @@ def aggregate_report_select():
     connection = None
     try:
         connection = get_db_connection()
-        service = ExamManagementService(connection)
+        service = ExamManagementService(connection, g.school_id)
         
         if request.method == 'POST':
             exam_ids = request.form.getlist('exam_ids')
@@ -6205,7 +6436,8 @@ def aggregate_report_select():
         # Get all exams and classes
         exams = service.get_all_exams()
         with connection.cursor() as cursor:
-            cursor.execute("SELECT classID, display_name FROM classes WHERE is_active = TRUE ORDER BY display_name")
+            school_id = g.school_id or 1
+            cursor.execute("SELECT classID, display_name FROM classes WHERE is_active = TRUE AND school_id = %s ORDER BY display_name", (school_id,))
             classes = cursor.fetchall()
             
         return render_template('aggregate_report_select.html', exams=exams, classes=classes)
@@ -6230,19 +6462,20 @@ def aggregate_report_class(class_id):
     connection = None
     try:
         connection = get_db_connection()
-        service = ExamManagementService(connection)
+        school_id = g.school_id or 1
+        service = ExamManagementService(connection, g.school_id)
         
         # Get class info
         with connection.cursor() as cursor:
-            cursor.execute("SELECT display_name FROM classes WHERE classID = %s", (class_id,))
+            cursor.execute("SELECT display_name FROM classes WHERE classID = %s AND school_id = %s", (class_id, school_id))
             res_cls = cursor.fetchone()
             class_name = res_cls['display_name'] if res_cls else "Unknown"
             
             # Get students in class
             cursor.execute("""
                 SELECT student_id FROM class_allocation 
-                WHERE class_id = %s AND is_current = TRUE
-            """, (class_id,))
+                WHERE class_id = %s AND is_current = TRUE AND school_id = %s
+            """, (class_id, school_id))
             students = cursor.fetchall()
             
         # Get exams info
@@ -6276,7 +6509,7 @@ def toggle_exam_status(exam_id):
     connection = None
     try:
         connection = get_db_connection()
-        service = ExamManagementService(connection)
+        service = ExamManagementService(connection, g.school_id)
         exam = service.get_exam_series(exam_id)
         if exam:
             new_lock_state = not exam['is_locked']
@@ -6307,7 +6540,7 @@ def exam_missing_marks(exam_id):
     connection = None
     try:
         connection = get_db_connection()
-        service = ExamManagementService(connection)
+        service = ExamManagementService(connection, g.school_id)
         exam = service.get_exam_series(exam_id)
         missing = service.get_exam_missing_marks_report(exam_id)
         return render_template('exam_missing_marks.html', exam=exam, missing=missing)
@@ -6326,7 +6559,7 @@ def marks_entry_select(exam_id):
     connection = None
     try:
         connection = get_db_connection()
-        service = ExamManagementService(connection)
+        service = ExamManagementService(connection, g.school_id)
         exam = service.get_exam_series(exam_id)
         
         # Get classes assigned to this exam
@@ -6335,12 +6568,13 @@ def marks_entry_select(exam_id):
         # Fallback to all active classes if none assigned (legacy support)
         if not classes:
             with connection.cursor() as cursor:
+                school_id = g.school_id or 1
                 cursor.execute("""
                     SELECT classID, display_name 
                     FROM classes 
-                    WHERE is_active = TRUE 
+                    WHERE is_active = TRUE AND school_id = %s
                     ORDER BY display_name
-                """)
+                """, (school_id,))
                 classes = cursor.fetchall()
             
         return render_template('marks_entry_select.html', exam=exam, classes=classes)
@@ -6367,15 +6601,16 @@ def marks_entry(exam_id):
     connection = None
     try:
         connection = get_db_connection()
-        service = ExamManagementService(connection)
+        school_id = g.school_id or 1
+        service = ExamManagementService(connection, g.school_id)
         exam = service.get_exam_series(exam_id)
         
         # Get class info
         with connection.cursor() as cursor:
-            cursor.execute("SELECT classID, display_name FROM classes WHERE classID = %s", (class_id,))
+            cursor.execute("SELECT classID, display_name FROM classes WHERE classID = %s AND school_id = %s", (class_id, school_id))
             cls_info = cursor.fetchone()
             
-            cursor.execute("SELECT subjectNo as id, subjName as name FROM subjects WHERE subjectNo = %s", (subject_id,))
+            cursor.execute("SELECT subjectNo as id, subjName as name FROM subjects WHERE subjectNo = %s AND school_id = %s", (subject_id, school_id))
             sub_info = cursor.fetchone()
             
         if not cls_info or not sub_info:
@@ -6415,7 +6650,7 @@ def api_save_mark(exam_id):
     connection = None
     try:
         connection = get_db_connection()
-        service = ExamManagementService(connection)
+        service = ExamManagementService(connection, g.school_id)
         
         # Save mark
         service.save_mark(
@@ -6476,14 +6711,15 @@ def export_marks_template(exam_id, class_id, subject_id):
     connection = None
     try:
         connection = get_db_connection()
-        service = ExamManagementService(connection)
+        school_id = g.school_id or 1
+        service = ExamManagementService(connection, g.school_id)
         
         # Get exam info
         with connection.cursor() as cursor:
             cursor.execute("SELECT name FROM exam_series WHERE id = %s", (exam_id,))
             exam = cursor.fetchone()
             
-            cursor.execute("SELECT subjName FROM subjects WHERE subjectNo = %s", (subject_id,))
+            cursor.execute("SELECT subjName FROM subjects WHERE subjectNo = %s AND school_id = %s", (subject_id, school_id))
             subject = cursor.fetchone()
             
             cursor.execute("SELECT display_name FROM classes WHERE classID = %s", (class_id,))
@@ -6548,7 +6784,7 @@ def import_marks_csv(exam_id, class_id, subject_id):
         reader = csv.DictReader(stream)
         
         connection = get_db_connection()
-        service = ExamManagementService(connection)
+        service = ExamManagementService(connection, g.school_id)
         
         # Check lock status
         exam = service.get_exam_series(exam_id)
@@ -6613,7 +6849,7 @@ def exam_tabulation(exam_id):
     connection = None
     try:
         connection = get_db_connection()
-        service = ExamManagementService(connection)
+        service = ExamManagementService(connection, g.school_id)
         exam = service.get_exam_series(exam_id)
         
         # Get all active classes for the dropdown
@@ -6655,7 +6891,7 @@ def student_report_card(exam_id, student_id):
     connection = None
     try:
         connection = get_db_connection()
-        service = ExamManagementService(connection)
+        service = ExamManagementService(connection, g.school_id)
         
         report_data = service.get_report_card_data(student_id, exam_id)
         
@@ -6676,7 +6912,7 @@ def exam_series_report(exam_id):
     connection = None
     try:
         connection = get_db_connection()
-        service = ExamManagementService(connection)
+        service = ExamManagementService(connection, g.school_id)
         exam = service.get_exam_series(exam_id)
         
         # 1. Best 3 students in each class
@@ -6720,7 +6956,7 @@ def class_exam_report(exam_id, class_id):
     connection = None
     try:
         connection = get_db_connection()
-        service = ExamManagementService(connection)
+        service = ExamManagementService(connection, g.school_id)
         exam = service.get_exam_series(exam_id)
         
         # 1. Distribution & Basic Stats
@@ -6764,7 +7000,7 @@ def stream_analysis(exam_id):
     connection = None
     try:
         connection = get_db_connection()
-        service = ExamManagementService(connection)
+        service = ExamManagementService(connection, g.school_id)
         exam = service.get_exam_series(exam_id)
         
         analysis = service.get_stream_performance_comparison(exam_id)
@@ -6791,20 +7027,21 @@ def stream_analysis(exam_id):
 def fees_dashboard():
     """Central dashboard for fees management."""
     connection = get_db_connection()
-    fees_service = FeesService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
     
     # Get summary stats
     today = datetime.now().date()
     yesterday = today - timedelta(days=1)
     
     with connection.cursor() as cursor:
+        school_id = g.school_id or 1
         # Today's Collection
-        cursor.execute("SELECT SUM(amount) as total FROM fee_payments WHERE payment_date = %s AND status = 'COMPLETED'", (today,))
+        cursor.execute("SELECT SUM(amount) as total FROM fee_payments WHERE payment_date = %s AND status = 'COMPLETED' AND school_id = %s", (today, school_id))
         res = cursor.fetchone()
         today_total = res['total'] if res and res['total'] else 0
         
         # Monthly Collection
-        cursor.execute("SELECT SUM(amount) as total FROM fee_payments WHERE MONTH(payment_date) = MONTH(%s) AND YEAR(payment_date) = YEAR(%s) AND status = 'COMPLETED'", (today, today))
+        cursor.execute("SELECT SUM(amount) as total FROM fee_payments WHERE MONTH(payment_date) = MONTH(%s) AND YEAR(payment_date) = YEAR(%s) AND status = 'COMPLETED' AND school_id = %s", (today, today, school_id))
         res = cursor.fetchone()
         monthly_total = res['total'] if res and res['total'] else 0
         
@@ -6812,8 +7049,13 @@ def fees_dashboard():
         cursor.execute("""
             SELECT SUM(fl.balance_after) as total
             FROM fee_ledger fl
-            WHERE fl.id IN (SELECT MAX(id) FROM fee_ledger GROUP BY admno)
-        """)
+            WHERE fl.school_id = %s
+              AND fl.id IN (
+                  SELECT MAX(id) FROM fee_ledger 
+                  WHERE school_id = %s
+                  GROUP BY admno
+              )
+        """, (school_id, school_id))
         res = cursor.fetchone()
         total_arrears = res['total'] if res and res['total'] else 0
 
@@ -6831,7 +7073,7 @@ def fees_collection_report():
     start_date = request.args.get('start_date', datetime.now().strftime('%Y-%m-01'))
     end_date = request.args.get('end_date', datetime.now().strftime('%Y-%m-%d'))
     connection = get_db_connection()
-    fees_service = FeesService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
     try:
         data = fees_service.get_collection_summary(start_date, end_date)
         return render_template('fees_collection_report.html', data=data, start_date=start_date, end_date=end_date)
@@ -6848,8 +7090,8 @@ def fee_balances_report():
     stream = request.args.get('stream')
     
     connection = get_db_connection()
-    fees_service = FeesService(connection)
-    class_service = ClassManagementService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
+    class_service = ClassManagementService(connection, school_id=g.school_id or 1)
     
     try:
         data = fees_service.get_fee_balances_report(
@@ -6881,7 +7123,7 @@ def fee_balances_report():
 @admin_required
 def fee_arrears_aging_report():
     connection = get_db_connection()
-    fees_service = FeesService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
     try:
         data = fees_service.get_arrears_aging_report()
         return render_template("fees_aging_report.html", data=data)
@@ -6893,19 +7135,20 @@ def fee_arrears_aging_report():
 @admin_required
 def manage_voteheads():
     connection = get_db_connection()
-    fees_service = FeesService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
     
     if request.method == 'POST':
         name = request.form.get('name').strip()
         priority = int(request.form.get('priority', 99))
         is_mandatory = 1 if request.form.get('is_mandatory') else 0
         description = request.form.get('description', '').strip()
+        school_id = g.school_id
         try:
             with connection.cursor() as cursor:
                 cursor.execute("""
-                    INSERT INTO fee_voteheads (name, priority, is_mandatory, description)
-                    VALUES (%s, %s, %s, %s)
-                """, (name, priority, is_mandatory, description))
+                    INSERT INTO fee_voteheads (name, priority, is_mandatory, description, school_id)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (name, priority, is_mandatory, description, school_id))
             connection.commit()
             flash(f"✓ Votehead '{name}' created.", "success")
         except Exception as e:
@@ -6920,14 +7163,15 @@ def manage_voteheads():
 @admin_required
 def manage_student_groups():
     connection = get_db_connection()
-    fees_service = FeesService(connection)
+    school_id = g.school_id
+    fees_service = FeesService(connection, school_id=school_id)
     
     if request.method == 'POST':
         name = request.form.get('name').strip()
         description = request.form.get('description', '').strip()
         try:
             with connection.cursor() as cursor:
-                cursor.execute("INSERT INTO student_groups (name, description) VALUES (%s, %s)", (name, description))
+                cursor.execute("INSERT INTO student_groups (name, description, school_id) VALUES (%s, %s, %s)", (name, description, school_id))
             connection.commit()
             flash(f"✓ Student Group '{name}' created.", "success")
         except Exception as e:
@@ -6943,7 +7187,7 @@ def manage_student_groups():
 @admin_required
 def fees_mpesa_reconcile():
     connection = get_db_connection()
-    fees_service = FeesService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
     try:
         report = fees_service.get_mpesa_reconciliation_report()
         return render_template('mpesa_reconciliation.html', report=report)
@@ -6987,7 +7231,7 @@ def api_import_mpesa():
             continue
 
     connection = get_db_connection()
-    fees_service = FeesService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
     try:
         summary = fees_service.import_mpesa_statement(transactions)
         return jsonify({'success': True, 'summary': summary})
@@ -7002,16 +7246,17 @@ def api_import_mpesa():
 @admin_required
 def fees_waiver_management():
     connection = get_db_connection()
-    fees_service = FeesService(connection)
-    class_service = ClassManagementService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
+    class_service = ClassManagementService(connection, school_id=g.school_id or 1)
     try:
         categories = fees_service.get_waiver_categories()
         years = class_service.get_all_academic_years()
         current_term_no, current_year_val = get_current_term_and_year()
+        school_id = g.school_id or 1
         
-        # Get current term ID
+        # Get current term ID (tenant-scoped)
         with connection.cursor() as cursor:
-            cursor.execute("SELECT id FROM uniform_term_dates WHERE term_number = %s AND YEAR(start_date) = %s", (current_term_no, current_year_val))
+            cursor.execute("SELECT id FROM uniform_term_dates WHERE term_number = %s AND YEAR(start_date) = %s AND school_id = %s", (current_term_no, current_year_val, school_id))
             curr_term = cursor.fetchone()
             
             # Fetch recent assignments
@@ -7026,7 +7271,7 @@ def fees_waiver_management():
             """)
             recent_waivers = cursor.fetchall()
             
-            cursor.execute("SELECT * FROM uniform_term_dates ORDER BY start_date DESC LIMIT 10")
+            cursor.execute("SELECT * FROM uniform_term_dates WHERE school_id = %s ORDER BY start_date DESC LIMIT 10", (school_id,))
             terms = cursor.fetchall()
 
         return render_template('fee_waiver_management.html', 
@@ -7049,7 +7294,7 @@ def assign_waiver():
     user_id = session.get('userNo')
     
     connection = get_db_connection()
-    fees_service = FeesService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
     try:
         fees_service.assign_waiver_to_student(admno, category_id, year_id, term_id, user_id)
         flash(f"✓ Waiver successfully assigned to Student {admno}.", "success")
@@ -7065,8 +7310,8 @@ def assign_waiver():
 @admin_required
 def manage_fee_structures():
     connection = get_db_connection()
-    fees_service = FeesService(connection)
-    class_service = ClassManagementService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
+    class_service = ClassManagementService(connection, school_id=g.school_id or 1)
     
     if request.method == 'POST':
         year_id = int(request.form.get('year_id'))
@@ -7126,8 +7371,9 @@ def manage_fee_structures():
 
     years = class_service.get_all_academic_years()
     
+    school_id = g.school_id or 1
     with connection.cursor() as cursor:
-        cursor.execute("SELECT * FROM uniform_term_dates ORDER BY year DESC, term_number DESC")
+        cursor.execute("SELECT * FROM uniform_term_dates WHERE school_id = %s ORDER BY year DESC, term_number DESC", (school_id,))
         terms = cursor.fetchall()
         cursor.execute("SELECT classID, display_name, class_group_code FROM classes WHERE is_active = TRUE ORDER BY display_name")
         all_classes = cursor.fetchall()
@@ -7150,7 +7396,7 @@ def manage_fee_structures():
 @admin_required
 def edit_fee_structure(structure_id):
     connection = get_db_connection()
-    fees_service = FeesService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
     
     if request.method == 'POST':
         try:
@@ -7192,7 +7438,7 @@ def edit_fee_structure(structure_id):
 @admin_required
 def delete_fee_structure(structure_id):
     connection = get_db_connection()
-    fees_service = FeesService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
     try:
         fees_service.delete_fee_structure(structure_id)
         flash("Fee structure deleted.", "info")
@@ -7212,8 +7458,8 @@ def fee_structure_card():
     category = request.args.get('category', 'Day')
     
     connection = get_db_connection()
-    fees_service = FeesService(connection)
-    class_service = ClassManagementService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
+    class_service = ClassManagementService(connection, school_id=g.school_id or 1)
     
     if not year_id:
         with connection.cursor() as cursor:
@@ -7221,9 +7467,10 @@ def fee_structure_card():
             row = cursor.fetchone()
             year_id = row['id'] if row else None
             
-    # Get all terms for the year
+    # Get all terms for the year (tenant-scoped)
+    school_id = g.school_id or 1
     with connection.cursor() as cursor:
-        cursor.execute("SELECT id, term_number FROM uniform_term_dates WHERE academic_year_id = %s ORDER BY term_number", (year_id,))
+        cursor.execute("SELECT id, term_number FROM uniform_term_dates WHERE academic_year_id = %s AND school_id = %s ORDER BY term_number", (year_id, school_id))
         terms = cursor.fetchall()
         
     # Get all voteheads
@@ -7300,8 +7547,8 @@ def fee_structure_download():
     category = request.args.get('category', 'Day')
     
     connection = get_db_connection()
-    fees_service = FeesService(connection)
-    class_service = ClassManagementService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
+    class_service = ClassManagementService(connection, school_id=g.school_id or 1)
     
     if not year_id:
         with connection.cursor() as cursor:
@@ -7309,9 +7556,10 @@ def fee_structure_download():
             row = cursor.fetchone()
             year_id = row['id'] if row else None
             
-    # Get all terms for the year
+    # Get all terms for the year (tenant-scoped)
+    school_id = g.school_id or 1
     with connection.cursor() as cursor:
-        cursor.execute("SELECT id, term_number FROM uniform_term_dates WHERE academic_year_id = %s ORDER BY term_number", (year_id,))
+        cursor.execute("SELECT id, term_number FROM uniform_term_dates WHERE academic_year_id = %s AND school_id = %s ORDER BY term_number", (year_id, school_id))
         terms = cursor.fetchall()
         
     voteheads = fees_service.get_voteheads()
@@ -7390,8 +7638,9 @@ def fee_structures_overview():
             row = cursor.fetchone()
             year_id = row['id'] if row else None
     
+    school_id = g.school_id or 1
     with connection.cursor() as cursor:
-        cursor.execute("SELECT id, term_number FROM uniform_term_dates WHERE academic_year_id = %s ORDER BY term_number", (year_id,))
+        cursor.execute("SELECT id, term_number FROM uniform_term_dates WHERE academic_year_id = %s AND school_id = %s ORDER BY term_number", (year_id, school_id))
         terms = cursor.fetchall()
         
         # Enhanced query to join specific class name
@@ -7426,7 +7675,7 @@ def fee_structures_overview():
 @admin_required
 def copy_fee_structure():
     connection = get_db_connection()
-    fees_service = FeesService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
     
     try:
         from_id = int(request.form.get('from_structure_id'))
@@ -7446,7 +7695,7 @@ def copy_fee_structure():
 @admin_required
 def create_yearly_fee_structure_route():
     connection = get_db_connection()
-    fees_service = FeesService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
     
     if request.method == 'POST':
         try:
@@ -7457,8 +7706,9 @@ def create_yearly_fee_structure_route():
             category = request.form.get('category')
             
             # Extract votehead amounts
+            school_id = g.school_id
             with connection.cursor() as cursor:
-                cursor.execute("SELECT id FROM fee_voteheads WHERE is_active = 1")
+                cursor.execute("SELECT id FROM fee_voteheads WHERE is_active = 1 AND school_id = %s", (school_id,))
                 voteheads = cursor.fetchall()
             
             term_amounts = {}
@@ -7482,14 +7732,15 @@ def create_yearly_fee_structure_route():
             return redirect(url_for('fee_structures_overview'))
 
     # GET
+    school_id = g.school_id
     with connection.cursor() as cursor:
-        cursor.execute("SELECT id, year, is_current FROM academic_years ORDER BY year DESC")
+        cursor.execute("SELECT id, year, is_current FROM academic_years WHERE school_id = %s ORDER BY year DESC", (school_id,))
         years = cursor.fetchall()
-        cursor.execute("SELECT classID, display_name, class_group_code FROM classes ORDER BY display_name")
+        cursor.execute("SELECT classID, display_name, class_group_code FROM classes WHERE school_id = %s ORDER BY display_name", (school_id,))
         classes = cursor.fetchall()
-        cursor.execute("SELECT name FROM fee_student_groups WHERE is_active = 1")
+        cursor.execute("SELECT name FROM fee_student_groups WHERE is_active = 1 AND school_id = %s", (school_id,))
         student_groups = cursor.fetchall()
-        cursor.execute("SELECT id, name, priority FROM fee_voteheads WHERE is_active = 1 ORDER BY priority ASC")
+        cursor.execute("SELECT id, name, priority FROM fee_voteheads WHERE is_active = 1 AND school_id = %s ORDER BY priority ASC", (school_id,))
         voteheads = cursor.fetchall()
     
     connection.close()
@@ -7502,7 +7753,7 @@ def create_yearly_fee_structure_route():
 @admin_required
 def toggle_structure_lock(structure_id):
     connection = get_db_connection()
-    fees_service = FeesService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
     lock = request.form.get('lock') == '1'
     try:
         fees_service.toggle_structure_lock(structure_id, lock)
@@ -7519,7 +7770,7 @@ def toggle_structure_lock(structure_id):
 @admin_required
 def collect_fees():
     connection = get_db_connection()
-    fees_service = FeesService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
     
     if request.method == 'POST':
         adm_val = request.form.get('admno')
@@ -7550,7 +7801,7 @@ def collect_fees():
         except Exception as e:
             flash(f"Unexpected error: {str(e)}", "error")
             
-    class_service = ClassManagementService(connection)
+    class_service = ClassManagementService(connection, school_id=g.school_id or 1)
     years = class_service.get_all_academic_years()
     
     # Identify current year/term
@@ -7560,12 +7811,13 @@ def collect_fees():
             current_year_id = y['id']
             break
             
+    school_id = g.school_id or 1
     with connection.cursor() as cursor:
-        cursor.execute("SELECT * FROM uniform_term_dates ORDER BY year DESC, term_number DESC")
+        cursor.execute("SELECT * FROM uniform_term_dates WHERE school_id = %s ORDER BY year DESC, term_number DESC", (school_id,))
         terms = cursor.fetchall()
         
-        # Current term from CURDATE
-        cursor.execute("SELECT id FROM uniform_term_dates WHERE CURDATE() BETWEEN start_date AND end_date LIMIT 1")
+        # Current term from CURDATE (tenant-scoped)
+        cursor.execute("SELECT id FROM uniform_term_dates WHERE CURDATE() BETWEEN start_date AND end_date AND school_id = %s LIMIT 1", (school_id,))
         term_res = cursor.fetchone()
         current_term_id = term_res['id'] if term_res else (terms[0]['id'] if terms else None)
         
@@ -7591,7 +7843,7 @@ def bulk_post_fees():
         return redirect(url_for('bulk_post_fees'))
 
     connection = get_db_connection()
-    fees_service = FeesService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
     posted = 0
     errors = []
     try:
@@ -7625,8 +7877,8 @@ def bulk_post_fees():
 def bulk_debit_term():
     """Bulk debit of term fees for selected classes using existing structures."""
     connection = get_db_connection()
-    fees_service = FeesService(connection)
-    class_service = ClassManagementService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
+    class_service = ClassManagementService(connection, school_id=g.school_id or 1)
     if request.method == 'POST':
         class_ids = [int(cid) for cid in request.form.getlist('class_ids')]
         year_id = int(request.form.get('year_id'))
@@ -7636,8 +7888,9 @@ def bulk_debit_term():
         flash(f"✓ Debited term fees for {count} students.", 'success')
         return redirect(url_for('fees_dashboard'))
     years = class_service.get_all_academic_years()
+    school_id = g.school_id or 1
     with connection.cursor() as cursor:
-        cursor.execute("SELECT * FROM uniform_term_dates ORDER BY year DESC, term_number DESC")
+        cursor.execute("SELECT * FROM uniform_term_dates WHERE school_id = %s ORDER BY year DESC, term_number DESC", (school_id,))
         terms = cursor.fetchall()
         cursor.execute("SELECT classID, display_name FROM classes WHERE is_active = TRUE ORDER BY display_name")
         classes = cursor.fetchall()
@@ -7651,7 +7904,7 @@ def api_recent_payments():
     if not admno:
         return jsonify([])
     connection = get_db_connection()
-    fees_service = FeesService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
     try:
         data = fees_service.get_recent_payments(int(admno), limit=5)
         return jsonify(data)
@@ -7666,7 +7919,7 @@ def api_statement():
     if not admno:
         return jsonify([])
     connection = get_db_connection()
-    fees_service = FeesService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
     try:
         data = fees_service.get_student_statement(int(admno), int(year_id) if year_id else None)
         return jsonify(data)
@@ -7677,7 +7930,7 @@ def api_statement():
 @login_required
 def print_fee_receipt(payment_id):
     connection = get_db_connection()
-    fees_service = FeesService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
     try:
         receipt = fees_service.get_receipt_details(payment_id)
         if not receipt:
@@ -7699,7 +7952,7 @@ def print_fee_receipt(payment_id):
 @admin_required
 def fee_receipts_register():
     connection = get_db_connection()
-    fees_service = FeesService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
     
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
@@ -7721,7 +7974,7 @@ def fee_receipts_register():
 @admin_required
 def edit_fee_receipt(payment_id):
     connection = get_db_connection()
-    fees_service = FeesService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
     
     if request.method == 'POST':
         mode = request.form.get('mode')
@@ -7752,7 +8005,7 @@ def edit_fee_receipt(payment_id):
 @admin_required
 def void_fee_receipt(payment_id):
     connection = get_db_connection()
-    fees_service = FeesService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
     reason = request.form.get('reason', 'System cancellation')
     
     try:
@@ -7775,7 +8028,7 @@ def void_fee_receipt(payment_id):
 @admin_required
 def finance_dashboard():
     connection = get_db_connection()
-    finance_service = FinanceService(connection)
+    finance_service = FinanceService(connection, g.school_id)
     
     try:
         stats = finance_service.get_dashboard_summary()
@@ -7805,8 +8058,8 @@ def finance_dashboard():
 @admin_required
 def manage_vouchers():
     connection = get_db_connection()
-    finance_service = FinanceService(connection)
-    procurement_service = ProcurementService(connection)
+    finance_service = FinanceService(connection, g.school_id)
+    procurement_service = ProcurementService(connection, g.school_id)
     
     if request.method == 'POST':
         try:
@@ -7881,7 +8134,7 @@ def manage_vouchers():
 @admin_required
 def verify_voucher(voucher_id):
     connection = get_db_connection()
-    finance_service = FinanceService(connection)
+    finance_service = FinanceService(connection, g.school_id)
     try:
         finance_service.verify_voucher(voucher_id, session['userNo'])
         flash("✓ Voucher verified successfully.", "success")
@@ -7899,7 +8152,7 @@ def authorize_voucher(voucher_id):
     source_account_id = int(source_account_id) if source_account_id else None
     
     connection = get_db_connection()
-    finance_service = FinanceService(connection)
+    finance_service = FinanceService(connection, g.school_id)
     try:
         finance_service.authorize_voucher(voucher_id, session['userNo'], source_account_id)
         flash("✓ Voucher authorized and posted to ledger.", "success")
@@ -7915,7 +8168,7 @@ def authorize_voucher(voucher_id):
 def print_cheque(voucher_id):
     source = request.args.get('source', 'VOUCHER')
     connection = get_db_connection()
-    finance_service = FinanceService(connection)
+    finance_service = FinanceService(connection, g.school_id)
     
     if source == 'PROCUREMENT':
         with connection.cursor() as cursor:
@@ -7946,7 +8199,7 @@ def print_cheque(voucher_id):
 @admin_required
 def print_payment_voucher(voucher_id):
     connection = get_db_connection()
-    finance_service = FinanceService(connection)
+    finance_service = FinanceService(connection, g.school_id)
     
     with connection.cursor() as cursor:
         cursor.execute("""
@@ -7976,7 +8229,7 @@ def print_payment_voucher(voucher_id):
 @admin_required
 def manage_budgets():
     connection = get_db_connection()
-    finance_service = FinanceService(connection)
+    finance_service = FinanceService(connection, g.school_id)
     
     if request.method == 'POST':
         account_id = int(request.form.get('account_id'))
@@ -8011,7 +8264,7 @@ def manage_budgets():
 def trial_balance_report():
     date = request.args.get('date', datetime.now().strftime('%Y-%m-%d'))
     connection = get_db_connection()
-    finance_service = FinanceService(connection)
+    finance_service = FinanceService(connection, g.school_id)
     
     data = finance_service.get_trial_balance(date)
     connection.close()
@@ -8024,7 +8277,7 @@ def income_statement_report():
     start_date = request.args.get('start_date', datetime.now().strftime('%Y-%m-01'))
     end_date = request.args.get('end_date', datetime.now().strftime('%Y-%m-%d'))
     connection = get_db_connection()
-    finance_service = FinanceService(connection)
+    finance_service = FinanceService(connection, g.school_id)
     try:
         data = finance_service.get_income_statement(start_date, end_date)
         return render_template('report_income_statement.html', data=data, start_date=start_date, end_date=end_date)
@@ -8037,7 +8290,7 @@ def income_statement_report():
 def balance_sheet_report():
     date = request.args.get('date', datetime.now().strftime('%Y-%m-%d'))
     connection = get_db_connection()
-    finance_service = FinanceService(connection)
+    finance_service = FinanceService(connection, g.school_id)
     try:
         data = finance_service.get_balance_sheet(date)
         return render_template('report_balance_sheet.html', data=data, date=date)
@@ -8073,14 +8326,15 @@ def mpesa_callback():
     with connection.cursor() as cursor:
         cursor.execute("SELECT id, year FROM academic_years WHERE is_current = TRUE LIMIT 1")
         y = cursor.fetchone()
-        cursor.execute("SELECT id FROM uniform_term_dates WHERE CURDATE() BETWEEN start_date AND end_date LIMIT 1")
+        school_id = g.school_id or 1
+        cursor.execute("SELECT id FROM uniform_term_dates WHERE CURDATE() BETWEEN start_date AND end_date AND school_id = %s LIMIT 1", (school_id,))
         t = cursor.fetchone()
     if not y or not t:
         connection.close()
         return jsonify({'success': False, 'message': 'No active year/term'}), 400
 
     try:
-        fees_service = FeesService(connection)
+        fees_service = FeesService(connection, school_id=g.school_id or 1)
         result = fees_service.record_payment(
             admno=admno,
             amount=amount,
@@ -8103,7 +8357,7 @@ def mpesa_callback():
 @admin_required
 def admin_fees_rollup():
     connection = get_db_connection()
-    fees_service = FeesService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
     
     # Get academic years for selection
     with connection.cursor() as cursor:
@@ -8138,7 +8392,7 @@ def admin_fees_rollup():
 @admin_required
 def reallocate_fee_payment():
     connection = get_db_connection()
-    fees_service = FeesService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
     
     if request.method == 'POST':
         ref = request.form.get('reference_no').strip()
@@ -8161,8 +8415,8 @@ def reallocate_fee_payment():
 @admin_required
 def bulk_invoice():
     connection = get_db_connection()
-    fees_service = FeesService(connection)
-    class_service = ClassManagementService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
+    class_service = ClassManagementService(connection, school_id=g.school_id or 1)
     
     if request.method == 'POST':
         class_ids = [int(cid) for cid in request.form.getlist('class_ids')]
@@ -8188,10 +8442,11 @@ def bulk_invoice():
             
     years = class_service.get_all_academic_years()
     voteheads = fees_service.get_voteheads()
+    school_id = g.school_id
     with connection.cursor() as cursor:
-        cursor.execute("SELECT * FROM uniform_term_dates ORDER BY year DESC, term_number DESC")
+        cursor.execute("SELECT * FROM uniform_term_dates WHERE school_id = %s ORDER BY year DESC, term_number DESC", (school_id,))
         terms = cursor.fetchall()
-        cursor.execute("SELECT classID, display_name FROM classes WHERE is_active = TRUE ORDER BY display_name")
+        cursor.execute("SELECT classID, display_name FROM classes WHERE is_active = TRUE AND school_id = %s ORDER BY display_name", (school_id,))
         classes = cursor.fetchall()
         
     connection.close()
@@ -8201,13 +8456,15 @@ def bulk_invoice():
 @login_required
 def student_fee_statement(admno):
     connection = get_db_connection()
-    fees_service = FeesService(connection)
+    fees_service = FeesService(connection, school_id=g.school_id or 1)
     
     statement = fees_service.get_student_statement(admno)
     balance = fees_service.get_student_balance(admno)
+
+    school_id = g.school_id or 1
     
     with connection.cursor() as cursor:
-        cursor.execute("SELECT FName, SName, AdmNo FROM studentinfo WHERE AdmNo = %s", (admno,))
+        cursor.execute("SELECT FName, SName, AdmNo FROM studentinfo WHERE AdmNo = %s AND school_id = %s", (admno, school_id))
         student = cursor.fetchone()
         
     connection.close()
@@ -8222,12 +8479,14 @@ def search_students_fees():
     
     connection = get_db_connection()
     cursor = connection.cursor()
+    school_id = g.school_id or 1
     cursor.execute("""
         SELECT AdmNo, CONCAT(FName, ' ', SName) as name, AdmNo as id
         FROM studentinfo
-        WHERE AdmNo LIKE %s OR FName LIKE %s OR SName LIKE %s
+        WHERE (AdmNo LIKE %s OR FName LIKE %s OR SName LIKE %s)
+          AND school_id = %s
         LIMIT 10
-    """, (f"%{q}%", f"%{q}%", f"%{q}%"))
+    """, (f"%{q}%", f"%{q}%", f"%{q}%", school_id))
     results = cursor.fetchall()
     connection.close()
     return jsonify(results)
@@ -8242,14 +8501,16 @@ def api_search_students():
     connection = get_db_connection()
     try:
         with connection.cursor() as cursor:
+            school_id = g.school_id or 1
             cursor.execute("""
                 SELECT si.AdmNo, si.FName, si.SName, c.display_name as class_name
                 FROM studentinfo si
                 LEFT JOIN class_allocation ca ON si.AdmNo = ca.student_id AND ca.is_current = TRUE
                 LEFT JOIN classes c ON ca.class_id = c.classID
-                WHERE si.AdmNo LIKE %s OR si.FName LIKE %s OR si.SName LIKE %s
+                WHERE (si.AdmNo LIKE %s OR si.FName LIKE %s OR si.SName LIKE %s)
+                  AND si.school_id = %s
                 LIMIT 15
-            """, (f"%{q}%", f"%{q}%", f"%{q}%"))
+            """, (f"%{q}%", f"%{q}%", f"%{q}%", school_id))
             return jsonify(cursor.fetchall())
     finally:
         connection.close()
@@ -8263,7 +8524,7 @@ def api_search_students():
 @admin_required
 def manage_requisitions():
     connection = get_db_connection()
-    service = ProcurementService(connection)
+    service = ProcurementService(connection, g.school_id)
     reqs = service.get_requisitions()
     connection.close()
     return render_template('manage_requisitions.html', requisitions=reqs)
@@ -8272,7 +8533,7 @@ def manage_requisitions():
 @login_required
 def create_requisition():
     connection = get_db_connection()
-    service = ProcurementService(connection)
+    service = ProcurementService(connection, g.school_id)
     
     if request.method == 'POST':
         dept_id = request.form.get('department_id')
@@ -8315,9 +8576,10 @@ def create_requisition():
             
     # Fetch departments and academic years for the dropdown
     with connection.cursor() as cursor:
-        cursor.execute("SELECT * FROM staffdepts ORDER BY dept")
+        school_id = g.school_id
+        cursor.execute("SELECT * FROM staffdepts WHERE school_id = %s ORDER BY dept", (school_id,))
         depts = cursor.fetchall()
-        cursor.execute("SELECT * FROM academic_years ORDER BY year DESC")
+        cursor.execute("SELECT * FROM academic_years WHERE school_id = %s ORDER BY year DESC", (school_id,))
         academic_years = cursor.fetchall()
         
     connection.close()
@@ -8329,7 +8591,8 @@ def create_requisition():
 @admin_required
 def view_requisition(req_id):
     connection = get_db_connection()
-    service = ProcurementService(connection)
+    school_id = g.school_id
+    service = ProcurementService(connection, school_id)
     req = service.get_requisition_details(req_id)
     
     if not req:
@@ -8341,7 +8604,7 @@ def view_requisition(req_id):
     suppliers = []
     if req['status'] == 'APPROVED':
         with connection.cursor() as cursor:
-            cursor.execute("SELECT supplierID, company FROM suppliers ORDER BY company")
+            cursor.execute("SELECT supplierID, company FROM suppliers WHERE school_id = %s ORDER BY company", (school_id,))
             suppliers = cursor.fetchall()
             
     connection.close()
@@ -8352,7 +8615,7 @@ def view_requisition(req_id):
 @admin_required
 def approve_requisition(req_id):
     connection = get_db_connection()
-    service = ProcurementService(connection)
+    service = ProcurementService(connection, g.school_id)
     try:
         service.update_requisition_status(req_id, 'APPROVED', session['userNo'])
         flash("✓ Requisition approved.", "success")
@@ -8367,7 +8630,7 @@ def approve_requisition(req_id):
 @admin_required
 def reject_requisition(req_id):
     connection = get_db_connection()
-    service = ProcurementService(connection)
+    service = ProcurementService(connection, g.school_id)
     try:
         service.update_requisition_status(req_id, 'REJECTED', session['userNo'])
         flash("✓ Requisition rejected.", "warning")
@@ -8387,7 +8650,7 @@ def convert_requisition(req_id):
         return redirect(url_for('view_requisition', req_id=req_id))
 
     connection = get_db_connection()
-    service = ProcurementService(connection)
+    service = ProcurementService(connection, g.school_id)
     try:
         po_info = service.convert_requisition_to_po(req_id, supplier_id, session['userNo'])
         flash(f"✓ Requisition converted to PO {po_info['po_number']}.", "success")
@@ -8403,7 +8666,7 @@ def convert_requisition(req_id):
 @admin_required
 def receive_goods(po_id):
     connection = get_db_connection()
-    service = ProcurementService(connection)
+    service = ProcurementService(connection, g.school_id)
     po = service.get_po_details(po_id)
     
     if request.method == 'POST':
@@ -8435,7 +8698,7 @@ def receive_goods(po_id):
 @admin_required
 def manage_assets():
     connection = get_db_connection()
-    service = ProcurementService(connection)
+    service = ProcurementService(connection, g.school_id)
     
     category = request.args.get('category')
     condition = request.args.get('condition')
@@ -8452,7 +8715,7 @@ def manage_assets():
 @admin_required
 def register_asset():
     connection = get_db_connection()
-    service = ProcurementService(connection)
+    service = ProcurementService(connection, g.school_id)
     
     if request.method == 'POST':
         data = {
@@ -8479,7 +8742,7 @@ def register_asset():
 @admin_required
 def update_asset(asset_id):
     connection = get_db_connection()
-    service = ProcurementService(connection)
+    service = ProcurementService(connection, g.school_id)
     
     new_cond = {
         'condition': request.form.get('condition_status'),
@@ -8504,7 +8767,7 @@ def update_asset(asset_id):
 @admin_required
 def procurement_dashboard():
     connection = get_db_connection()
-    service = ProcurementService(connection)
+    service = ProcurementService(connection, g.school_id)
     
     # Get Filters
     status_filter = request.args.get('status')
@@ -8531,13 +8794,14 @@ def procurement_dashboard():
 @admin_required
 def manage_procurement_budgets():
     connection = get_db_connection()
-    service = ProcurementService(connection)
+    school_id = g.school_id
+    service = ProcurementService(connection, school_id)
     
     # Get Academic Year
     year_id = request.args.get('academic_year_id')
     if not year_id:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT id FROM academic_years WHERE is_current = 1 LIMIT 1")
+            cursor.execute("SELECT id FROM academic_years WHERE is_current = 1 AND school_id = %s LIMIT 1", (school_id,))
             ay = cursor.fetchone()
             year_id = ay['id'] if ay else 1
             
@@ -8556,9 +8820,9 @@ def manage_procurement_budgets():
     
     # Context data
     with connection.cursor() as cursor:
-        cursor.execute("SELECT * FROM staffdepts ORDER BY dept")
+        cursor.execute("SELECT * FROM staffdepts WHERE school_id = %s ORDER BY dept", (school_id,))
         depts = cursor.fetchall()
-        cursor.execute("SELECT * FROM academic_years ORDER BY year DESC")
+        cursor.execute("SELECT * FROM academic_years WHERE school_id = %s ORDER BY year DESC", (school_id,))
         years = cursor.fetchall()
         
     connection.close()
@@ -8573,7 +8837,7 @@ def manage_procurement_budgets():
 @admin_required
 def suppliers_aging_report():
     connection = get_db_connection()
-    service = ProcurementService(connection)
+    service = ProcurementService(connection, g.school_id)
     aging_data = service.get_suppliers_aging()
     connection.close()
     return render_template('suppliers_aging.html', aging_data=aging_data)
@@ -8583,7 +8847,7 @@ def suppliers_aging_report():
 @admin_required
 def manage_suppliers():
     connection = get_db_connection()
-    service = ProcurementService(connection)
+    service = ProcurementService(connection, g.school_id)
     
     if request.method == 'POST':
         company = request.form.get('company')
@@ -8612,7 +8876,7 @@ def vendor_statement(supplier_id):
     end_date = request.args.get('end_date', datetime.now().strftime('%Y-%m-%d'))
     
     connection = get_db_connection()
-    service = ProcurementService(connection)
+    service = ProcurementService(connection, g.school_id)
     
     # Get supplier details
     with connection.cursor() as cursor:
@@ -8633,7 +8897,7 @@ def vendor_statement(supplier_id):
 @admin_required
 def create_purchase_order():
     connection = get_db_connection()
-    service = ProcurementService(connection)
+    service = ProcurementService(connection, g.school_id)
     
     if request.method == 'POST':
         supplier_id = int(request.form.get('supplier_id'))
@@ -8669,16 +8933,18 @@ def create_purchase_order():
     suppliers = service.get_suppliers()
     with connection.cursor() as cursor:
         # Fetch all catalog items for generic selection
-        cursor.execute("SELECT item_id, item_name, current_stock FROM item_stock ORDER BY item_name")
+        school_id = g.school_id or 1
+        cursor.execute("SELECT item_id, item_name, current_stock FROM item_stock WHERE school_id = %s ORDER BY item_name", (school_id,))
         stock_items = cursor.fetchall()
         
         # Fetch only uniform items - Include all from uniform_prices even if stock is 0/missing
         cursor.execute("""
             SELECT DISTINCT p.item_name, s.item_id, COALESCE(s.current_stock, 0) as current_stock 
             FROM uniform_prices p
-            LEFT JOIN item_stock s ON p.item_name = s.item_name
+            LEFT JOIN item_stock s ON p.item_name = s.item_name AND p.school_id = s.school_id
+            WHERE p.school_id = %s
             ORDER BY p.item_name
-        """)
+        """, (school_id,))
         uniform_items = cursor.fetchall()
 
     connection.close()
@@ -8689,7 +8955,7 @@ def create_purchase_order():
 @admin_required
 def edit_purchase_order(po_id):
     connection = get_db_connection()
-    service = ProcurementService(connection)
+    service = ProcurementService(connection, g.school_id)
     po = service.get_po_details(po_id)
     
     if not po:
@@ -8735,7 +9001,8 @@ def edit_purchase_order(po_id):
                 
     suppliers = service.get_suppliers()
     with connection.cursor() as cursor:
-        cursor.execute("SELECT item_id, item_name, current_stock FROM item_stock ORDER BY item_name")
+        school_id = g.school_id or 1
+        cursor.execute("SELECT item_id, item_name, current_stock FROM item_stock WHERE school_id = %s ORDER BY item_name", (school_id,))
         stock_items = cursor.fetchall()
         
     connection.close()
@@ -8746,7 +9013,7 @@ def edit_purchase_order(po_id):
 @admin_required
 def delete_purchase_order(po_id):
     connection = get_db_connection()
-    service = ProcurementService(connection)
+    service = ProcurementService(connection, g.school_id)
     try:
         service.delete_purchase_order(po_id)
         flash("✓ Purchase Order deleted successfully.", "success")
@@ -8761,7 +9028,7 @@ def delete_purchase_order(po_id):
 @admin_required
 def print_purchase_order(po_id):
     connection = get_db_connection()
-    service = ProcurementService(connection)
+    service = ProcurementService(connection, g.school_id)
     po = service.get_po_details(po_id)
     
     if not po:
@@ -8777,7 +9044,7 @@ def print_purchase_order(po_id):
 @admin_required
 def download_purchase_order(po_id):
     connection = get_db_connection()
-    service = ProcurementService(connection)
+    service = ProcurementService(connection, g.school_id)
     po = service.get_po_details(po_id)
     
     if not po:
@@ -8805,8 +9072,8 @@ def download_purchase_order(po_id):
 @admin_required
 def view_purchase_order(po_id):
     connection = get_db_connection()
-    service = ProcurementService(connection)
-    finance_service = FinanceService(connection)
+    service = ProcurementService(connection, g.school_id)
+    finance_service = FinanceService(connection, g.school_id)
     po = service.get_po_details(po_id)
     
     if not po:
@@ -8815,7 +9082,8 @@ def view_purchase_order(po_id):
         return redirect(url_for('procurement_dashboard'))
         
     with connection.cursor() as cursor:
-        cursor.execute("SELECT * FROM supplier_payments WHERE po_id = %s ORDER BY payment_date DESC", (po_id,))
+        school_id = g.school_id or 1
+        cursor.execute("SELECT * FROM supplier_payments WHERE po_id = %s AND school_id = %s ORDER BY payment_date DESC", (po_id, school_id))
         payments = cursor.fetchall()
 
     accounts = finance_service.get_accounts()
@@ -8828,7 +9096,7 @@ def view_purchase_order(po_id):
 def update_po_status(po_id):
     new_status = request.form.get('status')
     connection = get_db_connection()
-    service = ProcurementService(connection)
+    service = ProcurementService(connection, g.school_id)
     try:
         service.update_po_status(po_id, new_status, session['userNo'])
         flash(f"✓ PO status updated to {new_status}.", "success")
@@ -8849,7 +9117,7 @@ def record_po_payment(po_id):
     source_account_id = int(request.form.get('source_account_id'))
     
     connection = get_db_connection()
-    service = ProcurementService(connection)
+    service = ProcurementService(connection, g.school_id)
     try:
         service.record_po_payment(po_id, amount, mode, reference, date, session['userNo'], source_account_id)
         flash("✓ Payment recorded and posted to ledger.", "success")

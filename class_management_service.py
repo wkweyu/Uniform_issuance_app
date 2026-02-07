@@ -74,10 +74,11 @@ class ClassManagementService:
     - Support rollback on error
     """
 
-    def __init__(self, connection: pymysql.Connection):
+    def __init__(self, connection: pymysql.Connection, school_id: int = 1):
         """Initialize service with database connection."""
         self.connection = connection
         self.cursor = connection.cursor(pymysql.cursors.DictCursor)
+        self.school_id = school_id
 
     # =========================================================================
     # 1. CLASS GROUP & STREAM MANAGEMENT
@@ -315,9 +316,9 @@ class ClassManagementService:
                 INSERT INTO classes (
                     academic_year_id, class_group_code, stream_code,
                     display_name, is_active, created_by, created_at, updated_at,
-                    class_name, class_group
+                    class_name, class_group, school_id
                 )
-                VALUES (%s, %s, %s, %s, TRUE, %s, NOW(), NOW(), %s, %s)
+                VALUES (%s, %s, %s, %s, TRUE, %s, NOW(), NOW(), %s, %s, %s)
             """, (
                 academic_year_id,
                 class_group_code,
@@ -325,7 +326,8 @@ class ClassManagementService:
                 display_name,
                 created_by,
                 class_name or display_name,  # class_name (legacy)
-                class_group_code  # class_group (legacy)
+                class_group_code,  # class_group (legacy)
+                self.school_id
             ))
             
             class_id = self.cursor.lastrowid
@@ -334,7 +336,7 @@ class ClassManagementService:
             logger.info(f"Created class {display_name} (ID: {class_id})")
             
             # Return created record
-            self.cursor.execute("SELECT * FROM classes WHERE classID = %s", (class_id,))
+            self.cursor.execute("SELECT * FROM classes WHERE classID = %s AND school_id = %s", (class_id, self.school_id))
             return self.cursor.fetchone()
             
         except pymysql.IntegrityError as e:
@@ -347,16 +349,16 @@ class ClassManagementService:
     def _validate_academic_year(self, academic_year_id: int) -> bool:
         """Check if academic year exists."""
         self.cursor.execute(
-            "SELECT id FROM academic_years WHERE id = %s",
-            (academic_year_id,)
+            "SELECT id FROM academic_years WHERE id = %s AND school_id = %s",
+            (academic_year_id, self.school_id)
         )
         return self.cursor.fetchone() is not None
 
     def _validate_class_group(self, class_group_code: str) -> bool:
         """Check if class group exists in settings."""
         self.cursor.execute(
-            "SELECT id FROM class_group_settings WHERE code = %s",
-            (class_group_code,)
+            "SELECT id FROM class_group_settings WHERE code = %s AND school_id = %s",
+            (class_group_code, self.school_id)
         )
         return self.cursor.fetchone() is not None
 
@@ -408,8 +410,8 @@ class ClassManagementService:
                 SELECT c.classID, c.academic_year_id, c.display_name, ay.year
                 FROM classes c
                 JOIN academic_years ay ON c.academic_year_id = ay.id
-                WHERE c.classID = %s
-            """, (old_class_id,))
+                WHERE c.classID = %s AND c.school_id = %s
+            """, (old_class_id, self.school_id))
             old_class = self.cursor.fetchone()
             
             if not old_class:
@@ -419,8 +421,8 @@ class ClassManagementService:
                 SELECT c.classID, c.academic_year_id, c.display_name, ay.year
                 FROM classes c
                 JOIN academic_years ay ON c.academic_year_id = ay.id
-                WHERE c.classID = %s
-            """, (new_class_id,))
+                WHERE c.classID = %s AND c.school_id = %s
+            """, (new_class_id, self.school_id))
             new_class = self.cursor.fetchone()
             
             if not new_class:
@@ -439,8 +441,8 @@ class ClassManagementService:
             self.cursor.execute("""
                 SELECT id, student_id, academic_year_id
                 FROM class_allocation
-                WHERE class_id = %s AND is_current = TRUE
-            """, (old_class_id,))
+                WHERE class_id = %s AND is_current = TRUE AND school_id = %s
+            """, (old_class_id, self.school_id))
             students = self.cursor.fetchall()
             student_count = len(students)
             
@@ -455,22 +457,23 @@ class ClassManagementService:
                 self.cursor.execute("""
                     INSERT INTO class_allocation (
                         student_id, class_id, academic_year_id,
-                        allocation_date, promoted_from_id, is_current
+                        allocation_date, promoted_from_id, is_current, school_id
                     )
-                    VALUES (%s, %s, %s, NOW(), %s, TRUE)
+                    VALUES (%s, %s, %s, NOW(), %s, TRUE, %s)
                 """, (
                     student['student_id'],
                     new_class_id,
                     new_class['academic_year_id'],
-                    student['id']  # Reference to old allocation
+                    student['id'],  # Reference to old allocation
+                    self.school_id
                 ))
                 
                 # Copy subjects from old class to new allocation
                 # (if student had specific subject selections)
                 self.cursor.execute("""
                     SELECT subject_id FROM student_subjects
-                    WHERE class_allocation_id = %s AND is_active = TRUE
-                """, (student['id'],))
+                    WHERE class_allocation_id = %s AND is_active = TRUE AND school_id = %s
+                """, (student['id'], self.school_id))
                 subjects = self.cursor.fetchall()
                 
                 new_allocation_id = self.cursor.lastrowid
@@ -481,33 +484,34 @@ class ClassManagementService:
                         self.cursor.execute("""
                             INSERT INTO student_subjects (
                                 class_allocation_id, subject_id,
-                                enrollment_date, is_active
+                                enrollment_date, is_active, school_id
                             )
-                            VALUES (%s, %s, NOW(), TRUE)
+                            VALUES (%s, %s, NOW(), TRUE, %s)
                             ON DUPLICATE KEY UPDATE is_active = TRUE
-                        """, (new_allocation_id, subj['subject_id']))
+                        """, (new_allocation_id, subj['subject_id'], self.school_id))
             
             # Update old allocations to not current
             self.cursor.execute("""
                 UPDATE class_allocation
                 SET is_current = FALSE
-                WHERE class_id = %s AND is_current = TRUE
-            """, (old_class_id,))
+                WHERE class_id = %s AND is_current = TRUE AND school_id = %s
+            """, (old_class_id, self.school_id))
             
             # Phase 3: Audit Log
             self.cursor.execute("""
                 INSERT INTO class_promotion_log (
                     batch_id, old_class_id, new_class_id,
-                    student_count, promotion_date, promoted_by, notes
+                    student_count, promotion_date, promoted_by, notes, school_id
                 )
-                VALUES (%s, %s, %s, %s, CURDATE(), %s, %s)
+                VALUES (%s, %s, %s, %s, CURDATE(), %s, %s, %s)
             """, (
                 batch_id,
                 old_class_id,
                 new_class_id,
                 student_count,
                 promoted_by,
-                notes
+                notes,
+                self.school_id
             ))
             
             self.connection.commit()
@@ -560,17 +564,17 @@ class ClassManagementService:
             
             # Clear existing allocations
             self.cursor.execute("""
-                DELETE FROM class_subjects WHERE class_id = %s
-            """, (class_id,))
+                DELETE FROM class_subjects WHERE class_id = %s AND school_id = %s
+            """, (class_id, self.school_id))
             
             # Add new allocations
             for subject_id in subject_ids:
                 self.cursor.execute("""
                     INSERT INTO class_subjects (
-                        class_id, subject_id, is_compulsory, is_active
+                        class_id, subject_id, is_compulsory, is_active, school_id
                     )
-                    VALUES (%s, %s, %s, TRUE)
-                """, (class_id, subject_id, compulsory))
+                    VALUES (%s, %s, %s, TRUE, %s)
+                """, (class_id, subject_id, compulsory, self.school_id))
             
             self.connection.commit()
             logger.info(f"Allocated {len(subject_ids)} subjects to class {class_id}")
@@ -603,8 +607,8 @@ class ClassManagementService:
         try:
             # Get class ID from allocation
             self.cursor.execute("""
-                SELECT class_id FROM class_allocation WHERE id = %s
-            """, (class_allocation_id,))
+                SELECT class_id FROM class_allocation WHERE id = %s AND school_id = %s
+            """, (class_allocation_id, self.school_id))
             alloc = self.cursor.fetchone()
             
             if not alloc:
@@ -616,8 +620,8 @@ class ClassManagementService:
             self.cursor.execute("""
                 SELECT GROUP_CONCAT(subject_id) AS subject_ids
                 FROM class_subjects
-                WHERE class_id = %s AND is_active = TRUE
-            """, (class_id,))
+                WHERE class_id = %s AND is_active = TRUE AND school_id = %s
+            """, (class_id, self.school_id))
             
             result = self.cursor.fetchone()
             allowed_subjects = set(map(int, result['subject_ids'].split(','))) if result['subject_ids'] else set()
@@ -636,11 +640,11 @@ class ClassManagementService:
             for subject_id in subject_ids:
                 self.cursor.execute("""
                     INSERT INTO student_subjects (
-                        class_allocation_id, subject_id, enrollment_date, is_active
+                        class_allocation_id, subject_id, enrollment_date, is_active, school_id
                     )
-                    VALUES (%s, %s, NOW(), TRUE)
+                    VALUES (%s, %s, NOW(), TRUE, %s)
                     ON DUPLICATE KEY UPDATE is_active = TRUE
-                """, (class_allocation_id, subject_id))
+                """, (class_allocation_id, subject_id, self.school_id))
             
             self.connection.commit()
             logger.info(f"Enrolled student in {len(subject_ids)} subjects")
@@ -659,7 +663,7 @@ class ClassManagementService:
         """
         try:
             # 1. Get all students in the class
-            self.cursor.execute("SELECT id FROM class_allocation WHERE class_id = %s AND is_current = TRUE", (class_id,))
+            self.cursor.execute("SELECT id FROM class_allocation WHERE class_id = %s AND is_current = TRUE AND school_id = %s", (class_id, self.school_id))
             allocations = self.cursor.fetchall()
             
             # 2. Determine subjects to enroll
@@ -667,12 +671,12 @@ class ClassManagementService:
                 # Use provided subjects, but validate they belong to the class
                 self.cursor.execute("""
                     SELECT subject_id FROM class_subjects 
-                    WHERE class_id = %s AND subject_id IN %s AND is_active = TRUE
-                """, (class_id, tuple(subject_ids)))
+                    WHERE class_id = %s AND subject_id IN %s AND is_active = TRUE AND school_id = %s
+                """, (class_id, tuple(subject_ids), self.school_id))
                 subjects = self.cursor.fetchall()
             else:
                 # Get all subjects in the class
-                self.cursor.execute("SELECT subject_id FROM class_subjects WHERE class_id = %s AND is_active = TRUE", (class_id,))
+                self.cursor.execute("SELECT subject_id FROM class_subjects WHERE class_id = %s AND is_active = TRUE AND school_id = %s", (class_id, self.school_id))
                 subjects = self.cursor.fetchall()
             
             if not allocations or not subjects:
@@ -683,10 +687,10 @@ class ClassManagementService:
             for alloc in allocations:
                 for subj in subjects:
                     self.cursor.execute("""
-                        INSERT INTO student_subjects (class_allocation_id, subject_id, enrollment_date, is_active)
-                        VALUES (%s, %s, NOW(), TRUE)
+                        INSERT INTO student_subjects (class_allocation_id, subject_id, enrollment_date, is_active, school_id)
+                        VALUES (%s, %s, NOW(), TRUE, %s)
                         ON DUPLICATE KEY UPDATE is_active = TRUE
-                    """, (alloc['id'], subj['subject_id']))
+                    """, (alloc['id'], subj['subject_id'], self.school_id))
                     count += 1
             
             self.connection.commit()
@@ -727,9 +731,9 @@ class ClassManagementService:
             # `id` column which may not exist in older schemas.
             self.cursor.execute("""
                 SELECT 1 FROM class_subjects
-                WHERE class_id = %s AND subject_id = %s AND is_active = TRUE
+                WHERE class_id = %s AND subject_id = %s AND is_active = TRUE AND school_id = %s
                 LIMIT 1
-            """, (class_id, subject_id))
+            """, (class_id, subject_id, self.school_id))
             
             if not self.cursor.fetchone():
                 raise ValidationError("Subject not allocated to this class.")
@@ -745,10 +749,10 @@ class ClassManagementService:
             self.cursor.execute("""
                 INSERT INTO teacher_allocations (
                     teacher_id, class_id, subject_id, academic_year_id, 
-                    allocation_date, is_active
+                    allocation_date, is_active, school_id
                 )
-                VALUES (%s, %s, %s, %s, CURDATE(), TRUE)
-            """, (teacher_id, class_id, subject_id, academic_year_id))
+                VALUES (%s, %s, %s, %s, CURDATE(), TRUE, %s)
+            """, (teacher_id, class_id, subject_id, academic_year_id, self.school_id))
             
             self.connection.commit()
             logger.info(f"Allocated teacher {teacher_id} to class {class_id} subject {subject_id}")
@@ -780,9 +784,9 @@ class ClassManagementService:
             
             # Insert new class teacher
             self.cursor.execute("""
-                INSERT INTO class_teachers (class_id, teacher_id, academic_year_id, is_active)
-                VALUES (%s, %s, %s, TRUE)
-            """, (class_id, teacher_id, academic_year_id))
+                INSERT INTO class_teachers (class_id, teacher_id, academic_year_id, is_active, school_id)
+                VALUES (%s, %s, %s, TRUE, %s)
+            """, (class_id, teacher_id, academic_year_id, self.school_id))
             
             self.connection.commit()
             logger.info(f"Set teacher {teacher_id} as class teacher for class {class_id}")
@@ -815,9 +819,9 @@ class ClassManagementService:
                 
                 # Insert new allocation
                 self.cursor.execute("""
-                    INSERT INTO class_allocation (student_id, class_id, academic_year_id, allocation_date, is_current)
-                    VALUES (%s, %s, %s, NOW(), TRUE)
-                """, (student_id, class_id, academic_year_id))
+                    INSERT INTO class_allocation (student_id, class_id, academic_year_id, allocation_date, is_current, school_id)
+                    VALUES (%s, %s, %s, NOW(), TRUE, %s)
+                """, (student_id, class_id, academic_year_id, self.school_id))
                 allocated_count += 1
             
             self.connection.commit()
