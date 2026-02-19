@@ -78,7 +78,10 @@ CREATE TABLE IF NOT EXISTS buses (
   make VARCHAR(50),
   capacity INT,
   driver_name VARCHAR(50),
-  current_mileage INT DEFAULT 0
+  current_mileage INT DEFAULT 0,
+  active TINYINT(1) DEFAULT 1,
+  school_id INT(11) NOT NULL DEFAULT 1,
+  KEY idx_buses_school_id (school_id)
 );
 
 -- 📦 Fuel purchase vouchers (before fueling happens)
@@ -91,6 +94,8 @@ CREATE TABLE IF NOT EXISTS fuel_vouchers (
   total_amount DECIMAL(10,2),
   issued_by VARCHAR(50),
   status VARCHAR(20) DEFAULT 'Pending',
+  school_id INT(11) NOT NULL DEFAULT 1,
+  KEY idx_fuel_vouchers_school_id (school_id),
   FOREIGN KEY (bus_id) REFERENCES buses(id)
 );
 

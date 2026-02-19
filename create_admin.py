@@ -2,6 +2,7 @@ import os
 import pymysql
 import urllib.parse as urlparse
 from werkzeug.security import generate_password_hash
+import config
 
 # Fetch DB credentials from environment
 DATABASE_URL = os.environ.get('DATABASE_URL') or os.environ.get('DB_HOST')
@@ -15,11 +16,12 @@ if DATABASE_URL and '://' in DATABASE_URL:
     DB_NAME = url.path.lstrip('/')
     DB_PORT = url.port or 3306
 else:
-    DB_HOST = os.environ.get('DB_HOST', 'serverless-eu-west-3.sysp0000.db1.skysql.com')
-    DB_USER = os.environ.get('DB_USER', 'dbpwf28831395')
-    DB_PASSWORD = os.environ.get('DB_PASSWORD') or os.environ.get('DB_PASS', 'Bernice@2026')
-    DB_NAME = os.environ.get('DB_NAME', 'schoolmngt')
-    DB_PORT = int(os.environ.get('DB_PORT', 4018))
+    # Prefer environment variables; fall back to central config defaults
+    DB_HOST = os.environ.get('DB_HOST', getattr(config, 'DB_HOST', 'localhost'))
+    DB_USER = os.environ.get('DB_USER', getattr(config, 'DB_USER', 'root'))
+    DB_PASSWORD = os.environ.get('DB_PASSWORD') or os.environ.get('DB_PASS', getattr(config, 'DB_PASSWORD', ''))
+    DB_NAME = os.environ.get('DB_NAME', getattr(config, 'DB_NAME', 'schoolmngt'))
+    DB_PORT = int(os.environ.get('DB_PORT', getattr(config, 'DB_PORT', 3306)))
 
 def create_admin():
     if not DB_HOST or DB_HOST == 'localhost' and 'RENDER' in os.environ:

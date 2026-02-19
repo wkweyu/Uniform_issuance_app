@@ -60,15 +60,16 @@
 ### Phase 1: Database (1-2 hours)
 - [ ] Backup existing database
   ```bash
-  mysqldump -u schooluser -p schoolmngt > backup_$(date +%s).sql
+  # Copy .env.example -> .env and set DB_* values, then run (you will be prompted for password):
+  mysqldump -h "$DB_HOST" -u "$DB_USER" -p "$DB_NAME" > backup_$(date +%s).sql
   ```
 - [ ] Connect to MySQL
   ```bash
-  mysql -u schooluser -p schoolmngt
+  mysql -h "$DB_HOST" -u "$DB_USER" -p "$DB_NAME"
   ```
 - [ ] Run migration script
-  ```sql
-  source school_management_migration_v1.sql
+  ```bash
+  mysql -h "$DB_HOST" -u "$DB_USER" -p "$DB_NAME" < school_management_migration_v1.sql
   ```
 - [ ] Verify data integrity
   ```sql
@@ -90,7 +91,13 @@
   ```python
   import pymysql
   from class_management_service import ClassManagementService
-  conn = pymysql.connect(host='localhost', user='schooluser', password='jbs', database='schoolmngt')
+  import os
+  conn = pymysql.connect(
+      host=os.environ.get('DB_HOST', 'localhost'),
+      user=os.environ.get('DB_USER'),
+      password=os.environ.get('DB_PASSWORD'),
+      database=os.environ.get('DB_NAME')
+  )
   svc = ClassManagementService(conn)
   ay = svc.get_current_academic_year()
   print(ay)

@@ -8,7 +8,7 @@
 ## Pre-Deployment Verification (15 minutes)
 
 - [ ] **Database Backup Created**
-  - Command: `mysqldump -u schooluser -p schoolmngt > backup_$(date +%Y%m%d_%H%M%S).sql`
+  - Command: `# Copy .env.example -> .env and set DB_* values. Then run (you will be prompted for the DB password): mysqldump -h "$DB_HOST" -u "$DB_USER" -p "$DB_NAME" > backup_$(date +%Y%m%d_%H%M%S).sql`
   - Verify: `ls -lh backup_*.sql` shows recent backup
 
 - [ ] **App Compilation Verified**
@@ -24,7 +24,7 @@
   - Expected: Login page HTML returned
 
 - [ ] **Database Connection Working**
-  - Command: `mysql -u schooluser -pjbs schoolmngt -e "SELECT COUNT(*) FROM academic_years;"`
+  - Command: `mysql -h "$DB_HOST" -u "$DB_USER" -p "$DB_NAME" -e "SELECT COUNT(*) FROM academic_years;"`
   - Expected: Returns `3`
 
 ---
@@ -97,8 +97,8 @@
 - [ ] Database query performance
   ```bash
   # Time these queries
-  mysql -u schooluser -pjbs schoolmngt -e "SELECT COUNT(*) FROM class_allocation;"
-  mysql -u schooluser -pjbs schoolmngt -e "SELECT COUNT(*) FROM class_subjects;"
+  mysql -h "$DB_HOST" -u "$DB_USER" -p "$DB_NAME" -e "SELECT COUNT(*) FROM class_allocation;"
+  mysql -h "$DB_HOST" -u "$DB_USER" -p "$DB_NAME" -e "SELECT COUNT(*) FROM class_subjects;"
   ```
   - Expected: Sub-100ms response
 
@@ -129,17 +129,17 @@
 
 - [ ] Test backup restoration
   ```bash
-  # 1. Backup current state
-  mysqldump -u schooluser -p schoolmngt > backup_test.sql
+  # 1. Backup current state (ensure .env has DB settings)
+  mysqldump -h "$DB_HOST" -u "$DB_USER" -p "$DB_NAME" > backup_test.sql
   
-  # 2. Make a test change
-  mysql -u schooluser -pjbs schoolmngt -e "INSERT INTO academic_years (year, name) VALUES (2099, 'Test');"
+  # 2. Make a test change (you will be prompted for the password)
+  mysql -h "$DB_HOST" -u "$DB_USER" -p "$DB_NAME" -e "INSERT INTO academic_years (year, name) VALUES (2099, 'Test');"
   
   # 3. Restore from backup
-  mysql -u schooluser -pjbs schoolmngt < backup_test.sql
+  mysql -h "$DB_HOST" -u "$DB_USER" -p "$DB_NAME" < backup_test.sql
   
   # 4. Verify test data is gone
-  mysql -u schooluser -pjbs schoolmngt -e "SELECT * FROM academic_years WHERE year=2099;"
+  mysql -h "$DB_HOST" -u "$DB_USER" -p "$DB_NAME" -e "SELECT * FROM academic_years WHERE year=2099;"
   ```
   - Expected: No rows returned (test data removed)
 
@@ -188,7 +188,7 @@
 
 2. **Restore Database**
    ```bash
-   mysql -u schooluser -pjbs schoolmngt < backup_YYYYMMDD_HHMMSS.sql
+  mysql -h "$DB_HOST" -u "$DB_USER" -p "$DB_NAME" < backup_YYYYMMDD_HHMMSS.sql
    ```
 
 3. **Revert Code** (if needed)

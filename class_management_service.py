@@ -952,13 +952,21 @@ class ClassManagementService:
 def example_create_class():
     """Example: Create a new class."""
     import pymysql
-    
+    import os
+    import config
+
+    DB_HOST = os.environ.get('DB_HOST', getattr(config, 'DB_HOST', 'localhost'))
+    DB_PORT = int(os.environ.get('DB_PORT', getattr(config, 'DB_PORT', 3306)))
+    DB_USER = os.environ.get('DB_USER', getattr(config, 'DB_USER', 'root'))
+    DB_PASSWORD = os.environ.get('DB_PASSWORD') or os.environ.get('DB_PASS', getattr(config, 'DB_PASSWORD', ''))
+    DB_NAME = os.environ.get('DB_NAME', getattr(config, 'DB_NAME', 'schoolmngt'))
+
     connection = pymysql.connect(
-        host='serverless-eu-west-3.sysp0000.db1.skysql.com',
-        user='dbpwf28831395',
-        password='Bernice@2026',
-        database='schoolmngt',
-        port=4018
+        host=DB_HOST,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME,
+        port=DB_PORT
     )
     
     service = ClassManagementService(connection)
@@ -980,13 +988,21 @@ def example_create_class():
 def example_promote_students():
     """Example: Promote students to next class."""
     import pymysql
-    
+    import os
+    import config
+
+    DB_HOST = os.environ.get('DB_HOST', getattr(config, 'DB_HOST', 'localhost'))
+    DB_PORT = int(os.environ.get('DB_PORT', getattr(config, 'DB_PORT', 3306)))
+    DB_USER = os.environ.get('DB_USER', getattr(config, 'DB_USER', 'root'))
+    DB_PASSWORD = os.environ.get('DB_PASSWORD') or os.environ.get('DB_PASS', getattr(config, 'DB_PASSWORD', ''))
+    DB_NAME = os.environ.get('DB_NAME', getattr(config, 'DB_NAME', 'schoolmngt'))
+
     connection = pymysql.connect(
-        host='serverless-eu-west-3.sysp0000.db1.skysql.com',
-        user='dbpwf28831395',
-        password='Bernice@2026',
-        database='schoolmngt',
-        port=4018
+        host=DB_HOST,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME,
+        port=DB_PORT
     )
     
     service = ClassManagementService(connection)

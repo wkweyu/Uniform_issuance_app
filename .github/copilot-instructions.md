@@ -11,7 +11,7 @@ This is a **Flask-based school management system** with two integrated subsystem
 
 ### Data Architecture
 
-- **Source of Truth**: MySQL (`schoolmngt` database) with `schooluser` user (password `jbs`) @ localhost
+-- **Source of Truth**: MySQL (database name set via `DB_NAME`) using credentials provided via environment variables or a local `.env` file (see `.env.example`). Avoid committing secrets to the repo.
 - **Auth Model**: Session-based login requiring `userNo` in session; admin flag via `user.TA` field  
 - **No ORM**: Raw PyMySQL with `DictCursor` for all queries (returns dicts not tuples)
 - **App Entry**: Single monolithic `app.py` (3719 lines) containing all routes, helpers, and business logic
@@ -115,19 +115,16 @@ For Windows: `run_uniform_app.bat` (hardcoded batch file on Desktop).
 
 ### Database Setup & Startup Checklist
 1. **Ensure MySQL is running**: `systemctl start mysql` (Linux) or Start services (Windows)
-2. **Verify database exists**: `CREATE DATABASE schoolmngt;` (if not present)
-3. **Import schema**: `mysql -u schooluser -p schoolmngt < uniform_app_setup.sql` (password: `jbs`)
+2. **Verify database exists**: `CREATE DATABASE $DB_NAME;` (if not present) or use your managed DB provider's dashboard.
+3. **Import schema**: Create a `.env` from `.env.example` and set `DB_HOST`, `DB_USER`, `DB_NAME` then run:
+```bash
+mysql -h "$DB_HOST" -u "$DB_USER" -p "$DB_NAME" < uniform_app_setup.sql
+```
 4. **Verify user login**: Test `/login` with valid username from `users` table (requires `access_flag=1` and valid `pwd`)
 5. **Check term dates**: Ensure at least one record in `uniform_term_dates` with dates covering today (else issuance shows warnings)
 
 ### Database Connection Credentials (Hardcoded)
-Located in [app.py](app.py#L20-L36):
-```python
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://schooluser:jbs@localhost/schoolmngt'
-# Also in get_db_connection() line 54:
-pymysql.connect(host='localhost', user='schooluser', password='jbs', database='schoolmngt', ...)
-```
-**To change**: Edit these TWO locations (SQLAlchemy URI + get_db_connection function). Consider moving to `.env` for production.
+Located in [app.py](app.py#L20-L36): the app reads DB settings from environment variables (or `.env`) and builds the SQLAlchemy URI. You can also override the full URI with `SQLALCHEMY_DATABASE_URI` env var. Do not commit credentials to the repository; use `.env` for local development and env vars/secret manager for production.
 
 ### Adding a New Feature (Workflow)
 1. **Add DB table** to `uniform_app_setup.sql` (or create live via `mysql`)

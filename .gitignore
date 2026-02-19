@@ -7,3 +7,9 @@ __pycache__/
 *.pyo
 *.pyd
 *.so
+# IDE
+.vscode/
+.idea/
+
+# Static build outputs
+/static/

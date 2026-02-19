@@ -29,6 +29,22 @@ DB_USER = os.environ.get('DB_USER', config.DB_USER)
 DB_PASSWORD = os.environ.get('DB_PASSWORD', config.DB_PASSWORD)
 DB_NAME = os.environ.get('DB_NAME', config.DB_NAME)
 
+# Fail-fast runtime check: ensure critical DB env vars are set in production.
+# Set `SKIP_DB_ENV_CHECK=1` to bypass during special maintenance/testing.
+if not os.environ.get('SKIP_DB_ENV_CHECK'):
+    missing = []
+    for name, val in (('DB_USER', DB_USER), ('DB_PASSWORD', DB_PASSWORD), ('DB_NAME', DB_NAME)):
+        if not val:
+            missing.append(name)
+    if missing:
+        msg = (
+            "CRITICAL: Missing required DB environment variables: "
+            + ", ".join(missing)
+            + ". Create a .env from .env.example or set environment variables. To skip this check set SKIP_DB_ENV_CHECK=1"
+        )
+        print(msg)
+        raise SystemExit(msg)
+
 quoted_password = urlparse.quote_plus(DB_PASSWORD)
 DEFAULT_DB_URI = f"mysql+pymysql://{DB_USER}:{quoted_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
@@ -4119,8 +4135,7 @@ def manage_term_dates():
     cursor = connection.cursor()
     school_id = g.school_id or 1
     
-    now = datetime.now()
-
+    now = dat
     if request.method == 'POST':
         action = request.form.get('action')
         

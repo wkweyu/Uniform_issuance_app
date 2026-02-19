@@ -23,13 +23,16 @@ This system adds:
 ### Step 1: Backup Database (2 min)
 ```bash
 cd /home/frappe-user/uniform\ issuance\ app
-mysqldump -u schooluser -p schoolmngt > backup_$(date +%Y%m%d_%H%M%S).sql
+cp .env.example .env
+# Edit `.env` and set DB_HOST, DB_USER, DB_PASSWORD, DB_NAME (do not commit `.env`).
+echo "Edit .env now and then run the backup command below. You'll be prompted for the DB password."
+mysqldump -h "$DB_HOST" -u "$DB_USER" -p "$DB_NAME" > backup_$(date +%Y%m%d_%H%M%S).sql
 echo "✓ Backup created"
 ```
 
 ### Step 2: Run Migration Script (5 min)
 ```bash
-mysql -u schooluser -p schoolmngt < school_management_migration_v1.sql
+mysql -h "$DB_HOST" -u "$DB_USER" -p "$DB_NAME" < school_management_migration_v1.sql
 echo "✓ Tables created"
 ```
 
@@ -85,13 +88,13 @@ python3 << 'EOF'
 import pymysql
 from class_management_service import ClassManagementService
 
-try:
-    conn = pymysql.connect(
-        host='localhost',
-        user='schooluser',
-        password='jbs',
-        database='schoolmngt'
-    )
+  import os
+  conn = pymysql.connect(
+    host=os.environ.get('DB_HOST', 'localhost'),
+    user=os.environ.get('DB_USER'),
+    password=os.environ.get('DB_PASSWORD'),
+    database=os.environ.get('DB_NAME')
+  )
     service = ClassManagementService(conn)
     
     # Test 1: Get current academic year
@@ -138,10 +141,10 @@ import pymysql
 from class_management_service import ClassManagementService
 
 conn = pymysql.connect(
-    host='localhost',
-    user='schooluser',
-    password='jbs',
-    database='schoolmngt'
+  host=os.environ.get('DB_HOST', 'localhost'),
+  user=os.environ.get('DB_USER'),
+  password=os.environ.get('DB_PASSWORD'),
+  database=os.environ.get('DB_NAME')
 )
 service = ClassManagementService(conn)
 
@@ -178,10 +181,8 @@ EOF
 
 ### Test 3: Backward Compatibility (2 min)
 ```bash
-mysql -u schooluser -p schoolmngt -e "
-  SELECT COUNT(*) as legacy_classes FROM classallocation LIMIT 1;
-  SELECT COUNT(*) as new_classes FROM class_allocation LIMIT 1;
-"
+# Run queries against the DB specified in your `.env` (you will be prompted for the password):
+mysql -h "$DB_HOST" -u "$DB_USER" -p "$DB_NAME" -e "SELECT COUNT(*) as legacy_classes FROM classallocation LIMIT 1; SELECT COUNT(*) as new_classes FROM class_allocation LIMIT 1;"
 ```
 
 Both queries should work (or return 0 if tables are empty).
