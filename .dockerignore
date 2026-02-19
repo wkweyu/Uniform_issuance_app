@@ -1,0 +1,12 @@
+__pycache__/
+.venv
+venv/
+.env
+*.pyc
+*.pyo
+*.pyd
+.git
+node_modules
+dist
+output
+*.sqlite3
