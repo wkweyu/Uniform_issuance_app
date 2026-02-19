@@ -1,0 +1,108 @@
+name: Smoke Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run smoke tests daily at 02:00 UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  smoke-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: rootpassword
+          MYSQL_DATABASE: schoolmngt
+          MYSQL_USER: schooluser
+          MYSQL_PASSWORD: password
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+        ports:
+          - 3306:3306
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Wait for MySQL to be ready
+        run: |
+          for i in {1..30}; do
+            mysql -h 127.0.0.1 -u schooluser -ppassword -e "SELECT 1" && break
+            echo "Waiting for MySQL... ($i/30)"
+            sleep 1
+          done
+
+      - name: Initialize database
+        env:
+          DB_HOST: 127.0.0.1
+          DB_USER: schooluser
+          DB_PASSWORD: password
+          DB_NAME: schoolmngt
+          DB_PORT: 3306
+        run: |
+          mysql -h $DB_HOST -u $DB_USER -p$DB_PASSWORD $DB_NAME < uniform_app_setup.sql || true
+          mysql -h $DB_HOST -u $DB_USER -p$DB_PASSWORD $DB_NAME < migrations/*.sql || true
+          # Add test user: admin/admin123 with school DEFAULT
+          mysql -h $DB_HOST -u $DB_USER -p$DB_PASSWORD $DB_NAME << EOF
+          INSERT IGNORE INTO schools (id, name, code, is_active) VALUES (1, 'DEFAULT School', 'DEFAULT', 1);
+          INSERT IGNORE INTO users (userNo, username, pwd, access_flag, TA, school_id) 
+          VALUES (1, 'admin', 'admin123', 1, 1, 1);
+          EOF
+
+      - name: Start Flask app
+        env:
+          FLASK_ENV: development
+          DB_HOST: 127.0.0.1
+          DB_USER: schooluser
+          DB_PASSWORD: password
+          DB_NAME: schoolmngt
+          DB_PORT: 3306
+          SKIP_DB_ENV_CHECK: 1
+        run: |
+          python3 app.py > /tmp/app.log 2>&1 &
+          sleep 5
+          curl -s http://127.0.0.1:5000/health | grep -q '"status":"healthy"' && echo "App is healthy" || (cat /tmp/app.log && exit 1)
+
+      - name: Run smoke tests
+        env:
+          DB_HOST: 127.0.0.1
+        run: |
+          python3 smoke_tests.py \
+            --base-url http://127.0.0.1:5000 \
+            --username admin \
+            --password admin123 \
+            --school-code DEFAULT \
+            --timeout 10
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          echo "=== App Log ==="
+          tail -n 100 /tmp/app.log || true
+          echo "=== Smoke Tests Log ==="
+          ls -la *.log || true
+
+      - name: Report status
+        if: always()
+        run: |
+          echo "✅ Smoke tests completed"
