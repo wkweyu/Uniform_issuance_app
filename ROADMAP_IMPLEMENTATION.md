@@ -9,12 +9,18 @@ This roadmap outlines the steps to implement the suggested improvements and miss
 
 ### 1.1 Modularization via Blueprints
 1.  **Create Directory Structure**: Create a `blueprints/` directory.
-2.  **Decouple `app.py`**:
-    *   Extract Fees logic to `blueprints/fees/`.
-    *   Extract Exam logic to `blueprints/exams/`.
-    *   Extract Fleet logic to `blueprints/fleet/`.
-    *   Extract Procurement logic to `blueprints/procurement/`.
-3.  **Register Blueprints**: Update `app.py` to register these blueprints, significantly reducing its size.
+2.  **Decouple `app.py`**: To effectively reduce `app.py` from 4,000+ lines to a clean entry point, we will decouple it into **10 specialized blueprints**:
+    *   `auth`: Authentication, login, logout, and user session management.
+    *   `super_admin`: Platform-level SaaS controls and school onboarding.
+    *   `students`: Student admission, profile management, and bulk imports.
+    *   `classes`: Class groups, streams, and the promotion engine.
+    *   `exams`: Exam series management, grading, and report cards.
+    *   `fees`: Fee structures, payments, and student ledgers.
+    *   `finance`: General ledger, payment vouchers, and budgeting.
+    *   `procurement`: Requisitions, supplier management, and purchase orders.
+    *   `fleet`: Bus management, fuel tracking, and service records.
+    *   `uniforms`: Uniform issuance, pricing, and stock control.
+3.  **Register Blueprints**: Update `app.py` to register these blueprints, significantly reducing its size and complexity.
 
 ### 1.2 Unified Data Access (ORM)
 1.  **Model Definition**: Complete the transition of all tables in `schema.sql` to SQLAlchemy models in `models.py`.
