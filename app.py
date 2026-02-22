@@ -68,9 +68,7 @@ if SQLALCHEMY_DATABASE_URI.startswith("postgres://"):
 elif SQLALCHEMY_DATABASE_URI.startswith("mysql://"):
     SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace("mysql://", "mysql+pymysql://", 1)
 
-db = SQLAlchemy()
-csrf = CSRFProtect()
-migrate = Migrate()
+from extensions import db, csrf, migrate
 
 
 def create_app():
@@ -105,6 +103,21 @@ def create_app():
 
     from flask_wtf.csrf import generate_csrf
     app.jinja_env.globals['csrf_token'] = generate_csrf
+
+    # Register Blueprints
+    from blueprints.auth import auth_bp
+    app.register_blueprint(auth_bp)
+
+    # Context processor for backward compatibility in templates
+    @app.context_processor
+    def utility_processor():
+        def compat_url_for(endpoint, **values):
+            if endpoint == "login":
+                return url_for("auth.login", **values)
+            if endpoint == "logout":
+                return url_for("auth.logout", **values)
+            return url_for(endpoint, **values)
+        return dict(url_for=compat_url_for)
 
     return app
 
@@ -154,41 +167,7 @@ def get_db_connection():
         raise e
 
 
-class School(db.Model):
-    __tablename__ = 'schools'
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(255), nullable=False)
-    code = db.Column(db.String(20), unique=True, index=True)
-    is_active = db.Column(db.Boolean, default=True)
-    subscription_end = db.Column(db.Date)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-
-class User(db.Model):
-    __tablename__ = 'users'
-    userNo = db.Column(db.Integer, primary_key=True)
-    StaffID = db.Column(db.String(6))
-    username = db.Column(db.String(32))
-    pwd = db.Column(db.String(32), default='123456')
-    domainID = db.Column(db.Integer)
-    access_flag = db.Column(db.SmallInteger, default=1)
-    dateReg = db.Column(db.String(32))
-    RegStaffID = db.Column(db.String(6))
-    TA = db.Column(db.SmallInteger, default=0)
-    _date = db.Column(db.DateTime)
-    school_id = db.Column(db.Integer, db.ForeignKey("schools.id"), index=True)
-
-
-class UniformPrice(db.Model):
-    __tablename__ = 'uniform_prices'
-    id = db.Column(db.Integer, primary_key=True)
-    item_name = db.Column(db.String(255))
-    class_group = db.Column(db.String(255))
-    price = db.Column(db.Numeric(10, 2))
-    school_id = db.Column(db.Integer, db.ForeignKey("schools.id"), index=True)
-
-# Class group mapping
-# Class group mapping
+from models import School, User, UniformPrice
 CLASS_GROUPS = {
     'Playgroup': 'Playgroup-PP2',
     'Pre-Primary 1': 'Playgroup-PP2',
@@ -224,136 +203,12 @@ def get_current_term_and_year():
     else:
         return None, None  # or raise an error or default
 
-def verify_legacy_password(input_password, stored_password, user_id=None):
-    """
-    Supports:
-    - Secure Bcrypt/PBKDF2 hashes (Primary)
-    - Plain text passwords (Legacy - Auto-upgrades to secure hash on match)
-    - MD5 hashed passwords (Legacy - Auto-upgrades to secure hash on match)
-    """
-    if not stored_password:
-        return False
-
-    # Modern hashes (Werkzeug/Flask generate_password_hash)
-    try:
-        if check_password_hash(stored_password, input_password):
-            return True
-    except ValueError:
-        # Not a werkzeug hash, fall through
-        pass
-
-    # Legacy MD5
-    md5_hash = hashlib.md5(input_password.encode()).hexdigest()
-    if stored_password == md5_hash:
-        return True
-
-    # Plain text legacy
-    if stored_password == input_password:
-        return True
-
-    return False
-from urllib.parse import quote
-
-def login_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if 'userNo' not in session:
-            next_url = quote(request.url)
-            return redirect(url_for('login', next=next_url))
-        return f(*args, **kwargs)
-    return decorated
-
-def admin_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if 'userNo' not in session:
-            next_url = quote(request.url)
-            return redirect(url_for('login', next=next_url))
-        if not session.get('is_admin', False):
-            flash("Access denied. Admin privileges required.", "error")
-            return redirect(url_for('index'))
-        return f(*args, **kwargs)
-    return decorated
-
-
-def super_admin_required(f):
-    """Guard for platform-level super admins (SaaS controls)."""
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if 'userNo' not in session:
-            next_url = quote(request.url)
-            return redirect(url_for('login', next=next_url))
-        if not session.get('is_super_admin', False):
-            flash("Access denied. Super admin privileges required.", "error")
-            return redirect(url_for('index'))
-        return f(*args, **kwargs)
-    return decorated
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if 'userNo' in session:
-        return redirect(url_for('index'))
-
-    next_url = request.args.get('next')
-
-    if request.method == 'POST':
-        school_code = request.form.get('school_code')
-        username = request.form.get('username')
-        password = request.form.get('password')
-
-        # STEP 3: Tenant-aware login using school code
-        if not school_code:
-            flash("School code is required.", "error")
-            return redirect(url_for('login'))
-
-        school = School.query.filter_by(code=school_code).first()
-        if not school:
-            flash("Invalid school code.", "error")
-            return redirect(url_for('login'))
-
-        # Check school is active and subscription is valid
-        today = datetime.utcnow().date()
-        if not school.is_active or (school.subscription_end and school.subscription_end < today):
-            flash("School is inactive or subscription has expired.", "error")
-            return redirect(url_for('login'))
-
-        # Authenticate user within this school only
-        user = User.query.filter_by(username=username, school_id=school.id).first()
-
-        if not user or user.access_flag != 1:
-            flash("Invalid username or password.", "error")
-            return redirect(url_for('login'))
-
-        if not verify_legacy_password(password, user.pwd, user.userNo):
-            flash("Invalid username or password.", "error")
-            return redirect(url_for('login'))
-
-        # ✅ Login success
-        session['userNo'] = user.userNo
-        session['username'] = user.username
-        session['staff_id'] = user.StaffID
-        session['is_admin'] = bool(user.TA)
-        session['is_super_admin'] = bool(user.TA == 2)
-        session['school_id'] = school.id
-        session['logged_in'] = True  # Add this flag
-
-        # Set session to expire after 8 hours
-        session.permanent = True
-        app.permanent_session_lifetime = timedelta(hours=8)
-
-        flash(f"Welcome {user.username}", "success")
-
-        return redirect(next_url or url_for('index'))
-
-    return render_template('login.html')
-
-
-@app.route('/logout')
-def logout():
-    session.clear()
-    flash("Logged out successfully.", "successfully")
-    return redirect(url_for('login'))
-
+from blueprints.auth.utils import (
+    verify_legacy_password,
+    login_required,
+    admin_required,
+    super_admin_required
+)
 
 # ============================================================================
 # SUPER ADMIN (SaaS Controls)
@@ -4055,7 +3910,7 @@ def reset_password():
         else:
             flash("User not found.", "error")
         
-        return redirect(url_for('login'))
+        return redirect(url_for('auth.login'))
     
     return render_template('reset_password.html')
 
