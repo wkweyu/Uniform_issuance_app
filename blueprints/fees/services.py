@@ -19,6 +19,7 @@ from datetime import datetime
 import logging
 from typing import Dict, List, Optional, Tuple
 from decimal import Decimal
+from core.audit import audit_log
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -270,6 +271,7 @@ class FeesService:
         result = self.cursor.fetchone()
         return Decimal(str(result['balance_after'])) if result else Decimal("0.00")
 
+    @audit_log('invoice_student')
     def invoice_student(self, admno: int, year_id: int, term_id: int, structure_id: int, user_id: int, custom_items: List[Dict] = None) -> List[int]:
         """Apply a fee structure or custom items to a student's ledger."""
         try:
@@ -431,6 +433,7 @@ class FeesService:
     # 3. PAYMENTS & RECEIPTS
     # =========================================================================
 
+    @audit_log('record_fee_payment')
     def record_payment(self, admno: int, amount: Decimal, mode: str, reference: str, bank: str, date: str, year_id: int, term_id: int, user_id: int) -> Dict:
         """Record a student payment and distribute across voteheads by priority."""
         try:
@@ -688,6 +691,7 @@ class FeesService:
             self.connection.rollback()
             raise FeesError(f"Update failed: {str(e)}")
 
+    @audit_log('void_fee_receipt')
     def void_receipt(self, payment_id: int, user_id: int, reason: str) -> bool:
         """Void a receipt by reversing its effects on student's ledger."""
         try:
