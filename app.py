@@ -44,52 +44,66 @@ def create_app(config_class=Config):
     app.register_blueprint(inventory_bp)
     from blueprints.transport.routes import transport_bp
     app.register_blueprint(transport_bp)
+    from blueprints.admin.routes import admin_bp
+    app.register_blueprint(admin_bp)
+    from blueprints.uniforms.routes import uniforms_bp
+    app.register_blueprint(uniforms_bp)
+    from blueprints.reports.routes import reports_bp
+    app.register_blueprint(reports_bp)
 
     # Context processor for backward compatibility in templates
     @app.context_processor
     def utility_processor():
         from flask import url_for
         def compat_url_for(endpoint, **values):
-            # Auth
-            if endpoint == "login": return url_for("auth.login", **values)
-            if endpoint == "logout": return url_for("auth.logout", **values)
-            # Super Admin
-            if endpoint == "super_admin": return url_for("super_admin.super_admin_index", **values)
-            if endpoint == "manage_schools": return url_for("super_admin.manage_schools", **values)
-            if endpoint == "update_school_status": return url_for("super_admin.update_school_status", **values)
-            if endpoint == "update_school_subscription": return url_for("super_admin.update_school_subscription", **values)
-            # Students
-            if endpoint == "admit_student": return url_for("students.admit_student", **values)
-            if endpoint == "students_list": return url_for("students.students_list", **values)
-            if endpoint == "student_profile": return url_for("students.student_profile", **values)
-            if endpoint == "edit_student": return url_for("students.edit_student", **values)
-            if endpoint == "toggle_student_status": return url_for("students.toggle_student_status", **values)
-            if endpoint == "print_admission_form": return url_for("students.print_admission_form", **values)
-            # Fees
-            if endpoint == "fees_dashboard": return url_for("fees.fees_dashboard", **values)
-            if endpoint == "collect_fees": return url_for("fees.collect_fees", **values)
-            if endpoint == "print_fee_receipt": return url_for("fees.print_fee_receipt", **values)
-            # Finance
-            if endpoint == "finance_dashboard": return url_for("finance.finance_dashboard", **values)
-            # Add more as needed by templates
+            # Manual high-priority overrides
+            overrides = {
+                "login": "auth.login",
+                "logout": "auth.logout",
+                "index": "index",
+                "admin_settings": "admin.admin_settings",
+                "manage_users": "admin.manage_users",
+                "manage_term_dates": "admin.manage_term_dates",
+                "current_term_status": "admin.current_term_status",
+                "uniform_dashboard": "uniforms.uniform_dashboard",
+                "issue_uniform": "uniforms.issue_uniform",
+                "manage_uniform_items": "uniforms.manage_uniform_items",
+                "receipt": "uniforms.receipt",
+                "reports_dashboard": "reports.reports_dashboard",
+                "student_search": "reports.student_search",
+                "student_history": "reports.student_history",
+                "item_totals": "reports.item_totals",
+                "receipts_register": "reports.receipts_register",
+            }
+            if endpoint in overrides:
+                return url_for(overrides[endpoint], **values)
 
             try:
                 return url_for(endpoint, **values)
             except:
                 # Fallback mapping logic
                 prefixes = {
-                    'students': ['admit_student', 'students_list', 'student_profile', 'edit_student', 'api_search_students'],
-                    'classes': ['manage_classes', 'create_class', 'promote_students'],
-                    'fees': ['fees_dashboard', 'collect_fees', 'manage_fee_structures'],
-                    'finance': ['finance_dashboard', 'manage_vouchers'],
-                    'exams': ['exams_dashboard', 'create_exam', 'marks_entry'],
-                    'procurement': ['procurement_dashboard', 'manage_requisitions'],
+                    'auth': ['login', 'logout', 'reset_password', 'user_profile'],
+                    'admin': ['admin_settings', 'manage_users', 'manage_term_dates', 'current_term_status'],
+                    'students': ['admit_student', 'students_list', 'student_profile', 'edit_student', 'toggle_student_status', 'print_admission_form'],
+                    'classes': ['manage_classes', 'create_class', 'promote_students', 'manage_streams', 'allocate_teacher'],
+                    'fees': ['fees_dashboard', 'collect_fees', 'manage_fee_structures', 'print_fee_receipt', 'bulk_invoice', 'bulk_debit_term', 'bulk_post_fees', 'admin_fees_rollup'],
+                    'finance': ['finance_dashboard', 'manage_vouchers', 'manage_budgets', 'trial_balance_report', 'income_statement_report', 'balance_sheet_report'],
+                    'exams': ['exams_dashboard', 'create_exam', 'marks_entry', 'manage_grading_scales'],
+                    'procurement': ['procurement_dashboard', 'manage_requisitions', 'create_purchase_order', 'manage_suppliers'],
                     'inventory': ['manage_stock', 'stock_report'],
-                    'transport': ['fleet_dashboard', 'manage_buses']
+                    'transport': ['fleet_dashboard', 'manage_buses', 'record_fuel_invoice', 'service_register', 'manage_transport_routes', 'issue_fuel'],
+                    'uniforms': ['uniform_dashboard', 'issue_uniform', 'manage_uniform_items', 'receipt'],
+                    'reports': ['reports_dashboard', 'student_search', 'student_history', 'item_totals', 'receipts_register'],
+                    'super_admin': ['manage_schools', 'update_school_status', 'update_school_subscription']
                 }
                 for blueprint, funcs in prefixes.items():
                     if endpoint in funcs:
-                        return url_for(f"{blueprint}.{endpoint}", **values)
+                        try:
+                            return url_for(f"{blueprint}.{endpoint}", **values)
+                        except:
+                            continue
+                # If everything fails, just try the original endpoint one last time (will raise error)
                 return url_for(endpoint, **values)
         return dict(url_for=compat_url_for)
 
@@ -103,7 +117,21 @@ def setup_tenant():
 
 @app.route('/health')
 def health_check():
-    return jsonify({"status": "healthy"}), 200
+    health = {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "database": {"connected": False},
+        "ssl": False
+    }
+    try:
+        connection = get_db_connection()
+        connection.ping(reconnect=True)
+        health["database"]["connected"] = True
+        connection.close()
+    except Exception as e:
+        health["database"]["error"] = str(e)
+
+    return jsonify(health), 200
 
 @app.route('/')
 @login_required
