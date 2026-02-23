@@ -18,6 +18,8 @@ from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
 import logging
 import uuid
+from core.audit import audit_log
+from flask import g
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +27,9 @@ class FinanceError(Exception):
     pass
 
 class FinanceService:
-    def __init__(self, connection: pymysql.Connection, school_id: int):
+    def __init__(self, connection: pymysql.Connection, school_id: Optional[int] = None):
         self.connection = connection
-        self.school_id = school_id
+        self.school_id = school_id or g.school_id or 1
         self.cursor = connection.cursor(pymysql.cursors.DictCursor)
 
     # =========================================================================
@@ -89,6 +91,7 @@ class FinanceService:
     # 2. GENERAL LEDGER TRANSACTIONS
     # =========================================================================
 
+    @audit_log('record_gl_transaction')
     def record_transaction(self, date: str, reference: str, description: str, entries: List[Dict], user_id: int) -> int:
         """
         Record a double-entry transaction.
@@ -129,6 +132,7 @@ class FinanceService:
     # 3. PAYMENT VOUCHERS
     # =========================================================================
 
+    @audit_log('create_payment_voucher')
     def create_voucher(self, payee: str, amount: Decimal, mode: str, account_id: int, cheque_no: str, description: str, user_id: int, supplier_id: Optional[int] = None, po_id: Optional[int] = None, source_account_id: Optional[int] = None, vat: Decimal = 0, wht: Decimal = 0) -> int:
         """Issue a payment voucher draft for multi-level approval."""
         try:
@@ -180,6 +184,7 @@ class FinanceService:
             self.connection.rollback()
             raise FinanceError(f"Voucher creation failed: {str(e)}")
 
+    @audit_log('verify_payment_voucher')
     def verify_voucher(self, voucher_id: int, user_id: int):
         """Verifier level check."""
         try:
@@ -191,6 +196,7 @@ class FinanceService:
             self.connection.rollback()
             raise FinanceError(str(e))
 
+    @audit_log('authorize_payment_voucher')
     def authorize_voucher(self, voucher_id: int, user_id: int, source_account_id: Optional[int] = None):
         """Final authorization and GL Posting."""
         try:

@@ -2,15 +2,17 @@ from typing import List, Dict, Optional, Any
 from decimal import Decimal
 from datetime import datetime
 import pymysql
+from core.audit import audit_log
+from flask import g
 
 class ProcurementError(Exception):
     pass
 
 class ProcurementService:
-    def __init__(self, connection, school_id: int = 1):
+    def __init__(self, connection, school_id: Optional[int] = None):
         self.connection = connection
-        self.cursor = connection.cursor()
-        self.school_id = school_id
+        self.cursor = connection.cursor(pymysql.cursors.DictCursor)
+        self.school_id = school_id or g.school_id or 1
 
     # =========================================================================
     # 1. SUPPLIERS
@@ -26,6 +28,7 @@ class ProcurementService:
         self.cursor.execute(query, params)
         return self.cursor.fetchall()
 
+    @audit_log('create_supplier')
     def create_supplier(self, company: str, contact_person: str, email: str, phone: str, address: str, cert_no: str = "", pin_no: str = "") -> int:
         """Create a new supplier in the existing schema."""
         try:
@@ -44,6 +47,7 @@ class ProcurementService:
     # 2. PURCHASE REQUISITIONS (Internal)
     # =========================================================================
 
+    @audit_log('create_requisition')
     def create_requisition(self, department_id: int, items: List[Dict], user_id: int, justification: str = "", category: str = "General", academic_year_id: int = None) -> Dict:
         """Create an internal request for items."""
         try:
@@ -98,6 +102,7 @@ class ProcurementService:
         self.cursor.execute(query, params)
         return self.cursor.fetchall()
 
+    @audit_log('update_requisition_status')
     def update_requisition_status(self, req_id: int, status: str, user_id: int) -> bool:
         try:
             approved_at = datetime.now() if status == 'APPROVED' else None
@@ -132,6 +137,7 @@ class ProcurementService:
         req['items'] = self.cursor.fetchall()
         return req
 
+    @audit_log('convert_requisition_to_po')
     def convert_requisition_to_po(self, req_id: int, supplier_id: int, user_id: int) -> Dict:
         """Convert an APPROVED requisition into a Purchase Order."""
         try:
@@ -175,6 +181,7 @@ class ProcurementService:
     # 3. PURCHASE ORDERS
     # =========================================================================
 
+    @audit_log('create_purchase_order')
     def create_purchase_order(self, supplier_id: int, order_date: str, items: List[Dict], user_id: int, notes: str = "", category: str = "General", academic_year_id: int = None, department_id: int = None) -> Dict:
         """
         Create a new PO with multiple items.
@@ -215,6 +222,7 @@ class ProcurementService:
             self.connection.rollback()
             raise ProcurementError(f"Failed to create purchase order: {str(e)}")
 
+    @audit_log('update_purchase_order')
     def update_purchase_order(self, po_id: int, supplier_id: int, order_date: str, items: List[Dict], notes: str = "") -> bool:
         """Update an existing PO. Only allowed if status is DRAFT or PENDING_APPROVAL."""
         try:
@@ -253,6 +261,7 @@ class ProcurementService:
             self.connection.rollback()
             raise ProcurementError(f"Failed to update purchase order: {str(e)}")
 
+    @audit_log('delete_purchase_order')
     def delete_purchase_order(self, po_id: int) -> bool:
         """Delete a PO. Only allowed if status is DRAFT."""
         try:
@@ -333,6 +342,7 @@ class ProcurementService:
         
         return po
 
+    @audit_log('record_grn')
     def record_grn(self, po_id: int, received_by: int, items: List[Dict], delivery_note_ref: str = "", notes: str = "") -> str:
         """Record a partial or full delivery (GRN). Updates stock for each item."""
         try:
@@ -417,6 +427,7 @@ class ProcurementService:
             self.connection.rollback()
             raise ProcurementError(f"Failed to record GRN: {str(e)}")
 
+    @audit_log('update_po_status')
     def update_po_status(self, po_id: int, status: str, user_id: int) -> bool:
         """Update status and post to GL if RECEIVED (Accrual Basis)."""
         try:
@@ -541,6 +552,7 @@ class ProcurementService:
             self.connection.rollback()
             raise ProcurementError(f"Failed to update PO status: {str(e)}")
 
+    @audit_log('record_po_payment')
     def record_po_payment(self, po_id: int, amount: Decimal, mode: str, reference: str, date: str, user_id: int, source_account_id: int) -> bool:
         """Record a partial or full payment for a PO, clearing liability in GL."""
         try:
@@ -628,6 +640,7 @@ class ProcurementService:
     # 5. ASSET REGISTRY
     # =========================================================================
 
+    @audit_log('register_asset')
     def register_asset(self, data: Dict, user_id: int) -> int:
         """Register a new fixed asset."""
         try:
@@ -664,6 +677,7 @@ class ProcurementService:
         self.cursor.execute(query, params)
         return self.cursor.fetchall()
 
+    @audit_log('update_asset_condition')
     def update_asset_condition(self, asset_id: int, new_condition: Dict, user_id: int) -> bool:
         """Update asset condition or location."""
         try:
