@@ -58,6 +58,7 @@ def create_app(config_class=Config):
             if endpoint == "manage_schools": return url_for("super_admin.manage_schools", **values)
             if endpoint == "update_school_status": return url_for("super_admin.update_school_status", **values)
             if endpoint == "update_school_subscription": return url_for("super_admin.update_school_subscription", **values)
+            if endpoint == "admin_settings": return url_for("super_admin.super_admin_index", **values) 
             # Students
             if endpoint == "admit_student": return url_for("students.admit_student", **values)
             if endpoint == "students_list": return url_for("students.students_list", **values)
