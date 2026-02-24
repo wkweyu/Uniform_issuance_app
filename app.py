@@ -95,19 +95,53 @@ def create_app(config_class=Config):
 
     return app
 
+# Create the Flask application instance
 app = create_app()
 
+# ============================================================
+# FIX 1: Register the missing currency template filter
+# ============================================================
+@app.template_filter('currency')
+def currency_filter(value):
+    """
+    Custom Jinja2 filter to format numbers as currency.
+    Usage in templates: {{ amount|currency }}
+    """
+    if value is None:
+        return "$0.00"
+    try:
+        # Handle different numeric types (Decimal, float, int, string)
+        if hasattr(value, 'amount'):  # For Decimal objects from SQLAlchemy
+            value = float(str(value))
+        # Convert to float and format with 2 decimal places and thousand separators
+        return f"${float(value):,.2f}"
+    except (ValueError, TypeError):
+        # If conversion fails, return the original value with a dollar sign
+        return f"${value}"
+
+# ============================================================
+# Request Hooks and Routes
+# ============================================================
 @app.before_request
 def setup_tenant():
+    """Load tenant context before each request."""
     load_tenant_context()
 
 @app.route('/health')
 def health_check():
-    return jsonify({"status": "healthy"}), 200
+    """
+    Health check endpoint for Render.
+    Returns 200 OK if the app is running properly.
+    """
+    return jsonify({
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat()
+    }), 200
 
 @app.route('/')
 @login_required
 def index():
+    """Main dashboard route."""
     connection = get_db_connection()
     cursor = connection.cursor()
     school_id = g.school_id or 1
@@ -118,9 +152,42 @@ def index():
 
     cursor.execute("SELECT COUNT(*) AS count FROM users WHERE school_id = %s", (school_id,))
     total_staff = cursor.fetchone()['count']
+    
+    # Get today's collections for the currency filter demo
+    cursor.execute("""
+        SELECT COALESCE(SUM(amount), 0) AS total 
+        FROM fee_collections 
+        WHERE school_id = %s AND DATE(collection_date) = CURDATE()
+    """, (school_id,))
+    today_collections = cursor.fetchone()['total']
 
     connection.close()
-    return render_template('index.html', total_students=total_students, total_staff=total_staff)
+    
+    return render_template(
+        'index.html', 
+        total_students=total_students, 
+        total_staff=total_staff,
+        today_collections=today_collections
+    )
 
+# ============================================================
+# For local development only
+# This block is NOT used when running on Render with Gunicorn
+# ============================================================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    # Get port from environment variable (for Render compatibility) or default to 5000
+    port = int(os.environ.get('PORT', 5000))
+    
+    # Run the app
+    app.run(
+        host="0.0.0.0", 
+        port=port, 
+        debug=True  # Enable debug mode for local development
+    )
+
+# ============================================================
+# For Gunicorn (production on Render)
+# Some WSGI servers look for 'application' instead of 'app'
+# ============================================================
+# This ensures compatibility with various WSGI servers
+application = app
