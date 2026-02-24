@@ -154,13 +154,13 @@
             {% if session.get('logged_in') %}
               <!-- Dashboard -->
               <a href="{{ url_for('index') }}" 
-                 class="px-3 py-2 rounded-lg transition hover:bg-blue-700 {% if request.endpoint == 'index' %}nav-active bg-blue-900{% endif %}">
+                 class="px-3 py-2 rounded-lg transition hover:bg-blue-700 {% if request.endpoint and request.endpoint == 'index' %}nav-active bg-blue-900{% endif %}">
                 <i class="fas fa-home"></i> Home
               </a>
               
               <!-- Academic Management -->
               <div class="relative nav-group">
-                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'manage_classes' in request.endpoint or 'allocate_teacher' in request.endpoint or 'promote_students' in request.endpoint or 'manage_streams' in request.endpoint %}nav-active bg-blue-900{% endif %}">
+                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if request.endpoint and ('manage_classes' in request.endpoint or 'allocate_teacher' in request.endpoint or 'promote_students' in request.endpoint or 'manage_streams' in request.endpoint) %}nav-active bg-blue-900{% endif %}">
                   <i class="fas fa-graduation-cap"></i> Academic <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
                 </button>
                 <div class="nav-dropdown">
@@ -176,7 +176,7 @@
 
               <!-- Exam Management -->
               <div class="relative nav-group">
-                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'exam' in request.endpoint or 'grading' in request.endpoint %}nav-active bg-blue-900{% endif %}">
+                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if request.endpoint and ('exam' in request.endpoint or 'grading' in request.endpoint) %}nav-active bg-blue-900{% endif %}">
                   <i class="fas fa-award"></i> Exams <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
                 </button>
                 <div class="nav-dropdown">
@@ -189,7 +189,7 @@
 
               <!-- Student Management -->
               <div class="relative nav-group">
-                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'student' in request.endpoint %}nav-active bg-blue-900{% endif %}">
+                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if request.endpoint and 'student' in request.endpoint %}nav-active bg-blue-900{% endif %}">
                   <i class="fas fa-users-viewfinder"></i> Students <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
                 </button>
                 <div class="nav-dropdown">
@@ -201,7 +201,7 @@
 
               <!-- Fees & Billing -->
               <div class="relative nav-group">
-                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'fees' in request.endpoint and 'reports' not in request.path or 'invoice' in request.endpoint or 'votehead' in request.endpoint or 'structure' in request.endpoint or 'student_group' in request.endpoint %}nav-active bg-blue-900{% endif %}">
+                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if request.endpoint and ('fees' in request.endpoint and 'reports' not in request.path or 'invoice' in request.endpoint or 'votehead' in request.endpoint or 'structure' in request.endpoint or 'student_group' in request.endpoint) %}nav-active bg-blue-900{% endif %}">
                   <i class="fas fa-money-check-dollar"></i> Fees <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
                 </button>
                 <div class="nav-dropdown w-72">
@@ -233,7 +233,7 @@
 
               <!-- Accounts & Finance -->
               <div class="relative nav-group">
-                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'finance' in request.endpoint or 'reports' in request.path %}nav-active bg-blue-900{% endif %}">
+                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if request.endpoint and ('finance' in request.endpoint or 'reports' in request.path) %}nav-active bg-blue-900{% endif %}">
                   <i class="fas fa-vault"></i> Finance <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
                 </button>
                 <div class="nav-dropdown">
@@ -253,7 +253,7 @@
               
               <!-- Uniform Management -->
               <div class="relative nav-group">
-                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'uniform' in request.endpoint or 'stock' in request.endpoint %}nav-active bg-blue-900{% endif %}">
+                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if request.endpoint and ('uniform' in request.endpoint or 'stock' in request.endpoint) %}nav-active bg-blue-900{% endif %}">
                   <i class="fas fa-tshirt"></i> Uniforms <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
                 </button>
                 <div class="nav-dropdown">
@@ -268,7 +268,7 @@
               
               <!-- Fleet Management -->
               <div class="relative nav-group">
-                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'fleet' in request.endpoint or 'fuel' in request.endpoint %}nav-active bg-blue-900{% endif %}">
+                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if request.endpoint and ('fleet' in request.endpoint or 'fuel' in request.endpoint) %}nav-active bg-blue-900{% endif %}">
                   <i class="fas fa-bus"></i> Fleet <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
                 </button>
                 <div class="nav-dropdown">
@@ -284,7 +284,7 @@
 
               <!-- Procurement & Supplies -->
               <div class="relative nav-group">
-                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'procurement' in request.endpoint or 'po' in request.endpoint %}nav-active bg-blue-900{% endif %}">
+                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if request.endpoint and ('procurement' in request.endpoint or 'po' in request.endpoint) %}nav-active bg-blue-900{% endif %}">
                   <i class="fas fa-truck-ramp-box"></i> Procurement <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
                 </button>
                 <div class="nav-dropdown">
@@ -297,7 +297,7 @@
               <!-- System Admin -->
               {% if session.get('is_admin') %}
               <div class="relative nav-group">
-                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'manage_users' in request.endpoint or 'manage_term_dates' in request.endpoint or request.endpoint == 'admin_settings' %}nav-active bg-blue-900{% endif %}">
+                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if request.endpoint and ('manage_users' in request.endpoint or 'manage_term_dates' in request.endpoint or request.endpoint == 'admin_settings') %}nav-active bg-blue-900{% endif %}">
                   <i class="fas fa-shield-halved"></i> Admin <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
                 </button>
                 <div class="nav-dropdown">

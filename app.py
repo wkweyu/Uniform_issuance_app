@@ -51,6 +51,10 @@ def create_app(config_class=Config):
     from blueprints.reports.routes import reports_bp
     app.register_blueprint(reports_bp)
 
+    # Template filters
+    from core.helpers import format_currency
+    app.template_filter('currency')(format_currency)
+
     # Context processor for backward compatibility in templates
     @app.context_processor
     def utility_processor():
@@ -104,8 +108,23 @@ def create_app(config_class=Config):
                         except:
                             continue
                 # If everything fails, just try the original endpoint one last time (will raise error)
-                return url_for(endpoint, **values)
-        return dict(url_for=compat_url_for)
+                try:
+                    return url_for(endpoint, **values)
+                except Exception as e:
+                    app.logger.warning(f"url_for failed for endpoint: {endpoint}. Error: {e}")
+                    return "#" # Return a dead link instead of crashing the whole page
+        return dict(url_for=compat_url_for, datetime=datetime, now=datetime.utcnow())
+
+    @app.errorhandler(500)
+    def internal_error(error):
+        import traceback
+        app.logger.error(f"Server Error: {error}")
+        app.logger.error(traceback.format_exc())
+        return render_template('errors/500.html', error=error), 500
+
+    @app.errorhandler(404)
+    def not_found_error(error):
+        return render_template('errors/404.html'), 404
 
     return app
 
@@ -136,19 +155,62 @@ def health_check():
 @app.route('/')
 @login_required
 def index():
-    connection = get_db_connection()
-    cursor = connection.cursor()
     school_id = g.school_id or 1
+    total_students = 0
+    total_staff = 0
+    today_collections = 0
+    active_buses = 0
+    vouchers_today = 0
+    uniform_issued = 0
+    term_number = None
+    year = None
+    total_classes = 0
 
-    # Dashboard summary logic
-    cursor.execute("SELECT COUNT(*) AS count FROM studentinfo WHERE school_id = %s", (school_id,))
-    total_students = cursor.fetchone()['count']
+    try:
+        connection = get_db_connection()
+        cursor = connection.cursor()
 
-    cursor.execute("SELECT COUNT(*) AS count FROM users WHERE school_id = %s", (school_id,))
-    total_staff = cursor.fetchone()['count']
+        # 1. Basic Stats
+        cursor.execute("SELECT COUNT(*) AS count FROM studentinfo WHERE school_id = %s", (school_id,))
+        total_students = cursor.fetchone()['count']
 
-    connection.close()
-    return render_template('index.html', total_students=total_students, total_staff=total_staff)
+        cursor.execute("SELECT COUNT(*) AS count FROM users WHERE school_id = %s", (school_id,))
+        total_staff = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(*) AS count FROM classes WHERE school_id = %s AND is_active = 1", (school_id,))
+        total_classes = cursor.fetchone()['count']
+
+        # 2. Term Info
+        from core.helpers import get_current_term_and_year
+        term_number, year = get_current_term_and_year()
+
+        # 3. Collections & Operations
+        cursor.execute("SELECT SUM(total_price) as total FROM uniform_receipts WHERE school_id = %s AND DATE(date_issued) = CURDATE()", (school_id,))
+        today_collections = cursor.fetchone()['total'] or 0
+
+        cursor.execute("SELECT COUNT(*) as count FROM buses WHERE school_id = %s AND active = 1", (school_id,))
+        active_buses = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(*) as count FROM fuel_vouchers WHERE school_id = %s AND DATE(date) = CURDATE()", (school_id,))
+        vouchers_today = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(DISTINCT receipt_no) as count FROM uniform_receipts WHERE school_id = %s AND term = %s AND yr = %s", (school_id, term_number, year))
+        uniform_issued = cursor.fetchone()['count']
+
+        connection.close()
+    except Exception as e:
+        print(f"Error loading dashboard data: {e}")
+
+    return render_template('index.html',
+                         total_students=total_students,
+                         total_staff=total_staff,
+                         today_collections=today_collections,
+                         active_buses=active_buses,
+                         vouchers_today=vouchers_today,
+                         uniform_issued=uniform_issued,
+                         term_number=term_number,
+                         year=year,
+                         total_classes=total_classes)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

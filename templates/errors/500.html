@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="text-center py-20">
+    <h1 class="text-6xl font-bold text-red-600">500</h1>
+    <h2 class="text-3xl font-semibold mt-4">Internal Server Error</h2>
+    <p class="text-gray-500 mt-2">Something went wrong on our end. We've logged the error.</p>
+    {% if config.DEBUG %}
+    <div class="mt-8 text-left bg-gray-100 p-4 rounded overflow-auto max-w-4xl mx-auto">
+        <pre>{{ error }}</pre>
+    </div>
+    {% endif %}
+    <a href="{{ url_for('index') }}" class="mt-8 inline-block bg-blue-600 text-white px-6 py-2 rounded">Back to Home</a>
+</div>
+{% endblock %}
