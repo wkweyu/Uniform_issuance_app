@@ -15,11 +15,16 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY', 'your_secret_key_please_change_in_production')
 
     # Database configuration
-    DB_HOST = os.environ.get('DB_HOST', 'localhost')
-    DB_PORT = int(os.environ.get('DB_PORT', 3306))
-    DB_USER = os.environ.get('DB_USER', '')
-    DB_PASSWORD = os.environ.get('DB_PASSWORD', '')
-    DB_NAME = os.environ.get('DB_NAME', '')
+    DB_HOST = os.environ.get('DB_HOST', 'localhost').strip()
+    _db_port_env = os.environ.get('DB_PORT', '3306').strip()
+    try:
+        DB_PORT = int(_db_port_env)
+    except ValueError:
+        DB_PORT = 3306
+
+    DB_USER = os.environ.get('DB_USER', '').strip()
+    DB_PASSWORD = os.environ.get('DB_PASSWORD', '').strip()
+    DB_NAME = os.environ.get('DB_NAME', '').strip()
 
     quoted_password = urlparse.quote_plus(DB_PASSWORD)
     DEFAULT_DB_URI = f"mysql+pymysql://{DB_USER}:{quoted_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}"

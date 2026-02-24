@@ -1,14 +1,16 @@
 import os
 import pymysql
-from flask import Flask, render_template, jsonify, session, g
+import traceback
+from flask import Flask, render_template, jsonify, session, g, url_for
 from datetime import datetime
 from extensions import db, migrate, csrf
 from config import Config
 from core.permissions import login_required, admin_required, super_admin_required
 from core.db import get_db_connection
 from core.tenancy import load_tenant_context
+from core.helpers import format_currency, get_current_term_and_year
 
-# Re-importing services for compat (though many are now in blueprints)
+# Re-importing services for compat
 from blueprints.classes.services import ClassManagementService, ValidationError, PromotionError
 from blueprints.fees.services import FeesService, FeesError
 from blueprints.exams.services import ExamManagementService, ExamManagementError
@@ -44,58 +46,89 @@ def create_app(config_class=Config):
     app.register_blueprint(inventory_bp)
     from blueprints.transport.routes import transport_bp
     app.register_blueprint(transport_bp)
-
-    # Context processor for backward compatibility in templates
-    @app.context_processor
-    def utility_processor():
-        from flask import url_for
-        def compat_url_for(endpoint, **values):
-            # Auth
-            if endpoint == "login": return url_for("auth.login", **values)
-            if endpoint == "logout": return url_for("auth.logout", **values)
-            # Super Admin
-            if endpoint == "super_admin": return url_for("super_admin.super_admin_index", **values)
-            if endpoint == "manage_schools": return url_for("super_admin.manage_schools", **values)
-            if endpoint == "update_school_status": return url_for("super_admin.update_school_status", **values)
-            if endpoint == "update_school_subscription": return url_for("super_admin.update_school_subscription", **values)
-            # Students
-            if endpoint == "admit_student": return url_for("students.admit_student", **values)
-            if endpoint == "students_list": return url_for("students.students_list", **values)
-            if endpoint == "student_profile": return url_for("students.student_profile", **values)
-            if endpoint == "edit_student": return url_for("students.edit_student", **values)
-            if endpoint == "toggle_student_status": return url_for("students.toggle_student_status", **values)
-            if endpoint == "print_admission_form": return url_for("students.print_admission_form", **values)
-            # Fees
-            if endpoint == "fees_dashboard": return url_for("fees.fees_dashboard", **values)
-            if endpoint == "collect_fees": return url_for("fees.collect_fees", **values)
-            if endpoint == "print_fee_receipt": return url_for("fees.print_fee_receipt", **values)
-            # Finance
-            if endpoint == "finance_dashboard": return url_for("finance.finance_dashboard", **values)
-            # Add more as needed by templates
-
-            try:
-                return url_for(endpoint, **values)
-            except:
-                # Fallback mapping logic
-                prefixes = {
-                    'students': ['admit_student', 'students_list', 'student_profile', 'edit_student', 'api_search_students'],
-                    'classes': ['manage_classes', 'create_class', 'promote_students'],
-                    'fees': ['fees_dashboard', 'collect_fees', 'manage_fee_structures'],
-                    'finance': ['finance_dashboard', 'manage_vouchers'],
-                    'exams': ['exams_dashboard', 'create_exam', 'marks_entry'],
-                    'procurement': ['procurement_dashboard', 'manage_requisitions'],
-                    'inventory': ['manage_stock', 'stock_report'],
-                    'transport': ['fleet_dashboard', 'manage_buses']
-                }
-                for blueprint, funcs in prefixes.items():
-                    if endpoint in funcs:
-                        return url_for(f"{blueprint}.{endpoint}", **values)
-                return url_for(endpoint, **values)
-        return dict(url_for=compat_url_for)
+    from blueprints.admin.routes import admin_bp
+    app.register_blueprint(admin_bp)
+    from blueprints.uniforms.routes import uniforms_bp
+    app.register_blueprint(uniforms_bp)
+    from blueprints.reports.routes import reports_bp
+    app.register_blueprint(reports_bp)
 
     return app
 
 app = create_app()
+
+# Register template filters directly on the app instance
+app.jinja_env.filters['currency'] = format_currency
+
+# Register context processor for backward compatibility and global variables
+@app.context_processor
+def utility_processor():
+    def compat_url_for(endpoint, **values):
+        # Manual high-priority overrides
+        overrides = {
+            "login": "auth.login",
+            "logout": "auth.logout",
+            "index": "index",
+            "admin_settings": "admin.admin_settings",
+            "manage_users": "admin.manage_users",
+            "manage_term_dates": "admin.manage_term_dates",
+            "current_term_status": "admin.current_term_status",
+            "uniform_dashboard": "uniforms.uniform_dashboard",
+            "issue_uniform": "uniforms.issue_uniform",
+            "manage_uniform_items": "uniforms.manage_uniform_items",
+            "receipt": "uniforms.receipt",
+            "reports_dashboard": "reports.reports_dashboard",
+            "student_search": "reports.student_search",
+            "student_history": "reports.student_history",
+            "item_totals": "reports.item_totals",
+            "receipts_register": "reports.receipts_register",
+        }
+        if endpoint in overrides:
+            return url_for(overrides[endpoint], **values)
+
+        try:
+            return url_for(endpoint, **values)
+        except Exception:
+            # Fallback mapping logic
+            prefixes = {
+                'auth': ['login', 'logout', 'reset_password', 'user_profile'],
+                'admin': ['admin_settings', 'manage_users', 'manage_term_dates', 'current_term_status'],
+                'students': ['admit_student', 'students_list', 'student_profile', 'edit_student', 'toggle_student_status', 'print_admission_form'],
+                'classes': ['manage_classes', 'create_class', 'promote_students', 'manage_streams', 'allocate_teacher'],
+                'fees': ['fees_dashboard', 'collect_fees', 'manage_fee_structures', 'print_fee_receipt', 'bulk_invoice', 'bulk_debit_term', 'bulk_post_fees', 'admin_fees_rollup'],
+                'finance': ['finance_dashboard', 'manage_vouchers', 'manage_budgets', 'trial_balance_report', 'income_statement_report', 'balance_sheet_report'],
+                'exams': ['exams_dashboard', 'create_exam', 'marks_entry', 'manage_grading_scales'],
+                'procurement': ['procurement_dashboard', 'manage_requisitions', 'create_purchase_order', 'manage_suppliers'],
+                'inventory': ['manage_stock', 'stock_report'],
+                'transport': ['fleet_dashboard', 'manage_buses', 'record_fuel_invoice', 'service_register', 'manage_transport_routes', 'issue_fuel'],
+                'uniforms': ['uniform_dashboard', 'issue_uniform', 'manage_uniform_items', 'receipt'],
+                'reports': ['reports_dashboard', 'student_search', 'student_history', 'item_totals', 'receipts_register'],
+                'super_admin': ['manage_schools', 'update_school_status', 'update_school_subscription']
+            }
+            for blueprint, funcs in prefixes.items():
+                if endpoint in funcs:
+                    try:
+                        return url_for(f"{blueprint}.{endpoint}", **values)
+                    except Exception:
+                        continue
+            # Fallback to dead link to avoid crashing templates
+            return "#"
+
+    return dict(
+        url_for=compat_url_for,
+        datetime=datetime,
+        now=datetime.utcnow()
+    )
+
+@app.errorhandler(500)
+def internal_error(error):
+    app.logger.error(f"Server Error: {error}")
+    app.logger.error(traceback.format_exc())
+    return render_template('errors/500.html', error=error), 500
+
+@app.errorhandler(404)
+def not_found_error(error):
+    return render_template('errors/404.html'), 404
 
 @app.before_request
 def setup_tenant():
@@ -103,24 +136,66 @@ def setup_tenant():
 
 @app.route('/health')
 def health_check():
-    return jsonify({"status": "healthy"}), 200
+    health = {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "database": {"connected": False},
+        "ssl": False
+    }
+    try:
+        connection = get_db_connection()
+        connection.ping(reconnect=True)
+        health["database"]["connected"] = True
+        connection.close()
+    except Exception as e:
+        health["database"]["error"] = str(e)
+
+    return jsonify(health), 200
 
 @app.route('/')
 @login_required
 def index():
-    connection = get_db_connection()
-    cursor = connection.cursor()
     school_id = g.school_id or 1
+    context = {
+        'total_students': 0, 'total_staff': 0, 'today_collections': 0,
+        'active_buses': 0, 'vouchers_today': 0, 'uniform_issued': 0,
+        'term_number': None, 'year': None, 'total_classes': 0
+    }
 
-    # Dashboard summary logic
-    cursor.execute("SELECT COUNT(*) AS count FROM studentinfo WHERE school_id = %s", (school_id,))
-    total_students = cursor.fetchone()['count']
+    try:
+        connection = get_db_connection()
+        cursor = connection.cursor()
 
-    cursor.execute("SELECT COUNT(*) AS count FROM users WHERE school_id = %s", (school_id,))
-    total_staff = cursor.fetchone()['count']
+        cursor.execute("SELECT COUNT(*) AS count FROM studentinfo WHERE school_id = %s", (school_id,))
+        context['total_students'] = cursor.fetchone()['count']
 
-    connection.close()
-    return render_template('index.html', total_students=total_students, total_staff=total_staff)
+        cursor.execute("SELECT COUNT(*) AS count FROM users WHERE school_id = %s", (school_id,))
+        context['total_staff'] = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(*) AS count FROM classes WHERE school_id = %s AND is_active = 1", (school_id,))
+        context['total_classes'] = cursor.fetchone()['count']
+
+        term_number, year = get_current_term_and_year()
+        context['term_number'] = term_number
+        context['year'] = year
+
+        cursor.execute("SELECT SUM(total_price) as total FROM uniform_receipts WHERE school_id = %s AND DATE(date_issued) = CURDATE()", (school_id,))
+        context['today_collections'] = cursor.fetchone()['total'] or 0
+
+        cursor.execute("SELECT COUNT(*) as count FROM buses WHERE school_id = %s AND active = 1", (school_id,))
+        context['active_buses'] = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(*) as count FROM fuel_vouchers WHERE school_id = %s AND DATE(date) = CURDATE()", (school_id,))
+        context['vouchers_today'] = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(DISTINCT receipt_no) as count FROM uniform_receipts WHERE school_id = %s AND term = %s AND yr = %s", (school_id, term_number, year))
+        context['uniform_issued'] = cursor.fetchone()['count']
+
+        connection.close()
+    except Exception as e:
+        app.logger.error(f"Error loading dashboard data: {e}")
+
+    return render_template('index.html', **context)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
