@@ -24,3 +24,8 @@ class NotFoundError(AppError):
     """Raised when a resource is not found."""
     def __init__(self, message="Resource not found", status_code=404, payload=None):
         super().__init__(message, status_code, payload)
+
+class DatabaseConnectionError(AppError):
+    """Raised when database connection fails."""
+    def __init__(self, message="Database connection failed", status_code=503, payload=None):
+        super().__init__(message, status_code, payload)

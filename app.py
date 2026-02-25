@@ -8,6 +8,7 @@ from config import Config
 from core.permissions import login_required, admin_required, super_admin_required
 from core.db import get_db_connection
 from core.tenancy import load_tenant_context
+from core.errors import DatabaseConnectionError
 from core.helpers import format_currency, get_current_term_and_year
 
 # Re-importing services for compat
@@ -119,6 +120,11 @@ def utility_processor():
         datetime=datetime,
         now=datetime.utcnow()
     )
+
+@app.errorhandler(DatabaseConnectionError)
+def handle_db_error(error):
+    app.logger.error(f"Database Error: {error.message}")
+    return render_template('errors/db_error.html', error=error.message), 503
 
 @app.errorhandler(500)
 def internal_error(error):
