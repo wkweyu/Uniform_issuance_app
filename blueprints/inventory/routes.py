@@ -85,3 +85,65 @@ def stock_ledger():
         items = cursor.fetchall()
     connection.close()
     return render_template('stock_ledger.html', items=items, ledger_data=ledger_data, selected_item=item_name)
+
+@inventory_bp.route('/issue_uniform', methods=['GET', 'POST'])
+@login_required
+def issue_uniform():
+    connection = get_db_connection(); service = InventoryService(connection)
+    try:
+        # Check for search by AdmNo
+        admno = request.args.get('admno')
+        student = service.get_student_by_admno(admno) if admno else None
+        
+        # Get items for issuance
+        items = service.get_stock_levels() if student else []
+        
+        # Get term info
+        term_info = service.get_current_term()
+        
+        return render_template('issue_form.html', student=student, items=items, term=term_info)
+    finally: connection.close()
+
+@inventory_bp.route('/submit_issuance', methods=['POST'])
+@login_required
+@csrf.exempt
+def submit_issuance():
+    connection = get_db_connection(); service = InventoryService(connection)
+    try:
+        data = request.get_json()
+        admno = data.get('admno')
+        items = data.get('items')
+        receipt_no = f"UNI-{datetime.now().strftime('%m%d%H%M')}-{admno[-2:]}" # Simple generated ref, adjust logic as needed
+        total_amount = sum(float(i['total']) for i in items)
+        
+        success = service.process_issuance(admno, items, session['userNo'], receipt_no, total_amount)
+        if success:
+            return jsonify({'success': True, 'receipt_no': receipt_no})
+        return jsonify({'success': False, 'message': "Failed to process issuance"})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally: connection.close()
+
+@inventory_bp.route('/receipt/<receipt_no>')
+@login_required
+def receipt(receipt_no):
+    connection = get_db_connection(); service = InventoryService(connection)
+    try:
+        receipt_data = service.get_receipt_details(receipt_no)
+        if not receipt_data:
+            flash("Receipt not found.", "error")
+            return redirect(url_for('inventory.manage_stock'))
+        return render_template('receipt.html', receipt=receipt_data)
+    finally: connection.close()
+
+@inventory_bp.route('/print_receipt/<receipt_no>')
+@login_required
+def print_receipt(receipt_no):
+    connection = get_db_connection(); service = InventoryService(connection)
+    try:
+        receipt_data = service.get_receipt_details(receipt_no)
+        if not receipt_data:
+            flash("Receipt not found.", "error")
+            return redirect(url_for('inventory.manage_stock'))
+        return render_template('print_receipt.html', receipt=receipt_data, now=datetime.now())
+    finally: connection.close()

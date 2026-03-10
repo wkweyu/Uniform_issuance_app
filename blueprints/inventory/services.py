@@ -108,3 +108,54 @@ class InventoryService:
         query += " ORDER BY sm.movement_date ASC, sm.movement_id ASC"
         self.cursor.execute(query, params)
         return self.cursor.fetchall()
+
+    def get_current_term(self):
+        self.cursor.execute("SELECT id, term_name FROM uniform_term_dates WHERE CURDATE() BETWEEN start_date AND end_date AND school_id = %s LIMIT 1", (self.school_id,))
+        return self.cursor.fetchone()
+
+    def get_student_by_admno(self, admno: str):
+        self.cursor.execute("""
+            SELECT si.AdmNo, si.FName, si.MName, si.SName, c.display_name, cgs.name as class_group
+            FROM studentinfo si
+            JOIN class_allocation ca ON si.AdmNo = ca.student_id AND ca.is_current = TRUE AND ca.school_id = si.school_id
+            JOIN classes c ON ca.class_id = c.classID AND c.school_id = si.school_id
+            JOIN class_group_settings cgs ON c.class_group_code = cgs.code AND cgs.school_id = si.school_id
+            WHERE si.AdmNo = %s AND si.school_id = %s
+        """, (admno, self.school_id))
+        return self.cursor.fetchone()
+
+    @audit_log('process_uniform_issuance')
+    def process_issuance(self, admno, items, user_id, receipt_no, total_amount):
+        try:
+            # 1. Deduct stock and record movements
+            for item in items:
+                self.adjust_stock(
+                    item['item_name'], 
+                    int(item['quantity']), 
+                    'ISSUANCE', 
+                    user_id, 
+                    f"Issued to {admno}", 
+                    receipt_no
+                )
+
+                # 2. Save to uniform_receipts
+                self.cursor.execute("""
+                    INSERT INTO uniform_receipts (receipt_no, AdmNo, item_name, quantity, price, total, issued_by, school_id, issued_on)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                """, (receipt_no, admno, item['item_name'], item['quantity'], item['price'], item['total'], user_id, self.school_id))
+            
+            self.connection.commit()
+            return True
+        except Exception as e:
+            self.connection.rollback()
+            raise e
+
+    def get_receipt_details(self, receipt_no: str):
+        self.cursor.execute("""
+            SELECT ur.*, si.FName, si.SName, u.username as issuer_name
+            FROM uniform_receipts ur
+            JOIN studentinfo si ON ur.AdmNo = si.AdmNo AND ur.school_id = si.school_id
+            LEFT JOIN users u ON ur.issued_by = u.userNo AND ur.school_id = u.school_id
+            WHERE ur.receipt_no = %s AND ur.school_id = %s
+        """, (receipt_no, self.school_id))
+        return self.cursor.fetchall()

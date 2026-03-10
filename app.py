@@ -96,7 +96,13 @@ def create_app(config_class=Config):
             if endpoint == "platform.login":
                 return url_for("auth.login", **values)
             if endpoint == "issue_uniform":
-                return url_for("uniform.issue_uniform", **values)
+                return url_for("inventory.issue_uniform", **values)
+            if endpoint == "receipt":
+                return url_for("inventory.receipt", **values)
+            if endpoint == "print_receipt":
+                return url_for("inventory.print_receipt", **values)
+            if endpoint == "submit_issuance":
+                return url_for("inventory.submit_issuance", **values)
                 
             # Add more as needed by templates
 
