@@ -25,3 +25,35 @@ class AuthService:
             return None, "Invalid username or password."
 
         return user, school
+
+    def get_users(self, school_id):
+        from models import User
+        return User.query.filter_by(school_id=school_id).all()
+
+    def create_user(self, school_id, username, password, staff_id, access_flag=1, is_admin=False):
+        from models import User, db
+        from .utils import hash_password
+        
+        if User.query.filter_by(username=username, school_id=school_id).first():
+            raise Exception("Username already exists in this school.")
+            
+        user = User(
+            username=username,
+            pwd=hash_password(password),
+            access_flag=access_flag,
+            TA=1 if is_admin else 0,
+            StaffID=staff_id,
+            school_id=school_id
+        )
+        db.session.add(user)
+        db.session.commit()
+        return user
+
+    def delete_user(self, user_id, school_id):
+        from models import User, db
+        user = User.query.filter_by(userNo=user_id, school_id=school_id).first()
+        if user:
+            db.session.delete(user)
+            db.session.commit()
+            return True
+        return False

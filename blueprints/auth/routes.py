@@ -43,3 +43,32 @@ def logout():
     session.clear()
     flash("Logged out successfully.", "success")
     return redirect(url_for('auth.login'))
+
+@auth_bp.route('/manage_users', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def manage_users():
+    service = AuthService()
+    school_id = session.get('school_id')
+    
+    if request.method == 'POST':
+        action = request.form.get('action')
+        try:
+            if action == 'create':
+                service.create_user(
+                    school_id=school_id,
+                    username=request.form.get('username'),
+                    password=request.form.get('password'),
+                    staff_id=request.form.get('staff_id'),
+                    is_admin=bool(request.form.get('is_admin'))
+                )
+                flash("User created successfully.", "success")
+            elif action == 'delete':
+                user_id = request.form.get('user_id')
+                service.delete_user(user_id, school_id)
+                flash("User deleted successfully.", "success")
+        except Exception as e:
+            flash(str(e), "error")
+            
+    users = service.get_users(school_id)
+    return render_template('manage_users.html', users=users)

@@ -105,6 +105,8 @@ def create_app(config_class=Config):
                 return url_for("inventory.submit_issuance", **values)
             if endpoint == "manage_uniform_items":
                 return url_for("inventory.manage_uniform_items", **values)
+            if endpoint == "manage_users":
+                return url_for("auth.manage_users", **values)
                 
             # Add more as needed by templates
 

@@ -16,3 +16,7 @@ def verify_legacy_password(input_password, stored_password, user_id=None):
     if stored_password == input_password:
         return True
     return False
+
+def hash_password(password):
+    from werkzeug.security import generate_password_hash
+    return generate_password_hash(password)
