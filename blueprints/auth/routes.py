@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, current_app
+from core.permissions import login_required, admin_required
 from datetime import datetime, timedelta
 from .services import AuthService
 
