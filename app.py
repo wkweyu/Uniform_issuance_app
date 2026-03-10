@@ -110,7 +110,7 @@ def create_app(config_class=Config):
                     ],
                     'fees': ['fees_dashboard', 'collect_fees', 'manage_fee_structures'],
                     'finance': ['finance_dashboard', 'manage_vouchers'],
-                    'exams': ['exams_dashboard', 'create_exam', 'marks_entry'],
+                    'exams': ['exams_dashboard', 'create_exam', 'marks_entry', 'manage_grading_scales'],
                     'procurement': ['procurement_dashboard', 'manage_requisitions'],
                     'inventory': ['manage_stock', 'stock_report'],
                     'transport': ['fleet_dashboard', 'manage_buses']
