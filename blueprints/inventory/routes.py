@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, g, jsonify
+from extensions import csrf
 from core.permissions import admin_required, login_required
 from core.db import get_db_connection
 from blueprints.inventory.services import InventoryService
