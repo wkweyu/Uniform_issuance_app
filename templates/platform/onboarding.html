@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>School Onboarding Wizard</h2>
+<form method="post" class="space-y-3 max-w-xl">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div>
+    <label class="block text-sm">School Name</label>
+    <input name="name" required class="border px-2 py-1 rounded w-full">
+  </div>
+  <div>
+    <label class="block text-sm">Code</label>
+    <input name="code" required class="border px-2 py-1 rounded w-full">
+  </div>
+  <div>
+    <label class="block text-sm">Timezone</label>
+    <input name="timezone" class="border px-2 py-1 rounded w-full" placeholder="UTC">
+  </div>
+  <div>
+    <label class="block text-sm">Default Plan (optional)</label>
+    <input name="default_plan" class="border px-2 py-1 rounded w-full" placeholder="Basic">
+  </div>
+  <div>
+    <button class="bg-blue-600 text-white px-3 py-2 rounded">Create School</button>
+  </div>
+</form>
+{% endblock %}

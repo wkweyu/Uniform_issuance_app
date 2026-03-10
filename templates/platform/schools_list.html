@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Schools</h2>
+<ul>
+  {% for s in schools %}
+  <li>{{ s.name }} ({{ s.code }})</li>
+  {% endfor %}
+</ul>
+{% endblock %}

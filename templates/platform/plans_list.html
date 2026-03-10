@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Plans</h2>
+<ul>
+  {% for p in plans %}
+  <li>{{ p.name }} — {{ (p.price_cents/100)|currency }}</li>
+  {% endfor %}
+</ul>
+{% endblock %}

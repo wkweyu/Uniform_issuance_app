@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Support Tickets</h2>
+<ul>
+  {% for t in tickets %}
+  <li>{{ t.subject }} — {{ t.status }}</li>
+  {% endfor %}
+</ul>
+{% endblock %}

@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Subscriptions</h2>
+<ul>
+  {% for s in subscriptions %}
+  <li>{{ s.id }} — School: {{ s.school_id }} — Plan: {{ s.plan_id }} — {{ s.status }}</li>
+  {% endfor %}
+</ul>
+{% endblock %}

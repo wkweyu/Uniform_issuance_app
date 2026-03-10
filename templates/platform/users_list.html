@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Platform Users</h2>
+<div class="mb-4">
+  <h3 class="text-lg font-medium">Impersonate Tenant User</h3>
+  <form method="post" action="{{ url_for('platform.start_impersonation') }}" class="mt-2 flex items-center space-x-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label class="text-sm">Tenant User ID</label>
+    <input name="tenant_user_no" type="number" required class="border px-2 py-1 rounded" placeholder="Enter tenant userNo">
+    <button type="submit" class="bg-blue-600 text-white px-3 py-1 rounded">Impersonate</button>
+  </form>
+</div>
+
+<ul>
+  {% for u in users %}
+  <li class="py-1">{{ u.email }} — {{ u.role }} {% if u.assigned_school_id %}<span class="text-xs text-gray-500">(school {{ u.assigned_school_id }})</span>{% endif %}</li>
+  {% endfor %}
+</ul>
+{% endblock %}

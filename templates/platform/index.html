@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Platform Dashboard</h1>
+<p>Welcome to the platform control plane.</p>
+<div class="mt-4">
+	<a href="{{ url_for('platform.tenant_user_search') }}" class="bg-blue-600 text-white px-3 py-2 rounded mr-2">Search Tenant Users</a>
+	<a href="{{ url_for('platform.onboarding_wizard') }}" class="bg-green-600 text-white px-3 py-2 rounded mr-2">Onboard School</a>
+	<a href="{{ url_for('platform.list_plans') }}" class="bg-indigo-600 text-white px-3 py-2 rounded mr-2">Plans</a>
+	<a href="{{ url_for('platform.list_subscriptions') }}" class="bg-purple-600 text-white px-3 py-2 rounded">Subscriptions</a>
+</div>
+{% endblock %}

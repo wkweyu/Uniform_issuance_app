@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Tenant User Search</h2>
+<form method="get" action="{{ url_for('platform.tenant_user_search') }}" class="flex space-x-2 items-center mb-4">
+  <input name="q" value="{{ q }}" placeholder="Search userNo, username, StaffID" class="border px-2 py-1 rounded w-80">
+  <button type="submit" class="bg-blue-600 text-white px-3 py-1 rounded">Search</button>
+</form>
+
+{% if results %}
+<table class="w-full table-auto">
+  <thead><tr><th>UserNo</th><th>Username</th><th>StaffID</th><th>School</th><th>Action</th></tr></thead>
+  <tbody>
+    {% for r in results %}
+    <tr class="odd:bg-gray-50">
+      <td>{{ r.userNo }}</td>
+      <td>{{ r.username }}</td>
+      <td>{{ r.StaffID }}</td>
+      <td>{{ r.school_id }}</td>
+      <td>
+        <form method="post" action="{{ url_for('platform.start_impersonation') }}">
+          <input type="hidden" name="tenant_user_no" value="{{ r.userNo }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="bg-blue-500 text-white px-2 py-1 rounded">Impersonate</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% elif q %}
+<p>No results for "{{ q }}".</p>
+{% endif %}
+
+{% endblock %}

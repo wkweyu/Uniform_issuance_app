@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Audit Logs</h2>
+<ul>
+  {% for l in logs %}
+  <li>{{ l.created_at }} — {{ l.action }} — {{ l.target_table }} #{{ l.target_id }}</li>
+  {% endfor %}
+</ul>
+{% endblock %}
