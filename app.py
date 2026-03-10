@@ -49,7 +49,7 @@ def create_app(config_class=Config):
     # Context processor for backward compatibility in templates
     @app.context_processor
     def utility_processor():
-        from flask import url_for
+        from flask import url_for, current_app
 
         def compat_url_for(endpoint, **values):
             # Auth
@@ -96,45 +96,12 @@ def create_app(config_class=Config):
             try:
                 return url_for(endpoint, **values)
             except Exception:
-                # Fallback mapping logic
-                prefixes = {
-                    'students': ['admit_student', 'students_list', 'student_profile', 'edit_student', 'api_search_students'],
-                    'classes': [
-                        'manage_classes',
-                        'create_class',
-                        'promote_students',
-                        'allocate_teacher',
-                        'manage_streams',
-                        'manage_class_subjects',
-                        'manage_student_subjects'
-                    ],
-                    'fees': [
-                        'fees_dashboard',
-                        'collect_fees',
-                        'manage_fee_structures',
-                        'bulk_invoice',
-                        'bulk_debit_term',
-                        'bulk_post_fees',
-                        'reallocate_fee_payment',
-                        'fee_structures_overview',
-                        'create_yearly_fee_structure_route',
-                        'manage_voteheads',
-                        'manage_student_groups',
-                        'admin_fees_rollup',
-                        'fees_mpesa_reconcile',
-                        'fees_waiver_management',
-                        'fee_structure_card',
-                        'fee_structure_download'
-                    ],
-                    'finance': ['finance_dashboard', 'manage_vouchers'],
-                    'exams': ['exams_dashboard', 'create_exam', 'marks_entry', 'manage_grading_scales'],
-                    'procurement': ['procurement_dashboard', 'manage_requisitions'],
-                    'inventory': ['manage_stock', 'stock_report'],
-                    'transport': ['fleet_dashboard', 'manage_buses']
-                }
-                for blueprint, funcs in prefixes.items():
-                    if endpoint in funcs:
+                # Fallback: try resolving endpoint under all registered blueprints
+                for blueprint in current_app.blueprints.keys():
+                    try:
                         return url_for(f"{blueprint}.{endpoint}", **values)
+                    except Exception:
+                        continue
                 return url_for(endpoint, **values)
 
         return dict(url_for=compat_url_for)
