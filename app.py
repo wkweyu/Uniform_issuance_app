@@ -1,7 +1,8 @@
 import os
 import pymysql
-from flask import Flask, render_template, jsonify, session, g
+from flask import Flask, render_template, jsonify, session, g, flash
 from datetime import datetime
+import pymysql
 from extensions import db, migrate, csrf
 from config import Config
 from core.permissions import login_required, admin_required, super_admin_required
@@ -147,36 +148,57 @@ def setup_tenant():
 
 @app.route('/health')
 def health_check():
-    return jsonify({
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat()
-    }), 200
+    try:
+        connection = get_db_connection()
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1 AS ok")
+            cursor.fetchone()
+        connection.close()
+        return jsonify({
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat()
+        }), 200
+    except pymysql.MySQLError as error:
+        return jsonify({
+            "status": "unhealthy",
+            "timestamp": datetime.now().isoformat(),
+            "error": str(error)
+        }), 503
 
 
 @app.route('/')
 @login_required
 def index():
-    connection = get_db_connection()
-    cursor = connection.cursor()
-    school_id = g.school_id or 1
+    connection = None
+    total_students = 0
+    total_staff = 0
+    today_collections = 0
+    try:
+        connection = get_db_connection()
+        cursor = connection.cursor()
+        school_id = g.school_id or 1
 
-    cursor.execute("SELECT COUNT(*) AS count FROM studentinfo WHERE school_id = %s", (school_id,))
-    total_students = cursor.fetchone()['count']
+        cursor.execute("SELECT COUNT(*) AS count FROM studentinfo WHERE school_id = %s", (school_id,))
+        total_students = cursor.fetchone()['count']
 
-    cursor.execute("SELECT COUNT(*) AS count FROM users WHERE school_id = %s", (school_id,))
-    total_staff = cursor.fetchone()['count']
+        cursor.execute("SELECT COUNT(*) AS count FROM users WHERE school_id = %s", (school_id,))
+        total_staff = cursor.fetchone()['count']
 
-    cursor.execute(
-        """
-        SELECT COALESCE(SUM(amount), 0) AS total
-        FROM fee_collections
-        WHERE school_id = %s AND DATE(collection_date) = CURDATE()
-        """,
-        (school_id,)
-    )
-    today_collections = cursor.fetchone()['total']
-
-    connection.close()
+        cursor.execute(
+            """
+            SELECT COALESCE(SUM(amount), 0) AS total
+            FROM fee_collections
+            WHERE school_id = %s AND DATE(collection_date) = CURDATE()
+            """,
+            (school_id,)
+        )
+        today_collections = cursor.fetchone()['total']
+    except pymysql.MySQLError as error:
+        app.logger.error("Database connection/query failed on index: %s", error)
+        flash("Database is temporarily unavailable. Please verify database credentials/account status.", "error")
+    finally:
+        if connection:
+            connection.close()
 
     return render_template(
         'index.html',
