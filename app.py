@@ -133,7 +133,7 @@ def create_app(config_class=Config):
                         continue
                 return url_for(endpoint, **values)
 
-        return dict(url_for=compat_url_for)
+        return dict(url_for=compat_url_for, datetime=datetime)
 
     return app
 
