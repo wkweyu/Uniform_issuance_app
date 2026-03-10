@@ -177,3 +177,56 @@ class InventoryService:
             WHERE ur.receipt_no = %s AND ur.school_id = %s
         """, (receipt_no, self.school_id))
         return self.cursor.fetchall()
+
+    def get_issued_summary(self, start_date=None, end_date=None):
+        query = """
+            SELECT item_name, SUM(quantity) as total_quantity, SUM(total) as total_amount, COUNT(DISTINCT receipt_no) as receipts
+            FROM uniform_receipts
+            WHERE school_id = %s
+        """
+        params = [self.school_id]
+        if start_date:
+            query += " AND DATE(issued_on) >= %s"
+            params.append(start_date)
+        if end_date:
+            query += " AND DATE(issued_on) <= %s"
+            params.append(end_date)
+        query += " GROUP BY item_name ORDER BY total_amount DESC"
+        self.cursor.execute(query, params)
+        return self.cursor.fetchall()
+
+    def get_items_totals(self, start_date=None, end_date=None):
+        query = """
+            SELECT item_name, SUM(quantity) as total_quantity
+            FROM uniform_receipts
+            WHERE school_id = %s
+        """
+        params = [self.school_id]
+        if start_date:
+            query += " AND DATE(issued_on) >= %s"
+            params.append(start_date)
+        if end_date:
+            query += " AND DATE(issued_on) <= %s"
+            params.append(end_date)
+        query += " GROUP BY item_name"
+        self.cursor.execute(query, params)
+        return self.cursor.fetchall()
+
+    def get_receipts_register(self, start_date=None, end_date=None):
+        query = """
+            SELECT ur.receipt_no, ur.AdmNo, si.FName, si.SName, ur.total, ur.issued_on, u.username as issued_by
+            FROM uniform_receipts ur
+            JOIN studentinfo si ON ur.AdmNo = si.AdmNo AND ur.school_id = si.school_id
+            LEFT JOIN users u ON ur.issued_by = u.userNo AND ur.school_id = u.school_id
+            WHERE ur.school_id = %s
+        """
+        params = [self.school_id]
+        if start_date:
+            query += " AND DATE(ur.issued_on) >= %s"
+            params.append(start_date)
+        if end_date:
+            query += " AND DATE(ur.issued_on) <= %s"
+            params.append(end_date)
+        query += " ORDER BY ur.issued_on DESC"
+        self.cursor.execute(query, params)
+        return self.cursor.fetchall()

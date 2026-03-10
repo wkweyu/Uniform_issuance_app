@@ -173,3 +173,37 @@ def print_receipt(receipt_no):
             return redirect(url_for('inventory.manage_stock'))
         return render_template('print_receipt.html', receipt=receipt_data, now=datetime.now())
     finally: connection.close()
+
+# Uniform Reports
+@inventory_bp.route('/reports/issued_summary')
+@login_required
+def report_issued_summary():
+    connection = get_db_connection(); service = InventoryService(connection)
+    try:
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        report_data = service.get_issued_summary(start_date, end_date)
+        return render_template('report_issued_summary.html', items=report_data, start_date=start_date, end_date=end_date)
+    finally: connection.close()
+
+@inventory_bp.route('/reports/item_totals')
+@login_required
+def items_totals_report():
+    connection = get_db_connection(); service = InventoryService(connection)
+    try:
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        report_data = service.get_items_totals(start_date, end_date)
+        return render_template('report_item_totals.html', items=report_data, start_date=start_date, end_date=end_date)
+    finally: connection.close()
+
+@inventory_bp.route('/reports/receipts_register')
+@login_required
+def receipts_register_report():
+    connection = get_db_connection(); service = InventoryService(connection)
+    try:
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        report_data = service.get_receipts_register(start_date, end_date)
+        return render_template('report_receipts_register.html', receipts=report_data, start_date=start_date, end_date=end_date)
+    finally: connection.close()
