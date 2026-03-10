@@ -129,9 +129,15 @@
                    class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-sm font-medium">
                   <i class="fas fa-sign-out-alt"></i> Logout
                 </a>
+                {% if session.get('platform_impersonation') %}
+                <form method="post" action="{{ url_for('platform.stop_impersonation') }}" class="inline-block">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-2 rounded text-sm font-medium">Stop Impersonation</button>
+                </form>
+                {% endif %}
               </div>
             {% else %}
-              <a href="{{ url_for('login') }}" 
+              <a href="{{ url_for('platform.login') }}"
                  class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded text-sm font-medium">
                 <i class="fas fa-sign-in-alt"></i> Login
               </a>
