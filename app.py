@@ -94,6 +94,10 @@ def create_app(config_class=Config):
             # Add more as needed by templates
 
             try:
+                if endpoint == 'uniform_dashboard': 
+                    return url_for('transport.fleet_dashboard', **values)
+                if endpoint == 'manage_term_dates':
+                    return url_for('fees.manage_voteheads', **values)
                 return url_for(endpoint, **values)
             except Exception:
                 # Fallback: try resolving endpoint under all registered blueprints
