@@ -91,6 +91,13 @@ def create_app(config_class=Config):
             # Finance
             if endpoint == "finance_dashboard":
                 return url_for("finance.finance_dashboard", **values)
+            
+            # Platform & Uniform
+            if endpoint == "platform.login":
+                return url_for("auth.login", **values)
+            if endpoint == "issue_uniform":
+                return url_for("uniform.issue_uniform", **values)
+                
             # Add more as needed by templates
 
             try:
