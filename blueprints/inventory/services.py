@@ -33,6 +33,24 @@ class InventoryService:
         self.cursor.execute("DELETE FROM item_stock WHERE item_name = %s AND school_id = %s", (item_name, self.school_id))
         self.connection.commit()
 
+    def get_all_prices(self):
+        self.cursor.execute("""
+            SELECT item_name, class_group, price 
+            FROM uniform_prices 
+            WHERE school_id = %s 
+            ORDER BY item_name, class_group
+        """, (self.school_id,))
+        return self.cursor.fetchall()
+
+    @audit_log('update_uniform_price')
+    def update_price(self, item_name, class_group, price):
+        self.cursor.execute("""
+            UPDATE uniform_prices 
+            SET price = %s 
+            WHERE item_name = %s AND class_group = %s AND school_id = %s
+        """, (price, item_name, class_group, self.school_id))
+        self.connection.commit()
+
     def get_stock_levels(self) -> List[Dict]:
         self.cursor.execute("""
             SELECT up.item_name,

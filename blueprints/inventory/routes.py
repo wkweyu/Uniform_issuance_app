@@ -32,6 +32,31 @@ def delete_uniform_item():
     except Exception as e: return jsonify({'success': False, 'message': str(e)}), 500
     finally: connection.close()
 
+@inventory_bp.route('/manage_uniform_items', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def manage_uniform_items():
+    connection = get_db_connection(); service = InventoryService(connection)
+    try:
+        if request.method == 'POST':
+            item_name = request.form.get('item_name')
+            class_group = request.form.get('class_group')
+            price = float(request.form.get('price', 0))
+            service.update_price(item_name, class_group, price)
+            flash(f"✅ Price updated for {item_name} ({class_group}).", "success")
+
+        prices = service.get_all_prices()
+        # Get class groups for the 'add' modal
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT code, name FROM class_group_settings WHERE school_id = %s", (service.school_id,))
+            class_groups = cursor.fetchall()
+
+        return render_template('manage_prices.html', prices=prices, class_groups=class_groups)
+    except Exception as e:
+        flash(f"Error: {str(e)}", "error")
+        return redirect(url_for('inventory.manage_stock'))
+    finally: connection.close()
+
 @inventory_bp.route('/manage_stock', methods=['GET', 'POST'])
 @login_required
 def manage_stock():
