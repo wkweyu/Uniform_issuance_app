@@ -131,6 +131,21 @@ class InventoryService:
         self.cursor.execute("SELECT id, term_name FROM uniform_term_dates WHERE CURDATE() BETWEEN start_date AND end_date AND school_id = %s LIMIT 1", (self.school_id,))
         return self.cursor.fetchone()
 
+    def get_all_term_dates(self):
+        self.cursor.execute("SELECT * FROM uniform_term_dates WHERE school_id = %s ORDER BY start_date DESC", (self.school_id,))
+        return self.cursor.fetchall()
+
+    def add_term_date(self, term_name, start_date, end_date):
+        self.cursor.execute("""
+            INSERT INTO uniform_term_dates (term_name, start_date, end_date, school_id)
+            VALUES (%s, %s, %s, %s)
+        """, (term_name, start_date, end_date, self.school_id))
+        self.connection.commit()
+
+    def delete_term_date(self, term_id):
+        self.cursor.execute("DELETE FROM uniform_term_dates WHERE id = %s AND school_id = %s", (term_id, self.school_id))
+        self.connection.commit()
+
     def get_student_by_admno(self, admno: str):
         self.cursor.execute("""
             SELECT si.AdmNo, si.FName, si.MName, si.SName, c.display_name, cgs.name as class_group

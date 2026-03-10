@@ -113,6 +113,8 @@ def create_app(config_class=Config):
                 return url_for("inventory.items_totals_report", **values)
             if endpoint == "receipts_register_report":
                 return url_for("inventory.receipts_register_report", **values)
+            if endpoint == "manage_term_dates":
+                return url_for("inventory.manage_term_dates", **values)
             if endpoint == "student_search":
                 return url_for("students.admit_student", **values) # Mapping to admission search as fallback
                                 
@@ -120,9 +122,7 @@ def create_app(config_class=Config):
 
             try:
                 if endpoint == 'uniform_dashboard': 
-                    return url_for('transport.fleet_dashboard', **values)
-                if endpoint == 'manage_term_dates':
-                    return url_for('fees.manage_voteheads', **values)
+                    return url_for('inventory.manage_stock', **values) # Point to stock as a dashboard
                 return url_for(endpoint, **values)
             except Exception:
                 # Fallback: try resolving endpoint under all registered blueprints

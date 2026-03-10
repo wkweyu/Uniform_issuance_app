@@ -57,6 +57,29 @@ def manage_uniform_items():
         return redirect(url_for('inventory.manage_stock'))
     finally: connection.close()
 
+@inventory_bp.route('/admin/term_dates', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def manage_term_dates():
+    connection = get_db_connection(); service = InventoryService(connection)
+    try:
+        if request.method == 'POST':
+            action = request.form.get('action')
+            if action == 'add':
+                service.add_term_date(
+                    request.form.get('term_name'),
+                    request.form.get('start_date'),
+                    request.form.get('end_date')
+                )
+                flash("✅ Term dates added.", "success")
+            elif action == 'delete':
+                service.delete_term_date(request.form.get('id'))
+                flash("✅ Term deleted.", "success")
+
+        terms = service.get_all_term_dates()
+        return render_template('manage_term_dates.html', terms=terms)
+    finally: connection.close()
+
 @inventory_bp.route('/manage_stock', methods=['GET', 'POST'])
 @login_required
 def manage_stock():
