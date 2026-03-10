@@ -113,7 +113,9 @@ def create_app(config_class=Config):
                 return url_for("inventory.items_totals_report", **values)
             if endpoint == "receipts_register_report":
                 return url_for("inventory.receipts_register_report", **values)
-                
+            if endpoint == "student_search":
+                return url_for("students.admit_student", **values) # Mapping to admission search as fallback
+                                
             # Add more as needed by templates
 
             try:
