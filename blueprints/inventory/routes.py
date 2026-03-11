@@ -67,17 +67,18 @@ def manage_term_dates():
             action = request.form.get('action')
             if action == 'add':
                 service.add_term_date(
-                    request.form.get('term_name'),
+                    request.form.get('term_number'),
+                    request.form.get('year'),
                     request.form.get('start_date'),
                     request.form.get('end_date')
                 )
                 flash("✅ Term dates added.", "success")
             elif action == 'delete':
-                service.delete_term_date(request.form.get('id'))
+                service.delete_term_date(request.form.get('term_id'))
                 flash("✅ Term deleted.", "success")
 
         terms = service.get_all_term_dates()
-        return render_template('manage_term_dates.html', terms=terms)
+        return render_template('manage_term_dates.html', term_dates=terms, now=datetime.now())
     finally: connection.close()
 
 @inventory_bp.route('/manage_stock', methods=['GET', 'POST'])

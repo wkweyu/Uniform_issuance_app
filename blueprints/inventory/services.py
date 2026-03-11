@@ -128,18 +128,18 @@ class InventoryService:
         return self.cursor.fetchall()
 
     def get_current_term(self):
-        self.cursor.execute("SELECT id, term_name FROM uniform_term_dates WHERE CURDATE() BETWEEN start_date AND end_date AND school_id = %s LIMIT 1", (self.school_id,))
+        self.cursor.execute("SELECT id, term_number, year FROM uniform_term_dates WHERE CURDATE() BETWEEN start_date AND end_date AND school_id = %s LIMIT 1", (self.school_id,))
         return self.cursor.fetchone()
 
     def get_all_term_dates(self):
-        self.cursor.execute("SELECT * FROM uniform_term_dates WHERE school_id = %s ORDER BY start_date DESC", (self.school_id,))
+        self.cursor.execute("SELECT id, term_number, year, start_date, end_date FROM uniform_term_dates WHERE school_id = %s ORDER BY start_date DESC", (self.school_id,))
         return self.cursor.fetchall()
 
-    def add_term_date(self, term_name, start_date, end_date):
+    def add_term_date(self, term_number, year, start_date, end_date):
         self.cursor.execute("""
-            INSERT INTO uniform_term_dates (term_name, start_date, end_date, school_id)
-            VALUES (%s, %s, %s, %s)
-        """, (term_name, start_date, end_date, self.school_id))
+            INSERT INTO uniform_term_dates (term_number, year, start_date, end_date, school_id)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (term_number, year, start_date, end_date, self.school_id))
         self.connection.commit()
 
     def delete_term_date(self, term_id):
