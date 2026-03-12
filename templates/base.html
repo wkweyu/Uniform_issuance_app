@@ -299,6 +299,19 @@
                     <a href="{{ url_for('manage_suppliers') }}"><i class="fas fa-truck-field mr-2 w-5"></i> Suppliers</a>
                 </div>
               </div>
+
+              <!-- Farm & Income -->
+              <div class="relative nav-group">
+                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'farm' in request.endpoint %}nav-active bg-blue-900{% endif %}">
+                  <i class="fas fa-tractor"></i> Farm & Income <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
+                </button>
+                <div class="nav-dropdown">
+                    <a href="{{ url_for('farm.dashboard') }}"><i class="fas fa-chart-pie mr-2 w-5"></i> Farm Dashboard</a>
+                    <a href="{{ url_for('farm.record_production') }}"><i class="fas fa-plus-circle mr-2 w-5"></i> Record Production</a>
+                    <a href="{{ url_for('farm.record_sale') }}"><i class="fas fa-cash-register mr-2 w-5"></i> Record Sale</a>
+                    <a href="{{ url_for('farm.farm_expenses') }}"><i class="fas fa-receipt mr-2 w-5"></i> Request Expense</a>
+                </div>
+              </div>
               
               <!-- System Admin -->
               {% if session.get('is_admin') %}

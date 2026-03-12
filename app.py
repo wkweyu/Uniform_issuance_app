@@ -45,6 +45,8 @@ def create_app(config_class=Config):
     app.register_blueprint(inventory_bp)
     from blueprints.transport.routes import transport_bp
     app.register_blueprint(transport_bp)
+    from blueprints.farm.routes import farm_bp
+    app.register_blueprint(farm_bp)
 
     # Context processor for backward compatibility in templates
     @app.context_processor
