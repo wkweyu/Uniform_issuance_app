@@ -105,35 +105,71 @@ class FarmManagementService:
     def get_financial_summary(self, activity_id: int = None, start_date: str = None, end_date: str = None) -> Dict:
         """ Calculates Yield, Sales vs. Expenses, Spoilage Value per Cost Center. """
         
+        base_params = [self.school_id]
+        filters = ""
+        if activity_id:
+            filters += " AND activity_id = %s"
+            base_params.append(activity_id)
+        
         # 1. Yield and Production Aggregates
-        prod_query = """
+        prod_filters = filters
+        prod_params = list(base_params)
+        if start_date:
+            prod_filters += " AND production_date >= %s"
+            prod_params.append(start_date)
+        if end_date:
+            prod_filters += " AND production_date <= %s"
+            prod_params.append(end_date)
+            
+        prod_query = f"""
             SELECT SUM(quantity) as total_produced, 
                    SUM(spoilage_quantity) as total_spoilage, 
                    SUM(internal_consumption) as total_internal
             FROM income_production_log
-            WHERE school_id = %s
+            WHERE school_id = %s {prod_filters}
         """
-        params = [self.school_id]
-        if activity_id: prod_query += " AND activity_id = %s"; params.append(activity_id)
-        if start_date: prod_query += " AND production_date >= %s"; params.append(start_date)
-        if end_date: prod_query += " AND production_date <= %s"; params.append(end_date)
-        self.cursor.execute(prod_query, tuple(params))
-        prod_stats = self.cursor.fetchone() or {'total_produced': 0, 'total_spoilage': 0, 'total_internal': 0}
+        self.cursor.execute(prod_query, tuple(prod_params))
+        prod_stats = self.cursor.fetchone()
+        if not prod_stats or prod_stats['total_produced'] is None:
+            prod_stats = {'total_produced': 0, 'total_spoilage': 0, 'total_internal': 0}
 
-        # 2. Financial Aggregates
-        sales_query = "SELECT SUM(total_amount) as total_sales FROM income_sales WHERE school_id = %s"
-        exp_query = "SELECT SUM(amount) as total_expenses FROM income_expenses WHERE school_id = %s AND status IN ('APPROVED', 'PAID')"
+        # 2. Financial Aggregates (Sales)
+        sales_filters = filters
+        sales_params = list(base_params)
+        if start_date:
+            sales_filters += " AND sale_date >= %s"
+            sales_params.append(start_date)
+        if end_date:
+            sales_filters += " AND sale_date <= %s"
+            sales_params.append(end_date)
+
+        sales_query = f"SELECT SUM(total_amount) as total_sales FROM income_sales WHERE school_id = %s {sales_filters}"
+        self.cursor.execute(sales_query, tuple(sales_params))
+        sales_res = self.cursor.fetchone()
+        sales_total = (sales_res['total_sales'] if sales_res else 0) or 0
         
-        # ... logic for params similarly to prod_query ...
-        self.cursor.execute(sales_query, tuple(params))
-        sales_total = self.cursor.fetchone().get('total_sales') or 0
-        
-        self.cursor.execute(exp_query, tuple(params))
-        exp_total = self.cursor.fetchone().get('total_expenses') or 0
+        # 3. Financial Aggregates (Expenses)
+        exp_filters = filters
+        exp_params = list(base_params)
+        if start_date:
+            exp_filters += " AND expense_date >= %s"
+            exp_params.append(start_date)
+        if end_date:
+            exp_filters += " AND expense_date <= %s"
+            exp_params.append(end_date)
+
+        exp_query = f"SELECT SUM(amount) as total_expenses FROM income_expenses WHERE school_id = %s AND status IN ('APPROVED', 'PAID') {exp_filters}"
+        self.cursor.execute(exp_query, tuple(exp_params))
+        exp_res = self.cursor.fetchone()
+        exp_total = (exp_res['total_expenses'] if exp_res else 0) or 0
 
         return {
-            'revenue': sales_total,
-            'expenses': exp_total,
-            'profit': sales_total - exp_total,
-            'production': prod_stats
+            'revenue': float(sales_total),
+            'expenses': float(exp_total),
+            'profit': float(sales_total - exp_total),
+            'production': {
+                'total_produced': float(prod_stats.get('total_produced', 0) or 0),
+                'total_spoilage': float(prod_stats.get('total_spoilage', 0) or 0),
+                'total_internal': float(prod_stats.get('total_internal', 0) or 0)
+            }
         }
