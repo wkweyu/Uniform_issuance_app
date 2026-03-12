@@ -9,7 +9,7 @@ farm_bp = Blueprint('farm', __name__, url_prefix='/farm')
 
 @farm_bp.route('/dashboard')
 @login_required
-def farm_dashboard():
+def dashboard():
     connection = get_db_connection()
     service = FarmManagementService(connection)
     try:
@@ -39,7 +39,7 @@ def record_production():
             flash("✅ Production recorded successfully.", "success")
         except Exception as e:
             flash(f"Error: {str(e)}", "error")
-        return redirect(url_for('farm.farm_dashboard'))
+        return redirect(url_for('farm.dashboard'))
     
     activities = service.get_activities()
     connection.close()
@@ -62,7 +62,7 @@ def record_sale():
             flash("✅ Sale recorded and receipt generated.", "success")
         except Exception as e:
             flash(f"Error: {str(e)}", "error")
-        return redirect(url_for('farm.farm_dashboard'))
+        return redirect(url_for('farm.dashboard'))
     
     activities = service.get_activities()
     connection.close()
