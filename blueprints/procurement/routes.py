@@ -47,9 +47,7 @@ def view_requisition(req_id):
     req = service.get_requisition_details(req_id)
     suppliers = []
     if req and req['status'] == 'APPROVED':
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT supplierID, company FROM suppliers WHERE school_id = %s ORDER BY company", (service.school_id,))
-            suppliers = cursor.fetchall()
+        suppliers = service.get_suppliers()
     connection.close()
     return render_template('view_requisition.html', requisition=req, suppliers=suppliers)
 
@@ -150,7 +148,10 @@ def procurement_dashboard():
     pos = service.get_purchase_orders(request.args.get('status'), request.args.get('po_number'), int(request.args.get('supplier_id')) if request.args.get('supplier_id') else None)
     suppliers = service.get_suppliers()
     with connection.cursor() as cursor:
-        cursor.execute("SELECT status, COUNT(*) as count FROM purchase_orders WHERE school_id = %s GROUP BY status", (service.school_id,))
+        if service._table_has_column('purchase_orders', 'school_id'):
+            cursor.execute("SELECT status, COUNT(*) as count FROM purchase_orders WHERE school_id = %s GROUP BY status", (service.school_id,))
+        else:
+            cursor.execute("SELECT status, COUNT(*) as count FROM purchase_orders GROUP BY status")
         stats = cursor.fetchall()
     connection.close()
     return render_template('procurement_dashboard.html', pos=pos, suppliers=suppliers, stats=stats)
@@ -208,7 +209,10 @@ def manage_suppliers():
 def vendor_statement(supplier_id):
     connection = get_db_connection(); service = ProcurementService(connection)
     with connection.cursor() as cursor:
-        cursor.execute("SELECT * FROM suppliers WHERE supplierID = %s AND school_id = %s", (supplier_id, service.school_id))
+        if service._table_has_column('suppliers', 'school_id'):
+            cursor.execute("SELECT * FROM suppliers WHERE supplierID = %s AND school_id = %s", (supplier_id, service.school_id))
+        else:
+            cursor.execute("SELECT * FROM suppliers WHERE supplierID = %s", (supplier_id,))
         supplier = cursor.fetchone()
     if not supplier: flash("Not found", "error"); connection.close(); return redirect(url_for('procurement.manage_suppliers'))
     txns = service.get_vendor_statement(supplier_id, request.args.get('start_date', datetime.now().replace(day=1).strftime('%Y-%m-%d')), request.args.get('end_date', datetime.now().strftime('%Y-%m-%d')))

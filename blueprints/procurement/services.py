@@ -13,6 +13,13 @@ class ProcurementService:
         self.connection = connection
         self.cursor = connection.cursor(pymysql.cursors.DictCursor)
         self.school_id = school_id or g.school_id or 1
+        self._table_columns_cache = {}
+
+    def _table_has_column(self, table_name: str, column_name: str) -> bool:
+        if table_name not in self._table_columns_cache:
+            self.cursor.execute(f"SHOW COLUMNS FROM {table_name}")
+            self._table_columns_cache[table_name] = {row['Field'] for row in self.cursor.fetchall()}
+        return column_name in self._table_columns_cache[table_name]
 
     # =========================================================================
     # 1. SUPPLIERS
@@ -20,10 +27,16 @@ class ProcurementService:
 
     def get_suppliers(self, active_only: bool = True) -> List[Dict]:
         """Fetch all suppliers from the existing suppliers table."""
-        query = "SELECT * FROM suppliers WHERE school_id = %s"
-        params = [self.school_id]
+        query = "SELECT * FROM suppliers"
+        params = []
+        conditions = []
+        if self._table_has_column('suppliers', 'school_id'):
+            conditions.append("school_id = %s")
+            params.append(self.school_id)
         if active_only:
-            query += " AND in_operation = 'Y'"
+            conditions.append("in_operation = 'Y'")
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY company ASC"
         self.cursor.execute(query, params)
         return self.cursor.fetchall()
@@ -33,10 +46,16 @@ class ProcurementService:
         """Create a new supplier in the existing schema."""
         try:
             # Note: mobilePhone maps to mobilePhone in table
-            self.cursor.execute("""
-                INSERT INTO suppliers (company, contact_person, email, mobilePhone, address, cert_no, pin_no, in_operation, school_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, 'Y', %s)
-            """, (company, contact_person, email, phone, address, cert_no, pin_no, self.school_id))
+            if self._table_has_column('suppliers', 'school_id'):
+                self.cursor.execute("""
+                    INSERT INTO suppliers (company, contact_person, email, mobilePhone, address, cert_no, pin_no, in_operation, school_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, 'Y', %s)
+                """, (company, contact_person, email, phone, address, cert_no, pin_no, self.school_id))
+            else:
+                self.cursor.execute("""
+                    INSERT INTO suppliers (company, email, mobilePhone, address, cert_no, pin_no, in_operation)
+                    VALUES (%s, %s, %s, %s, %s, %s, 'Y')
+                """, (company, email, phone, address, cert_no, pin_no))
             self.connection.commit()
             return self.cursor.lastrowid
         except Exception as e:
@@ -197,24 +216,39 @@ class ProcurementService:
 
             # Generate PO number
             year_short = datetime.now().strftime('%y')
-            self.cursor.execute("SELECT COUNT(*) as count FROM purchase_orders WHERE YEAR(created_at) = YEAR(CURDATE()) AND school_id = %s", (self.school_id,))
+            if self._table_has_column('purchase_orders', 'school_id'):
+                self.cursor.execute("SELECT COUNT(*) as count FROM purchase_orders WHERE YEAR(created_at) = YEAR(CURDATE()) AND school_id = %s", (self.school_id,))
+            else:
+                self.cursor.execute("SELECT COUNT(*) as count FROM purchase_orders WHERE YEAR(created_at) = YEAR(CURDATE())")
             count = self.cursor.fetchone()['count'] + 1
             po_number = f"PO-{count:04d}-{year_short}"
             
             total_amount = sum(Decimal(str(item['quantity'])) * Decimal(str(item['unit_price'])) for item in items)
             
-            self.cursor.execute("""
-                INSERT INTO purchase_orders (po_number, supplier_id, order_date, total_amount, status, notes, created_by, category, academic_year_id, department_id, school_id)
-                VALUES (%s, %s, %s, %s, 'DRAFT', %s, %s, %s, %s, %s, %s)
-            """, (po_number, supplier_id, order_date, total_amount, notes, user_id, category, academic_year_id, department_id, self.school_id))
+            if self._table_has_column('purchase_orders', 'school_id'):
+                self.cursor.execute("""
+                    INSERT INTO purchase_orders (po_number, supplier_id, order_date, total_amount, status, notes, created_by, category, academic_year_id, department_id, school_id)
+                    VALUES (%s, %s, %s, %s, 'DRAFT', %s, %s, %s, %s, %s, %s)
+                """, (po_number, supplier_id, order_date, total_amount, notes, user_id, category, academic_year_id, department_id, self.school_id))
+            else:
+                self.cursor.execute("""
+                    INSERT INTO purchase_orders (po_number, supplier_id, order_date, total_amount, status, notes, created_by, category, academic_year_id, department_id)
+                    VALUES (%s, %s, %s, %s, 'DRAFT', %s, %s, %s, %s, %s)
+                """, (po_number, supplier_id, order_date, total_amount, notes, user_id, category, academic_year_id, department_id))
             
             po_id = self.cursor.lastrowid
             
             for item in items:
-                self.cursor.execute("""
-                    INSERT INTO purchase_order_items (po_id, item_id, description, quantity, unit_price, school_id)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                """, (po_id, item.get('item_id'), item['description'], item['quantity'], item['unit_price'], self.school_id))
+                if self._table_has_column('purchase_order_items', 'school_id'):
+                    self.cursor.execute("""
+                        INSERT INTO purchase_order_items (po_id, item_id, description, quantity, unit_price, school_id)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, (po_id, item.get('item_id'), item['description'], item['quantity'], item['unit_price'], self.school_id))
+                else:
+                    self.cursor.execute("""
+                        INSERT INTO purchase_order_items (po_id, item_id, description, quantity, unit_price)
+                        VALUES (%s, %s, %s, %s, %s)
+                    """, (po_id, item.get('item_id'), item['description'], item['quantity'], item['unit_price']))
             
             self.connection.commit()
             return {'id': po_id, 'po_number': po_number}
@@ -229,7 +263,10 @@ class ProcurementService:
             self.connection.begin()
             
             # Check status
-            self.cursor.execute("SELECT status FROM purchase_orders WHERE id = %s AND school_id = %s", (po_id, self.school_id))
+            if self._table_has_column('purchase_orders', 'school_id'):
+                self.cursor.execute("SELECT status FROM purchase_orders WHERE id = %s AND school_id = %s", (po_id, self.school_id))
+            else:
+                self.cursor.execute("SELECT status FROM purchase_orders WHERE id = %s", (po_id,))
             po = self.cursor.fetchone()
             if not po:
                 raise ProcurementError("Purchase order not found")
@@ -240,20 +277,36 @@ class ProcurementService:
             total_amount = sum(Decimal(str(item['quantity'])) * Decimal(str(item['unit_price'])) for item in items)
             
             # Update header
-            self.cursor.execute("""
-                UPDATE purchase_orders 
-                SET supplier_id = %s, order_date = %s, total_amount = %s, notes = %s
-                WHERE id = %s AND school_id = %s
-            """, (supplier_id, order_date, total_amount, notes, po_id, self.school_id))
+            if self._table_has_column('purchase_orders', 'school_id'):
+                self.cursor.execute("""
+                    UPDATE purchase_orders 
+                    SET supplier_id = %s, order_date = %s, total_amount = %s, notes = %s
+                    WHERE id = %s AND school_id = %s
+                """, (supplier_id, order_date, total_amount, notes, po_id, self.school_id))
+            else:
+                self.cursor.execute("""
+                    UPDATE purchase_orders 
+                    SET supplier_id = %s, order_date = %s, total_amount = %s, notes = %s
+                    WHERE id = %s
+                """, (supplier_id, order_date, total_amount, notes, po_id))
             
             # Refresh items: Delete old and insert new (simplest way for dynamic items)
-            self.cursor.execute("DELETE FROM purchase_order_items WHERE po_id = %s AND school_id = %s", (po_id, self.school_id))
+            if self._table_has_column('purchase_order_items', 'school_id'):
+                self.cursor.execute("DELETE FROM purchase_order_items WHERE po_id = %s AND school_id = %s", (po_id, self.school_id))
+            else:
+                self.cursor.execute("DELETE FROM purchase_order_items WHERE po_id = %s", (po_id,))
             
             for item in items:
-                self.cursor.execute("""
-                    INSERT INTO purchase_order_items (po_id, item_id, description, quantity, unit_price, school_id)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                """, (po_id, item.get('item_id'), item['description'], item['quantity'], item['unit_price'], self.school_id))
+                if self._table_has_column('purchase_order_items', 'school_id'):
+                    self.cursor.execute("""
+                        INSERT INTO purchase_order_items (po_id, item_id, description, quantity, unit_price, school_id)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, (po_id, item.get('item_id'), item['description'], item['quantity'], item['unit_price'], self.school_id))
+                else:
+                    self.cursor.execute("""
+                        INSERT INTO purchase_order_items (po_id, item_id, description, quantity, unit_price)
+                        VALUES (%s, %s, %s, %s, %s)
+                    """, (po_id, item.get('item_id'), item['description'], item['quantity'], item['unit_price']))
             
             self.connection.commit()
             return True
@@ -267,7 +320,10 @@ class ProcurementService:
         try:
             self.connection.begin()
             
-            self.cursor.execute("SELECT status FROM purchase_orders WHERE id = %s AND school_id = %s", (po_id, self.school_id))
+            if self._table_has_column('purchase_orders', 'school_id'):
+                self.cursor.execute("SELECT status FROM purchase_orders WHERE id = %s AND school_id = %s", (po_id, self.school_id))
+            else:
+                self.cursor.execute("SELECT status FROM purchase_orders WHERE id = %s", (po_id,))
             po = self.cursor.fetchone()
             if not po:
                 raise ProcurementError("Purchase order not found")
@@ -276,8 +332,14 @@ class ProcurementService:
                 raise ProcurementError(f"Cannot delete PO in {po['status']} status")
                 
             # items will be deleted via CASCADE FK if set, but let's be explicit if not
-            self.cursor.execute("DELETE FROM purchase_order_items WHERE po_id = %s AND school_id = %s", (po_id, self.school_id))
-            self.cursor.execute("DELETE FROM purchase_orders WHERE id = %s AND school_id = %s", (po_id, self.school_id))
+            if self._table_has_column('purchase_order_items', 'school_id'):
+                self.cursor.execute("DELETE FROM purchase_order_items WHERE po_id = %s AND school_id = %s", (po_id, self.school_id))
+            else:
+                self.cursor.execute("DELETE FROM purchase_order_items WHERE po_id = %s", (po_id,))
+            if self._table_has_column('purchase_orders', 'school_id'):
+                self.cursor.execute("DELETE FROM purchase_orders WHERE id = %s AND school_id = %s", (po_id, self.school_id))
+            else:
+                self.cursor.execute("DELETE FROM purchase_orders WHERE id = %s", (po_id,))
             
             self.connection.commit()
             return True
@@ -287,57 +349,88 @@ class ProcurementService:
 
     def get_purchase_orders(self, status: Optional[str] = None, po_number: Optional[str] = None, supplier_id: Optional[int] = None) -> List[Dict]:
         """Fetch all purchase orders with optional filters."""
+        po_has_school_id = self._table_has_column('purchase_orders', 'school_id')
+        suppliers_has_school_id = self._table_has_column('suppliers', 'school_id')
         query = """
             SELECT po.*, s.company as supplier_name, u.username as created_by_name
             FROM purchase_orders po
-            JOIN suppliers s ON po.supplier_id = s.supplierID AND po.school_id = s.school_id
-            LEFT JOIN users u ON po.created_by = u.userNo AND po.school_id = u.school_id
-            WHERE po.school_id = %s
+            JOIN suppliers s ON po.supplier_id = s.supplierID
+            LEFT JOIN users u ON po.created_by = u.userNo
         """
-        params = [self.school_id]
+        params = []
+        conditions = []
+        if po_has_school_id:
+            conditions.append("po.school_id = %s")
+            params.append(self.school_id)
+        elif suppliers_has_school_id:
+            conditions.append("s.school_id = %s")
+            params.append(self.school_id)
         
         if status:
-            query += " AND po.status = %s"
+            conditions.append("po.status = %s")
             params.append(status)
         if po_number:
-            query += " AND po.po_number LIKE %s"
+            conditions.append("po.po_number LIKE %s")
             params.append(f"%{po_number}%")
         if supplier_id:
-            query += " AND po.supplier_id = %s"
+            conditions.append("po.supplier_id = %s")
             params.append(supplier_id)
-            
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY po.created_at DESC"
         self.cursor.execute(query, params)
         return self.cursor.fetchall()
 
     def get_po_details(self, po_id: int) -> Dict:
         """Fetch a specific PO with its items and received quantities."""
-        self.cursor.execute("""
+        po_has_school_id = self._table_has_column('purchase_orders', 'school_id')
+        suppliers_has_school_id = self._table_has_column('suppliers', 'school_id')
+        query = """
             SELECT po.*, s.company as supplier_name, s.email as supplier_email, s.mobilePhone as supplier_phone,
                    u.username as created_by_name
             FROM purchase_orders po
-            JOIN suppliers s ON po.supplier_id = s.supplierID AND po.school_id = s.school_id
-            LEFT JOIN users u ON po.created_by = u.userNo AND po.school_id = u.school_id
-            WHERE po.id = %s AND po.school_id = %s
-        """, (po_id, self.school_id))
+            JOIN suppliers s ON po.supplier_id = s.supplierID
+            LEFT JOIN users u ON po.created_by = u.userNo
+            WHERE po.id = %s
+        """
+        params = [po_id]
+        if po_has_school_id:
+            query += " AND po.school_id = %s"
+            params.append(self.school_id)
+        elif suppliers_has_school_id:
+            query += " AND s.school_id = %s"
+            params.append(self.school_id)
+        self.cursor.execute(query, tuple(params))
         po = self.cursor.fetchone()
         
         if not po:
             return None
             
         # Get items with total received quantity
-        self.cursor.execute("""
+        poi_has_school_id = self._table_has_column('purchase_order_items', 'school_id')
+        grn_items_has_school_id = self._table_has_column('procurement_grn_items', 'school_id')
+        items_query = """
             SELECT poi.*, 
                    COALESCE(SUM(gi.quantity_received), 0) as total_received
             FROM purchase_order_items poi
-            LEFT JOIN procurement_grn_items gi ON poi.id = gi.po_item_id AND poi.school_id = gi.school_id
-            WHERE poi.po_id = %s AND poi.school_id = %s
-            GROUP BY poi.id
-        """, (po_id, self.school_id))
+            LEFT JOIN procurement_grn_items gi ON poi.id = gi.po_item_id
+        """
+        if poi_has_school_id and grn_items_has_school_id:
+            items_query += " AND poi.school_id = gi.school_id"
+        items_query += " WHERE poi.po_id = %s"
+        item_params = [po_id]
+        if poi_has_school_id:
+            items_query += " AND poi.school_id = %s"
+            item_params.append(self.school_id)
+        items_query += " GROUP BY poi.id"
+        self.cursor.execute(items_query, tuple(item_params))
         po['po_items'] = self.cursor.fetchall()
         
         # Get associated GRNs
-        self.cursor.execute("SELECT * FROM procurement_grns WHERE po_id = %s AND school_id = %s", (po_id, self.school_id))
+        if self._table_has_column('procurement_grns', 'school_id'):
+            self.cursor.execute("SELECT * FROM procurement_grns WHERE po_id = %s AND school_id = %s", (po_id, self.school_id))
+        else:
+            self.cursor.execute("SELECT * FROM procurement_grns WHERE po_id = %s", (po_id,))
         po['grns'] = self.cursor.fetchall()
         
         return po
@@ -755,7 +848,11 @@ class ProcurementService:
         """
         # We define "Due" by order_date because we don't have a formal "due_date" 
         # but in schools, it's usually 30 days from order/invoice.
-        self.cursor.execute("""
+        po_has_school_id = self._table_has_column('purchase_orders', 'school_id')
+        suppliers_has_school_id = self._table_has_column('suppliers', 'school_id')
+        payments_has_school_id = self._table_has_column('supplier_payments', 'school_id')
+
+        query = """
             SELECT 
                 s.supplierID,
                 s.company as supplier_name,
@@ -765,15 +862,23 @@ class ProcurementService:
                 SUM(CASE WHEN DATEDIFF(CURDATE(), po.order_date) > 90 THEN (po.total_amount - COALESCE(payments.paid, 0)) ELSE 0 END) as bucket_91_plus,
                 SUM(po.total_amount - COALESCE(payments.paid, 0)) as total_owed
             FROM purchase_orders po
-            JOIN suppliers s ON po.supplier_id = s.supplierID AND po.school_id = s.school_id
+            JOIN suppliers s ON po.supplier_id = s.supplierID
             LEFT JOIN (
-                SELECT po_id, school_id, SUM(amount) as paid FROM supplier_payments GROUP BY po_id, school_id
-            ) payments ON po.id = payments.po_id AND po.school_id = payments.school_id
+                SELECT po_id,
+                       SUM(amount) as paid
+                FROM supplier_payments
+                GROUP BY po_id
+            ) payments ON po.id = payments.po_id
             WHERE po.status IN ('ORDERED', 'RECEIVED', 'PARTIAL') 
               AND po.payment_status != 'PAID'
-              AND po.school_id = %s
-            GROUP BY s.supplierID
-            HAVING total_owed > 0
-            ORDER BY total_owed DESC
-        """, (self.school_id,))
+        """
+        params = []
+        if po_has_school_id:
+            query += " AND po.school_id = %s"
+            params.append(self.school_id)
+        elif suppliers_has_school_id:
+            query += " AND s.school_id = %s"
+            params.append(self.school_id)
+        query += " GROUP BY s.supplierID HAVING total_owed > 0 ORDER BY total_owed DESC"
+        self.cursor.execute(query, tuple(params))
         return self.cursor.fetchall()
