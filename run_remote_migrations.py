@@ -1,10 +1,136 @@
+import argparse
+import sys
 import pymysql
 import os
 import glob
 import re
 import config
 
-def run_migrations():
+
+CREATE_TABLE_RE = re.compile(r'CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+`?(?P<table>\w+)`?\s*\((?P<body>.*)\)\s*(ENGINE|DEFAULT|CHARSET|COLLATE|$)', re.IGNORECASE | re.DOTALL)
+COLUMN_DEF_RE = re.compile(r'^`(?P<name>[^`]+)`\s+(?P<type>[A-Z]+(?:\s*\([^)]*\))?(?:\s+UNSIGNED)?)', re.IGNORECASE)
+FK_RE = re.compile(r'FOREIGN\s+KEY\s*\(`(?P<local>[^`]+)`\)\s+REFERENCES\s+`(?P<ref_table>[^`]+)`\s*\(`(?P<ref_column>[^`]+)`\)', re.IGNORECASE)
+
+
+def _normalize_column_type(column_type):
+    normalized = re.sub(r'\s+', ' ', (column_type or '').strip().lower())
+    normalized = re.sub(
+        r'\b(tinyint|smallint|mediumint|int|bigint)\s*\(\d+\)',
+        r'\1',
+        normalized,
+    )
+    return normalized
+
+
+def _strip_sql_comments(sql_content):
+    cleaned_lines = []
+    for raw_line in sql_content.splitlines():
+        stripped = raw_line.strip()
+        if stripped.startswith('--') or stripped.startswith('#'):
+            continue
+        cleaned_lines.append(raw_line)
+    return '\n'.join(cleaned_lines)
+
+
+def _split_sql_statements(sql_content):
+    return [statement.strip() for statement in _strip_sql_comments(sql_content).split(';') if statement.strip()]
+
+
+def _is_ignorable_migration_error(error):
+    error_code = error.args[0] if error.args else None
+    error_message = error.args[1] if len(error.args) > 1 else str(error)
+    if error_code in [1050, 1060, 1061, 1091, 1826]:
+        return True
+    if error_code == 1005 and 'Duplicate key on write or update' in error_message:
+        return True
+    return False
+
+
+def _is_character_type(column_type):
+    return _normalize_column_type(column_type).startswith(('char', 'varchar', 'text'))
+
+
+def _get_live_column_metadata(cursor, table_name, column_name, database_name):
+    cursor.execute(
+        """
+        SELECT COLUMN_TYPE, DATA_TYPE, CHARACTER_SET_NAME, COLLATION_NAME
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = %s
+        """,
+        (database_name, table_name, column_name),
+    )
+    return cursor.fetchone()
+
+
+def _parse_create_table_statement(statement):
+    match = CREATE_TABLE_RE.search(statement)
+    if not match:
+        return None, {}, []
+
+    table_name = match.group('table')
+    body = match.group('body')
+    column_types = {}
+    foreign_keys = []
+
+    for raw_line in body.splitlines():
+        line = raw_line.strip().rstrip(',')
+        if not line:
+            continue
+        column_match = COLUMN_DEF_RE.match(line)
+        if column_match:
+            column_types[column_match.group('name')] = column_match.group('type')
+            continue
+        fk_match = FK_RE.search(line)
+        if fk_match:
+            foreign_keys.append(fk_match.groupdict())
+
+    return table_name, column_types, foreign_keys
+
+
+def _preflight_foreign_keys(cursor, file_path, statement, database_name):
+    table_name, column_types, foreign_keys = _parse_create_table_statement(statement)
+    if not table_name or not foreign_keys:
+        return
+
+    table_charset_match = re.search(r'CHARSET\s*=\s*(\w+)', statement, re.IGNORECASE)
+    table_collation_match = re.search(r'COLLATE\s*=\s*(\w+)', statement, re.IGNORECASE)
+    table_charset = table_charset_match.group(1) if table_charset_match else None
+    table_collation = table_collation_match.group(1) if table_collation_match else None
+
+    for foreign_key in foreign_keys:
+        local_column = foreign_key['local']
+        ref_table = foreign_key['ref_table']
+        ref_column = foreign_key['ref_column']
+        local_column_type = column_types.get(local_column)
+        if not local_column_type:
+            raise RuntimeError(
+                f"could not determine local type for {table_name}.{local_column}"
+            )
+
+        live_reference = _get_live_column_metadata(cursor, ref_table, ref_column, database_name)
+        if not live_reference:
+            raise RuntimeError(
+                f"referenced column {ref_table}.{ref_column} does not exist in database {database_name}"
+            )
+
+        normalized_local = _normalize_column_type(local_column_type)
+        normalized_reference = _normalize_column_type(live_reference['COLUMN_TYPE'])
+        if normalized_local != normalized_reference:
+            raise RuntimeError(
+                f"foreign key type mismatch for {table_name}.{local_column} ({local_column_type}) -> {ref_table}.{ref_column} ({live_reference['COLUMN_TYPE']})"
+            )
+
+        if _is_character_type(local_column_type):
+            if table_charset and live_reference['CHARACTER_SET_NAME'] and table_charset.lower() != live_reference['CHARACTER_SET_NAME'].lower():
+                raise RuntimeError(
+                    f"foreign key charset mismatch for {table_name}.{local_column} ({table_charset}) -> {ref_table}.{ref_column} ({live_reference['CHARACTER_SET_NAME']})"
+                )
+            if table_collation and live_reference['COLLATION_NAME'] and table_collation.lower() != live_reference['COLLATION_NAME'].lower():
+                raise RuntimeError(
+                    f"foreign key collation mismatch for {table_name}.{local_column} ({table_collation}) -> {ref_table}.{ref_column} ({live_reference['COLLATION_NAME']})"
+                )
+
+def run_migrations(preflight_only=False):
     # Connection details: prefer environment variables, then central config
     DB_HOST = os.environ.get('DB_HOST', getattr(config, 'DB_HOST', 'localhost'))
     DB_PORT = int(os.environ.get('DB_PORT', getattr(config, 'DB_PORT', 3306)))
@@ -35,41 +161,60 @@ def run_migrations():
         print(f"Connection failed: {e}")
         return
 
-    with connection.cursor() as cursor:
+    had_errors = False
+
+    with connection.cursor(pymysql.cursors.DictCursor) as cursor:
         # Get all migration files in order
         migration_files = sorted(glob.glob('migrations/*.sql'))
         
         for file_path in migration_files:
-            print(f"Running migration: {file_path}")
+            mode_label = "Preflighting" if preflight_only else "Running migration"
+            print(f"{mode_label}: {file_path}")
             with open(file_path, 'r') as f:
                 sql_content = f.read()
             
-            # Remove comments and split by semicolon
-            # This is a naive split, but usually works for simple migrations
-            # Better: split by semicolon only if not inside quotes, but we'll try simple first.
-            statements = sql_content.split(';')
+            statements = _split_sql_statements(sql_content)
             
-            for statement in statements:
-                stmt = statement.strip()
-                if not stmt:
-                    continue
-                
+            for stmt in statements:
                 try:
+                    _preflight_foreign_keys(cursor, file_path, stmt, DB_NAME)
+                    if preflight_only:
+                        continue
                     cursor.execute(stmt)
                     # print(f"  OK: {stmt[:50]}...")
-                except pymysql.err.InternalError as e:
-                    # Ignore "Duplicate column name" (1060) and "Table already exists" (1050)
-                    # and "Duplicate key name" (1061), "Can't DROP; check that column/key exists" (1091)
-                    if e.args[0] in [1060, 1050, 1061, 1091]:
+                except RuntimeError as e:
+                    print(f"  PRECHECK FAILED in {file_path}: {e}")
+                    connection.close()
+                    return False
+                except (pymysql.err.InternalError, pymysql.err.OperationalError) as e:
+                    if _is_ignorable_migration_error(e):
                         # print(f"  Skipped (already applied): {e.args[1]}")
                         pass
                     else:
                         print(f"  ERROR in {file_path}: {e}")
+                        had_errors = True
                 except Exception as e:
                     print(f"  CRITICAL ERROR in {file_path}: {e}")
+                    had_errors = True
 
     connection.close()
-    print("Migration process completed.")
+    if preflight_only:
+        print("Migration preflight completed.")
+    else:
+        print("Migration process completed.")
+    return not had_errors
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run or preflight SQL migrations against the configured database.")
+    parser.add_argument(
+        "--preflight-only",
+        action="store_true",
+        help="Inspect foreign-key compatibility without executing any migration statements.",
+    )
+    return parser.parse_args()
 
 if __name__ == "__main__":
-    run_migrations()
+    args = parse_args()
+    success = run_migrations(preflight_only=args.preflight_only)
+    sys.exit(0 if success else 1)

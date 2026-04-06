@@ -1,9 +1,232 @@
 {% extends 'base.html' %}
-{% block content %}
-<h2>Support Tickets</h2>
-<ul>
-  {% for t in tickets %}
-  <li>{{ t.subject }} — {{ t.status }}</li>
-  {% endfor %}
-</ul>
+{% block platform_content %}
+<section class="max-w-7xl mx-auto space-y-6">
+  <div class="flex items-center justify-between gap-4">
+    <div>
+      <div class="flex flex-wrap items-center gap-3">
+        <h2 class="text-2xl font-bold text-gray-900">Support Tickets</h2>
+        {% if view_preferences.has_saved_page_size_badge %}
+        <span title="Using saved preference for support queue page size" aria-label="Using saved preference for support queue page size: {{ view_preferences.saved_page_size }} per page" class="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-blue-700">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-3.5 w-3.5" aria-hidden="true">
+            <path fill-rule="evenodd" d="M8 1.75a6.25 6.25 0 1 0 0 12.5A6.25 6.25 0 0 0 8 1.75ZM6.97 9.78l3.5-3.5a.75.75 0 1 1 1.06 1.06L7.5 11.37a.75.75 0 0 1-1.06 0L4.47 9.41a.75.75 0 1 1 1.06-1.06l1.44 1.43Z" clip-rule="evenodd" />
+          </svg>
+          <span>Saved page size: {{ view_preferences.saved_page_size }}</span>
+        </span>
+        {% endif %}
+      </div>
+      <p class="text-sm text-gray-600">Assign tickets, progress them through the queue, and filter large support backlogs without leaving the page.</p>
+    </div>
+    <a href="{{ url_for('platform.create_ticket') }}" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Create Ticket</a>
+  </div>
+
+  <form method="get" class="grid gap-4 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm md:grid-cols-2 xl:grid-cols-6">
+    <div>
+      <label class="mb-1 block text-sm font-medium text-gray-700">School</label>
+      <select name="school_id" title="Filter support tickets by school" aria-label="Filter support tickets by school" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <option value="">All schools</option>
+        {% for school in schools %}
+        <option value="{{ school.id }}" {% if filters.school_id == school.id %}selected{% endif %}>{{ school.name }} ({{ school.code }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="mb-1 block text-sm font-medium text-gray-700">Status</label>
+      <select name="status" title="Filter support tickets by status" aria-label="Filter support tickets by status" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <option value="">All statuses</option>
+        {% for item in statuses %}
+        <option value="{{ item }}" {% if filters.status == item %}selected{% endif %}>{{ item.replace('_', ' ') }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="mb-1 block text-sm font-medium text-gray-700">Assignment</label>
+      <select name="assignment" title="Filter support tickets by assignment" aria-label="Filter support tickets by assignment" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <option value="">Any assignment</option>
+        {% for option in assignment_options %}
+        <option value="{{ option.value }}" {% if filters.assignment == option.value %}selected{% endif %}>{{ option.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="mb-1 block text-sm font-medium text-gray-700">Search</label>
+      <input name="search" type="text" value="{{ filters.search or '' }}" title="Search support tickets" aria-label="Search support tickets" placeholder="Subject, email, school" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label class="mb-1 block text-sm font-medium text-gray-700">Page Size</label>
+      <select name="page_size" title="Set support queue page size" aria-label="Set support queue page size" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        {% for option in page_size_options %}
+        <option value="{{ option }}" {% if filters.page_size == option %}selected{% endif %}>{{ option }} per page</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex items-end gap-2">
+      <button type="submit" class="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Apply Filters</button>
+      <a href="{{ url_for('platform.list_tickets') }}" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400">Reset</a>
+    </div>
+  </form>
+
+  <div class="flex flex-col gap-2 text-sm text-gray-600 md:flex-row md:items-center md:justify-between">
+    <p>Showing {{ pagination.start_index }}-{{ pagination.end_index }} of {{ pagination.total_count }} support tickets</p>
+    <div class="flex gap-2">
+      <a href="{{ url_for('platform.list_tickets') }}{% if reset_preferences_query_string %}?{{ reset_preferences_query_string }}{% endif %}" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400">Reset View Preferences</a>
+    </div>
+  </div>
+
+  <p class="text-sm text-gray-500">Reset View Preferences clears the saved page-size choice only. Current queue filters and sorting stay applied.</p>
+
+  {% if pagination.total_pages > 1 %}
+  <div class="flex items-center justify-between text-sm text-gray-600">
+    <div>Page {{ pagination.current_page }} of {{ pagination.total_pages }}</div>
+  </div>
+  {% endif %}
+
+  <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">
+            <a href="{{ sorting.sort_urls.subject.url }}" title="{{ sorting.sort_urls.subject.title }}" aria-label="{{ sorting.sort_urls.subject.title }} by ticket subject" class="inline-flex items-center gap-1 hover:text-gray-900">
+              <span>Ticket</span>
+              {% if sorting.sort_by == 'subject' %}
+              <span class="text-blue-600" aria-hidden="true">{% if sorting.sort_dir == 'asc' %}
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-4 w-4">
+                  <path fill-rule="evenodd" d="M8 3.5a.75.75 0 0 1 .53.22l4 4a.75.75 0 1 1-1.06 1.06L8.75 6.06V12.5a.75.75 0 0 1-1.5 0V6.06L4.53 8.78a.75.75 0 1 1-1.06-1.06l4-4A.75.75 0 0 1 8 3.5Z" clip-rule="evenodd" />
+                </svg>
+              {% else %}
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-4 w-4">
+                  <path fill-rule="evenodd" d="M8 12.5a.75.75 0 0 1-.53-.22l-4-4a.75.75 0 1 1 1.06-1.06l2.72 2.72V3.5a.75.75 0 0 1 1.5 0v6.44l2.72-2.72a.75.75 0 1 1 1.06 1.06l-4 4A.75.75 0 0 1 8 12.5Z" clip-rule="evenodd" />
+                </svg>
+              {% endif %}</span>
+              {% endif %}
+            </a>
+          </th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">
+            <a href="{{ sorting.sort_urls.school.url }}" title="{{ sorting.sort_urls.school.title }}" aria-label="{{ sorting.sort_urls.school.title }} by school" class="inline-flex items-center gap-1 hover:text-gray-900">
+              <span>School</span>
+              {% if sorting.sort_by == 'school' %}
+              <span class="text-blue-600" aria-hidden="true">{% if sorting.sort_dir == 'asc' %}
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-4 w-4">
+                  <path fill-rule="evenodd" d="M8 3.5a.75.75 0 0 1 .53.22l4 4a.75.75 0 1 1-1.06 1.06L8.75 6.06V12.5a.75.75 0 0 1-1.5 0V6.06L4.53 8.78a.75.75 0 1 1-1.06-1.06l4-4A.75.75 0 0 1 8 3.5Z" clip-rule="evenodd" />
+                </svg>
+              {% else %}
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-4 w-4">
+                  <path fill-rule="evenodd" d="M8 12.5a.75.75 0 0 1-.53-.22l-4-4a.75.75 0 1 1 1.06-1.06l2.72 2.72V3.5a.75.75 0 0 1 1.5 0v6.44l2.72-2.72a.75.75 0 1 1 1.06 1.06l-4 4A.75.75 0 0 1 8 12.5Z" clip-rule="evenodd" />
+                </svg>
+              {% endif %}</span>
+              {% endif %}
+            </a>
+          </th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">
+            <a href="{{ sorting.sort_urls.status.url }}" title="{{ sorting.sort_urls.status.title }}" aria-label="{{ sorting.sort_urls.status.title }} by status" class="inline-flex items-center gap-1 hover:text-gray-900">
+              <span>Status</span>
+              {% if sorting.sort_by == 'status' %}
+              <span class="text-blue-600" aria-hidden="true">{% if sorting.sort_dir == 'asc' %}
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-4 w-4">
+                  <path fill-rule="evenodd" d="M8 3.5a.75.75 0 0 1 .53.22l4 4a.75.75 0 1 1-1.06 1.06L8.75 6.06V12.5a.75.75 0 0 1-1.5 0V6.06L4.53 8.78a.75.75 0 1 1-1.06-1.06l4-4A.75.75 0 0 1 8 3.5Z" clip-rule="evenodd" />
+                </svg>
+              {% else %}
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-4 w-4">
+                  <path fill-rule="evenodd" d="M8 12.5a.75.75 0 0 1-.53-.22l-4-4a.75.75 0 1 1 1.06-1.06l2.72 2.72V3.5a.75.75 0 0 1 1.5 0v6.44l2.72-2.72a.75.75 0 1 1 1.06 1.06l-4 4A.75.75 0 0 1 8 12.5Z" clip-rule="evenodd" />
+                </svg>
+              {% endif %}</span>
+              {% endif %}
+            </a>
+          </th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">Assignment</th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">
+            <a href="{{ sorting.sort_urls.created_at.url }}" title="{{ sorting.sort_urls.created_at.title }}" aria-label="{{ sorting.sort_urls.created_at.title }} by creation time" class="inline-flex items-center gap-1 hover:text-gray-900">
+              <span>Actions</span>
+              {% if sorting.sort_by == 'created_at' %}
+              <span class="text-blue-600" aria-hidden="true">{% if sorting.sort_dir == 'asc' %}
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-4 w-4">
+                  <path fill-rule="evenodd" d="M8 3.5a.75.75 0 0 1 .53.22l4 4a.75.75 0 1 1-1.06 1.06L8.75 6.06V12.5a.75.75 0 0 1-1.5 0V6.06L4.53 8.78a.75.75 0 1 1-1.06-1.06l4-4A.75.75 0 0 1 8 3.5Z" clip-rule="evenodd" />
+                </svg>
+              {% else %}
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-4 w-4">
+                  <path fill-rule="evenodd" d="M8 12.5a.75.75 0 0 1-.53-.22l-4-4a.75.75 0 1 1 1.06-1.06l2.72 2.72V3.5a.75.75 0 0 1 1.5 0v6.44l2.72-2.72a.75.75 0 1 1 1.06 1.06l-4 4A.75.75 0 0 1 8 12.5Z" clip-rule="evenodd" />
+                </svg>
+              {% endif %}</span>
+              {% endif %}
+            </a>
+          </th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for t in tickets %}
+        {% set school = schools_by_id.get(t.school_id) %}
+        <tr class="align-top">
+          <td class="px-4 py-4">
+            <div class="font-semibold text-gray-900">{{ t.subject }}</div>
+            <div class="text-xs text-gray-500">{{ t.raised_by_email or 'No email' }}</div>
+            <p class="mt-2 max-w-xl text-sm text-gray-600">{{ t.description }}</p>
+          </td>
+          <td class="px-4 py-4 text-gray-700">
+            {% if school %}
+            <div class="font-medium text-gray-900">{{ school.name }}</div>
+            <div class="text-xs text-gray-500">{{ school.code }}</div>
+            {% else %}
+            <span class="text-gray-400">Unlinked</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-4">
+            <span class="inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-700">{{ t.status or 'open' }}</span>
+          </td>
+          <td class="px-4 py-4 text-gray-700">
+            {% set assigned_user = assignees_by_id.get(t.assigned_to_user_id) %}
+            {% if assigned_user %}
+            <div class="font-medium text-gray-900">{{ assigned_user.name or assigned_user.email }}</div>
+            <div class="text-xs text-gray-500">{{ assigned_user.role }}</div>
+            {% else %}
+            <span class="text-gray-400">Unassigned</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-4">
+            <div class="space-y-3">
+              <form method="post" action="{{ url_for('platform.assign_ticket', ticket_id=t.id) }}" class="flex items-center gap-2">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="next" value="{{ current_view_path }}">
+                <select name="assigned_to_user_id" title="Assign support ticket owner" aria-label="Assign support ticket owner" class="rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                  <option value="">Assign to...</option>
+                  {% for user in assignees %}
+                  <option value="{{ user.id }}" {% if user.id == t.assigned_to_user_id %}selected{% endif %}>{{ user.name or user.email }} ({{ user.role }})</option>
+                  {% endfor %}
+                </select>
+                <button type="submit" class="rounded-lg border border-gray-300 px-3 py-2 font-medium text-gray-700 hover:border-gray-400">Assign</button>
+              </form>
+              <form method="post" action="{{ url_for('platform.update_ticket_status', ticket_id=t.id) }}" class="flex items-center gap-2">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="next" value="{{ current_view_path }}">
+                <select name="status" title="Update support ticket status" aria-label="Update support ticket status" class="rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                  {% for status in statuses %}
+                  <option value="{{ status }}" {% if status == (t.status or 'open') %}selected{% endif %}>{{ status }}</option>
+                  {% endfor %}
+                </select>
+                <button type="submit" class="rounded-lg bg-emerald-600 px-3 py-2 font-medium text-white hover:bg-emerald-700">Update</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500">No support tickets match the selected filters.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if pagination.total_pages > 1 %}
+  <nav class="flex items-center justify-center gap-2" aria-label="Support ticket pagination">
+    {% if pagination.prev_url %}
+    <a href="{{ pagination.prev_url }}" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400">Previous</a>
+    {% endif %}
+    {% for page_link in pagination.page_links %}
+    <a href="{{ page_link.url }}" class="rounded-lg px-3 py-2 text-sm font-semibold {% if page_link.is_current %}bg-blue-600 text-white{% else %}border border-gray-300 text-gray-700 hover:border-gray-400{% endif %}">{{ page_link.number }}</a>
+    {% endfor %}
+    {% if pagination.next_url %}
+    <a href="{{ pagination.next_url }}" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400">Next</a>
+    {% endif %}
+  </nav>
+  {% endif %}
+</section>
 {% endblock %}

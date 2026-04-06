@@ -1,501 +1,291 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <link
-      rel="icon"
-      type="image/x-icon"
-      href="{{ url_for('static', filename='images/favicon.ico') }}"
-    />
-
-    <meta charset="UTF-8" />
-    <title>SkoolTrack Pro</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-    <!-- Modern Font Family -->
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}SkoolTrack Pro{% endblock %}</title>
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='images/favicon.ico') }}"/>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-
-    <!-- Font Awesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
-    <!-- Local Tailwind CSS -->
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/tailwind.min.css') }}"
-    />
-    <!-- Fallback CDN -->
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
-      onerror="console.error('Failed to load local Tailwind')"
-    />
-
-    <!-- Print Styling -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.min.css') }}"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" onerror="console.error('Failed to load local Tailwind')"/>
     <style>
-      body {
-          font-family: 'Inter', sans-serif;
-      }
-      @media print {
-        .no-print { display: none !important; }
-        body { background: #fff; margin: 0; padding: 0; }
-        main, header, footer { box-shadow: none; padding: 0; margin: 0; }
-        table, th, td { border: 1px solid #000; border-collapse: collapse; }
-        th, td { padding: 6px; }
-      }
-      
-      /* Modern Dropdown Menu */
-      .nav-group:hover .nav-dropdown {
-          display: block;
-          animation: slideDown 0.2s ease-out;
-      }
-      @keyframes slideDown {
-          from { opacity: 0; transform: translateY(-10px); }
-          to { opacity: 1; transform: translateY(0); }
-      }
-      .nav-dropdown {
-          display: none;
-          position: absolute;
-          top: 100%;
-          left: 0;
-          min-width: 220px;
-          background: white;
-          border-radius: 0.75rem;
-          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-          z-index: 50;
-          padding: 0.5rem;
-          border: 1px solid rgba(0,0,0,0.05);
-      }
-      .nav-dropdown a {
-          display: flex;
-          align-items: center;
-          padding: 0.75rem 1rem;
-          color: #4b5563;
-          font-size: 0.875rem;
-          font-weight: 500;
-          border-radius: 0.5rem;
-          transition: all 0.2s;
-      }
-      .nav-dropdown a:hover {
-          background-color: #f9fafb;
-          color: #2563eb;
-      }
-      .nav-dropdown a i {
-          width: 1.25rem;
-          margin-right: 0.75rem;
-          font-size: 1rem;
-          opacity: 0.7;
-      }
-      .nav-active {
-          color: #fff;
-          background-color: rgba(255,255,255,0.1);
-      }
+        body { font-family: 'Inter', sans-serif; }
+        @media print {
+            .no-print { display: none !important; }
+            body { background: #fff; margin: 0; padding: 0; }
+            main, header, footer { box-shadow: none; padding: 0; margin: 0; }
+            table, th, td { border: 1px solid #000; border-collapse: collapse; }
+            th, td { padding: 6px; }
+        }
+        .nav-group:hover .nav-dropdown { display: block; animation: slideDown 0.2s ease-out; }
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        .nav-dropdown {
+            display: none; position: absolute; top: 100%; left: 0; min-width: 220px;
+            background: white; border-radius: 0.75rem; padding: 0.5rem; z-index: 50;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1); border: 1px solid rgba(0,0,0,0.05);
+        }
+        .nav-dropdown a {
+            display: flex; align-items: center; padding: 0.75rem 1rem; color: #4b5563; font-size: 0.875rem;
+            font-weight: 500; border-radius: 0.5rem; transition: all 0.2s;
+        }
+        .nav-dropdown a:hover { background-color: #f9fafb; color: #2563eb; }
+        .nav-dropdown a i { width: 1.25rem; margin-right: 0.75rem; font-size: 1rem; opacity: 0.7; }
+        .nav-active { color: #fff; background-color: rgba(255,255,255,0.1); }
+        
+        .platform-shell { background-color: #f8fafc; }
+        .platform-panel { background: #1f2937; border-right: 1px solid rgba(255, 255, 255, 0.05); }
+        .platform-nav-link {
+            display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem;
+            color: #9ca3af; font-size: 0.8125rem; font-weight: 500; transition: all 0.1s ease;
+        }
+        .platform-nav-link:hover { background: rgba(255, 255, 255, 0.03); color: #f3f4f6; }
+        .platform-nav-link--active { background: rgba(59, 130, 246, 0.1); color: #60a5fa; border-left: 2px solid #3b82f6; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+        .platform-nav-link i { width: 1.25rem; text-align: center; font-size: 0.875rem; opacity: 0.8; }
+        .platform-card { background: white; border: 1px solid #e2e8f0; border-radius: 0.75rem; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px 0 rgba(0, 0, 0, 0.06); }
+        .platform-table-compact td, .platform-table-compact th { padding: 0.5rem 0.875rem; font-size: 0.8125rem; }
+        .platform-table-compact thead th { font-size: 0.625rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; }
+        .platform-section-title { font-size: 0.875rem; font-weight: 700; color: #0f172a; letter-spacing: -0.01em; }
+        .platform-btn-primary { background: #2563eb; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; font-weight: 600; font-size: 0.875rem; transition: all 0.2s; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2); }
+        .platform-btn-primary:hover { background: #1d4ed8; transform: translateY(-1px); box-shadow: 0 6px 10px -1px rgba(37, 99, 235, 0.3); }
+        .platform-btn-secondary { background: white; color: #475569; border: 1px solid #e2e8f0; padding: 0.5rem 1rem; border-radius: 0.5rem; font-weight: 600; font-size: 0.875rem; transition: all 0.2s; }
+        .platform-btn-secondary:hover { background: #f8fafc; color: #1e293b; border-color: #cbd5e1; }
+        .platform-toast { border-radius: 0.75rem; padding: 1rem 1.25rem; font-size: 0.9rem; font-weight: 500; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+        .platform-toast[data-tone='error'] { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+        .platform-toast[data-tone='warning'] { background: #fffbeb; border: 1px solid #fef3c7; color: #92400e; }
+        .platform-toast[data-tone='success'] { background: #f0fdf4; border: 1px solid #dcfce7; color: #166534; }
+        .platform-toast[data-tone='info'] { background: #eff6ff; border: 1px solid #dbeafe; color: #1e40af; }
     </style>
-  </head>
+</head>
 
-  <body class="bg-gray-50 min-h-screen text-gray-800">
+{% set is_platform_request = request.blueprint == 'platform' %}
+{% set is_platform_login = is_platform_request and (request.endpoint == 'platform.login' or 'login' in request.path) %}
 
-    <!-- App Header -->
-    <header class="bg-blue-800 text-white shadow no-print">
-      <div class="max-w-7xl mx-auto px-4">
-        <!-- Top Bar: Logo + User Info -->
-        <div class="flex justify-between items-center py-3">
-          <!-- Logo / Title -->
-          <div class="flex items-center space-x-3">
-            <h1 class="text-2xl font-bold">🎒 SkoolTrack Pro</h1>
-            {% if session.get('logged_in') and session.get('is_admin') %}
-              <a href="{{ url_for('admin_settings') }}" 
-                 class="bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded text-sm font-medium">
-                <i class="fas fa-cog"></i> Admin
-              </a>
-            {% endif %}
-          </div>
+<body class="{% if is_platform_request %}platform-shell min-h-screen text-slate-800{% else %}bg-gray-50 min-h-screen text-gray-800{% endif %}">
 
-          <!-- User Info -->
-          <div class="flex items-center space-x-4">
-            {% if session.get('logged_in') %}
-              <div class="text-right hidden md:block">
-                <div class="text-sm font-medium">{{ session.username }}</div>
-                <div class="text-xs text-blue-200">
-                  {% if session.is_admin %}
-                    <span class="bg-red-500 px-2 py-0.5 rounded">Administrator</span>
-                  {% else %}
-                    Staff User
-                  {% endif %}
+    {% if is_platform_request %}
+        <!-- Platform Layout -->
+        <div class="min-h-screen {% if not is_platform_login %}md:flex{% endif %}">
+            {% if not is_platform_login %}
+            <div id="platform-mobile-backdrop" class="fixed inset-0 z-40 hidden bg-slate-900/40 backdrop-blur-sm md:hidden"></div>
+            <aside id="platform-sidebar" class="platform-panel fixed inset-y-0 left-0 z-50 flex w-60 -translate-x-full flex-col px-3 py-5 transition-transform duration-200 md:translate-x-0">
+                <div class="mb-7 px-2">
+                    <div class="flex items-center gap-2.5">
+                        <div class="h-7 w-7 rounded-lg bg-blue-600 flex items-center justify-center shadow-sm shadow-blue-500/20">
+                            <i class="fas fa-microchip text-white text-[10px]"></i>
+                        </div>
+                        <span class="text-base font-extrabold tracking-tight text-white">Control Plane</span>
+                    </div>
                 </div>
-              </div>
-              <div class="flex items-center space-x-2">
-                <a href="{{ url_for('logout') }}" 
-                   class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-sm font-medium">
-                  <i class="fas fa-sign-out-alt"></i> Logout
-                </a>
-                {% if session.get('platform_impersonation') %}
-                <form method="post" action="{{ url_for('platform.stop_impersonation') }}" class="inline-block">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button type="submit" class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-2 rounded text-sm font-medium">Stop Impersonation</button>
-                </form>
-                {% endif %}
-              </div>
+
+                <nav class="flex-1 space-y-0.5 overflow-y-auto">
+                    <a href="{{ url_for('platform.index') }}" class="platform-nav-link {% if request.endpoint == 'platform.index' %}platform-nav-link--active{% endif %}">
+                        <i class="fas fa-home"></i> <span>Insights</span>
+                    </a>
+                    
+                    <div class="pt-5 pb-1.5 px-3 text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500">Inventory</div>
+                    {% if platform_has_permission('billing_access') %}
+                    <a href="{{ url_for('platform.list_schools') }}" class="platform-nav-link {% if request.endpoint in ['platform.list_schools', 'platform.school_detail', 'platform.create_school'] %}platform-nav-link--active{% endif %}">
+                        <i class="fas fa-building"></i> <span>Tenants</span>
+                    </a>
+                    <a href="{{ url_for('platform.list_subscriptions') }}" class="platform-nav-link {% if request.endpoint in ['platform.list_subscriptions', 'platform.subscription_detail', 'platform.create_subscription'] %}platform-nav-link--active{% endif %}">
+                        <i class="fas fa-credit-card"></i> <span>Billing</span>
+                    </a>
+                    <a href="{{ url_for('platform.list_plans') }}" class="platform-nav-link {% if request.endpoint in ['platform.list_plans', 'platform.create_plan', 'platform.edit_plan'] %}platform-nav-link--active{% endif %}">
+                        <i class="fas fa-layer-group"></i> <span>Service Plans</span>
+                    </a>
+                    {% endif %}
+                    
+                    <div class="pt-5 pb-1.5 px-3 text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500">Operations</div>
+                    {% if platform_has_permission('onboarding_manage') %}
+                    <a href="{{ url_for('platform.onboarding_wizard') }}" class="platform-nav-link {% if request.endpoint in ['platform.onboarding_wizard', 'platform.onboarding_status'] %}platform-nav-link--active{% endif %}">
+                        <i class="fas fa-rocket"></i> <span>Onboarding</span>
+                    </a>
+                    {% endif %}
+                    {% if platform_has_permission('support_access') %}
+                    <a href="{{ url_for('platform.list_tickets') }}" class="platform-nav-link {% if request.endpoint in ['platform.list_tickets', 'platform.create_ticket'] %}platform-nav-link--active{% endif %}">
+                        <i class="fas fa-ticket"></i> <span>Service Desk</span>
+                    </a>
+                    {% endif %}
+                    
+                    <div class="pt-5 pb-1.5 px-3 text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500">Governance</div>
+                    {% if platform_has_permission('audit_access') %}
+                    <a href="{{ url_for('platform.view_audit') }}" class="platform-nav-link {% if request.endpoint == 'platform.view_audit' %}platform-nav-link--active{% endif %}">
+                        <i class="fas fa-clipboard-list"></i> <span>Audit Trail</span>
+                    </a>
+                    {% endif %}
+                    {% if platform_has_permission('security_access') %}
+                    <a href="{{ url_for('platform.list_security_events') }}" class="platform-nav-link {% if request.endpoint == 'platform.list_security_events' %}platform-nav-link--active{% endif %}">
+                        <i class="fas fa-shield-halved"></i> <span>Security</span>
+                    </a>
+                    {% endif %}
+                    {% if platform_has_permission('platform_settings') %}
+                    <a href="{{ url_for('platform.list_users') }}" class="platform-nav-link {% if request.endpoint in ['platform.list_users', 'platform.create_user', 'platform.edit_user'] %}platform-nav-link--active{% endif %}">
+                        <i class="fas fa-users-gear"></i> <span>Operators</span>
+                    </a>
+                    <a href="{{ url_for('platform.view_access_settings') }}" class="platform-nav-link {% if request.endpoint == 'platform.view_access_settings' %}platform-nav-link--active{% endif %}">
+                        <i class="fas fa-sliders"></i> <span>Access Policy</span>
+                    </a>
+                    {% endif %}
+                </nav>
+
+                <div class="mt-auto pt-4 border-t border-white/5">
+                    <div class="flex items-center gap-2.5 px-2 mb-4">
+                        <div class="h-7 w-7 rounded-full bg-gray-700 flex items-center justify-center border border-white/10">
+                            <i class="fas fa-user-tie text-[9px] text-gray-400"></i>
+                        </div>
+                        <div class="overflow-hidden">
+                            <div class="text-[11px] font-bold text-gray-200 truncate">{{ platform_current_user.name if platform_current_user else 'Operator' }}</div>
+                            <div class="text-[9px] text-gray-500 font-medium uppercase tracking-tighter">{{ platform_role_label(platform_current_user.role) if platform_current_user else 'Staff' }}</div>
+                        </div>
+                    </div>
+                    {% if session.get('platform_impersonation') %}
+                    <form method="post" action="{{ url_for('platform.stop_impersonation') }}" class="mb-1">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[10px] font-bold text-amber-400 hover:bg-amber-400/5 rounded-md transition-colors">
+                            <i class="fas fa-user-secret w-4 text-center"></i> <span>End Impersonation</span>
+                        </button>
+                    </form>
+                    {% endif %}
+                    <a href="{{ url_for('platform.logout') }}" class="flex w-full items-center gap-2.5 px-2.5 py-1.5 text-[11px] font-medium text-gray-400 hover:text-white hover:bg-white/5 rounded-md transition-colors">
+                        <i class="fas fa-power-off w-4 text-center"></i> <span>Sign Out</span>
+                    </a>
+                </div>
+            </aside>
+
+            <div class="min-h-screen flex-1 md:pl-60 flex flex-col">
+                <header class="h-16 border-b border-slate-200 bg-white sticky top-0 z-30 px-4 md:px-8 shrink-0">
+                    <div class="h-full flex items-center justify-between">
+                        <div class="flex items-center gap-4">
+                            <button id="platform-menu-btn" type="button" class="md:hidden text-slate-500 hover:text-slate-900 transition-colors">
+                                <i class="fas fa-bars text-xl"></i>
+                            </button>
+                            <nav class="hidden md:flex items-center text-xs font-semibold text-slate-400">
+                                {% block breadcrumb %}
+                                <span class="text-slate-900">Control Plane</span>
+                                {% endblock %}
+                            </nav>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <a href="{{ url_for('index') }}" class="text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 italic transition-all">Go to School App</a>
+                        </div>
+                    </div>
+                </header>
+                <main class="flex-1 p-4 md:p-6">
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                        {% if messages %}
+                            <div class="space-y-4 mb-8">
+                                {% for category, message in messages %}
+                                    <div class="platform-toast flex items-center justify-between gap-4" data-tone="{{ 'error' if category == 'error' else 'warning' if category == 'warning' else 'success' if category == 'success' else 'info' }}">
+                                        <div class="flex items-center gap-3">
+                                            <p>{{ message }}</p>
+                                        </div>
+                                        <button type="button" class="text-current opacity-50 hover:opacity-100 transition-opacity" onclick="this.parentElement.remove()"><i class="fas fa-xmark"></i></button>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    {% endwith %}
+                    
+                    {% block platform_content %}{% endblock %}
+                </main>
+            </div>
             {% else %}
-              <a href="{{ url_for('platform.login') }}"
-                 class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded text-sm font-medium">
-                <i class="fas fa-sign-in-alt"></i> Login
-              </a>
+                <!-- Platform Login View -->
+                <main class="min-h-screen">
+                    {% block login_content %}{% endblock %}
+                </main>
             {% endif %}
-            
-            <!-- Mobile Hamburger Button -->
-            <button id="menu-btn" class="md:hidden focus:outline-none">
-              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                   xmlns="http://www.w3.org/2000/svg">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M4 6h16M4 12h16M4 18h16"></path>
-              </svg>
-            </button>
-          </div>
         </div>
+    {% else %}
+        <!-- School App Layout (Legacy) -->
+        <header class="bg-blue-800 text-white shadow no-print">
+            <div class="max-w-7xl mx-auto px-4">
+                <div class="flex justify-between items-center py-3">
+                    <div class="flex items-center space-x-3">
+                        <h1 class="text-2xl font-bold">🎒 SkoolTrack Pro</h1>
+                        {% if session.get('logged_in') and session.get('is_admin') %}
+                            <a href="{{ url_for('admin_settings') }}" class="bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded text-sm font-medium"><i class="fas fa-cog"></i> Admin</a>
+                        {% endif %}
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        {% if session.get('logged_in') %}
+                            <div class="text-right hidden md:block">
+                                <div class="text-sm font-medium">{{ session.username }}</div>
+                                <div class="text-xs text-blue-200">{% if session.is_admin %}Administrator{% else %}Staff User{% endif %}</div>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <a href="{{ url_for('logout') }}" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-sm font-medium"><i class="fas fa-sign-out-alt"></i> Logout</a>
+                                {% if session.get('platform_impersonation') %}
+                                <form method="post" action="{{ url_for('platform.stop_impersonation') }}" class="inline-block">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-2 rounded text-sm font-medium">Stop Impersonation</button>
+                                </form>
+                                {% endif %}
+                            </div>
+                        {% else %}
+                            <a href="{{ url_for('platform.login') }}" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded text-sm font-medium"><i class="fas fa-sign-in-alt"></i> Login</a>
+                        {% endif %}
+                    </div>
+                </div>
 
-        <!-- Main Navigation -->
-        <nav class="border-t border-blue-700 py-1 hidden md:block">
-          <div class="flex space-x-2 flex-wrap items-center">
-            {% if session.get('logged_in') %}
-              <!-- Dashboard -->
-              <a href="{{ url_for('index') }}" 
-                 class="px-3 py-2 rounded-lg transition hover:bg-blue-700 {% if request.endpoint == 'index' %}nav-active bg-blue-900{% endif %}">
-                <i class="fas fa-home"></i> Home
-              </a>
-              
-              <!-- Academic Management -->
-              <div class="relative nav-group">
-                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'manage_classes' in request.endpoint or 'allocate_teacher' in request.endpoint or 'promote_students' in request.endpoint or 'manage_streams' in request.endpoint %}nav-active bg-blue-900{% endif %}">
-                  <i class="fas fa-graduation-cap"></i> Academic <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
-                </button>
-                <div class="nav-dropdown">
-                  <a href="{{ url_for('manage_classes') }}"><i class="fas fa-school mr-2 w-5"></i> Manage Classes</a>
-                  <a href="{{ url_for('allocate_teacher') }}"><i class="fas fa-chalkboard-user mr-2 w-5"></i> Teacher Allocations</a>
-                  {% if session.get('is_admin') %}
-                  <div class="border-t my-1"></div>
-                  <a href="{{ url_for('manage_streams') }}"><i class="fas fa-stream mr-2 w-5"></i> Manage Streams</a>
-                  <a href="{{ url_for('promote_students') }}"><i class="fas fa-arrow-up-right-dots mr-2 w-5"></i> Promotions</a>
-                  {% endif %}
-                </div>
-              </div>
+                <nav class="border-t border-blue-700 py-1 hidden md:block">
+                    <div class="flex space-x-2 flex-wrap items-center">
+                        {% if session.get('logged_in') %}
+                            <a href="{{ url_for('index') }}" class="px-3 py-2 rounded-lg transition hover:bg-blue-700 {% if request.endpoint == 'index' %}nav-active bg-blue-900{% endif %}"><i class="fas fa-home"></i> Home</a>
+                            <a href="{{ url_for('students_list') }}" class="px-3 py-2 rounded-lg transition hover:bg-blue-700"><i class="fas fa-users"></i> Students</a>
+                            <a href="{{ url_for('fees_dashboard') }}" class="px-3 py-2 rounded-lg transition hover:bg-blue-700"><i class="fas fa-money-check-dollar"></i> Fees</a>
+                            <a href="{{ url_for('uniform_dashboard') }}" class="px-3 py-2 rounded-lg transition hover:bg-blue-700"><i class="fas fa-tshirt"></i> Uniforms</a>
+                            <a href="{{ url_for('fleet_dashboard') }}" class="px-3 py-2 rounded-lg transition hover:bg-blue-700"><i class="fas fa-bus"></i> Fleet</a>
+                            {% if platform_is_saas_user() %}
+                            <a href="{{ url_for('platform.index') }}" class="px-3 py-2 rounded-lg text-cyan-300 font-bold hover:bg-blue-700"><i class="fas fa-microchip"></i> Control Plane</a>
+                            {% endif %}
+                        {% endif %}
+                    </div>
+                </nav>
+            </div>
+        </header>
 
-              <!-- Exam Management -->
-              <div class="relative nav-group">
-                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'exam' in request.endpoint or 'grading' in request.endpoint %}nav-active bg-blue-900{% endif %}">
-                  <i class="fas fa-award"></i> Exams <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
-                </button>
-                <div class="nav-dropdown">
-                  <a href="{{ url_for('exams_dashboard') }}"><i class="fas fa-file-invoice mr-2 w-5"></i> Exam Dashboard</a>
-                  {% if session.is_admin %}
-                  <a href="{{ url_for('manage_grading_scales') }}"><i class="fas fa-graduation-cap mr-2 w-5"></i> Grading Systems</a>
-                  {% endif %}
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="container mx-auto px-4 mt-6">
+                    {% for category, message in messages %}
+                        <div class="{{ 'bg-red-100 text-red-700 border-red-200' if category == 'error' else 'bg-green-100 text-green-700 border-green-200' }} p-4 rounded-xl border mb-4 flex items-center justify-between shadow-sm">
+                            <span class="font-medium">{{ message }}</span>
+                            <button onclick="this.parentElement.remove()" class="text-xl opacity-50 hover:opacity-100">&times;</button>
+                        </div>
+                    {% endfor %}
                 </div>
-              </div>
-
-              <!-- Student Management -->
-              <div class="relative nav-group">
-                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'student' in request.endpoint %}nav-active bg-blue-900{% endif %}">
-                  <i class="fas fa-users-viewfinder"></i> Students <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
-                </button>
-                <div class="nav-dropdown">
-                  <a href="{{ url_for('students_list') }}"><i class="fas fa-users mr-2 w-5"></i> All Students</a>
-                  <a href="{{ url_for('admit_student') }}"><i class="fas fa-user-plus mr-2 w-5"></i> Admit Student</a>
-                  <a href="/admin/student_subjects_select"><i class="fas fa-book-open-reader mr-2 w-5"></i> Subject Enrollment</a>
-                </div>
-              </div>
-
-              <!-- Fees & Billing -->
-              <div class="relative nav-group">
-                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'fees' in request.endpoint and 'reports' not in request.path or 'invoice' in request.endpoint or 'votehead' in request.endpoint or 'structure' in request.endpoint or 'student_group' in request.endpoint %}nav-active bg-blue-900{% endif %}">
-                  <i class="fas fa-money-check-dollar"></i> Fees <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
-                </button>
-                <div class="nav-dropdown w-72">
-                  <div class="px-3 py-1.5 text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 border-b">Operational Hub</div>
-                  <a href="{{ url_for('fees_dashboard') }}"><i class="fas fa-gauge-high mr-2 w-5 text-blue-600"></i> Fees Overview Hub</a>
-                  <a href="{{ url_for('collect_fees') }}"><i class="fas fa-hand-holding-dollar mr-2 w-5 text-emerald-600"></i> Collect Live Payment</a>
-                  
-                  {% if session.get('is_admin') %}
-                  <div class="px-3 py-1.5 text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 border-b border-t mt-1">Billing & Invoicing</div>
-                  <a href="{{ url_for('bulk_invoice') }}"><i class="fas fa-file-invoice-dollar mr-2 w-5"></i> Bulk Invoicing Engine</a>
-                  <a href="{{ url_for('bulk_debit_term') }}"><i class="fas fa-sack-dollar mr-2 w-5"></i> Bulk Term Debiting</a>
-                  <a href="{{ url_for('bulk_post_fees') }}"><i class="fas fa-cloud-upload-alt mr-2 w-5"></i> Bulk Registry Posting</a>
-                  <a href="{{ url_for('reallocate_fee_payment') }}"><i class="fas fa-arrows-spin mr-2 w-5 text-orange-600"></i> Reallocate Payment</a>
-                  
-                  <div class="px-3 py-1.5 text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 border-b border-t mt-1">Structure Configuration</div>
-                  <a href="{{ url_for('fee_structures_overview') }}"><i class="fas fa-table-list mr-2 w-5 text-indigo-600"></i> View Fee Matrix</a>
-                  <a href="{{ url_for('create_yearly_fee_structure_route') }}"><i class="fas fa-wand-magic-sparkles mr-2 w-5 text-blue-500"></i> Setup Yearly Fees</a>
-                  <a href="{{ url_for('manage_fee_structures') }}"><i class="fas fa-gears mr-2 w-5 text-gray-600"></i> Manage Structures</a>
-                  <a href="{{ url_for('manage_voteheads') }}"><i class="fas fa-list-check mr-2 w-5"></i> Revenue Voteheads</a>
-                  <a href="{{ url_for('manage_student_groups') }}"><i class="fas fa-users-rectangle mr-2 w-5"></i> Billing Categories</a>
-                  <a href="{{ url_for('admin_fees_rollup') }}"><i class="fas fa-arrows-rotate mr-2 w-5"></i> Roll-up Arrears</a>
-                  
-                  <div class="px-3 py-1.5 text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 border-b border-t mt-1">Reconciliation & Aid</div>
-                  <a href="{{ url_for('fees_mpesa_reconcile') }}"><i class="fa-brands fa-m mr-2 w-5 text-green-600"></i> M-Pesa Recon</a>
-                  <a href="{{ url_for('fees_waiver_management') }}"><i class="fas fa-hand-holding-heart mr-2 w-5 text-pink-600"></i> Waivers & Aid</a>
-                  {% endif %}
-                </div>
-              </div>
-
-              <!-- Accounts & Finance -->
-              <div class="relative nav-group">
-                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'finance' in request.endpoint or 'reports' in request.path %}nav-active bg-blue-900{% endif %}">
-                  <i class="fas fa-vault"></i> Finance <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
-                </button>
-                <div class="nav-dropdown">
-                  <a href="{{ url_for('finance_dashboard') }}"><i class="fas fa-chart-pie mr-2 w-5"></i> Finance Hub</a>
-                  <a href="{{ url_for('manage_vouchers') }}"><i class="fas fa-file-invoice mr-2 w-5"></i> Payment Vouchers</a>
-                  <a href="{{ url_for('manage_budgets') }}"><i class="fas fa-chart-pie mr-2 w-5"></i> Budget Management</a>
-                  {% if session.get('is_admin') %}
-                  <div class="border-t my-1 text-[10px] font-bold text-gray-400 px-3 uppercase tracking-widest">Financial Reports</div>
-                  <a href="{{ url_for('fees_collection_report') }}"><i class="fas fa-magnifying-glass-chart mr-2 w-5"></i> Collection Summary</a>
-                  <a href="{{ url_for('fee_balances_report') }}"><i class="fas fa-user-tag mr-2 w-5"></i> Fees Balances</a>
-                  <a href="{{ url_for('trial_balance_report') }}"><i class="fas fa-balance-scale-left mr-2 w-5"></i> Trial Balance</a>
-                  <a href="{{ url_for('income_statement_report') }}"><i class="fas fa-chart-line mr-2 w-5"></i> Income Statement</a>
-                  <a href="{{ url_for('balance_sheet_report') }}"><i class="fas fa-file-signature mr-2 w-5"></i> Balance Sheet</a>
-                  {% endif %}
-                </div>
-              </div>
-              
-              <!-- Uniform Management -->
-              <div class="relative nav-group">
-                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'uniform' in request.endpoint or 'stock' in request.endpoint %}nav-active bg-blue-900{% endif %}">
-                  <i class="fas fa-tshirt"></i> Uniforms <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
-                </button>
-                <div class="nav-dropdown">
-                    <a href="{{ url_for('uniform_dashboard') }}"><i class="fas fa-chart-line mr-2 w-5"></i> Uniform Hub</a>
-                    <a href="{{ url_for('issue_uniform') }}"><i class="fas fa-receipt mr-2 w-5"></i> Issue Uniform</a>
-                    <a href="{{ url_for('manage_stock') }}"><i class="fas fa-boxes-stacked mr-2 w-5"></i> Inventory / Stock</a>
-                    {% if session.get('is_admin') %}
-                    <a href="{{ url_for('manage_uniform_items') }}"><i class="fas fa-tags mr-2 w-5"></i> Pricing & Items</a>
-                    {% endif %}
-                </div>
-              </div>
-              
-              <!-- Fleet Management -->
-              <div class="relative nav-group">
-                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'fleet' in request.endpoint or 'fuel' in request.endpoint %}nav-active bg-blue-900{% endif %}">
-                  <i class="fas fa-bus"></i> Fleet <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
-                </button>
-                <div class="nav-dropdown">
-                    <a href="{{ url_for('fleet_dashboard') }}"><i class="fas fa-gauge mr-2 w-5"></i> Fleet Hub</a>
-                    <a href="{{ url_for('record_fuel_invoice') }}"><i class="fas fa-gas-pump mr-2 w-5"></i> Fuel Tracking</a>
-                    <a href="{{ url_for('service_register') }}"><i class="fas fa-wrench mr-2 w-5"></i> Maintenance</a>
-                    {% if session.get('is_admin') %}
-                    <a href="{{ url_for('manage_buses') }}"><i class="fas fa-list mr-2 w-5"></i> Manage Vehicles</a>
-                    <a href="{{ url_for('manage_transport_routes') }}"><i class="fas fa-route mr-2 w-5"></i> Transport Routes</a>
-                    {% endif %}
-                </div>
-              </div>
-
-              <!-- Procurement & Supplies -->
-              <div class="relative nav-group">
-                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'procurement' in request.endpoint or 'po' in request.endpoint %}nav-active bg-blue-900{% endif %}">
-                  <i class="fas fa-truck-ramp-box"></i> Procurement <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
-                </button>
-                <div class="nav-dropdown">
-                    <a href="{{ url_for('procurement_dashboard') }}"><i class="fas fa-clipboard-list mr-2 w-5"></i> Procurement Hub</a>
-                    <a href="{{ url_for('create_purchase_order') }}"><i class="fas fa-file-invoice mr-2 w-5"></i> Create PO</a>
-                    <a href="{{ url_for('manage_suppliers') }}"><i class="fas fa-truck-field mr-2 w-5"></i> Suppliers</a>
-                </div>
-              </div>
-
-              <!-- Farm & Income -->
-              <div class="relative nav-group">
-                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'farm' in request.endpoint %}nav-active bg-blue-900{% endif %}">
-                  <i class="fas fa-tractor"></i> Farm & Income <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
-                </button>
-                <div class="nav-dropdown">
-                    <a href="{{ url_for('farm.dashboard') }}"><i class="fas fa-chart-pie mr-2 w-5"></i> Farm Dashboard</a>
-                    <a href="{{ url_for('farm.record_production') }}"><i class="fas fa-plus-circle mr-2 w-5"></i> Record Production</a>
-                    <a href="{{ url_for('farm.record_sale') }}"><i class="fas fa-cash-register mr-2 w-5"></i> Record Sale</a>
-                    <a href="{{ url_for('farm.farm_expenses') }}"><i class="fas fa-receipt mr-2 w-5"></i> Request Expense</a>
-                </div>
-              </div>
-              
-              <!-- System Admin -->
-              {% if session.get('is_admin') %}
-              <div class="relative nav-group">
-                <button class="px-3 py-2 rounded-lg transition hover:bg-blue-700 flex items-center gap-1 {% if 'manage_users' in request.endpoint or 'manage_term_dates' in request.endpoint or request.endpoint == 'admin_settings' %}nav-active bg-blue-900{% endif %}">
-                  <i class="fas fa-shield-halved"></i> Admin <i class="fas fa-chevron-down text-[10px] opacity-50"></i>
-                </button>
-                <div class="nav-dropdown">
-                    <a href="{{ url_for('admin_settings') }}"><i class="fas fa-sliders mr-2 w-5"></i> Settings Hub</a>
-                    <a href="{{ url_for('manage_users') }}"><i class="fas fa-user-gear mr-2 w-5"></i> User Management</a>
-                    <a href="{{ url_for('manage_term_dates') }}"><i class="fas fa-calendar-days mr-2 w-5"></i> Term Periods</a>
-                </div>
-              </div>
-              {% endif %}
-
-              {% if session.get('is_super_admin') %}
-              <a href="{{ url_for('manage_schools') }}" 
-                 class="px-3 py-2 rounded-lg transition hover:bg-blue-700 {% if request.endpoint == 'manage_schools' %}nav-active bg-blue-900{% endif %}">
-                <i class="fas fa-city"></i> SaaS Controls
-              </a>
-              {% endif %}
             {% endif %}
-          </div>
-        </nav>
-      </div>
+        {% endwith %}
 
-      <!-- Mobile Menu -->
-      <div id="mobile-menu" class="hidden md:hidden bg-blue-700 border-t border-blue-600">
-        <div class="flex flex-col p-4 space-y-4">
-          {% if session.get('logged_in') %}
-            <!-- Dashboard -->
-            <a href="{{ url_for('index') }}" class="text-white hover:text-blue-200 border-b border-blue-600 pb-2">
-              <i class="fas fa-home mr-1"></i> Home
-            </a>
+        <main class="container mx-auto px-4 py-8">
+            {% block content %}{% endblock %}
+        </main>
 
-            <!-- Academic -->
-            <div class="space-y-2">
-                <div class="text-blue-300 text-[10px] uppercase font-bold tracking-wider">Academic Management</div>
-                <a href="{{ url_for('manage_classes') }}" class="block text-white hover:text-blue-200 pl-2">
-                  <i class="fas fa-school mr-1 w-5"></i> Manage Classes
-                </a>
-                <a href="{{ url_for('allocate_teacher') }}" class="block text-white hover:text-blue-200 pl-2">
-                  <i class="fas fa-chalkboard-user mr-1 w-5"></i> Teacher Allocations
-                </a>
-                {% if session.get('is_admin') %}
-                <a href="{{ url_for('manage_streams') }}" class="block text-white hover:text-blue-200 pl-2">
-                  <i class="fas fa-stream mr-1 w-5"></i> Manage Streams
-                </a>
-                <a href="{{ url_for('promote_students') }}" class="block text-white hover:text-blue-200 pl-2">
-                    <i class="fas fa-arrow-up-right-dots mr-1 w-5"></i> Promotions
-                </a>
-                {% endif %}
-            </div>
-
-            <!-- Students -->
-            <div class="space-y-2">
-                <div class="text-blue-300 text-[10px] uppercase font-bold tracking-wider">Student Management</div>
-                <a href="{{ url_for('students_list') }}" class="block text-white hover:text-blue-200 pl-2">
-                  <i class="fas fa-users mr-1 w-5"></i> All Students
-                </a>
-                <a href="{{ url_for('admit_student') }}" class="block text-white hover:text-blue-200 pl-2">
-                  <i class="fas fa-user-plus mr-1 w-5"></i> Admit Student
-                </a>
-                <a href="/admin/student_subjects_select" class="block text-white hover:text-blue-200 pl-2">
-                  <i class="fas fa-book-open-reader mr-1 w-5"></i> Subject Enrollment
-                </a>
-            </div>
-
-            <!-- Uniform -->
-            <div class="space-y-2">
-                <div class="text-blue-300 text-[10px] uppercase font-bold tracking-wider">Uniform System</div>
-                <a href="{{ url_for('uniform_dashboard') }}" class="block text-white hover:text-blue-200 pl-2">
-                  <i class="fas fa-chart-line mr-1 w-5"></i> Uniform Hub
-                </a>
-                <a href="{{ url_for('issue_uniform') }}" class="block text-white hover:text-blue-200 pl-2">
-                    <i class="fas fa-receipt mr-1 w-5"></i> Issue Uniform
-                </a>
-                <a href="{{ url_for('manage_stock') }}" class="block text-white hover:text-blue-200 pl-2">
-                    <i class="fas fa-boxes-stacked mr-1 w-5"></i> Inventory
-                </a>
-            </div>
-
-            <!-- Fleet -->
-            <div class="space-y-2">
-                <div class="text-blue-300 text-[10px] uppercase font-bold tracking-wider">Fleet Management</div>
-                <a href="{{ url_for('fleet_dashboard') }}" class="block text-white hover:text-blue-200 pl-2">
-                  <i class="fas fa-gauge mr-1 w-5"></i> Fleet Hub
-                </a>
-                <a href="{{ url_for('service_register') }}" class="block text-white hover:text-blue-200 pl-2">
-                    <i class="fas fa-wrench mr-1 w-5"></i> Maintenance
-                </a>
-            </div>
-
-            <!-- Fees & Billing -->
-            <div class="space-y-2">
-                <div class="text-blue-300 text-[10px] uppercase font-bold tracking-wider">Fees & Billing</div>
-                <a href="{{ url_for('fees_dashboard') }}" class="block text-white hover:text-blue-200 pl-2">
-                  <i class="fas fa-gauge-high mr-1 w-5"></i> Fees Hub
-                </a>
-                <a href="{{ url_for('collect_fees') }}" class="block text-white hover:text-blue-200 pl-2">
-                  <i class="fas fa-hand-holding-dollar mr-1 w-5"></i> Collect Fees
-                </a>
-                {% if session.get('is_admin') %}
-                <a href="{{ url_for('manage_fee_structures') }}" class="block text-white hover:text-blue-200 pl-2">
-                  <i class="fas fa-gears mr-1 w-5"></i> Fee Structures
-                </a>
-                <a href="{{ url_for('bulk_invoice') }}" class="block text-white hover:text-blue-200 pl-2">
-                  <i class="fas fa-file-invoice-dollar mr-1 w-5"></i> Bulk Invoicing
-                </a>
-                {% endif %}
-            </div>
-
-            <!-- Finance & Accounts -->
-            <div class="space-y-2">
-                <div class="text-blue-300 text-[10px] uppercase font-bold tracking-wider">Accounts & Finance</div>
-                <a href="{{ url_for('finance_dashboard') }}" class="block text-white hover:text-blue-200 pl-2">
-                  <i class="fas fa-vault mr-1 w-5"></i> Finance Hub
-                </a>
-                <a href="{{ url_for('manage_vouchers') }}" class="block text-white hover:text-blue-200 pl-2">
-                  <i class="fas fa-file-invoice mr-1 w-5"></i> Payment Vouchers
-                </a>
-                {% if session.get('is_admin') %}
-                <a href="{{ url_for('income_statement_report') }}" class="block text-white hover:text-blue-200 pl-2">
-                    <i class="fas fa-chart-line mr-1 w-5"></i> Income Statement
-                </a>
-                <a href="{{ url_for('balance_sheet_report') }}" class="block text-white hover:text-blue-200 pl-2">
-                    <i class="fas fa-file-signature mr-1 w-5"></i> Balance Sheet
-                </a>
-                {% endif %}
-            </div>
-
-            <!-- Admin -->
-            {% if session.get('is_admin') %}
-            <div class="space-y-2">
-                <div class="text-blue-300 text-[10px] uppercase font-bold tracking-wider">Administration</div>
-                <a href="{{ url_for('admin_settings') }}" class="block text-white hover:text-blue-200 pl-2">
-                    <i class="fas fa-cog mr-1 w-5"></i> Settings
-                </a>
-                <a href="{{ url_for('manage_users') }}" class="block text-white hover:text-blue-200 pl-2">
-                    <i class="fas fa-user-cog mr-1 w-5"></i> Manage Users
-                </a>
-            </div>
-            {% endif %}
-
-            {% if session.get('is_super_admin') %}
-            <div class="space-y-2">
-              <div class="text-blue-300 text-[10px] uppercase font-bold tracking-wider">SaaS Controls</div>
-              <a href="{{ url_for('manage_schools') }}" class="block text-white hover:text-blue-200 pl-2">
-                <i class="fas fa-city mr-1 w-5"></i> Manage Schools
-              </a>
-            </div>
-            {% endif %}
-          {% endif %}
-        </div>
-      </div>
-    </header>
-
-    <!-- Flash Messages -->
-    <main class="max-w-7xl mx-auto p-4">
-      {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-          {% for category, message in messages %}
-            <div class="mb-4 p-4 rounded {% if category == 'error' %}bg-red-100 border border-red-400 text-red-700{% elif category == 'warning' %}bg-yellow-100 border border-yellow-400 text-yellow-700{% else %}bg-green-100 border border-green-400 text-green-700{% endif %}">
-              {{ message }}
-            </div>
-          {% endfor %}
-        {% endif %}
-      {% endwith %}
-
-      <!-- Page Content -->
-      {% block content %}{% endblock %}
-    </main>
-
-    <!-- Footer -->
-    <footer class="bg-gray-900 text-gray-300 text-center py-4 mt-8 no-print">
-      <p>&copy; 2025 SkoolTrack Pro - School Management System</p>
-    </footer>
+        <footer class="mt-auto py-8 text-center text-gray-400 text-sm">
+            <p>&copy; 2025 SkoolTrack Pro &bull; Enterprise Cloud</p>
+        </footer>
+    {% endif %}
 
     <script>
-      // Mobile menu toggle
-      document.getElementById('menu-btn').addEventListener('click', function() {
-        const menu = document.getElementById('mobile-menu');
-        menu.classList.toggle('hidden');
-      });
+        document.addEventListener('DOMContentLoaded', function() {
+            const menuBtn = document.getElementById('platform-menu-btn');
+            const sidebar = document.getElementById('platform-sidebar');
+            const backdrop = document.getElementById('platform-mobile-backdrop');
+            if(menuBtn && sidebar && backdrop) {
+                menuBtn.addEventListener('click', () => {
+                    sidebar.classList.toggle('-translate-x-full');
+                    backdrop.classList.toggle('hidden');
+                });
+                backdrop.addEventListener('click', () => {
+                    sidebar.classList.add('-translate-x-full');
+                    backdrop.classList.add('hidden');
+                });
+            }
+        });
     </script>
-  </body>
+</body>
 </html>

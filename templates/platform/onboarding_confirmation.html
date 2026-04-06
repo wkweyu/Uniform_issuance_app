@@ -1,0 +1,130 @@
+{% extends 'base.html' %}
+{% block platform_content %}
+<section class="mx-auto max-w-5xl space-y-6">
+  <div class="rounded-3xl bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 p-8 text-white shadow-lg">
+    <p class="text-sm font-semibold uppercase tracking-[0.2em] text-green-100">Provisioning Complete</p>
+    <h2 class="mt-3 text-3xl font-bold">Onboarding Complete</h2>
+    <p class="mt-3 max-w-2xl text-sm text-green-50">The tenant has been provisioned. Use the summary below to hand over the first login details and confirm the initial subscription state.</p>
+  </div>
+
+  <div class="grid gap-6 lg:grid-cols-3">
+    <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm lg:col-span-2">
+      <h3 class="text-lg font-semibold text-gray-900">Tenant Access Summary</h3>
+      <dl class="mt-4 grid gap-4 md:grid-cols-2">
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">School</dt>
+          <dd class="mt-1 text-lg font-semibold text-gray-900">{{ summary.school_name }}</dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">School Code</dt>
+          <dd class="mt-1 text-sm font-medium text-gray-800">{{ summary.school_code }}</dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">Admin Username</dt>
+          <dd class="mt-1 text-sm font-medium text-gray-800">{{ summary.admin_username or 'Not created' }}</dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">Temporary Password</dt>
+          <dd class="mt-1 text-sm font-medium text-gray-800">{{ summary.admin_password or 'Only available immediately after onboarding' }}</dd>
+        </div>
+        <div class="md:col-span-2">
+          <dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">Next Login URL</dt>
+          <dd class="mt-1 break-all text-sm font-medium text-blue-700"><a href="{{ summary.login_url }}" class="underline">{{ summary.login_url }}</a></dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">Subscription Status</dt>
+          <dd class="mt-1"><span class="inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-700">{{ summary.subscription_status or 'not provisioned' }}</span></dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">Writes Allowed</dt>
+          <dd class="mt-1 text-sm text-gray-700">{{ 'Yes' if status.subscription and status.subscription.status in ['trial', 'active'] else 'No' }}</dd>
+        </div>
+      </dl>
+
+      <div class="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <h4 class="text-sm font-semibold uppercase tracking-wide text-emerald-700">Copy Credentials</h4>
+            <p class="mt-1 text-sm text-emerald-800">Use the full handoff bundle below to share the tenant login package quickly.</p>
+          </div>
+          <button
+            type="button"
+            id="copy-credentials-btn"
+            class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+            data-copy-target="onboarding-credentials-bundle"
+          >
+            Copy Credentials
+          </button>
+        </div>
+        <textarea
+          id="onboarding-credentials-bundle"
+          readonly
+          class="mt-4 h-40 w-full rounded-xl border border-emerald-200 bg-white px-4 py-3 font-mono text-sm text-gray-800"
+        >School Name: {{ summary.school_name }}
+School Code: {{ summary.school_code }}
+Admin Username: {{ summary.admin_username or 'Not created' }}
+Temporary Password: {{ summary.admin_password or 'Only available immediately after onboarding' }}
+Login URL: {{ summary.login_url }}
+Subscription Status: {{ summary.subscription_status or 'not provisioned' }}</textarea>
+        <p id="copy-credentials-feedback" class="mt-2 text-xs font-medium text-emerald-700"></p>
+      </div>
+    </div>
+
+    <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+      <h3 class="text-lg font-semibold text-gray-900">Next Steps</h3>
+      <ol class="mt-4 space-y-3 text-sm text-gray-600">
+        <li>1. Give the school code, username, and temporary password to the tenant admin.</li>
+        <li>2. Ask the admin to sign in via the login URL and change the password immediately.</li>
+        <li>3. Confirm the subscription state before opening the tenant for operational use.</li>
+      </ol>
+      <div class="mt-6 flex flex-col gap-3">
+        <a href="{{ url_for('platform.onboarding_status', school_id=summary.school_id) }}" class="rounded-lg border border-gray-300 px-4 py-2 text-center text-sm font-semibold text-gray-700 hover:border-gray-400">Open JSON Status</a>
+        <a href="{{ url_for('platform.list_subscriptions') }}" class="rounded-lg bg-purple-600 px-4 py-2 text-center text-sm font-semibold text-white hover:bg-purple-700">Manage Subscription</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+    <h3 class="text-lg font-semibold text-gray-900">Provisioned Records</h3>
+    <div class="mt-4 grid gap-4 md:grid-cols-3 text-sm text-gray-700">
+      <div class="rounded-xl bg-gray-50 p-4">
+        <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">School Record</div>
+        <div class="mt-2">{{ status.school.name }} ({{ status.school.code }})</div>
+      </div>
+      <div class="rounded-xl bg-gray-50 p-4">
+        <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Admin User</div>
+        <div class="mt-2">{{ status.admin_user.username if status.admin_user else 'Not created' }}</div>
+      </div>
+      <div class="rounded-xl bg-gray-50 p-4">
+        <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Subscription</div>
+        <div class="mt-2">{{ status.subscription.status if status.subscription else 'Not provisioned' }}</div>
+      </div>
+    </div>
+  </div>
+</section>
+<script>
+  (function () {
+    const button = document.getElementById('copy-credentials-btn');
+    const feedback = document.getElementById('copy-credentials-feedback');
+    if (!button) {
+      return;
+    }
+
+    button.addEventListener('click', async function () {
+      const target = document.getElementById(button.dataset.copyTarget);
+      if (!target) {
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(target.value);
+        feedback.textContent = 'Credentials copied to clipboard.';
+      } catch (error) {
+        target.focus();
+        target.select();
+        feedback.textContent = 'Clipboard access failed. The credentials bundle is selected so you can copy it manually.';
+      }
+    });
+  })();
+</script>
+{% endblock %}

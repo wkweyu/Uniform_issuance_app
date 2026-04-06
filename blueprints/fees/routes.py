@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, g, jsonify, make_response
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from core.permissions import admin_required, login_required
 from blueprints.fees.services import FeesService, FeesError
 from blueprints.classes.services import ClassManagementService
@@ -8,6 +8,51 @@ import csv
 import io
 
 fees_bp = Blueprint('fees', __name__)
+
+
+def _required_text(value, field_name):
+    parsed = (value or '').strip()
+    if not parsed:
+        raise ValueError(f"{field_name} is required.")
+    return parsed
+
+
+def _required_int(value, field_name):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field_name} is required and must be a valid integer.")
+
+
+def _optional_int(value, field_name):
+    if value in (None, ''):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field_name} must be a valid integer.")
+
+
+def _parse_decimal(value, field_name, default=None):
+    if value in (None, ''):
+        if default is not None:
+            return Decimal(str(default))
+        raise ValueError(f"{field_name} is required and must be a valid number.")
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValueError(f"{field_name} must be a valid number.")
+
+
+def _build_fee_structure_items(votehead_ids, amounts):
+    items = []
+    for index, (votehead_id, amount) in enumerate(zip(votehead_ids, amounts), start=1):
+        if amount in (None, ''):
+            continue
+        parsed_amount = _parse_decimal(amount, f'amount[{index}]')
+        if parsed_amount > 0:
+            items.append({'votehead_id': _required_int(votehead_id, f'votehead_id[{index}]'), 'amount': float(parsed_amount)})
+    return items
 
 def get_db_connection():
     from core.db import get_db_connection
@@ -25,25 +70,9 @@ def fees_dashboard():
     service = FeesService(connection)
 
     today = datetime.now().date()
-
-    with connection.cursor() as cursor:
-        school_id = service.school_id
-        cursor.execute("SELECT SUM(amount) as total FROM fee_payments WHERE payment_date = %s AND status = 'COMPLETED' AND school_id = %s", (today, school_id))
-        today_total = cursor.fetchone()['total'] or 0
-
-        cursor.execute("SELECT SUM(amount) as total FROM fee_payments WHERE MONTH(payment_date) = MONTH(%s) AND YEAR(payment_date) = YEAR(%s) AND status = 'COMPLETED' AND school_id = %s", (today, today, school_id))
-        monthly_total = cursor.fetchone()['total'] or 0
-
-        cursor.execute("""
-            SELECT SUM(fl.balance_after) as total
-            FROM fee_ledger fl
-            WHERE fl.school_id = %s
-              AND fl.id IN (SELECT MAX(id) FROM fee_ledger WHERE school_id = %s GROUP BY admno)
-        """, (school_id, school_id))
-        total_arrears = cursor.fetchone()['total'] or 0
-
+    dashboard_totals = service.get_dashboard_totals(today)
     connection.close()
-    return render_template('fees_dashboard.html', today_total=today_total, monthly_total=monthly_total, total_arrears=total_arrears)
+    return render_template('fees_dashboard.html', **dashboard_totals)
 
 @fees_bp.route('/admin/fees/reports/collection')
 @login_required
@@ -80,9 +109,7 @@ def fee_balances_report():
 
         years = class_service.get_all_academic_years()
         classes = class_service.get_active_classes()
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT DISTINCT stream_code FROM classes WHERE stream_code IS NOT NULL AND stream_code != '' AND school_id = %s", (service.school_id,))
-            streams = [s['stream_code'] for s in cursor.fetchall()]
+        streams = service.get_distinct_stream_codes()
 
         return render_template('report_fee_balances.html',
                              data=data, years=years, classes=classes, streams=streams,
@@ -113,11 +140,13 @@ def manage_voteheads():
     if request.method == 'POST':
         try:
             service.create_votehead(
-                name=request.form.get('name').strip(),
-                priority=int(request.form.get('priority', 99)),
+                name=_required_text(request.form.get('name'), 'name'),
+                priority=_required_int(request.form.get('priority', 99), 'priority'),
                 description=request.form.get('description', '').strip()
             )
-            flash("✓ Votehead created.", "success")
+            flash("Votehead created.", "success")
+        except (ValueError, FeesError) as e:
+            flash(str(e), "error")
         except Exception as e:
             flash(str(e), "error")
 
@@ -134,11 +163,13 @@ def manage_student_groups():
 
     if request.method == 'POST':
         try:
-            with connection.cursor() as cursor:
-                cursor.execute("INSERT INTO student_groups (name, description, school_id) VALUES (%s, %s, %s)",
-                             (request.form.get('name').strip(), request.form.get('description').strip(), service.school_id))
-            connection.commit()
-            flash("✓ Student Group created.", "success")
+            service.create_student_group(
+                _required_text(request.form.get('name'), 'name'),
+                (request.form.get('description') or '').strip(),
+            )
+            flash("Student Group created.", "success")
+        except (ValueError, FeesError) as e:
+            flash(f"Error: {str(e)}", "error")
         except Exception as e:
             flash(f"Error: {str(e)}", "error")
 
@@ -163,8 +194,8 @@ def fees_mpesa_reconcile():
 @admin_required
 def api_import_mpesa():
     file = request.files.get('file')
-    if not file or not file.filename.endswith('.csv'):
-        return jsonify({'success': False, 'message': 'Invalid file format. Upload CSV'})
+    if not file or not (file.filename or '').lower().endswith('.csv'):
+        return jsonify({'success': False, 'message': 'Invalid file format. Upload CSV'}), 400
 
     transactions = []
     try:
@@ -179,16 +210,21 @@ def api_import_mpesa():
                 'transaction_time': row.get('Completion Time') or row.get('transaction_time')
             }
             if tx['transaction_no']: transactions.append(tx)
-    except Exception as e:
-        return jsonify({'success': False, 'message': f'Error parsing CSV: {str(e)}'})
+    except (UnicodeDecodeError, csv.Error, InvalidOperation, AttributeError, TypeError, ValueError) as e:
+        return jsonify({'success': False, 'message': f'Error parsing CSV: {str(e)}'}), 400
+
+    if not transactions:
+        return jsonify({'success': False, 'message': 'No valid transactions found in CSV.'}), 400
 
     connection = get_db_connection()
     service = FeesService(connection)
     try:
         summary = service.import_mpesa_statement(transactions)
         return jsonify({'success': True, 'summary': summary})
+    except FeesError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
     except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
+        return jsonify({'success': False, 'message': str(e)}), 500
     finally:
         connection.close()
 
@@ -202,22 +238,8 @@ def fees_waiver_management():
     try:
         categories = service.get_waiver_categories()
         years = class_service.get_all_academic_years()
-
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT sw.*, si.FName, si.SName, fwc.name as category_name, ay.year as year_name, utd.term_number
-                FROM student_waivers sw
-                JOIN studentinfo si ON sw.admno = si.AdmNo
-                JOIN fee_waiver_categories fwc ON sw.category_id = fwc.id
-                JOIN academic_years ay ON sw.academic_year_id = ay.id
-                JOIN uniform_term_dates utd ON sw.term_id = utd.id
-                WHERE sw.school_id = %s
-                ORDER BY sw.created_at DESC LIMIT 50
-            """, (service.school_id,))
-            recent_waivers = cursor.fetchall()
-
-            cursor.execute("SELECT * FROM uniform_term_dates WHERE school_id = %s ORDER BY start_date DESC LIMIT 10", (service.school_id,))
-            terms = cursor.fetchall()
+        recent_waivers = service.get_recent_waivers(limit=50)
+        terms = service.get_recent_terms(limit=10)
 
         return render_template('fee_waiver_management.html',
                              categories=categories, years=years, terms=terms, recent_waivers=recent_waivers)
@@ -232,13 +254,15 @@ def assign_waiver():
     service = FeesService(connection)
     try:
         service.assign_waiver_to_student(
-            admno=int(request.form.get('admno')),
-            category_id=int(request.form.get('category_id')),
-            year_id=int(request.form.get('year_id')),
-            term_id=int(request.form.get('term_id')),
+            admno=_required_int(request.form.get('admno'), 'admno'),
+            category_id=_required_int(request.form.get('category_id'), 'category_id'),
+            year_id=_required_int(request.form.get('year_id'), 'year_id'),
+            term_id=_required_int(request.form.get('term_id'), 'term_id'),
             user_id=session.get('userNo')
         )
-        flash("✓ Waiver assigned successfully.", "success")
+        flash("Waiver assigned successfully.", "success")
+    except ValueError as e:
+        flash(str(e), "error")
     except FeesError as e:
         flash(str(e), "error")
     finally:
@@ -257,20 +281,22 @@ def manage_fee_structures():
         try:
             votehead_ids = request.form.getlist('votehead_id')
             amounts = request.form.getlist('amount')
-            items = [{'votehead_id': int(vid), 'amount': float(amt)} for vid, amt in zip(votehead_ids, amounts) if amt and float(amt) > 0]
+            items = _build_fee_structure_items(votehead_ids, amounts)
 
             if not items: flash("Enter at least one votehead amount.", "error")
             else:
                 results = service.create_bulk_fee_structures(
-                    year_id=int(request.form.get('year_id')),
-                    term_id=int(request.form.get('term_id')),
+                    year_id=_required_int(request.form.get('year_id'), 'year_id'),
+                    term_id=_required_int(request.form.get('term_id'), 'term_id'),
                     class_groups=request.form.getlist('class_groups'),
                     categories=request.form.getlist('categories'),
                     items=items,
                     user_id=session['userNo'],
-                    class_ids=[int(cid) for cid in request.form.getlist('specific_classes')] if request.form.getlist('specific_classes') else None
+                    class_ids=[_required_int(cid, 'specific_classes') for cid in request.form.getlist('specific_classes')] if request.form.getlist('specific_classes') else None
                 )
-                flash(f"✓ {results['success']} structures created, {results['skipped']} skipped.", "success")
+                flash(f"{results['success']} structures created, {results['skipped']} skipped.", "success")
+        except (ValueError, FeesError) as e:
+            flash(str(e), "error")
         except Exception as e:
             flash(str(e), "error")
 
@@ -291,9 +317,7 @@ def manage_fee_structures():
 
     structures = sorted(grouped_structures.values(), key=lambda x: (x['year_name'], x['label']), reverse=True)
 
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT * FROM uniform_term_dates WHERE school_id = %s ORDER BY year DESC, term_number DESC", (service.school_id,))
-        terms = cursor.fetchall()
+    terms = service.get_recent_terms()
 
     context = {
         'structures': structures,
@@ -318,10 +342,12 @@ def edit_fee_structure(structure_id):
         try:
             votehead_ids = request.form.getlist('votehead_id')
             amounts = request.form.getlist('amount')
-            items = [{'votehead_id': int(vid), 'amount': float(amt)} for vid, amt in zip(votehead_ids, amounts) if amt and float(amt) > 0]
+            items = _build_fee_structure_items(votehead_ids, amounts)
             service.update_fee_structure(structure_id, items, session['userNo'])
-            flash("✓ Fee structure updated successfully.", "success")
+            flash("Fee structure updated successfully.", "success")
             return redirect(url_for('fees.manage_fee_structures'))
+        except (ValueError, FeesError) as e:
+            flash(str(e), "error")
         except Exception as e:
             flash(str(e), "error")
 
@@ -345,6 +371,8 @@ def delete_fee_structure(structure_id):
     try:
         service.delete_fee_structure(structure_id)
         flash("Fee structure deleted.", "info")
+    except FeesError as e:
+        flash(str(e), "error")
     except Exception as e:
         flash(str(e), "error")
     finally:
@@ -367,33 +395,19 @@ def fee_structure_card():
         ay = class_service.get_current_academic_year()
         year_id = ay['id'] if ay else None
 
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT id, term_number FROM uniform_term_dates WHERE academic_year_id = %s AND school_id = %s ORDER BY term_number", (year_id, service.school_id))
-        terms = cursor.fetchall()
+    terms = service.get_terms_for_academic_year(year_id)
 
     voteheads = service.get_voteheads()
     data = {v['id']: {'name': v['name'], 'terms': {t['id']: 0 for t in terms}, 'yearly': 0} for v in voteheads}
 
     is_locked = False
-    with connection.cursor() as cursor:
-        query = """
-            SELECT fsi.votehead_id, fsi.amount, fs.term_id, fs.is_locked
-            FROM fee_structure_items fsi
-            JOIN fee_structures fs ON fsi.fee_structure_id = fs.id
-            WHERE fs.academic_year_id = %s AND fs.student_category = %s AND fs.school_id = %s
-        """
-        params = [year_id, category, service.school_id]
-        if class_id:
-            query += " AND fs.class_id = %s"; params.append(class_id)
-        else:
-            query += " AND fs.class_group_code = %s AND (fs.class_id IS NULL OR fs.class_id = 0)"; params.append(group_code or 'all')
-        cursor.execute(query, params)
-        items = cursor.fetchall()
-        for item in items:
-            if item['votehead_id'] in data:
-                data[item['votehead_id']]['terms'][item['term_id']] = item['amount']
-                data[item['votehead_id']]['yearly'] += item['amount']
-                if item.get('is_locked'): is_locked = True
+    items = service.get_structure_card_items(year_id, category, class_id=int(class_id) if class_id else None, group_code=group_code)
+    for item in items:
+        if item['votehead_id'] in data:
+            data[item['votehead_id']]['terms'][item['term_id']] = item['amount']
+            data[item['votehead_id']]['yearly'] += item['amount']
+            if item.get('is_locked'):
+                is_locked = True
 
     filtered_data = {k: v for k, v in data.items() if v['yearly'] > 0}
     all_classes = class_service.get_active_classes()
@@ -427,14 +441,8 @@ def fee_structures_overview():
         ay = class_service.get_current_academic_year()
         year_id = ay['id'] if ay else None
 
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT id, term_number FROM uniform_term_dates WHERE academic_year_id = %s AND school_id = %s ORDER BY term_number", (year_id, service.school_id))
-        terms = cursor.fetchall()
-        cursor.execute("""
-            SELECT fs.class_group_code, fs.class_id, fs.student_category, fs.term_id, fs.total_amount, c.display_name as specific_class_name
-            FROM fee_structures fs LEFT JOIN classes c ON fs.class_id = c.classID WHERE fs.academic_year_id = %s AND fs.school_id = %s
-        """, (year_id, service.school_id))
-        rows = cursor.fetchall()
+    terms = service.get_terms_for_academic_year(year_id)
+    rows = service.get_structure_overview_rows(year_id)
 
     years = class_service.get_all_academic_years()
     term_ids = [t['id'] for t in terms]
@@ -455,8 +463,15 @@ def copy_fee_structure():
     connection = get_db_connection()
     service = FeesService(connection)
     try:
-        service.copy_fee_structure(int(request.form.get('from_structure_id')), int(request.form.get('target_year_id')), int(request.form.get('target_term_id')), session['userNo'])
-        flash("✓ Fee structure copied successfully.", "success")
+        service.copy_fee_structure(
+            _required_int(request.form.get('from_structure_id'), 'from_structure_id'),
+            _required_int(request.form.get('target_year_id'), 'target_year_id'),
+            _required_int(request.form.get('target_term_id'), 'target_term_id'),
+            session['userNo'],
+        )
+        flash("Fee structure copied successfully.", "success")
+    except (ValueError, FeesError) as e:
+        flash(str(e), "error")
     except Exception as e: flash(str(e), "error")
     finally: connection.close()
     return redirect(url_for('fees.manage_fee_structures'))
@@ -470,12 +485,13 @@ def create_yearly_fee_structure_route():
     class_service = ClassManagementService(connection, school_id=service.school_id)
     if request.method == 'POST':
         try:
-            year_id = int(request.form.get('year_id'))
-            class_id = int(request.form.get('class_id')) if request.form.get('class_id') else None
+            year_id = _required_int(request.form.get('year_id'), 'year_id')
+            class_id = _optional_int(request.form.get('class_id'), 'class_id')
             voteheads = service.get_voteheads()
             term_amounts = {v['id']: {f't{t}': request.form.get(f"v_{v['id']}_t{t}", 0) for t in [1,2,3]} for v in voteheads}
             service.create_yearly_fee_structure(year_id, class_id, request.form.get('group_code'), request.form.get('category'), term_amounts, session['userNo'])
-            flash("✓ Yearly fee structure updated.", "success")
+            flash("Yearly fee structure updated.", "success")
+        except (ValueError, FeesError) as e: flash(str(e), "error")
         except Exception as e: flash(str(e), "error")
         finally: connection.close(); return redirect(url_for('fees.fee_structures_overview'))
 
@@ -497,6 +513,7 @@ def toggle_structure_lock(structure_id):
     try:
         service.toggle_structure_lock(structure_id, request.form.get('lock') == '1')
         flash("Structure status updated.", "success")
+    except FeesError as e: flash(str(e), "error")
     except Exception as e: flash(str(e), "error")
     finally: connection.close()
     return redirect(request.referrer or url_for('fees.fee_structures_overview'))
@@ -512,30 +529,28 @@ def collect_fees():
     if request.method == 'POST':
         try:
             result = service.record_payment(
-                admno=int(request.form.get('admno')),
-                amount=Decimal(request.form.get('amount', '0')),
+                admno=_required_int(request.form.get('admno'), 'admno'),
+                amount=_parse_decimal(request.form.get('amount'), 'amount'),
                 mode=request.form.get('mode'),
                 reference=request.form.get('reference', '').strip(),
                 bank=request.form.get('bank', '').strip(),
                 date=request.form.get('date'),
-                year_id=int(request.form.get('year_id')),
-                term_id=int(request.form.get('term_id')),
+                year_id=_required_int(request.form.get('year_id'), 'year_id'),
+                term_id=_required_int(request.form.get('term_id'), 'term_id'),
                 user_id=session['userNo']
             )
-            flash(f"✓ Payment received. Receipt No: {result['receipt_no']}", "success")
+            flash(f"Payment received. Receipt No: {result['receipt_no']}", "success")
             return redirect(url_for('fees.print_fee_receipt', payment_id=result['payment_id']))
+        except (ValueError, FeesError) as e: flash(str(e), "error")
         except Exception as e: flash(str(e), "error")
 
     years = class_service.get_all_academic_years()
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT * FROM uniform_term_dates WHERE school_id = %s ORDER BY year DESC, term_number DESC", (service.school_id,))
-        terms = cursor.fetchall()
-        cursor.execute("SELECT id FROM uniform_term_dates WHERE CURDATE() BETWEEN start_date AND end_date AND school_id = %s LIMIT 1", (service.school_id,))
-        curr_term = cursor.fetchone()
+    terms = service.get_recent_terms()
+    curr_term_id = service.get_current_term_id()
 
     connection.close()
     return render_template('collect_fees.html', years=years, terms=terms, current_year_id=next((y['id'] for y in years if y['is_current']), None),
-                         current_term_id=curr_term['id'] if curr_term else None, now=datetime.now())
+                         current_term_id=curr_term_id, now=datetime.now())
 
 @fees_bp.route('/admin/fees/bulk_post', methods=['GET', 'POST'])
 @login_required
@@ -544,16 +559,39 @@ def bulk_post_fees():
     if request.method == 'POST':
         file = request.files.get('file')
         if not file: flash('Upload a CSV file.', 'error'); return redirect(url_for('fees.bulk_post_fees'))
-        connection = get_db_connection(); service = FeesService(connection); posted = 0
+        connection = get_db_connection(); service = FeesService(connection); posted = 0; row_errors = []
         try:
             stream = io.TextIOWrapper(file.stream, encoding='utf-8')
             reader = csv.DictReader(stream)
-            for row in reader:
+            for line_number, row in enumerate(reader, start=2):
                 try:
-                    service.record_payment(int(row['admno']), Decimal(row['amount']), row.get('mode', 'CASH'), row.get('reference','').strip(), row.get('bank','').strip(), row.get('date') or datetime.now().strftime('%Y-%m-%d'), int(row['year_id']), int(row['term_id']), session['userNo'])
+                    service.record_payment(
+                        _required_int(row.get('admno'), 'admno'),
+                        _parse_decimal(row.get('amount'), 'amount'),
+                        (row.get('mode') or 'CASH').strip() or 'CASH',
+                        (row.get('reference') or '').strip(),
+                        (row.get('bank') or '').strip(),
+                        (row.get('date') or datetime.now().strftime('%Y-%m-%d')).strip(),
+                        _required_int(row.get('year_id'), 'year_id'),
+                        _required_int(row.get('term_id'), 'term_id'),
+                        session['userNo'],
+                    )
                     posted += 1
-                except: continue
-            flash(f"✓ Bulk posting complete. Posted: {posted}", 'success')
+                except (ValueError, FeesError) as e:
+                    row_errors.append(f"Row {line_number}: {str(e)}")
+                except Exception as e:
+                    row_errors.append(f"Row {line_number}: {str(e)}")
+            if posted:
+                flash(f"Bulk posting complete. Posted: {posted}", 'success')
+            if row_errors:
+                preview = '; '.join(row_errors[:5])
+                if len(row_errors) > 5:
+                    preview = f"{preview}; and {len(row_errors) - 5} more"
+                flash(f"Bulk posting encountered {len(row_errors)} row error(s). {preview}", 'error')
+            if not posted and not row_errors:
+                flash('No rows found in CSV.', 'error')
+        except (UnicodeDecodeError, csv.Error) as e:
+            flash(f'Error parsing CSV: {str(e)}', 'error')
         finally: connection.close()
         return redirect(url_for('fees.fees_dashboard'))
     return render_template('bulk_post_fees.html')
@@ -566,14 +604,21 @@ def bulk_debit_term():
     service = FeesService(connection)
     class_service = ClassManagementService(connection, school_id=service.school_id)
     if request.method == 'POST':
-        count = service.bulk_invoice_classes([int(cid) for cid in request.form.getlist('class_ids')], int(request.form.get('year_id')), int(request.form.get('term_id')), session['userNo'])
-        connection.close()
-        flash(f"✓ Debited term fees for {count} students.", 'success')
-        return redirect(url_for('fees.fees_dashboard'))
+        try:
+            count = service.bulk_invoice_classes(
+                [_required_int(cid, 'class_ids') for cid in request.form.getlist('class_ids')],
+                _required_int(request.form.get('year_id'), 'year_id'),
+                _required_int(request.form.get('term_id'), 'term_id'),
+                session['userNo'],
+            )
+            flash(f"Debited term fees for {count} students.", 'success')
+        except (ValueError, FeesError) as e:
+            flash(str(e), 'error')
+        finally:
+            connection.close()
+        return redirect(url_for('fees.bulk_debit_term'))
 
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT * FROM uniform_term_dates WHERE school_id = %s ORDER BY year DESC, term_number DESC", (service.school_id,))
-        terms = cursor.fetchall()
+    terms = service.get_recent_terms()
     context = {'years': class_service.get_all_academic_years(), 'terms': terms, 'classes': class_service.get_active_classes()}
     connection.close()
     return render_template('bulk_debit_term.html', **context)
@@ -593,7 +638,10 @@ def api_statement():
     admno = request.args.get('admno')
     if not admno: return jsonify([])
     connection = get_db_connection(); service = FeesService(connection)
-    try: return jsonify(service.get_student_statement(int(admno), int(request.args.get('year_id')) if request.args.get('year_id') else None))
+    try:
+        return jsonify(service.get_student_statement(_required_int(admno, 'admno'), _optional_int(request.args.get('year_id'), 'year_id')))
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
     finally: connection.close()
 
 @fees_bp.route('/admin/fees/receipt/<int:payment_id>')
@@ -612,7 +660,11 @@ def print_fee_receipt(payment_id):
 @admin_required
 def fee_receipts_register():
     connection = get_db_connection(); service = FeesService(connection)
-    records = service.get_receipts_register(request.args.get('start_date'), request.args.get('end_date'), int(request.args.get('admno')) if request.args.get('admno') else None, request.args.get('mode'))
+    try:
+        records = service.get_receipts_register(request.args.get('start_date'), request.args.get('end_date'), _optional_int(request.args.get('admno'), 'admno'), request.args.get('mode'))
+    except ValueError as e:
+        flash(str(e), 'error')
+        records = []
     connection.close()
     return render_template('fee_receipts_register.html', records=records, filters=request.args)
 
@@ -624,7 +676,8 @@ def edit_fee_receipt(payment_id):
     if request.method == 'POST':
         try:
             service.update_payment_details(payment_id, request.form.get('mode'), request.form.get('reference'), request.form.get('bank'), request.form.get('date'), session['userNo'])
-            flash("✓ Receipt updated.", "success")
+            flash("Receipt updated.", "success")
+        except FeesError as e: flash(str(e), "error")
         except Exception as e: flash(str(e), "error")
         finally: connection.close(); return redirect(url_for('fees.fee_receipts_register'))
     receipt = service.get_receipt_details(payment_id)
@@ -638,7 +691,8 @@ def void_fee_receipt(payment_id):
     connection = get_db_connection(); service = FeesService(connection)
     try:
         service.void_receipt(payment_id, session['userNo'], request.form.get('reason', 'System cancellation'))
-        flash("✓ Receipt voided.", "success")
+        flash("Receipt voided.", "success")
+    except FeesError as e: flash(str(e), "error")
     except Exception as e: flash(str(e), "error")
     finally: connection.close()
     return redirect(request.referrer or url_for('fees.fee_receipts_register'))
@@ -656,8 +710,14 @@ def admin_fees_rollup():
     class_service = ClassManagementService(connection, school_id=service.school_id)
     if request.method == 'POST':
         try:
-            count = service.carry_forward_balances(int(request.form.get('old_year_id')), int(request.form.get('new_year_id')), 1, session['userNo'])
+            count = service.carry_forward_balances(
+                _required_int(request.form.get('old_year_id'), 'old_year_id'),
+                _required_int(request.form.get('new_year_id'), 'new_year_id'),
+                1,
+                session['userNo'],
+            )
             flash(f'Successfully rolled up balances for {count} students.', 'success')
+        except (ValueError, FeesError) as e: flash(f'Error: {str(e)}', 'error')
         except Exception as e: flash(f'Error: {str(e)}', 'error')
     years = class_service.get_all_academic_years()
     connection.close()
@@ -670,8 +730,15 @@ def reallocate_fee_payment():
     if request.method == 'POST':
         connection = get_db_connection(); service = FeesService(connection)
         try:
-            service.reallocate_payment(request.form.get('reference_no').strip(), request.form.get('from_admno'), request.form.get('to_admno'), session['userNo'], request.form.get('reason').strip())
-            flash("✓ Payment reallocated.", "success")
+            service.reallocate_payment(
+                _required_text(request.form.get('reference_no'), 'reference_no'),
+                _required_int(request.form.get('from_admno'), 'from_admno'),
+                _required_int(request.form.get('to_admno'), 'to_admno'),
+                session['userNo'],
+                _required_text(request.form.get('reason'), 'reason'),
+            )
+            flash("Payment reallocated.", "success")
+        except (ValueError, FeesError) as e: flash(str(e), "error")
         except Exception as e: flash(str(e), "error")
         finally: connection.close()
     return render_template('payment_reallocation.html')
@@ -685,13 +752,19 @@ def bulk_invoice():
     if request.method == 'POST':
         try:
             vh = request.form.get('specific_votehead_id'); amt = request.form.get('specific_amount')
-            count = service.bulk_invoice_classes([int(cid) for cid in request.form.getlist('class_ids')], int(request.form.get('year_id')), int(request.form.get('term_id')), session['userNo'], specific_votehead_id=int(vh) if vh else None, specific_amount=Decimal(amt) if amt else None)
-            flash(f"✓ Bulk invoicing complete. {count} students invoiced.", "success")
+            count = service.bulk_invoice_classes(
+                [_required_int(cid, 'class_ids') for cid in request.form.getlist('class_ids')],
+                _required_int(request.form.get('year_id'), 'year_id'),
+                _required_int(request.form.get('term_id'), 'term_id'),
+                session['userNo'],
+                specific_votehead_id=_optional_int(vh, 'specific_votehead_id'),
+                specific_amount=_parse_decimal(amt, 'specific_amount') if amt else None,
+            )
+            flash(f"Bulk invoicing complete. {count} students invoiced.", "success")
+        except (ValueError, FeesError) as e: flash(str(e), "error")
         except Exception as e: flash(str(e), "error")
 
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT * FROM uniform_term_dates WHERE school_id = %s ORDER BY year DESC, term_number DESC", (service.school_id,))
-        terms = cursor.fetchall()
+    terms = service.get_recent_terms()
     context = {'years': class_service.get_all_academic_years(), 'terms': terms, 'classes': class_service.get_active_classes(), 'voteheads': service.get_voteheads()}
     connection.close()
     return render_template('bulk_invoice.html', **context)

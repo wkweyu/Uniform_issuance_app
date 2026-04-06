@@ -15,6 +15,19 @@ SKIP_DB_ENV_CHECK=1 SQLALCHEMY_DATABASE_URI='sqlite:///:memory:' python3 -m pyte
 SKIP_DB_ENV_CHECK=1 SQLALCHEMY_DATABASE_URI='sqlite:///:memory:' python3 -m pytest tests/ -v -s
 ```
 
+## Phase 8 Smoke Test
+
+```bash
+cd /home/frappe-user/uniform\ issuance\ app
+source venv/bin/activate
+python3 platform_smoke_tests.py \
+    --base-url http://127.0.0.1:5000 \
+    --email '<super-admin-email>' \
+    --password '<super-admin-password>'
+```
+
+Use this after staging deployment and again after production deployment.
+
 ## Start Application
 
 ```bash
@@ -117,6 +130,11 @@ Request → Flask App → Auth Check → Platform Route → Service Layer → Da
 - [ ] SMTP credentials configured (optional)
 - [ ] Rate limiting enabled (optional)
 - [ ] Monitoring/alerting setup (optional)
+
+## Go-Live Runbook
+
+- Phase 8 rollout runbook: `PHASE8_CONTROL_PLANE_GO_LIVE.md`
+- Smoke test entrypoint: `platform_smoke_tests.py`
 
 ---
 

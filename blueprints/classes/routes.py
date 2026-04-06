@@ -1,8 +1,23 @@
-from blueprints.classes.services import ClassManagementService, PromotionError
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, g, jsonify
+from blueprints.classes.services import ClassManagementService, PromotionError, ValidationError
+from flask import Blueprint, render_template, request, redirect, url_for, session, g, jsonify, flash
+from core.flash_messages import flash_message
 from core.permissions import admin_required, login_required
 
 classes_bp = Blueprint('classes', __name__)
+
+
+def _required_text(value, field_name):
+    parsed = (value or '').strip()
+    if not parsed:
+        raise ValueError(f"{field_name} is required.")
+    return parsed
+
+
+def _required_int(value, field_name):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field_name} is required and must be a valid integer.")
 
 def get_db_connection():
     from core.db import get_db_connection
@@ -33,7 +48,7 @@ def manage_classes():
                              streams=streams,
                              **alerts)
     except Exception as e:
-        flash(f"Error loading dashboard: {str(e)}", "error")
+        flash_message(f"Error loading dashboard: {str(e)}", "error")
         return redirect(url_for('index'))
     finally:
         connection.close()
@@ -67,7 +82,7 @@ def delete_class(class_id):
     service = ClassManagementService(connection)
     try:
         service.delete_class(class_id)
-        return jsonify({'message': '✓ Class deleted successfully.'})
+        return jsonify({'message': 'Class deleted successfully.'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:
@@ -107,14 +122,16 @@ def create_class():
     if request.method == 'POST':
         try:
             service.create_class(
-                academic_year_id=int(request.form.get('academic_year_id')),
+                academic_year_id=_required_int(request.form.get('academic_year_id'), 'academic_year_id'),
                 class_group_code=request.form.get('class_group_code'),
                 stream_code=request.form.get('stream_code'),
                 created_by=session.get('userNo'),
                 class_name=request.form.get('class_name', '').strip()
             )
-            flash('✅ Class created successfully', 'success')
+            flash('Class created successfully', 'success')
             return redirect(url_for('classes.manage_classes'))
+        except (ValueError, ValidationError) as e:
+            flash(f'Error creating class: {str(e)}', 'error')
         except Exception as e:
             flash(f'Error creating class: {str(e)}', 'error')
 
@@ -133,13 +150,15 @@ def promote_students():
     if request.method == 'POST':
         try:
             result = service.promote_students(
-                old_class_id=int(request.form.get('old_class_id')),
-                new_class_id=int(request.form.get('new_class_id')),
+                old_class_id=_required_int(request.form.get('old_class_id'), 'old_class_id'),
+                new_class_id=_required_int(request.form.get('new_class_id'), 'new_class_id'),
                 promoted_by=session.get('userNo'),
                 notes=request.form.get('notes', '')
             )
             flash(result['message'], 'success')
             return redirect(url_for('classes.manage_classes'))
+        except (ValueError, ValidationError, PromotionError) as e:
+            flash(f'Promotion failed: {str(e)}', 'error')
         except Exception as e:
             flash(f'Promotion failed: {str(e)}', 'error')
 
@@ -158,13 +177,15 @@ def manage_streams():
         try:
             if action == 'add':
                 service.add_stream(request.form.get('stream_code'), request.form.get('stream_name'))
-                flash('✅ Stream added successfully', 'success')
+                flash('Stream added successfully', 'success')
             elif action == 'toggle':
-                service.toggle_stream(int(request.form.get('stream_id')))
-                flash('✅ Stream status updated', 'success')
+                service.toggle_stream(_required_int(request.form.get('stream_id'), 'stream_id'))
+                flash('Stream status updated', 'success')
             elif action == 'delete':
-                service.delete_stream(int(request.form.get('stream_id')))
-                flash('✅ Stream deleted successfully', 'success')
+                service.delete_stream(_required_int(request.form.get('stream_id'), 'stream_id'))
+                flash('Stream deleted successfully', 'success')
+        except (ValueError, ValidationError) as e:
+            flash(str(e), 'error')
         except Exception as e:
             flash(str(e), 'error')
 
@@ -179,10 +200,13 @@ def manage_class_subjects(class_id):
     connection = get_db_connection()
     service = ClassManagementService(connection)
     if request.method == 'POST':
-        subject_ids = [int(sid) for sid in request.form.getlist('subject_ids')]
-        service.allocate_subjects_to_class(class_id, subject_ids, compulsory=(request.form.get('is_compulsory') == 'on'))
-        flash('✅ Subjects allocated to class', 'success')
-        return redirect(url_for('classes.manage_classes'))
+        try:
+            subject_ids = [_required_int(sid, 'subject_ids') for sid in request.form.getlist('subject_ids')]
+            service.allocate_subjects_to_class(class_id, subject_ids, compulsory=(request.form.get('is_compulsory') == 'on'))
+            flash('Subjects allocated to class', 'success')
+            return redirect(url_for('classes.manage_classes'))
+        except (ValueError, ValidationError) as e:
+            flash(str(e), 'error')
 
     subjects = service.get_active_subjects()
     allocated = service.get_allocated_subject_ids(class_id)
@@ -197,19 +221,21 @@ def allocate_teacher():
     service = ClassManagementService(connection)
     if request.method == 'POST':
         try:
-            teacher_id = int(request.form.get('teacher_id'))
-            class_id = int(request.form.get('class_id'))
+            teacher_id = _required_int(request.form.get('teacher_id'), 'teacher_id')
+            class_id = _required_int(request.form.get('class_id'), 'class_id')
             subject_id = request.form.get('subject_id')
-            academic_year_id = int(request.form.get('academic_year_id'))
+            academic_year_id = _required_int(request.form.get('academic_year_id'), 'academic_year_id')
 
             if request.form.get('is_class_teacher') == 'on':
                 service.set_class_teacher(class_id, teacher_id, academic_year_id)
 
             if subject_id:
-                service.allocate_teacher_to_class_subject(teacher_id, class_id, int(subject_id), academic_year_id)
+                service.allocate_teacher_to_class_subject(teacher_id, class_id, _required_int(subject_id, 'subject_id'), academic_year_id)
 
-            flash('✅ Allocation successful', 'success')
+            flash('Allocation successful', 'success')
             return redirect(url_for('classes.manage_classes'))
+        except (ValueError, ValidationError) as e:
+            flash(f'Error: {str(e)}', 'error')
         except Exception as e:
             flash(f'Error: {str(e)}', 'error')
 
@@ -252,12 +278,17 @@ def manage_class_hub(class_id):
 @login_required
 @admin_required
 def api_update_class_subjects(class_id):
-    subject_ids = request.json.get('subject_ids', [])
+    data = request.get_json(silent=True) or {}
+    subject_ids = data.get('subject_ids')
+    if not isinstance(subject_ids, list):
+        return jsonify({'success': False, 'message': 'subject_ids must be a list.'}), 400
     connection = get_db_connection()
     service = ClassManagementService(connection)
     try:
-        service.allocate_subjects_to_class(class_id, [int(sid) for sid in subject_ids])
+        service.allocate_subjects_to_class(class_id, [_required_int(sid, 'subject_id') for sid in subject_ids])
         return jsonify({'success': True, 'message': 'Subjects updated successfully'})
+    except (TypeError, ValueError, ValidationError) as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
     finally:
@@ -267,16 +298,23 @@ def api_update_class_subjects(class_id):
 @login_required
 @admin_required
 def api_assign_teacher(class_id):
-    data = request.json
+    data = request.get_json(silent=True) or {}
+    if not data.get('teacher_id'):
+        return jsonify({'success': False, 'message': 'teacher_id is required.'}), 400
+    if not data.get('is_class_teacher') and not data.get('subject_id'):
+        return jsonify({'success': False, 'message': 'Either is_class_teacher or subject_id is required.'}), 400
     connection = get_db_connection()
     service = ClassManagementService(connection)
     try:
+        teacher_id = _required_int(data.get('teacher_id'), 'teacher_id')
         ay_id = service.get_class_academic_year_id(class_id)
         if data.get('is_class_teacher'):
-            service.set_class_teacher(class_id, int(data['teacher_id']), ay_id)
+            service.set_class_teacher(class_id, teacher_id, ay_id)
         if data.get('subject_id'):
-            service.allocate_teacher_to_class_subject(int(data['teacher_id']), class_id, int(data['subject_id']), ay_id)
+            service.allocate_teacher_to_class_subject(teacher_id, class_id, _required_int(data.get('subject_id'), 'subject_id'), ay_id)
         return jsonify({'success': True, 'message': 'Teacher assigned successfully'})
+    except (TypeError, ValueError, ValidationError) as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
     finally:
@@ -286,12 +324,18 @@ def api_assign_teacher(class_id):
 @login_required
 @admin_required
 def api_batch_enroll_subjects(class_id):
-    subject_ids = (request.json or {}).get('subject_ids')
+    data = request.get_json(silent=True) or {}
+    subject_ids = data.get('subject_ids')
+    if subject_ids is not None and not isinstance(subject_ids, list):
+        return jsonify({'success': False, 'message': 'subject_ids must be a list when provided.'}), 400
     connection = get_db_connection()
     service = ClassManagementService(connection)
     try:
-        count = service.enroll_all_students_in_class_subjects(class_id, subject_ids)
+        parsed_subject_ids = [_required_int(sid, 'subject_id') for sid in subject_ids] if subject_ids is not None else None
+        count = service.enroll_all_students_in_class_subjects(class_id, parsed_subject_ids)
         return jsonify({'success': True, 'message': f'Successfully enrolled students in {count} instances'})
+    except (TypeError, ValueError, ValidationError) as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
     finally:

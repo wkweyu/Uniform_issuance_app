@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block content %}
+{% block platform_content %}
 <h2>Tenant User Search</h2>
 <form method="get" action="{{ url_for('platform.tenant_user_search') }}" class="flex space-x-2 items-center mb-4">
   <input name="q" value="{{ q }}" placeholder="Search userNo, username, StaffID" class="border px-2 py-1 rounded w-80">

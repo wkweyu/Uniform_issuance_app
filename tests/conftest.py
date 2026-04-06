@@ -10,18 +10,19 @@ os.environ['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
 os.environ['FLASK_ENV'] = 'testing'
 
 # Now safe to import app
-from app import create_app, db
+from app import app as flask_app, db
 
 
 @pytest.fixture(scope='session')
 def app():
     """Create app instance configured for testing with SQLite."""
-    app = create_app()
+    app = flask_app
     app.config['TESTING'] = True
     # Explicitly override to ensure SQLite
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
     app.config['SQLALCHEMY_ECHO'] = False
     app.config['LOGLEVEL'] = 'DEBUG'
+    app.config['WTF_CSRF_ENABLED'] = False
 
     with app.app_context():
         db.create_all()

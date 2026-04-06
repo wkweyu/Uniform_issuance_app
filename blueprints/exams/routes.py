@@ -10,6 +10,13 @@ from datetime import datetime
 
 exams_bp = Blueprint('exams', __name__)
 
+
+def _required_int(value, field_name):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field_name} is required and must be a valid integer.")
+
 @exams_bp.route('/api/exams/<int:exam_id>/class/<int:class_id>/subjects-status')
 @login_required
 def get_exam_subjects_status(exam_id, class_id):
@@ -37,7 +44,7 @@ def add_grading_scale():
     connection = get_db_connection(); service = ExamManagementService(connection)
     try:
         service.create_grading_scale(request.form.get('name'), request.form.get('description'), request.form.get('is_default') == 'on')
-        flash("✅ Grading scale created.", "success")
+        flash("Grading scale created.", "success")
     except Exception as e: flash(str(e), "error")
     finally: connection.close()
     return redirect(url_for('exams.manage_grading_scales'))
@@ -61,7 +68,7 @@ def save_grading_details(scale_id):
         # Parse grades from form...
         grades = [] # logic to extract from form
         service.save_grading_details(scale_id, grades)
-        flash("✅ Grading rules updated.", "success")
+        flash("Grading rules updated.", "success")
     except Exception as e: flash(str(e), "error")
     finally: connection.close()
     return redirect(url_for('exams.edit_grading_scale', scale_id=scale_id))
@@ -86,10 +93,11 @@ def save_class_grading_assignments():
     try:
         for key, val in request.form.items():
             if key.startswith('class_'):
-                cid = int(key.split('_')[1])
-                sid = int(val) if val else None
+                cid = _required_int(key.split('_')[1], 'class_id')
+                sid = _required_int(val, 'scale_id') if val else None
                 service.assign_scale_to_class(cid, sid)
-        flash("✅ Grading scales assigned to classes.", "success")
+        flash("Grading scales assigned to classes.", "success")
+    except (ValueError, ExamManagementError) as e: flash(str(e), "error")
     except Exception as e: flash(str(e), "error")
     finally: connection.close()
     return redirect(url_for('exams.assign_class_grading'))
@@ -114,13 +122,14 @@ def create_exam():
         try:
             service.create_exam_series(
                 name=request.form.get('name'),
-                academic_year_id=int(request.form.get('academic_year_id')),
-                term=int(request.form.get('term')),
+                academic_year_id=_required_int(request.form.get('academic_year_id'), 'academic_year_id'),
+                term=_required_int(request.form.get('term'), 'term'),
                 created_by=session['userNo'],
-                class_ids=[int(cid) for cid in request.form.getlist('class_ids')]
+                class_ids=[_required_int(cid, 'class_ids') for cid in request.form.getlist('class_ids')]
             )
-            flash("✅ Exam series created.", "success")
+            flash("Exam series created.", "success")
             return redirect(url_for('exams.exams_dashboard'))
+        except (ValueError, ExamManagementError) as e: flash(str(e), "error")
         except Exception as e: flash(str(e), "error")
 
     years = class_service.get_all_academic_years()
@@ -135,7 +144,7 @@ def toggle_exam_status(exam_id):
     connection = get_db_connection(); service = ExamManagementService(connection)
     try:
         service.toggle_exam_lock(exam_id, request.form.get('lock') == 'true')
-        flash("✅ Exam status updated.", "success")
+        flash("Exam status updated.", "success")
     except Exception as e: flash(str(e), "error")
     finally: connection.close()
     return redirect(url_for('exams.exams_dashboard'))
@@ -166,11 +175,18 @@ def marks_entry(exam_id):
 @login_required
 @admin_required
 def api_save_mark(exam_id):
-    data = request.json
+    data = request.get_json(silent=True) or {}
+    student_id = str(data.get('student_id', '')).strip()
+    if not student_id:
+        return jsonify({'success': False, 'message': 'student_id is required.'}), 400
+    if data.get('subject_id') in (None, ''):
+        return jsonify({'success': False, 'message': 'subject_id is required.'}), 400
     connection = get_db_connection(); service = ExamManagementService(connection)
     try:
-        service.save_mark(exam_id, data['student_id'], int(data['subject_id']), data.get('mark'), data.get('is_absent', False), data.get('remarks', ''))
+        service.save_mark(exam_id, student_id, _required_int(data.get('subject_id'), 'subject_id'), data.get('mark'), data.get('is_absent', False), data.get('remarks', ''))
         return jsonify({'success': True})
+    except (TypeError, ValueError, ExamManagementError) as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
     except Exception as e: return jsonify({'success': False, 'message': str(e)}), 500
     finally: connection.close()
 

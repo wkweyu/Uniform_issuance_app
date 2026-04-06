@@ -3,6 +3,7 @@ from decimal import Decimal
 from datetime import datetime
 import pymysql
 from core.audit import audit_log
+from core.tenancy import require_current_school_id
 from flask import g
 
 class ProcurementError(Exception):
@@ -12,8 +13,14 @@ class ProcurementService:
     def __init__(self, connection, school_id: Optional[int] = None):
         self.connection = connection
         self.cursor = connection.cursor(pymysql.cursors.DictCursor)
-        self.school_id = school_id or g.school_id or 1
+        self.school_id = school_id or require_current_school_id()
         self._table_columns_cache = {}
+
+    def _required_int(self, value, field_name: str) -> int:
+        try:
+            return int(str(value).strip())
+        except (AttributeError, TypeError, ValueError):
+            raise ProcurementError(f"{field_name} must be a valid integer.")
 
     def _table_has_column(self, table_name: str, column_name: str) -> bool:
         if table_name not in self._table_columns_cache:
@@ -21,22 +28,147 @@ class ProcurementService:
             self._table_columns_cache[table_name] = {row['Field'] for row in self.cursor.fetchall()}
         return column_name in self._table_columns_cache[table_name]
 
+    def _require_school_scoped_tables(self, *table_names: str):
+        missing = [table_name for table_name in table_names if not self._table_has_column(table_name, 'school_id')]
+        if missing:
+            raise ProcurementError(
+                f"Tenant isolation requires school_id on: {', '.join(missing)}. Run the tenancy migrations before using this procurement path."
+            )
+
+    def _assert_supplier_belongs_to_school(self, supplier_id: int):
+        self._require_school_scoped_tables('suppliers')
+        self.cursor.execute(
+            "SELECT supplierID FROM suppliers WHERE supplierID = %s AND school_id = %s LIMIT 1",
+            (supplier_id, self.school_id),
+        )
+        if not self.cursor.fetchone():
+            raise ProcurementError("Supplier not found for the active school.")
+
+    def _assert_account_belongs_to_school(self, account_id: int):
+        self._require_school_scoped_tables('finance_accounts')
+        self.cursor.execute(
+            "SELECT id FROM finance_accounts WHERE id = %s AND school_id = %s LIMIT 1",
+            (account_id, self.school_id),
+        )
+        if not self.cursor.fetchone():
+            raise ProcurementError("Selected account does not belong to the active school.")
+
+    def _assert_department_belongs_to_school(self, department_id: int):
+        self._require_school_scoped_tables('staffdepts')
+        self.cursor.execute(
+            "SELECT deptID FROM staffdepts WHERE deptID = %s AND school_id = %s LIMIT 1",
+            (department_id, self.school_id),
+        )
+        if not self.cursor.fetchone():
+            raise ProcurementError("Department not found for the active school.")
+
+    def _assert_academic_year_belongs_to_school(self, academic_year_id: int):
+        self.cursor.execute(
+            "SELECT id FROM academic_years WHERE id = %s AND school_id = %s LIMIT 1",
+            (academic_year_id, self.school_id),
+        )
+        if not self.cursor.fetchone():
+            raise ProcurementError("Academic year not found for the active school.")
+
+    def _assert_asset_belongs_to_school(self, asset_id: int):
+        self._require_school_scoped_tables('assets_registry')
+        self.cursor.execute(
+            "SELECT id FROM assets_registry WHERE id = %s AND school_id = %s LIMIT 1",
+            (asset_id, self.school_id),
+        )
+        if not self.cursor.fetchone():
+            raise ProcurementError("Asset not found for the active school.")
+
+    def _assert_purchase_order_belongs_to_school(self, po_id: int) -> Dict:
+        self._require_school_scoped_tables('purchase_orders')
+        self.cursor.execute(
+            "SELECT * FROM purchase_orders WHERE id = %s AND school_id = %s LIMIT 1",
+            (po_id, self.school_id),
+        )
+        po = self.cursor.fetchone()
+        if not po:
+            raise ProcurementError("Purchase order not found")
+        return po
+
+    def _assert_purchase_order_item_belongs_to_school(self, po_item_id: int, po_id: Optional[int] = None) -> Dict:
+        self._require_school_scoped_tables('purchase_order_items')
+        query = "SELECT * FROM purchase_order_items WHERE id = %s AND school_id = %s"
+        params = [po_item_id, self.school_id]
+        if po_id is not None:
+            query += " AND po_id = %s"
+            params.append(po_id)
+        query += " LIMIT 1"
+        self.cursor.execute(query, tuple(params))
+        item = self.cursor.fetchone()
+        if not item:
+            raise ProcurementError("Purchase order item not found for the active school.")
+        return item
+
+    def get_departments(self) -> List[Dict]:
+        self._require_school_scoped_tables('staffdepts')
+        self.cursor.execute("SELECT * FROM staffdepts WHERE school_id = %s ORDER BY dept", (self.school_id,))
+        return self.cursor.fetchall()
+
+    def get_academic_years(self) -> List[Dict]:
+        self.cursor.execute("SELECT * FROM academic_years WHERE school_id = %s ORDER BY year DESC", (self.school_id,))
+        return self.cursor.fetchall()
+
+    def get_current_academic_year_id(self) -> Optional[int]:
+        self.cursor.execute("SELECT id FROM academic_years WHERE is_current = 1 AND school_id = %s LIMIT 1", (self.school_id,))
+        row = self.cursor.fetchone()
+        return row['id'] if row else None
+
+    def get_purchase_order_status_counts(self) -> List[Dict]:
+        self._require_school_scoped_tables('purchase_orders')
+        self.cursor.execute(
+            "SELECT status, COUNT(*) as count FROM purchase_orders WHERE school_id = %s GROUP BY status",
+            (self.school_id,),
+        )
+        return self.cursor.fetchall()
+
+    def get_supplier_by_id(self, supplier_id: int) -> Optional[Dict]:
+        self._require_school_scoped_tables('suppliers')
+        self.cursor.execute(
+            "SELECT * FROM suppliers WHERE supplierID = %s AND school_id = %s",
+            (supplier_id, self.school_id),
+        )
+        return self.cursor.fetchone()
+
+    def get_stock_items(self) -> List[Dict]:
+        self.cursor.execute(
+            "SELECT item_id, item_name, current_stock FROM item_stock WHERE school_id = %s ORDER BY item_name",
+            (self.school_id,),
+        )
+        return self.cursor.fetchall()
+
+    def get_uniform_items_with_stock(self) -> List[Dict]:
+        self.cursor.execute(
+            "SELECT DISTINCT p.item_name, s.item_id, COALESCE(s.current_stock, 0) as current_stock FROM uniform_prices p LEFT JOIN item_stock s ON p.item_name = s.item_name AND p.school_id = s.school_id WHERE p.school_id = %s ORDER BY p.item_name",
+            (self.school_id,),
+        )
+        return self.cursor.fetchall()
+
+    def get_purchase_order_payments(self, po_id: int) -> List[Dict]:
+        self._require_school_scoped_tables('supplier_payments')
+        self.cursor.execute(
+            "SELECT * FROM supplier_payments WHERE po_id = %s AND school_id = %s ORDER BY payment_date DESC",
+            (po_id, self.school_id),
+        )
+        return self.cursor.fetchall()
+
     # =========================================================================
     # 1. SUPPLIERS
     # =========================================================================
 
     def get_suppliers(self, active_only: bool = True) -> List[Dict]:
         """Fetch all suppliers from the existing suppliers table."""
+        self._require_school_scoped_tables('suppliers')
         query = "SELECT * FROM suppliers"
-        params = []
-        conditions = []
-        if self._table_has_column('suppliers', 'school_id'):
-            conditions.append("school_id = %s")
-            params.append(self.school_id)
+        params = [self.school_id]
+        conditions = ["school_id = %s"]
         if active_only:
             conditions.append("in_operation = 'Y'")
-        if conditions:
-            query += " WHERE " + " AND ".join(conditions)
+        query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY company ASC"
         self.cursor.execute(query, params)
         return self.cursor.fetchall()
@@ -45,17 +177,12 @@ class ProcurementService:
     def create_supplier(self, company: str, contact_person: str, email: str, phone: str, address: str, cert_no: str = "", pin_no: str = "") -> int:
         """Create a new supplier in the existing schema."""
         try:
+            self._require_school_scoped_tables('suppliers')
             # Note: mobilePhone maps to mobilePhone in table
-            if self._table_has_column('suppliers', 'school_id'):
-                self.cursor.execute("""
-                    INSERT INTO suppliers (company, contact_person, email, mobilePhone, address, cert_no, pin_no, in_operation, school_id)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, 'Y', %s)
-                """, (company, contact_person, email, phone, address, cert_no, pin_no, self.school_id))
-            else:
-                self.cursor.execute("""
-                    INSERT INTO suppliers (company, email, mobilePhone, address, cert_no, pin_no, in_operation)
-                    VALUES (%s, %s, %s, %s, %s, %s, 'Y')
-                """, (company, email, phone, address, cert_no, pin_no))
+            self.cursor.execute("""
+                INSERT INTO suppliers (company, contact_person, email, mobilePhone, address, cert_no, pin_no, in_operation, school_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 'Y', %s)
+            """, (company, contact_person, email, phone, address, cert_no, pin_no, self.school_id))
             self.connection.commit()
             return self.cursor.lastrowid
         except Exception as e:
@@ -70,13 +197,18 @@ class ProcurementService:
     def create_requisition(self, department_id: int, items: List[Dict], user_id: int, justification: str = "", category: str = "General", academic_year_id: int = None) -> Dict:
         """Create an internal request for items."""
         try:
+            self._require_school_scoped_tables('procurement_requisitions', 'procurement_requisition_items')
+            self._assert_department_belongs_to_school(department_id)
             self.connection.begin()
             
             # Get current academic year if not provided
             if not academic_year_id:
                 self.cursor.execute("SELECT id FROM academic_years WHERE is_current = 1 AND school_id = %s LIMIT 1", (self.school_id,))
                 ay = self.cursor.fetchone()
-                academic_year_id = ay['id'] if ay else 1
+                if not ay:
+                    raise ProcurementError("No current academic year is configured for this school.")
+                academic_year_id = ay['id']
+            self._assert_academic_year_belongs_to_school(academic_year_id)
 
             # Generate Req number
             year_short = datetime.now().strftime('%y')
@@ -124,6 +256,7 @@ class ProcurementService:
     @audit_log('update_requisition_status')
     def update_requisition_status(self, req_id: int, status: str, user_id: int) -> bool:
         try:
+            self._require_school_scoped_tables('procurement_requisitions')
             approved_at = datetime.now() if status == 'APPROVED' else None
             self.cursor.execute("""
                 UPDATE procurement_requisitions 
@@ -138,6 +271,7 @@ class ProcurementService:
 
     def get_requisition_details(self, req_id: int) -> Dict:
         """Fetch a specific requisition with its items."""
+        self._require_school_scoped_tables('procurement_requisitions', 'procurement_requisition_items')
         self.cursor.execute("""
             SELECT r.*, u.username as requester_name, d.dept as department_name,
                    appr.username as approved_by_name
@@ -160,6 +294,8 @@ class ProcurementService:
     def convert_requisition_to_po(self, req_id: int, supplier_id: int, user_id: int) -> Dict:
         """Convert an APPROVED requisition into a Purchase Order."""
         try:
+            self._require_school_scoped_tables('procurement_requisitions', 'procurement_requisition_items', 'purchase_orders', 'purchase_order_items')
+            self._assert_supplier_belongs_to_school(supplier_id)
             self.connection.begin()
             
             # 1. Validate requisition
@@ -207,48 +343,40 @@ class ProcurementService:
         Items: [{'description': str, 'quantity': decimal, 'unit_price': decimal}]
         """
         try:
+            self._require_school_scoped_tables('purchase_orders', 'purchase_order_items')
+            self._assert_supplier_belongs_to_school(supplier_id)
+            if department_id:
+                self._assert_department_belongs_to_school(department_id)
             self.connection.begin()
             
             if not academic_year_id:
                 self.cursor.execute("SELECT id FROM academic_years WHERE is_current = 1 AND school_id = %s LIMIT 1", (self.school_id,))
                 ay = self.cursor.fetchone()
-                academic_year_id = ay['id'] if ay else 1
+                if not ay:
+                    raise ProcurementError("No current academic year is configured for this school.")
+                academic_year_id = ay['id']
+            self._assert_academic_year_belongs_to_school(academic_year_id)
 
             # Generate PO number
             year_short = datetime.now().strftime('%y')
-            if self._table_has_column('purchase_orders', 'school_id'):
-                self.cursor.execute("SELECT COUNT(*) as count FROM purchase_orders WHERE YEAR(created_at) = YEAR(CURDATE()) AND school_id = %s", (self.school_id,))
-            else:
-                self.cursor.execute("SELECT COUNT(*) as count FROM purchase_orders WHERE YEAR(created_at) = YEAR(CURDATE())")
+            self.cursor.execute("SELECT COUNT(*) as count FROM purchase_orders WHERE YEAR(created_at) = YEAR(CURDATE()) AND school_id = %s", (self.school_id,))
             count = self.cursor.fetchone()['count'] + 1
             po_number = f"PO-{count:04d}-{year_short}"
             
             total_amount = sum(Decimal(str(item['quantity'])) * Decimal(str(item['unit_price'])) for item in items)
             
-            if self._table_has_column('purchase_orders', 'school_id'):
-                self.cursor.execute("""
-                    INSERT INTO purchase_orders (po_number, supplier_id, order_date, total_amount, status, notes, created_by, category, academic_year_id, department_id, school_id)
-                    VALUES (%s, %s, %s, %s, 'DRAFT', %s, %s, %s, %s, %s, %s)
-                """, (po_number, supplier_id, order_date, total_amount, notes, user_id, category, academic_year_id, department_id, self.school_id))
-            else:
-                self.cursor.execute("""
-                    INSERT INTO purchase_orders (po_number, supplier_id, order_date, total_amount, status, notes, created_by, category, academic_year_id, department_id)
-                    VALUES (%s, %s, %s, %s, 'DRAFT', %s, %s, %s, %s, %s)
-                """, (po_number, supplier_id, order_date, total_amount, notes, user_id, category, academic_year_id, department_id))
+            self.cursor.execute("""
+                INSERT INTO purchase_orders (po_number, supplier_id, order_date, total_amount, status, notes, created_by, category, academic_year_id, department_id, school_id)
+                VALUES (%s, %s, %s, %s, 'DRAFT', %s, %s, %s, %s, %s, %s)
+            """, (po_number, supplier_id, order_date, total_amount, notes, user_id, category, academic_year_id, department_id, self.school_id))
             
             po_id = self.cursor.lastrowid
             
             for item in items:
-                if self._table_has_column('purchase_order_items', 'school_id'):
-                    self.cursor.execute("""
-                        INSERT INTO purchase_order_items (po_id, item_id, description, quantity, unit_price, school_id)
-                        VALUES (%s, %s, %s, %s, %s, %s)
-                    """, (po_id, item.get('item_id'), item['description'], item['quantity'], item['unit_price'], self.school_id))
-                else:
-                    self.cursor.execute("""
-                        INSERT INTO purchase_order_items (po_id, item_id, description, quantity, unit_price)
-                        VALUES (%s, %s, %s, %s, %s)
-                    """, (po_id, item.get('item_id'), item['description'], item['quantity'], item['unit_price']))
+                self.cursor.execute("""
+                    INSERT INTO purchase_order_items (po_id, item_id, description, quantity, unit_price, school_id)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (po_id, item.get('item_id'), item['description'], item['quantity'], item['unit_price'], self.school_id))
             
             self.connection.commit()
             return {'id': po_id, 'po_number': po_number}
@@ -260,13 +388,12 @@ class ProcurementService:
     def update_purchase_order(self, po_id: int, supplier_id: int, order_date: str, items: List[Dict], notes: str = "") -> bool:
         """Update an existing PO. Only allowed if status is DRAFT or PENDING_APPROVAL."""
         try:
+            self._require_school_scoped_tables('purchase_orders', 'purchase_order_items')
+            self._assert_supplier_belongs_to_school(supplier_id)
             self.connection.begin()
             
             # Check status
-            if self._table_has_column('purchase_orders', 'school_id'):
-                self.cursor.execute("SELECT status FROM purchase_orders WHERE id = %s AND school_id = %s", (po_id, self.school_id))
-            else:
-                self.cursor.execute("SELECT status FROM purchase_orders WHERE id = %s", (po_id,))
+            self.cursor.execute("SELECT status FROM purchase_orders WHERE id = %s AND school_id = %s", (po_id, self.school_id))
             po = self.cursor.fetchone()
             if not po:
                 raise ProcurementError("Purchase order not found")
@@ -277,36 +404,20 @@ class ProcurementService:
             total_amount = sum(Decimal(str(item['quantity'])) * Decimal(str(item['unit_price'])) for item in items)
             
             # Update header
-            if self._table_has_column('purchase_orders', 'school_id'):
-                self.cursor.execute("""
-                    UPDATE purchase_orders 
-                    SET supplier_id = %s, order_date = %s, total_amount = %s, notes = %s
-                    WHERE id = %s AND school_id = %s
-                """, (supplier_id, order_date, total_amount, notes, po_id, self.school_id))
-            else:
-                self.cursor.execute("""
-                    UPDATE purchase_orders 
-                    SET supplier_id = %s, order_date = %s, total_amount = %s, notes = %s
-                    WHERE id = %s
-                """, (supplier_id, order_date, total_amount, notes, po_id))
+            self.cursor.execute("""
+                UPDATE purchase_orders 
+                SET supplier_id = %s, order_date = %s, total_amount = %s, notes = %s
+                WHERE id = %s AND school_id = %s
+            """, (supplier_id, order_date, total_amount, notes, po_id, self.school_id))
             
             # Refresh items: Delete old and insert new (simplest way for dynamic items)
-            if self._table_has_column('purchase_order_items', 'school_id'):
-                self.cursor.execute("DELETE FROM purchase_order_items WHERE po_id = %s AND school_id = %s", (po_id, self.school_id))
-            else:
-                self.cursor.execute("DELETE FROM purchase_order_items WHERE po_id = %s", (po_id,))
+            self.cursor.execute("DELETE FROM purchase_order_items WHERE po_id = %s AND school_id = %s", (po_id, self.school_id))
             
             for item in items:
-                if self._table_has_column('purchase_order_items', 'school_id'):
-                    self.cursor.execute("""
-                        INSERT INTO purchase_order_items (po_id, item_id, description, quantity, unit_price, school_id)
-                        VALUES (%s, %s, %s, %s, %s, %s)
-                    """, (po_id, item.get('item_id'), item['description'], item['quantity'], item['unit_price'], self.school_id))
-                else:
-                    self.cursor.execute("""
-                        INSERT INTO purchase_order_items (po_id, item_id, description, quantity, unit_price)
-                        VALUES (%s, %s, %s, %s, %s)
-                    """, (po_id, item.get('item_id'), item['description'], item['quantity'], item['unit_price']))
+                self.cursor.execute("""
+                    INSERT INTO purchase_order_items (po_id, item_id, description, quantity, unit_price, school_id)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (po_id, item.get('item_id'), item['description'], item['quantity'], item['unit_price'], self.school_id))
             
             self.connection.commit()
             return True
@@ -318,12 +429,10 @@ class ProcurementService:
     def delete_purchase_order(self, po_id: int) -> bool:
         """Delete a PO. Only allowed if status is DRAFT."""
         try:
+            self._require_school_scoped_tables('purchase_orders', 'purchase_order_items')
             self.connection.begin()
             
-            if self._table_has_column('purchase_orders', 'school_id'):
-                self.cursor.execute("SELECT status FROM purchase_orders WHERE id = %s AND school_id = %s", (po_id, self.school_id))
-            else:
-                self.cursor.execute("SELECT status FROM purchase_orders WHERE id = %s", (po_id,))
+            self.cursor.execute("SELECT status FROM purchase_orders WHERE id = %s AND school_id = %s", (po_id, self.school_id))
             po = self.cursor.fetchone()
             if not po:
                 raise ProcurementError("Purchase order not found")
@@ -332,14 +441,8 @@ class ProcurementService:
                 raise ProcurementError(f"Cannot delete PO in {po['status']} status")
                 
             # items will be deleted via CASCADE FK if set, but let's be explicit if not
-            if self._table_has_column('purchase_order_items', 'school_id'):
-                self.cursor.execute("DELETE FROM purchase_order_items WHERE po_id = %s AND school_id = %s", (po_id, self.school_id))
-            else:
-                self.cursor.execute("DELETE FROM purchase_order_items WHERE po_id = %s", (po_id,))
-            if self._table_has_column('purchase_orders', 'school_id'):
-                self.cursor.execute("DELETE FROM purchase_orders WHERE id = %s AND school_id = %s", (po_id, self.school_id))
-            else:
-                self.cursor.execute("DELETE FROM purchase_orders WHERE id = %s", (po_id,))
+            self.cursor.execute("DELETE FROM purchase_order_items WHERE po_id = %s AND school_id = %s", (po_id, self.school_id))
+            self.cursor.execute("DELETE FROM purchase_orders WHERE id = %s AND school_id = %s", (po_id, self.school_id))
             
             self.connection.commit()
             return True
@@ -349,22 +452,15 @@ class ProcurementService:
 
     def get_purchase_orders(self, status: Optional[str] = None, po_number: Optional[str] = None, supplier_id: Optional[int] = None) -> List[Dict]:
         """Fetch all purchase orders with optional filters."""
-        po_has_school_id = self._table_has_column('purchase_orders', 'school_id')
-        suppliers_has_school_id = self._table_has_column('suppliers', 'school_id')
+        self._require_school_scoped_tables('purchase_orders', 'suppliers')
         query = """
             SELECT po.*, s.company as supplier_name, u.username as created_by_name
             FROM purchase_orders po
-            JOIN suppliers s ON po.supplier_id = s.supplierID
-            LEFT JOIN users u ON po.created_by = u.userNo
+            JOIN suppliers s ON po.supplier_id = s.supplierID AND po.school_id = s.school_id
+            LEFT JOIN users u ON po.created_by = u.userNo AND po.school_id = u.school_id
         """
-        params = []
-        conditions = []
-        if po_has_school_id:
-            conditions.append("po.school_id = %s")
-            params.append(self.school_id)
-        elif suppliers_has_school_id:
-            conditions.append("s.school_id = %s")
-            params.append(self.school_id)
+        params = [self.school_id]
+        conditions = ["po.school_id = %s"]
         
         if status:
             conditions.append("po.status = %s")
@@ -383,54 +479,35 @@ class ProcurementService:
 
     def get_po_details(self, po_id: int) -> Dict:
         """Fetch a specific PO with its items and received quantities."""
-        po_has_school_id = self._table_has_column('purchase_orders', 'school_id')
-        suppliers_has_school_id = self._table_has_column('suppliers', 'school_id')
+        self._require_school_scoped_tables('purchase_orders', 'suppliers', 'purchase_order_items', 'procurement_grn_items', 'procurement_grns')
         query = """
             SELECT po.*, s.company as supplier_name, s.email as supplier_email, s.mobilePhone as supplier_phone,
                    u.username as created_by_name
             FROM purchase_orders po
-            JOIN suppliers s ON po.supplier_id = s.supplierID
-            LEFT JOIN users u ON po.created_by = u.userNo
-            WHERE po.id = %s
+            JOIN suppliers s ON po.supplier_id = s.supplierID AND po.school_id = s.school_id
+            LEFT JOIN users u ON po.created_by = u.userNo AND po.school_id = u.school_id
+            WHERE po.id = %s AND po.school_id = %s
         """
-        params = [po_id]
-        if po_has_school_id:
-            query += " AND po.school_id = %s"
-            params.append(self.school_id)
-        elif suppliers_has_school_id:
-            query += " AND s.school_id = %s"
-            params.append(self.school_id)
-        self.cursor.execute(query, tuple(params))
+        self.cursor.execute(query, (po_id, self.school_id))
         po = self.cursor.fetchone()
         
         if not po:
             return None
             
         # Get items with total received quantity
-        poi_has_school_id = self._table_has_column('purchase_order_items', 'school_id')
-        grn_items_has_school_id = self._table_has_column('procurement_grn_items', 'school_id')
         items_query = """
             SELECT poi.*, 
                    COALESCE(SUM(gi.quantity_received), 0) as total_received
             FROM purchase_order_items poi
-            LEFT JOIN procurement_grn_items gi ON poi.id = gi.po_item_id
+            LEFT JOIN procurement_grn_items gi ON poi.id = gi.po_item_id AND poi.school_id = gi.school_id
         """
-        if poi_has_school_id and grn_items_has_school_id:
-            items_query += " AND poi.school_id = gi.school_id"
-        items_query += " WHERE poi.po_id = %s"
-        item_params = [po_id]
-        if poi_has_school_id:
-            items_query += " AND poi.school_id = %s"
-            item_params.append(self.school_id)
+        items_query += " WHERE poi.po_id = %s AND poi.school_id = %s"
         items_query += " GROUP BY poi.id"
-        self.cursor.execute(items_query, tuple(item_params))
+        self.cursor.execute(items_query, (po_id, self.school_id))
         po['po_items'] = self.cursor.fetchall()
         
         # Get associated GRNs
-        if self._table_has_column('procurement_grns', 'school_id'):
-            self.cursor.execute("SELECT * FROM procurement_grns WHERE po_id = %s AND school_id = %s", (po_id, self.school_id))
-        else:
-            self.cursor.execute("SELECT * FROM procurement_grns WHERE po_id = %s", (po_id,))
+        self.cursor.execute("SELECT * FROM procurement_grns WHERE po_id = %s AND school_id = %s", (po_id, self.school_id))
         po['grns'] = self.cursor.fetchall()
         
         return po
@@ -439,7 +516,16 @@ class ProcurementService:
     def record_grn(self, po_id: int, received_by: int, items: List[Dict], delivery_note_ref: str = "", notes: str = "") -> str:
         """Record a partial or full delivery (GRN). Updates stock for each item."""
         try:
+            self._require_school_scoped_tables(
+                'purchase_orders',
+                'purchase_order_items',
+                'procurement_grns',
+                'procurement_grn_items',
+                'item_stock',
+                'stock_movements',
+            )
             self.connection.begin()
+            self._assert_purchase_order_belongs_to_school(po_id)
             
             # Generate GRN number
             year_short = datetime.now().strftime('%y')
@@ -460,15 +546,13 @@ class ProcurementService:
                 
                 if qty_received <= 0:
                     continue
+
+                poi = self._assert_purchase_order_item_belongs_to_school(po_item_id, po_id=po_id)
                     
                 self.cursor.execute("""
                     INSERT INTO procurement_grn_items (grn_id, po_item_id, quantity_received, school_id)
                     VALUES (%s, %s, %s, %s)
                 """, (grn_id, po_item_id, qty_received, self.school_id))
-                
-                # Fetch original item info for stock update
-                self.cursor.execute("SELECT description, item_id FROM purchase_order_items WHERE id = %s AND school_id = %s", (po_item_id, self.school_id))
-                poi = self.cursor.fetchone()
                 
                 # Update Stock (Re-using robust logic from before)
                 item_id = poi.get('item_id')
@@ -524,12 +608,17 @@ class ProcurementService:
     def update_po_status(self, po_id: int, status: str, user_id: int) -> bool:
         """Update status and post to GL if RECEIVED (Accrual Basis)."""
         try:
+            self._require_school_scoped_tables(
+                'purchase_orders',
+                'purchase_order_items',
+                'finance_transactions',
+                'finance_ledger_entries',
+                'item_stock',
+                'stock_movements',
+            )
             self.connection.begin()
             
-            self.cursor.execute("SELECT * FROM purchase_orders WHERE id = %s AND school_id = %s", (po_id, self.school_id))
-            po = self.cursor.fetchone()
-            if not po:
-                raise ProcurementError("Purchase order not found")
+            po = self._assert_purchase_order_belongs_to_school(po_id)
 
             # Post Invoice to GL when goods are received
             if status == 'RECEIVED' and po['status'] != 'RECEIVED':
@@ -600,7 +689,7 @@ class ProcurementService:
                         self.cursor.execute("SELECT current_stock FROM item_stock WHERE item_id = %s AND school_id = %s", (item_id, self.school_id))
                         curr_stock_row = self.cursor.fetchone()
                         curr_stock = curr_stock_row['current_stock'] if curr_stock_row else 0
-                        qty = int(item['quantity'])
+                        qty = self._required_int(item.get('quantity'), 'quantity')
                         new_stock = curr_stock + qty
                         
                         # Update stock
@@ -649,7 +738,10 @@ class ProcurementService:
     def record_po_payment(self, po_id: int, amount: Decimal, mode: str, reference: str, date: str, user_id: int, source_account_id: int) -> bool:
         """Record a partial or full payment for a PO, clearing liability in GL."""
         try:
+            self._require_school_scoped_tables('purchase_orders', 'supplier_payments', 'finance_transactions', 'finance_ledger_entries')
             self.connection.begin()
+            self._assert_account_belongs_to_school(source_account_id)
+            po = self._assert_purchase_order_belongs_to_school(po_id)
             
             # 1. Insert into supplier_payments
             self.cursor.execute("""
@@ -658,10 +750,6 @@ class ProcurementService:
             """, (po_id, amount, date, mode, reference, user_id, self.school_id))
             
             # 2. Update PO payment status
-            self.cursor.execute("SELECT total_amount, po_number, supplier_id FROM purchase_orders WHERE id = %s AND school_id = %s", (po_id, self.school_id))
-            po = self.cursor.fetchone()
-            if not po:
-                raise ProcurementError("Purchase order not found")
             po_num = po['po_number']
             
             self.cursor.execute("SELECT SUM(amount) as total_paid FROM supplier_payments WHERE po_id = %s AND school_id = %s", (po_id, self.school_id))
@@ -711,6 +799,8 @@ class ProcurementService:
 
     def get_vendor_statement(self, supplier_id: int, start_date: str, end_date: str) -> List[Dict]:
         """Fetch all ledger transactions for a vendor to produce a statement."""
+        self._require_school_scoped_tables('suppliers', 'finance_transactions', 'finance_ledger_entries')
+        self._assert_supplier_belongs_to_school(supplier_id)
         # First, ensure we get a clean running balance by fetching ALL history up to start_date if needed, 
         # but for this implementation we return the requested range.
         self.cursor.execute("""
@@ -737,6 +827,10 @@ class ProcurementService:
     def register_asset(self, data: Dict, user_id: int) -> int:
         """Register a new fixed asset."""
         try:
+            self._require_school_scoped_tables('assets_registry')
+            po_id = data.get('po_id')
+            if po_id:
+                self._assert_purchase_order_belongs_to_school(int(po_id))
             self.cursor.execute("""
                 INSERT INTO assets_registry 
                 (asset_name, tag_number, category, purchase_date, purchase_value, 
@@ -746,7 +840,7 @@ class ProcurementService:
                 data['asset_name'], data.get('tag_number'), data['category'],
                 data['purchase_date'], data['purchase_value'],
                 data.get('location'), data.get('condition_status', 'NEW'),
-                data.get('po_id'), user_id, self.school_id
+                po_id, user_id, self.school_id
             ))
             self.connection.commit()
             return self.cursor.lastrowid
@@ -756,6 +850,7 @@ class ProcurementService:
 
     def get_assets(self, filters: Dict = None) -> List[Dict]:
         """Fetch assets with optional filtering."""
+        self._require_school_scoped_tables('assets_registry')
         query = "SELECT a.*, u.username as creator_name FROM assets_registry a JOIN users u ON a.created_by = u.userNo AND a.school_id = u.school_id WHERE a.school_id = %s"
         params = [self.school_id]
         if filters:
@@ -774,6 +869,7 @@ class ProcurementService:
     def update_asset_condition(self, asset_id: int, new_condition: Dict, user_id: int) -> bool:
         """Update asset condition or location."""
         try:
+            self._assert_asset_belongs_to_school(asset_id)
             self.cursor.execute("""
                 UPDATE assets_registry 
                 SET condition_status = %s, location = %s, updated_at = CURRENT_TIMESTAMP
@@ -791,6 +887,7 @@ class ProcurementService:
 
     def get_budgets(self, academic_year_id: int) -> List[Dict]:
         """Fetch all budgets for a given academic year."""
+        self._require_school_scoped_tables('procurement_budgets', 'staffdepts')
         self.cursor.execute("""
             SELECT b.*, d.dept as department_name, ay.year as year_name
             FROM procurement_budgets b
@@ -803,6 +900,9 @@ class ProcurementService:
     def set_budget(self, department_id: int, academic_year_id: int, category: str, amount: Decimal) -> bool:
         """Create or update a departmental budget."""
         try:
+            self._require_school_scoped_tables('procurement_budgets')
+            self._assert_department_belongs_to_school(department_id)
+            self._assert_academic_year_belongs_to_school(academic_year_id)
             self.cursor.execute("""
                 INSERT INTO procurement_budgets (department_id, academic_year_id, category, allocated_amount, school_id)
                 VALUES (%s, %s, %s, %s, %s)
@@ -848,9 +948,7 @@ class ProcurementService:
         """
         # We define "Due" by order_date because we don't have a formal "due_date" 
         # but in schools, it's usually 30 days from order/invoice.
-        po_has_school_id = self._table_has_column('purchase_orders', 'school_id')
-        suppliers_has_school_id = self._table_has_column('suppliers', 'school_id')
-        payments_has_school_id = self._table_has_column('supplier_payments', 'school_id')
+        self._require_school_scoped_tables('purchase_orders', 'suppliers', 'supplier_payments')
 
         query = """
             SELECT 
@@ -862,23 +960,19 @@ class ProcurementService:
                 SUM(CASE WHEN DATEDIFF(CURDATE(), po.order_date) > 90 THEN (po.total_amount - COALESCE(payments.paid, 0)) ELSE 0 END) as bucket_91_plus,
                 SUM(po.total_amount - COALESCE(payments.paid, 0)) as total_owed
             FROM purchase_orders po
-            JOIN suppliers s ON po.supplier_id = s.supplierID
+            JOIN suppliers s ON po.supplier_id = s.supplierID AND po.school_id = s.school_id
             LEFT JOIN (
                 SELECT po_id,
                        SUM(amount) as paid
                 FROM supplier_payments
+                WHERE school_id = %s
                 GROUP BY po_id
             ) payments ON po.id = payments.po_id
             WHERE po.status IN ('ORDERED', 'RECEIVED', 'PARTIAL') 
               AND po.payment_status != 'PAID'
+              AND po.school_id = %s
         """
-        params = []
-        if po_has_school_id:
-            query += " AND po.school_id = %s"
-            params.append(self.school_id)
-        elif suppliers_has_school_id:
-            query += " AND s.school_id = %s"
-            params.append(self.school_id)
+        params = [self.school_id, self.school_id]
         query += " GROUP BY s.supplierID HAVING total_owed > 0 ORDER BY total_owed DESC"
         self.cursor.execute(query, tuple(params))
         return self.cursor.fetchall()

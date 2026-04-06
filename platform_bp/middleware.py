@@ -6,6 +6,8 @@ def register_platform_middleware(app):
     def resolve_platform_context():
         # Set a platform-specific context if platform_user is logged in
         g.platform_user_id = session.get('platform_user_id')
+        g.platform_current_user = None
+        g.platform_user_loaded = False
         # For tenant resolution prefer session school_id (existing app behavior)
         g.current_school_id = session.get('school_id')
 

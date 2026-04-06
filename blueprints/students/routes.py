@@ -1,9 +1,11 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, g, jsonify
 from core.permissions import admin_required, login_required
+from core.tenancy import require_current_school_id
 from blueprints.students.services import StudentService
 from blueprints.fees.services import FeesService
 from blueprints.exams.services import ExamManagementService
 from blueprints.classes.services import ClassManagementService
+from datetime import date, datetime
 import csv
 import io
 
@@ -12,6 +14,12 @@ students_bp = Blueprint('students', __name__)
 def get_db_connection():
     from core.db import get_db_connection
     return get_db_connection()
+
+def _required_int(value, field_name):
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        raise ValueError(f'{field_name} must be a valid integer.')
 
 def get_current_term_and_year():
     from core.helpers import get_current_term_and_year
@@ -79,7 +87,7 @@ def admit_student():
                                 custom_items=[{'votehead_id': votehead_id, 'votehead_name': votehead_name, 'amount': route_data['amount']}]
                             )
 
-                flash(f"✓ Student admitted successfully. ID: {student_data['admno']}", "success")
+                flash(f"Student admitted successfully. ID: {student_data['admno']}", "success")
                 return redirect(url_for('print_admission_form', admno=student_data['admno']))
         except Exception as e:
             flash(f"Error during admission: {str(e)}", "error")
@@ -181,7 +189,7 @@ def edit_student(admno):
 
         try:
             service.update_student(admno, student_data, parent_data, class_id, academic_year_id)
-            flash(f"✓ Student profile updated successfully.", "success")
+            flash("Student profile updated successfully.", "success")
             return redirect(url_for('students.student_profile', admno=admno))
         except Exception as e:
             flash(f"Error updating profile: {str(e)}", "error")
@@ -297,7 +305,7 @@ def toggle_student_status(admno):
 @login_required
 def student_fee_statement(admno):
     connection = get_db_connection()
-    fees_service = FeesService(connection, school_id=g.school_id or 1)
+    fees_service = FeesService(connection, school_id=require_current_school_id())
     service = StudentService(connection)
     statement = fees_service.get_student_statement(admno)
     balance = fees_service.get_student_balance(admno)
@@ -354,12 +362,14 @@ def enroll_student_subjects(student_id):
     class_service = ClassManagementService(connection, school_id=service.school_id)
 
     if request.method == 'POST':
-        class_allocation_id = int(request.form.get('class_allocation_id'))
-        subject_ids = [int(sid) for sid in request.form.getlist('subject_ids')]
         try:
+            class_allocation_id = _required_int(request.form.get('class_allocation_id'), 'class_allocation_id')
+            subject_ids = [_required_int(sid, 'subject_id') for sid in request.form.getlist('subject_ids')]
             class_service.enroll_student_in_subjects(class_allocation_id=class_allocation_id, subject_ids=subject_ids)
-            flash('✅ Student enrolled in subjects', 'success')
+            flash('Student enrolled in subjects', 'success')
             return redirect(url_for('manage_classes'))
+        except ValueError as e:
+            flash(f'Error enrolling student: {str(e)}', 'error')
         except Exception as e:
             flash(f'Error enrolling student: {str(e)}', 'error')
         finally:
@@ -388,16 +398,17 @@ def enroll_student_subjects(student_id):
 @login_required
 @admin_required
 def api_add_students(class_id):
-    data = request.json
-    student_ids = data.get('student_ids', [])
+    data = request.get_json(silent=True) or {}
+    student_ids = data.get('student_ids')
+    if not isinstance(student_ids, list) or not student_ids:
+        return jsonify({'success': False, 'message': 'student_ids must be a non-empty list.'}), 400
     connection = get_db_connection()
-    service = StudentService(connection)
-    class_service = ClassManagementService(connection, school_id=service.school_id)
+    class_service = ClassManagementService(connection)
     try:
-        class_data = service.get_class_details(class_id)
-        ay_id = class_data['academic_year_id'] if class_data else None
-        count = class_service.allocate_students_to_class(class_id, [int(sid) for sid in student_ids], ay_id)
+        count = class_service.allocate_students_to_class(class_id, [int(sid) for sid in student_ids])
         return jsonify({'success': True, 'message': f'Successfully added {count} students'})
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
     finally:
@@ -421,19 +432,20 @@ def api_get_student_subjects(allocation_id):
 @login_required
 @admin_required
 def api_update_student_subjects():
-    data = request.json
-    allocation_id = int(data.get('allocation_id'))
-    subject_ids = [int(sid) for sid in data.get('subject_ids', [])]
+    data = request.get_json(silent=True) or {}
+    if 'allocation_id' not in data:
+        return jsonify({'success': False, 'message': 'allocation_id is required.'}), 400
+    subject_ids = data.get('subject_ids')
+    if not isinstance(subject_ids, list):
+        return jsonify({'success': False, 'message': 'subject_ids must be a list.'}), 400
     connection = get_db_connection()
-    service = StudentService(connection)
-    class_service = ClassManagementService(connection, school_id=service.school_id)
+    class_service = ClassManagementService(connection)
     try:
-        # Business logic here is still a bit thick, but it's calling services
-        with connection.cursor() as cursor:
-            cursor.execute("UPDATE student_subjects SET is_active = FALSE WHERE class_allocation_id = %s AND school_id = %s", (allocation_id, service.school_id))
-        connection.commit()
-        class_service.enroll_student_in_subjects(allocation_id, subject_ids)
+        allocation_id = _required_int(data.get('allocation_id'), 'allocation_id')
+        class_service.replace_student_subject_enrollments(allocation_id, [_required_int(sid, 'subject_id') for sid in subject_ids])
         return jsonify({'success': True, 'message': 'Student subjects updated successfully'})
+    except (TypeError, ValueError) as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
     finally:
@@ -444,11 +456,12 @@ def api_update_student_subjects():
 @admin_required
 def api_remove_student(allocation_id):
     connection = get_db_connection()
-    service = StudentService(connection)
-    class_service = ClassManagementService(connection, school_id=service.school_id)
+    class_service = ClassManagementService(connection)
     try:
         class_service.remove_student_from_class(allocation_id)
         return jsonify({'success': True, 'message': 'Student removed from class'})
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
     finally:
@@ -458,25 +471,11 @@ def api_remove_student(allocation_id):
 def print_admission_form(admno):
     """Generate printable admission form."""
     connection = get_db_connection()
-    cursor = connection.cursor()
+    service = StudentService(connection)
 
     try:
         # 1. Fetch student and basic info
-        school_id = g.school_id or 1
-        cursor.execute("""
-            SELECT
-                s.*,
-                CONCAT(COALESCE(s.FName, ''), ' ', COALESCE(s.MName, ''), ' ', COALESCE(s.SName, '')) as Fullname,
-                c.display_name as class_name,
-                tr.name as route_name,
-                tr.amount as route_amount
-            FROM studentinfo s
-            LEFT JOIN class_allocation ca ON s.AdmNo = ca.student_id AND ca.is_current = TRUE
-            LEFT JOIN classes c ON ca.class_id = c.classID
-            LEFT JOIN transport_routes tr ON s.route_id = tr.id
-            WHERE s.AdmNo = %s AND s.school_id = %s
-        """, (admno, school_id))
-        student_res = cursor.fetchone()
+        student_res = service.get_admission_form_profile(admno)
 
         if not student_res:
             flash("Student not found", "error")
@@ -485,7 +484,7 @@ def print_admission_form(admno):
         # Helper for date conversion
         def to_date(date_val):
             if not date_val: return None
-            if isinstance(date_val, (datetime, datetime.date)): return date_val
+            if isinstance(date_val, (datetime, date)): return date_val
             try:
                 return datetime.strptime(str(date_val), '%Y-%m-%d')
             except:
@@ -508,15 +507,7 @@ def print_admission_form(admno):
         }
 
         # 2. Parent Info
-        school_id = g.school_id or 1
-        cursor.execute("""
-            SELECT pName, phone1, phone2, email, address, hometown
-            FROM parentinfo WHERE admno = %s AND school_id = %s
-        """, (admno, school_id))
-        parent = cursor.fetchone()
-        if not parent and student_res['parentID']:
-            cursor.execute("SELECT pName, phone1, phone2, email, address, hometown FROM parentinfo WHERE parentid = %s AND school_id = %s LIMIT 1", (student_res['parentID'], school_id))
-            parent = cursor.fetchone()
+        parent = service.get_parent_contact_for_student(admno, student_res['parentID'])
 
         # 3. Route Info
         route = None
@@ -529,17 +520,7 @@ def print_admission_form(admno):
         # 4. Siblings
         siblings = []
         if student_res['parentID'] and str(student_res['parentID']) != '0':
-            cursor.execute("""
-                SELECT
-                    s.AdmNo,
-                    CONCAT(COALESCE(s.FName, ''), ' ', COALESCE(s.SName, '')) as Fullname,
-                    c.display_name as class_name
-                FROM studentinfo s
-                LEFT JOIN class_allocation ca ON s.AdmNo = ca.student_id AND ca.is_current = TRUE
-                LEFT JOIN classes c ON ca.class_id = c.classID
-                WHERE s.parentID = %s AND s.AdmNo != %s
-            """, (student_res['parentID'], admno))
-            sib_res = cursor.fetchall()
+            sib_res = service.get_sibling_profiles(student_res['parentID'], admno)
             for sib in sib_res:
                 siblings.append({
                     'Fullname': sib['Fullname'].strip().replace('  ', ' ') if sib['Fullname'] else "Sibling",

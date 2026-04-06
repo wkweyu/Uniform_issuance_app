@@ -21,11 +21,11 @@
         </div>
         <div>
             <label class="block text-[10px] uppercase font-black text-gray-400 mb-1">From Date</label>
-            <input type="date" name="date_from" value="{{ date_from }}" class="w-full border rounded px-3 py-1.5 text-xs">
+            <input type="date" name="date_from" value="{{ date_from }}" title="From date" class="w-full border rounded px-3 py-1.5 text-xs">
         </div>
         <div>
             <label class="block text-[10px] uppercase font-black text-gray-400 mb-1">To Date</label>
-            <input type="date" name="date_to" value="{{ date_to }}" class="w-full border rounded px-3 py-1.5 text-xs">
+            <input type="date" name="date_to" value="{{ date_to }}" title="To date" class="w-full border rounded px-3 py-1.5 text-xs">
         </div>
         <div class="flex gap-2">
             <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded text-[10px] font-black uppercase flex-1 shadow-sm hover:bg-blue-700">Filter</button>
@@ -95,28 +95,4 @@
 </div>
 {% endif %}
 
-{% endblock %}
-            <button
-              type="submit"
-              class="text-red-600 underline bg-transparent border-none"
-            >
-              Delete
-            </button>
-          </form>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-      <tr class="font-semibold bg-gray-50">
-        <td colspan="4" class="border p-2 text-right">Grand Total:</td>
-        <td class="border p-2 text-right">{{ total_litres|currency }}</td>
-        <td class="border p-2 text-right">KES {{ total_cost|currency }}</td>
-        <td colspan="2" class="border p-2 no-print"></td>
-      </tr>
-    </tbody>
-  </table>
-  {% else %}
-  <p class="text-gray-500">No vouchers found for the selected criteria.</p>
-  {% endif %}
-</div>
 {% endblock %}

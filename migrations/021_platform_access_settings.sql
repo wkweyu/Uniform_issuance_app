@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS platform_settings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    `key` VARCHAR(128) NOT NULL,
+    value_json JSON NOT NULL,
+    updated_by_user_id INT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_platform_settings_key (`key`)
+);

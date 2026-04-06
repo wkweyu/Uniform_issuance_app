@@ -1,0 +1,1647 @@
+Detailed Implementation Examples: Critical Multi-Tenancy Components
+1. Data Migration & Rollback Strategy
+Migration Architecture Pattern
+
+Design a versioned migration system that treats tenant separation as a state machine. Each migration should be reversible with clear checkpoints.
+
+Migration States:
+
+    Pre-Migration Validation State: System runs with dual-writes (old logic + new scoping) but reads from old logic. Compare results to ensure consistency.
+
+    Migration Execution State: System writes to new schema while maintaining old structure. Data transformation happens in batches with progress tracking.
+
+    Post-Migration Verification State: System runs with new scoping but can fall back to old logic if anomalies detected.
+
+    Cleanup State: Old structure removed after verification period (e.g., 30 days of production validation).
+
+Rollback Triggers:
+Define automatic rollback conditions:
+
+    Data count mismatch exceeding 0.1% across any table
+
+    Query performance degradation exceeding 200ms for critical operations
+
+    Orphaned records appearing in audit logs
+
+    Failed foreign key constraints during transaction commits
+
+    Anomaly detection alerts from monitoring systems
+
+Migration Monitoring:
+Create a real-time dashboard showing:
+
+    Progress per table (rows processed, success/failure rates)
+
+    Data integrity metrics (orphaned records, constraint violations)
+
+    Performance impact (query timing before/after)
+
+    Rollback readiness status
+
+2. Tenant Context Propagation
+Context Lifecycle Management
+
+Design a tenant context propagation system that maintains isolation across synchronous requests, asynchronous tasks, and background jobs.
+
+Context Sources (in priority order):
+
+    Explicit tenant parameter in function calls (highest priority)
+
+    Request context from authentication middleware
+
+    Session data for long-running operations
+
+    Task metadata for background jobs
+
+    User association as fallback with strict logging
+
+    System default only for platform-level operations (blocked for school-level data)
+
+Propagation Patterns:
+
+For HTTP Requests:
+Middleware extracts tenant from authentication token (school code), validates against active subscriptions, and establishes context before routing. All downstream operations inherit this context automatically.
+
+For Background Tasks:
+When enqueuing tasks, serialize tenant context into task metadata. Worker processes restore this context before executing, ensuring async operations maintain isolation. Failed tasks retain tenant context in logs for debugging.
+
+For Database Operations:
+Use a query interceptor pattern that automatically injects tenant filters without modifying business logic. The interceptor validates tenant context exists before executing any query on tenant-scoped tables. Platform-level tables bypass this filter.
+
+For External Integrations:
+Webhook handlers receive tenant context from URL parameters, headers, or payload data. Context is validated against signature before processing to prevent spoofing.
+
+Error Handling:
+When tenant context is missing for a tenant-scoped operation:
+
+    Log the incident with stack trace and request details
+
+    Block the operation (fail closed)
+
+    Return appropriate error response (403 or 500 based on scenario)
+
+    Alert monitoring systems for pattern detection
+
+3. Hierarchical RBAC & Access Control
+Multi-Level Access Structure
+
+Design a hierarchical role system that supports platform-level and tenant-level access with clear separation boundaries.
+
+Platform-Level Roles:
+
+System Owner (Super User):
+
+    Complete platform access across all tenants
+
+    Can view all schools, subscriptions, and platform metrics
+
+    Can modify system-wide settings and configurations
+
+    Can access audit logs across all tenants
+
+    Can perform emergency maintenance and migrations
+
+    Cannot modify school data directly without explicit override (audited)
+
+    Has ability to impersonate any user with full audit trail
+
+Platform Support Staff:
+
+    Can view all schools but with limited modification rights
+
+    Can assist schools with troubleshooting
+
+    Can reset passwords with approval workflows
+
+    Can view support tickets across all schools
+
+    Cannot access financial data or modify subscription plans
+
+    All actions logged with school context and support ticket reference
+
+    Requires secondary approval for sensitive operations
+
+System Marketers (Portfolio-Based):
+
+    Assigned to specific schools as their portfolio
+
+    Can view assigned school's basic information and contact details
+
+    Can view subscription status and usage analytics
+
+    Can generate marketing reports for assigned schools
+
+    Cannot access student data, financial records, or academic information
+
+    Can communicate with school admins through the platform
+
+    Portfolio assignments managed by System Owner
+
+    Performance metrics tracked per marketer for their portfolio
+
+Platform Auditors:
+
+    Read-only access to all audit logs across schools
+
+    Can view compliance reports and access patterns
+
+    Cannot modify any data
+
+    Separate authentication with MFA requirements
+
+    All queries logged with auditor identity
+
+School-Level Roles:
+Each role inherits from the school context and cannot cross tenant boundaries:
+
+    School Admin: Full school management, can create staff and manage settings
+
+    Academic Admin: Manages classes, subjects, exams, and grading
+
+    Finance Admin: Handles fees, payments, and financial reports
+
+    Department Head: Manages department-specific resources and teachers
+
+    Teacher: Access to assigned classes, grade entry, and student records
+
+    Parent: Access to own children's records, fees, and communications
+
+    Student: Limited access to own profile, assignments, and results
+
+Permission Inheritance Rules:
+
+    Platform roles cannot automatically access school data without explicit permission
+
+    School roles cannot access other schools under any circumstances
+
+    Cross-school reporting requires platform-level aggregators with data anonymization
+
+    Role hierarchies support feature-based permissions (view, create, edit, delete, approve)
+
+4. Subscription Enforcement Architecture
+Subscription State Machine
+
+Design a state-based subscription system with clear transitions and enforcement points.
+
+Subscription States:
+
+    Trial: New schools get 14-day trial with full features, upgrade prompts appear after 7 days
+
+    Active: Full access based on plan features, payment up to date
+
+    Grace Period: 7 days after payment failure, read-only access, warning banners displayed
+
+    Suspended: After grace period, no access to school data except billing portal, admin can restore with payment
+
+    Expired: Manual cancellation, data retained for 90 days, no access except data export request
+
+    Archived: After retention period, data moved to cold storage, school code released for reuse
+
+Enforcement Points:
+
+At Authentication Level:
+
+    Validate subscription status before establishing session
+
+    Block login attempts for suspended/expired schools with clear messaging
+
+    Display subscription status in dashboard banner
+
+At Request Level:
+
+    Middleware checks subscription status before processing any request
+
+    Read operations allowed in grace period with warnings
+
+    Write operations blocked in grace period except payment-related endpoints
+
+    API rate limits reduced for non-active subscriptions
+
+At Feature Level:
+
+    Feature flags control access based on subscription plan
+
+    UI components conditionally render based on available features
+
+    API endpoints validate feature access before processing
+
+At Data Level:
+
+    Background jobs check subscription status before processing
+
+    Data exports limited to active subscriptions
+
+    Scheduled reports paused for inactive subscriptions
+
+Notification Triggers:
+
+    Trial ending (3 days before)
+
+    Payment failed (immediate)
+
+    Grace period started (1 day after payment failure)
+
+    Suspension warning (3 days before suspension)
+
+    Data archival warning (30 days before deletion)
+
+Revenue Recovery:
+
+    Automated dunning emails with payment links
+
+    Retry failed payments with increasing intervals
+
+    Offer payment plan options for larger invoices
+
+    Track recovery rate per school segment
+
+5. Testing Strategy Across Phases
+Comprehensive Test Architecture
+
+Build a layered testing strategy that validates tenant isolation at every level.
+
+Unit Testing Layer:
+
+    Test tenant context initialization and propagation
+
+    Test role-based permission checks for every endpoint
+
+    Test subscription state transitions and enforcement
+
+    Test query filters automatically include tenant scope
+
+    Mock database layer to verify tenant filters without data access
+
+Integration Testing Layer:
+
+    Test complete request flows with tenant context
+
+    Test cross-tenant data isolation with concurrent requests
+
+    Test background task tenant context preservation
+
+    Test webhook handling with tenant identification
+
+    Test database transactions maintain tenant boundaries
+
+End-to-End Testing Layer:
+
+    Create automated test suite with multiple parallel tenants
+
+    Generate realistic school data patterns (students, fees, exams)
+
+    Simulate concurrent operations across tenants
+
+    Verify no data leakage through reports, exports, or APIs
+
+    Test subscription lifecycle from trial to archival
+
+Performance Testing Layer:
+
+    Baseline query performance before migration
+
+    Test index effectiveness with realistic data distribution
+
+    Simulate peak usage across multiple tenants
+
+    Monitor connection pool behavior with tenant switching
+
+    Test report generation across varying data sizes
+
+Security Testing Layer:
+
+    Attempt SQL injection with tenant filters
+
+    Test URL manipulation to access other tenants
+
+    Verify session tokens cannot be reused across tenants
+
+    Test API key scoping to single tenant
+
+    Audit log integrity and tamper detection
+
+Data Integrity Testing:
+
+    Validate foreign key constraints prevent cross-tenant references
+
+    Test backup and restore for individual tenants
+
+    Verify migration scripts maintain referential integrity
+
+    Test rollback procedures restore previous state completely
+
+    Validate archive processes preserve data relationships
+
+6. Audit Logging & Monitoring
+Comprehensive Audit System
+
+Design an immutable audit trail that captures all tenant-scoped actions with forensic detail.
+
+Audit Log Structure:
+Each log entry captures:
+
+    Identity Layer: User ID, username, role, school ID (if applicable), session ID
+
+    Request Layer: IP address, user agent, request ID, endpoint, method, duration
+
+    Action Layer: Action type, resource type, resource ID, operation (CRUD)
+
+    Data Layer: Before state (JSON), after state (JSON), reason for change, approval reference
+
+    Context Layer: Correlation ID (links related actions), parent action ID, batch ID
+
+    Compliance Layer: GDPR consent reference, legal basis, data retention category
+
+Log Categories:
+
+    Authentication Events: Login attempts, password changes, MFA verification, session creation/expiry
+
+    Authorization Events: Permission checks, role assignments, access denials
+
+    Data Events: Create, read, update, delete operations with data snapshots
+
+    System Events: Configuration changes, background jobs, scheduled tasks
+
+    Security Events: Suspicious patterns detected, rate limit hits, anomaly alerts
+
+    Compliance Events: Data exports, consent changes, deletion requests
+
+Storage Strategy:
+
+    Hot storage (30 days): Fast query for troubleshooting
+
+    Warm storage (90 days): Compressed, indexed for compliance queries
+
+    Cold storage (7 years): Immutable archives for legal retention
+
+    Separate write-once storage for compliance-critical logs
+
+Monitoring & Alerting:
+
+Real-time Anomalies:
+
+    Sudden spike in cross-tenant query attempts
+
+    Unusual data access patterns outside working hours
+
+    Multiple failed authentication attempts across tenants
+
+    API calls from unexpected geographic locations
+
+    Data export volume exceeding typical patterns
+
+Business Metrics:
+
+    New school onboarding velocity
+
+    Subscription conversion rates
+
+    Feature adoption per school
+
+    Support ticket volume by tenant
+
+    Revenue by subscription tier
+
+Health Metrics:
+
+    Tenant context missing errors
+
+    Subscription enforcement violations
+
+    Rate limit hits by tenant
+
+    Background job failure rates
+
+    Database connection pool saturation
+
+7. Platform User Access Control Implementation
+Portfolio-Based Access Management
+
+System Owner Capabilities:
+
+Tenant Management:
+
+    Create new schools with automated onboarding
+
+    View complete school list with filtering (status, plan, size, region)
+
+    Modify any school settings with audit reason required
+
+    Suspend or archive schools with approval workflows for large tenants
+
+    Transfer schools between marketers with notification
+
+User Management:
+
+    Create platform users with role assignment
+
+    Define marketer portfolios (school assignments)
+
+    Set approval thresholds for support actions
+
+    View login history and session details for any user
+
+    Reset MFA for any user with verification workflow
+
+Platform Configuration:
+
+    Define subscription plans and features
+
+    Configure system-wide defaults (timezones, currencies)
+
+    Set global rate limits and security policies
+
+    Manage API rate limits and throttling
+
+    Configure integration credentials for external services
+
+Support Staff Access Model:
+
+Assisted Access:
+
+    Support staff initiate "assisted access" session with ticket reference
+
+    Session records all actions with support staff identity
+
+    School admin receives notification of support session
+
+    Support actions require explicit school admin approval for sensitive operations
+
+    Session duration limited (default 2 hours)
+
+    Cannot perform financial transactions or modify payment details
+
+Support Tools:
+
+    View any school's dashboard with overlay indicating support mode
+
+    Access audit logs for specific school with filtering
+
+    Run diagnostic tests (email delivery, API connectivity)
+
+    View recent errors and exceptions for school
+
+    Generate support reports without data export
+
+Portfolio-Based Marketers:
+
+Portfolio Definition:
+
+    Marketers assigned to schools by region, size, or segment
+
+    Portfolio size managed to ensure quality engagement
+
+    Schools can request marketer reassignment
+
+    Performance metrics track engagement frequency, response time, upsell success
+
+Access Controls:
+
+    View assigned schools with contact information
+
+    Access subscription status and usage analytics (aggregated, no individual data)
+
+    View school settings and customization status
+
+    Initiate communication through platform messaging
+
+    Cannot access student, staff, financial, or academic data
+
+    All views masked to prevent data exposure
+
+Marketing Tools:
+
+    Dashboard showing portfolio health metrics
+
+    School engagement tracking (last login, feature usage)
+
+    Automated renewal reminders and upgrade suggestions
+
+    Campaign management for targeted outreach
+
+    School feedback collection and analysis
+
+Audit Requirements:
+
+For All Platform Users:
+
+    All actions logged with platform user identity
+
+    School context recorded when accessing tenant data
+
+    Session recording for sensitive operations
+
+    Approval workflows captured with approver identity
+
+    Geographic access monitoring for account compromise detection
+
+For Support Staff:
+
+    Support actions require ticket reference
+
+    School admin notification for all support interactions
+
+    Weekly review of support access patterns
+
+    Quarterly access recertification
+
+For Marketers:
+
+    Portfolio access reviewed monthly
+
+    Data export attempts logged and limited
+
+    Communication logs retained for compliance
+
+    Performance metrics tracked against portfolio
+
+8. Performance Optimization Strategy
+Query Optimization & Caching
+
+Database Optimization:
+
+    Composite indexes for common query patterns (school_id + date ranges)
+
+    Partition large tables by school_id for improved maintenance
+
+    Materialized views for complex reports with refresh schedules
+
+    Query plan analysis for tenant-scoped operations
+
+    Connection pooling with tenant affinity for reduced context switching
+
+Caching Strategy:
+
+Request-Level Cache:
+
+    Tenant configuration cached per request (subscription, features, settings)
+
+    User permissions cached with invalidation on role changes
+
+    Rate limit counters stored with school/user keys
+
+Application-Level Cache:
+
+    Frequently accessed data (school settings, term dates) cached with tenant key
+
+    Report results cached with configurable TTL based on data volatility
+
+    Dashboard aggregates precomputed during off-peak hours
+
+Distributed Cache:
+
+    Redis clusters partitioned by tenant for isolation
+
+    Cache keys prefixed with school_id to prevent cross-tenant leakage
+
+    Stale-while-revalidate pattern for high-traffic endpoints
+
+Background Processing:
+
+    Queue tenants with similar workloads together for efficiency
+
+    Tenant-aware scheduling that respects subscription tiers
+
+    Resource allocation based on school size and activity
+
+Scaling Considerations:
+
+    Read replicas with tenant-aware routing
+
+    Sharding strategy for database growth (by school size or region)
+
+    Connection pool sizing based on active tenant count
+
+    Automated scaling triggers based on tenant workload patterns
+
+9. Onboarding Automation Workflow
+Zero-Touch Onboarding Pipeline
+
+School Registration:
+
+    Self-service portal captures school information
+
+    Automated validation checks (domain uniqueness, email verification)
+
+    School code generation with collision detection
+
+    Trial subscription automatically activated
+
+Infrastructure Provisioning:
+
+    Tenant record created in schools table
+
+    Database schema extensions prepared (if using schema-per-tenant)
+
+    Storage buckets created with school isolation
+
+    Queue topics/subscriptions configured
+
+Data Seeding:
+
+    Default academic year based on region and current date
+
+    Standard roles with permissions (pre-configured)
+
+    Default fee structures (templates based on school type)
+
+    System settings with regional defaults (currency, grading system)
+
+    Welcome email configuration with setup instructions
+
+User Provisioning:
+
+    School admin user created with temporary password
+
+    MFA enrollment required on first login
+
+    Staff invitation workflow ready
+
+    Parent/student import templates available
+
+Integration Setup:
+
+    API keys generated with school scope
+
+    Webhook endpoints validated
+
+    Email domain verification for white-labeling
+
+    SMS sender ID reserved
+
+Post-Onboarding:
+
+    Configuration checklist for school admin
+
+    Guided tour of key features
+
+    Support contact assigned (marketer portfolio)
+
+    Initial health check scheduled (7 days)
+
+    Feature adoption tracking begins
+
+10. Disaster Recovery & Business Continuity
+Tenant-Aware Recovery Planning
+
+Backup Strategy:
+
+    Continuous backup with point-in-time recovery per tenant
+
+    Full tenant backup before major migrations
+
+    Backup verification restored in isolated environment
+
+    Cross-region replication for geo-redundancy
+
+Recooint Objectives:
+
+    Recovery Time Objective (RTO): 4 hours for platform, 1 hour per tenant
+
+    Recovery Point Objective (RPO): 15 minutes for critical data, 24 hours for logs
+
+    Tenant restoration priority based on subscription tier
+
+Failure Scenarios:
+
+Database Failure:
+
+    Automatic failover to read replica with promotion
+
+    Tenant-level restore if corruption isolated
+
+    Cross-tenant data integrity validation after restore
+
+Region Failure:
+
+    Manual failover with DNS switching
+
+    Tenant data synchronized to secondary region
+
+    Communication plan for affected schools
+
+Data Corruption:
+
+    Point-in-time restore for specific tenant
+
+    Transaction log replay for granular recovery
+
+    Forensic analysis to determine root cause
+
+Testing:
+
+    Monthly backup restoration drills
+
+    Quarterly failover exercises
+
+    Annual full disaster simulation
+
+    Tenant-specific recovery testing for largest customers
+
+Part 1: Modular Billing Architecture
+1.1 Module-Based Subscription Model
+
+Module Catalog Design:
+
+Create a hierarchical module structure where schools can select individual modules or bundles. Each module has its own feature set, pricing model, and technical dependencies.
+
+Core Modules (Required Foundation):
+
+    School Management Core: Student records, staff management, classes, subjects (base requirement for all other modules)
+
+    Tenant Foundation: Multi-tenancy infrastructure, user management, role-based access
+
+Academic Modules:
+
+    Curriculum Management: Lesson planning, syllabus tracking, learning objectives
+
+    Examination Management: Exam scheduling, grade entry, report cards, transcripts
+
+    Grading System: Custom grade scales, GPA calculation, academic progress tracking
+
+    Online Learning: Virtual classrooms, assignments submission, digital resources
+
+Finance Modules:
+
+    Fee Management: Fee structures, payment tracking, receipts, financial reports
+
+    Accounting: General ledger, chart of accounts, financial statements
+
+    Procurement: Purchase orders, vendor management, inventory control
+
+    Payroll: Staff salary processing, statutory deductions, payslips
+
+Operations Modules:
+
+    Attendance Management: Daily attendance tracking, biometric integration, reports
+
+    Timetable Management: Class scheduling, teacher allocation, room management
+
+    Transport Management: Route planning, vehicle tracking, parent notifications
+
+    Inventory Management: Asset tracking, consumables, equipment maintenance
+
+Communication Modules:
+
+    Parent Portal: Student progress access, fee payments, communication
+
+    SMS & Email Integration: Bulk messaging, notifications, alerts
+
+    Mobile App Access: Parent and staff mobile applications
+
+Billing Models by Module Type:
+
+Per-Student Modules:
+
+    Fee Management: Price per active student per term
+
+    Attendance: Price per student per month
+
+    Parent Portal: Price per parent account
+
+Per-Staff Modules:
+
+    Payroll: Price per staff member per month
+
+    Timetable: Flat fee plus per teacher charge
+
+    Professional Development: Per training session
+
+Flat-Rate Modules:
+
+    Procurement: Fixed monthly fee
+
+    Accounting: Fixed monthly fee
+
+    Inventory: Fixed monthly fee
+
+Usage-Based Modules:
+
+    SMS Credits: Per message sent
+
+    Online Learning: Per course enrollment
+
+    API Calls: Tiered pricing based on volume
+
+1.2 Pricing Strategy & Plans
+
+Subscription Tiers with Module Limits:
+
+Basic Plan:
+
+    Core module only
+
+    Up to 500 students
+
+    5 staff users
+
+    Basic support (email only)
+
+    Price: $99/month
+
+Professional Plan:
+
+    Core + any 3 additional modules
+
+    Up to 2,000 students
+
+    Unlimited staff
+
+    Standard support (email + chat)
+
+    Price: $299/month + module costs
+
+Enterprise Plan:
+
+    All modules included
+
+    Unlimited students
+
+    Priority support
+
+    Dedicated account manager
+
+    API access
+
+    Price: $999/month
+
+Module Add-on Pricing:
+
+    Academic modules: $50-150/month
+
+    Finance modules: $100-200/month
+
+    Operations modules: $75-150/month
+
+    Communication modules: $50-100/month
+
+1.3 Billing System Implementation
+
+Subscription Management Tables:
+
+Design tables that track school subscriptions, module assignments, and usage metrics. Each subscription has a parent record linking to the school, with child records for each selected module. Include start dates, end dates, trial periods, and billing cycles.
+
+Usage Tracking Tables:
+
+Create usage tracking per school per module with daily, monthly, and annual aggregates. Track metrics like student count (for per-student billing), API calls, SMS messages sent, and storage usage. This enables usage-based billing and capacity planning.
+
+Pricing Tables:
+
+Store pricing rules as flexible configurations rather than hardcoded values. Each module has base pricing, per-unit pricing, volume discounts, and promotional pricing periods. Support different currencies and tax rules based on school location.
+
+Billing Engine Design:
+
+The billing engine runs on a schedule to:
+
+    Calculate monthly charges based on module selection and usage metrics
+
+    Apply volume discounts (e.g., discount per module when selecting 5+ modules)
+
+    Generate invoices with line items per module
+
+    Track payment status and apply late fees
+
+    Handle prorated charges for mid-cycle module additions
+
+    Calculate refunds for module removals
+
+Invoice Generation:
+
+Each invoice includes:
+
+    School details and billing period
+
+    Line items: Module subscription fees, usage-based charges, discounts
+
+    Payment due date and accepted methods
+
+    Tax breakdown by jurisdiction
+
+    Previous balance and adjustments
+
+    Payment link for online payment
+
+Payment Processing:
+
+Integrate with payment gateways (Stripe, PayPal, local payment processors) with:
+
+    Automatic monthly billing
+
+    Payment method storage with tokenization
+
+    Failed payment retry logic with increasing intervals
+
+    Manual payment recording for offline payments
+
+    Reconciliation tools for finance teams
+
+Part 2: Support Ticketing System
+2.1 Support Team Structure & Access Levels
+
+Support Tier Definitions:
+
+Tier 1: Frontline Support
+
+    Handle initial ticket triage and categorization
+
+    Resolve common issues using knowledge base
+
+    Identify issues requiring escalation
+
+    Access: Read-only to school settings, support tools only
+
+    Cannot view student data or financial records
+
+    Ticket assignment based on issue type
+
+Tier 2: Technical Support
+
+    Handle technical issues requiring investigation
+
+    Access diagnostic tools and logs
+
+    Can view but not modify school data
+
+    Escalate to Tier 3 for code-level issues
+
+    Specialized by module (Finance, Academic, etc.)
+
+Tier 3: Engineering Support
+
+    Code-level debugging and fixes
+
+    Database queries with read-only access in production
+
+    Can request data fixes with approval workflow
+
+    Platform maintenance and updates
+
+    Performance optimization
+
+Tier 4: Escalation Management
+
+    Complex architectural issues
+
+    Security incidents
+
+    Critical system failures
+
+    Major data integrity problems
+
+    Executive-level communication
+
+2.2 Support Ticketing System Architecture
+
+Ticket Lifecycle States:
+
+Define clear state transitions for tickets:
+
+    New: Initial submission, awaiting triage
+
+    Triaged: Categorized, assigned to appropriate team
+
+    Investigating: Under active investigation
+
+    Waiting for Customer: Awaiting information from school
+
+    Escalated: Moved to higher tier
+
+    Resolved: Fix applied, awaiting confirmation
+
+    Closed: Confirmed resolved, no further action
+
+    Reopened: Issue recurred after resolution
+
+Ticket Metadata:
+Each ticket captures:
+
+    School context (automatic from authentication)
+
+    User details (who reported, their role)
+
+    Module affected (academic, finance, etc.)
+
+    Severity level (Critical, High, Medium, Low)
+
+    Priority based on school plan and issue impact
+
+    Related tickets (for recurring issues)
+
+    Time tracking (first response, resolution, time to close)
+
+    Customer satisfaction rating
+
+Ticket Assignment Logic:
+
+    Automatic routing based on issue type and module
+
+    Round-robin assignment within skill groups
+
+    Load balancing across support staff
+
+    Escalation after time thresholds (1h for Critical, 4h for High)
+
+    Manual reassignment for specialized handling
+
+2.3 Safe Troubleshooting & Data Access
+
+Read-Only Access Patterns:
+
+Implement specialized support views that provide necessary data without modification capabilities:
+
+Diagnostic Dashboard:
+
+    School configuration and settings (read-only)
+
+    Recent activity logs and errors
+
+    Module status and last sync times
+
+    Usage metrics and limits
+
+    Subscription details and payment history
+
+Audit Trail Viewer:
+
+    User actions with timestamps
+
+    Data modifications with before/after values
+
+    API calls with request/response
+
+    System events and background jobs
+
+    Error logs with stack traces
+
+Safe Troubleshooting Tools:
+
+Session Impersonation with Guardrails:
+
+    Support staff can request temporary access to school admin view
+
+    School admin receives notification and can approve/deny
+
+    All actions during impersonation logged separately
+
+    Session recorded for playback during investigation
+
+    Cannot perform financial transactions or change sensitive data
+
+Query Sandbox:
+
+    Support staff can run SELECT queries in sandbox environment
+
+    Queries automatically limited by row count and execution time
+
+    Results reviewed by Tier 3 before applying in production
+
+    Query templates for common diagnostics pre-approved
+
+Data Fix Workflow:
+
+    Support identifies data inconsistency
+
+    Creates fix proposal with before/after values
+
+    Fix reviewed by Tier 3 or data team
+
+    School admin approves for non-critical fixes
+
+    Change applied with audit trail
+
+    Verification step confirms correct application
+
+    School notified of resolution
+
+2.4 Follow-up & Continuous Improvement
+
+Bug Tracking System:
+
+Link tickets to feature development:
+
+    Each bug fix creates reference in release notes
+
+    Recurring issues trigger root cause analysis
+
+    Bug severity influences release prioritization
+
+    Customer impact assessment for each bug
+
+Feature Request Management:
+
+    School feature requests linked to tickets
+
+    Voting system for popular requests
+
+    Roadmap visibility for enterprise customers
+
+    Beta program for early adopters
+
+Knowledge Base:
+
+    Articles automatically suggested based on ticket content
+
+    Common solutions published for self-service
+
+    Video tutorials for complex features
+
+    Release notes with feature explanations
+
+Customer Feedback Loop:
+
+Post-Resolution Survey:
+
+    Rate solution effectiveness (1-5)
+
+    Rate support experience (1-5)
+
+    Additional comments captured
+
+    Follow-up if rating below 3
+
+Monthly Business Reviews (Enterprise):
+
+    Review tickets and resolution times
+
+    Feature adoption metrics
+
+    Upcoming roadmap alignment
+
+    Identify training opportunities
+
+Part 3: Communication System
+3.1 Multi-Channel Communication Architecture
+
+Communication Types by Purpose:
+
+System Notifications:
+
+    Billing reminders (upcoming payment, payment success, payment failed)
+
+    System maintenance (scheduled downtime, completed maintenance)
+
+    Security alerts (new login detection, password changes)
+
+    Feature updates (new features, deprecated features)
+
+    Service status (incident reports, resolution updates)
+
+Support Communications:
+
+    Ticket updates (assigned, status change, resolution)
+
+    Follow-up requests (need more information, verification)
+
+    Resolution notifications (fixed, workaround provided)
+
+    Satisfaction surveys
+
+Marketing Communications:
+
+    New feature announcements
+
+    Webinar invitations
+
+    Newsletter updates
+
+    Case studies and best practices
+
+School-Specific Communications:
+
+    Module usage alerts (approaching limits)
+
+    Training recommendations
+
+    Regional events or compliance updates
+
+    Custom communications from account managers
+
+3.2 Communication Preferences Management
+
+School-Level Preferences:
+Each school configures:
+
+    Primary contact email (admin billing)
+
+    Technical contact (system notifications)
+
+    Module-specific contacts (finance team, academic coordinators)
+
+    Timezone for scheduled communications
+
+    Communication language preference
+
+User-Level Preferences:
+Each platform user controls:
+
+    Email notifications (on/off per type)
+
+    SMS notifications (critical only vs all)
+
+    In-app notifications (real-time vs digest)
+
+    Digest frequency (daily, weekly)
+
+    Quiet hours (no notifications during certain times)
+
+Notification Channels:
+
+Email Channel:
+
+    Transactional emails (billing, security) - always sent
+
+    Marketing emails - opt-in only
+
+    Support emails - tied to ticket subscriptions
+
+    Digest emails - configurable frequency
+
+    White-label option for schools (custom domain)
+
+SMS Channel:
+
+    Critical alerts (payment failures, security issues)
+
+    Two-factor authentication codes
+
+    Ticket assignment notifications
+
+    Limited to 160 characters, priority routing
+
+In-App Notifications:
+
+    Real-time notification center
+
+    Persistent until dismissed
+
+    Categorized by type
+
+    Searchable history
+
+Webhook Channel:
+
+    Schools can receive system events via webhook
+
+    Custom integration with their internal systems
+
+    Retry logic with exponential backoff
+
+    Signature verification for security
+
+3.3 Communication Templates & Personalization
+
+Template Engine:
+
+Design templates with variables for personalization:
+
+    School name and branding
+
+    User name and role
+
+    Ticket number and link
+
+    Module name and usage metrics
+
+    Dynamic content based on school settings
+
+Template Categories:
+
+Billing Templates:
+
+    Invoice generation notifications
+
+    Payment confirmation receipts
+
+    Overdue payment reminders (escalating tone)
+
+    Subscription change confirmations
+
+    Credit card expiration warnings
+
+System Templates:
+
+    Maintenance windows (with timezone conversion)
+
+    Service degradation alerts
+
+    Feature deprecation notices
+
+    New release highlights
+
+Support Templates:
+
+    Ticket creation confirmation
+
+    Support assignment notification
+
+    Status update messages
+
+    Resolution confirmation
+
+    Follow-up survey requests
+
+Marketing Templates:
+
+    Onboarding welcome sequence
+
+    Feature spotlight series
+
+    Webinar invitations
+
+    Seasonal promotions
+
+    Renewal reminders
+
+3.4 Communication Scheduling & Batch Processing
+
+Queue-Based Architecture:
+
+All communications go through a central queue system that handles:
+
+    Rate limiting per channel (avoid spam flags)
+
+    Batching for non-urgent communications
+
+    Retry logic with backoff for failed deliveries
+
+    Bounce and complaint handling for emails
+
+    Opt-out management across channels
+
+Scheduling Rules:
+
+    Critical communications (security, billing) sent immediately
+
+    Marketing communications batched during business hours
+
+    School timezone respected for non-critical communications
+
+    Digest emails generated during off-peak hours
+
+    Maintenance communications sent with at least 7 days notice
+
+Delivery Tracking:
+
+    Open rates for emails
+
+    Click-through tracking
+
+    SMS delivery receipts
+
+    Bounce and complaint reporting
+
+    Engagement analytics per school
+
+Part 4: System Administration & Monitoring
+4.1 Platform Admin Dashboard
+
+System Overview Metrics:
+
+Real-time dashboard showing:
+
+    Active schools count (by status: trial, active, suspended)
+
+    Schools by plan tier (Basic, Professional, Enterprise)
+
+    Revenue metrics (MRR, ARR, churn rate)
+
+    Support ticket metrics (open, by tier, average resolution time)
+
+    System health indicators (response times, error rates)
+
+School Management Interface:
+
+Platform admins can:
+
+    Search schools by name, code, domain, plan
+
+    View school details with module usage
+
+    Manage subscriptions (upgrade, downgrade, add modules)
+
+    View recent activity and errors
+
+    Access diagnostic dashboard for troubleshooting
+
+    Perform maintenance actions (with approval for sensitive)
+
+Financial Management:
+
+    Revenue reporting by module, plan, region
+
+    Payment reconciliation tools
+
+    Failed payment management
+
+    Refund processing with approval workflow
+
+    Tax compliance reporting
+
+    Revenue forecasting
+
+4.2 Monitoring & Alerting
+
+System Health Monitoring:
+
+    API response times by endpoint
+
+    Database performance metrics
+
+    Background job queue depths
+
+    Error rate tracking by module
+
+    User activity spikes detection
+
+Business Metrics Alerts:
+
+    New school sign-ups below threshold
+
+    Trial conversion rate drops
+
+    Support ticket volume spikes
+
+    Payment failure rate increases
+
+    Module adoption below targets
+
+Security Monitoring:
+
+    Multiple failed login attempts across schools
+
+    Suspicious API key usage patterns
+
+    Unusual data export volumes
+
+    Geographic access anomalies
+
+    Session hijacking attempts
+
+4.3 Release Management
+
+Deployment Strategy:
+
+    Feature flags for gradual rollout
+
+    Canary deployments for new features
+
+    Automated rollback on error thresholds
+
+    School-based feature activation
+
+    Beta program for early access
+
+Release Communication:
+
+    Release notes with feature descriptions
+
+    Impact analysis for breaking changes
+
+    Migration guides for major updates
+
+    Webinars for significant features
+
+    In-app announcements for new capabilities
+
+Part 5: School Management Features
+5.1 Academic Module
+
+Student Information System:
+
+    Comprehensive student profiles with demographics, medical info, emergency contacts
+
+    Enrollment history with academic years and classes
+
+    Academic records with grades, attendance, behavior
+
+    Document management (birth certificates, health records)
+
+    Alumni tracking with graduation data
+
+Class & Subject Management:
+
+    Multi-level class structures (primary, secondary, forms)
+
+    Subject catalogs with prerequisites
+
+    Teacher assignments with workload balancing
+
+    Classroom allocation with capacity management
+
+    Academic term and session management
+
+5.2 Finance & Fees Module
+
+Fee Structure Management:
+
+    Fee categories (tuition, transport, meals, development)
+
+    Term-based fee structures
+
+    Sibling discounts and scholarships
+
+    Late payment penalties
+
+    Payment plans and installments
+
+Payment Processing:
+
+    Multiple payment methods (cash, bank transfer, card, mobile money)
+
+    Receipt generation with QR codes
+
+    Payment reconciliation tools
+
+    Outstanding balance tracking
+
+    Automated reminder system
+
+Financial Reporting:
+
+    Fee collection reports by class, term, period
+
+    Outstanding balance aging
+
+    Revenue forecasts
+
+    Bank reconciliation statements
+
+    Audit trail for all transactions
+
+5.3 Procurement & Inventory Module
+
+Supplier Management:
+
+    Vendor registration and evaluation
+
+    Purchase order workflow with approvals
+
+    Goods received notes
+
+    Supplier performance tracking
+
+    Contract management
+
+Inventory Control:
+
+    Stock levels with reorder points
+
+    Stock movement tracking (receipts, issues, returns)
+
+    Consumables tracking (stationery, cleaning supplies)
+
+    Asset management (furniture, equipment)
+
+    Stock valuation methods (FIFO, weighted average)
+
+5.4 Payroll Module
+
+Staff Management:
+
+    Employee records with qualifications
+
+    Contract management with terms
+
+    Attendance tracking integration
+
+    Leave management (annual, sick, study)
+
+    Staff appraisal system
+
+Salary Processing:
+
+    Salary structures with grade levels
+
+    Allowances and deductions
+
+    Statutory deductions (PAYE, NSSF, NHIF)
+
+    Bank file generation
+
+    Payslip generation and distribution
+
+5.5 Attendance & Timetable Modules
+
+Attendance Tracking:
+
+    Daily attendance entry with period tracking
+
+    Biometric system integration
+
+    Absence tracking with reason codes
+
+    Attendance reports by class, student, teacher
+
+    Late arrival tracking
+
+Timetable Management:
+
+    Visual timetable builder with conflict detection
+
+    Teacher workload balancing
+
+    Room allocation optimization
+
+    Timetable printing and export
+
+    Substitution management for absent teachers

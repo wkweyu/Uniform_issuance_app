@@ -1,0 +1,41 @@
+CREATE TABLE IF NOT EXISTS `student_attendance` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `school_id` INT NOT NULL,
+  `class_id` INT NOT NULL,
+  `student_id` INT NOT NULL,
+  `attendance_date` DATE NOT NULL,
+  `status` VARCHAR(16) NOT NULL DEFAULT 'present',
+  `remarks` VARCHAR(255) NULL,
+  `recorded_by` INT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_student_attendance_school_class_student_date` (`school_id`, `class_id`, `student_id`, `attendance_date`),
+  KEY `idx_student_attendance_school_date` (`school_id`, `attendance_date`),
+  KEY `idx_student_attendance_school_student` (`school_id`, `student_id`),
+  CONSTRAINT `fk_student_attendance_school` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_student_attendance_class` FOREIGN KEY (`class_id`) REFERENCES `classes` (`classID`) ON DELETE CASCADE,
+  CONSTRAINT `fk_student_attendance_student` FOREIGN KEY (`student_id`) REFERENCES `studentinfo` (`AdmNo`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
+
+CREATE TABLE IF NOT EXISTS `student_attendance_logs` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `school_id` INT NOT NULL,
+  `attendance_id` INT NULL,
+  `class_id` INT NOT NULL,
+  `student_id` INT NOT NULL,
+  `attendance_date` DATE NOT NULL,
+  `action` VARCHAR(16) NOT NULL,
+  `old_status` VARCHAR(16) NULL,
+  `new_status` VARCHAR(16) NOT NULL,
+  `remarks` VARCHAR(255) NULL,
+  `changed_by` INT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_student_attendance_logs_school_date` (`school_id`, `attendance_date`),
+  KEY `idx_student_attendance_logs_school_student` (`school_id`, `student_id`),
+  CONSTRAINT `fk_student_attendance_logs_school` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_student_attendance_logs_attendance` FOREIGN KEY (`attendance_id`) REFERENCES `student_attendance` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_student_attendance_logs_class` FOREIGN KEY (`class_id`) REFERENCES `classes` (`classID`) ON DELETE CASCADE,
+  CONSTRAINT `fk_student_attendance_logs_student` FOREIGN KEY (`student_id`) REFERENCES `studentinfo` (`AdmNo`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;

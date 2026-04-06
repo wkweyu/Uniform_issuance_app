@@ -1,0 +1,242 @@
+{% extends 'base.html' %}
+{% block platform_content %}
+<section class="mx-auto max-w-7xl space-y-6">
+  <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+    <div>
+      <h2 class="text-2xl font-bold text-gray-900">Pricing Reports</h2>
+      <p class="text-sm text-gray-600">Review bundle mix, student-band distribution, module adoption, projected revenue, and legacy mapping closure from one operator view.</p>
+    </div>
+    <div class="flex gap-2">
+      <a href="{{ url_for('platform.export_pricing_reports_csv') }}" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Export CSV</a>
+      <a href="{{ url_for('platform.list_subscriptions') }}" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400">Subscriptions</a>
+    </div>
+  </div>
+
+  <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+    <article class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Active subscriptions</div>
+      <div class="mt-2 text-3xl font-bold text-gray-900">{{ summary.active_subscription_count }}</div>
+      <div class="mt-2 text-sm text-gray-600">{{ summary.schools_with_subscriptions }} schools with current subscriptions in scope.</div>
+    </article>
+    <article class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Projected Monthly</div>
+      <div class="mt-2 text-3xl font-bold text-gray-900">{{ format_currency(summary.projected_monthly_cents) }}</div>
+      <div class="mt-2 text-sm text-gray-600">Monthly equivalent across trial, active, and grace-period subscriptions.</div>
+    </article>
+    <article class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Projected Annual</div>
+      <div class="mt-2 text-3xl font-bold text-gray-900">{{ format_currency(summary.projected_annual_cents) }}</div>
+      <div class="mt-2 text-sm text-gray-600">Annualized run rate from current active commercial state.</div>
+    </article>
+    <article class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Pending Legacy Review</div>
+      <div class="mt-2 text-3xl font-bold {{ 'text-rose-700' if summary.pending_mapping_review_count else 'text-gray-900' }}">{{ summary.pending_mapping_review_count }}</div>
+      <div class="mt-2 text-sm text-gray-600">{{ summary.ambiguous_active_count }} active ambiguous subscriptions, {{ summary.review_required_count }} already flagged.</div>
+    </article>
+  </div>
+
+  <div class="grid gap-6 xl:grid-cols-2">
+    <section class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-lg font-bold text-gray-900">Schools By Bundle</h3>
+          <p class="text-sm text-gray-600">Current tenant distribution and projected revenue by commercial bundle family.</p>
+        </div>
+      </div>
+      <div class="mt-4 overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200 text-sm">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-4 py-3 text-left font-semibold text-gray-600">Bundle</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-600">Schools</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-600">Active</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-600">Monthly</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-600">Annual</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for row in bundle_rows %}
+            <tr>
+              <td class="px-4 py-3 font-semibold text-gray-900">{{ row.bundle_family_label }}</td>
+              <td class="px-4 py-3 text-gray-700">{{ row.school_count }}</td>
+              <td class="px-4 py-3 text-gray-700">{{ row.active_school_count }}</td>
+              <td class="px-4 py-3 text-gray-700">{{ format_currency(row.projected_monthly_cents) }}</td>
+              <td class="px-4 py-3 text-gray-700">{{ format_currency(row.projected_annual_cents) }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500">No bundle distribution data is available.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+      <div>
+        <h3 class="text-lg font-bold text-gray-900">Schools By Student Band</h3>
+        <p class="text-sm text-gray-600">Current portfolio split across resolved student bands.</p>
+      </div>
+      <div class="mt-4 overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200 text-sm">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-4 py-3 text-left font-semibold text-gray-600">Student Band</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-600">Schools</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-600">Active</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-600">Monthly</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-600">Annual</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for row in band_rows %}
+            <tr>
+              <td class="px-4 py-3 font-semibold text-gray-900">{{ row.student_band_label }}</td>
+              <td class="px-4 py-3 text-gray-700">{{ row.school_count }}</td>
+              <td class="px-4 py-3 text-gray-700">{{ row.active_school_count }}</td>
+              <td class="px-4 py-3 text-gray-700">{{ format_currency(row.projected_monthly_cents) }}</td>
+              <td class="px-4 py-3 text-gray-700">{{ format_currency(row.projected_annual_cents) }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500">No band data is available.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div class="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+    <section class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+      <div>
+        <h3 class="text-lg font-bold text-gray-900">Module Adoption</h3>
+        <p class="text-sm text-gray-600">Adoption by currently entitled schools, with bundle-family spread included for quick portfolio checks.</p>
+      </div>
+      <div class="mt-4 space-y-3">
+        {% for row in module_rows %}
+        <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <div class="font-semibold text-gray-900">{{ row.name }}</div>
+              <div class="text-xs uppercase tracking-wide text-gray-500">{{ row.family_label }} · {{ row.code }}</div>
+              <div class="mt-1 text-xs text-gray-500">{{ row.bundle_family_labels }}</div>
+            </div>
+            <div class="text-right">
+              <div class="text-2xl font-bold text-gray-900">{{ row.school_count }}</div>
+              <div class="text-xs uppercase tracking-wide text-gray-500">Schools</div>
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <div class="rounded-xl border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500">No module adoption data is available.</div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+      <div>
+        <h3 class="text-lg font-bold text-gray-900">Revenue Projection</h3>
+        <p class="text-sm text-gray-600">Monthly equivalent and annualized revenue grouped by bundle family and student band.</p>
+      </div>
+      <div class="mt-4 overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200 text-sm">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-4 py-3 text-left font-semibold text-gray-600">Bundle</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-600">Student Band</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-600">Schools</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-600">Monthly</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-600">Annual</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for row in revenue_rows %}
+            <tr>
+              <td class="px-4 py-3 font-semibold text-gray-900">{{ row.bundle_family_label }}</td>
+              <td class="px-4 py-3 text-gray-700">{{ row.student_band_label }}</td>
+              <td class="px-4 py-3 text-gray-700">{{ row.school_count }}</td>
+              <td class="px-4 py-3 text-gray-700">{{ format_currency(row.projected_monthly_cents) }}</td>
+              <td class="px-4 py-3 text-gray-700">{{ format_currency(row.projected_annual_cents) }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500">No revenue projection data is available.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <section class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+    <div class="flex items-center justify-between gap-4">
+      <div>
+        <h3 class="text-lg font-bold text-gray-900">Legacy Mapping Review</h3>
+        <p class="text-sm text-gray-600">Active subscriptions are considered closed when they are either clearly mapped, confirmed mapped, or explicitly flagged for operator review.</p>
+      </div>
+      <div class="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-wide text-gray-600">
+        <span class="rounded-full bg-gray-100 px-3 py-1">Auto mapped: {{ summary.auto_mapped_count }}</span>
+        <span class="rounded-full bg-emerald-100 px-3 py-1 text-emerald-700">Confirmed: {{ summary.confirmed_mapping_count }}</span>
+        <span class="rounded-full bg-amber-100 px-3 py-1 text-amber-700">Flagged: {{ summary.review_required_count }}</span>
+      </div>
+    </div>
+    <div class="mt-4 overflow-x-auto">
+      <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">School</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Commercial State</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Mapping Review</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for row in report_rows %}
+          <tr>
+            <td class="px-4 py-4 align-top">
+              <div class="font-semibold text-gray-900">{{ row.school.name }}</div>
+              <div class="text-xs text-gray-500">{{ row.school.code }} · {{ row.plan.name }}</div>
+            </td>
+            <td class="px-4 py-4 align-top">
+              <div class="font-semibold text-gray-900">{{ row.bundle_family_label }} · {{ row.student_band_label }}</div>
+              <div class="text-xs text-gray-500">{{ row.effective_status.replace('_', ' ') }} · {{ format_currency(row.amount_cents) }} / {{ row.billing_cycle }}</div>
+              <div class="mt-2 text-xs text-gray-500">Modules: {{ row.module_names|join(', ') if row.module_names else 'None configured' }}</div>
+            </td>
+            <td class="px-4 py-4 align-top">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide {{ 'bg-gray-100 text-gray-700' if row.mapping_review.state == 'auto_mapped' else 'bg-emerald-100 text-emerald-700' if row.mapping_review.state == 'confirmed' else 'bg-rose-100 text-rose-700' if row.mapping_review.state == 'pending_review' else 'bg-amber-100 text-amber-700' }}">{{ row.mapping_review.label }}</span>
+                {% if row.mapping_review.is_ambiguous %}
+                <span class="inline-flex rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-rose-700">Ambiguous legacy mapping</span>
+                {% endif %}
+              </div>
+              {% if row.mapping_review.notes %}
+              <div class="mt-2 text-sm text-gray-600">{{ row.mapping_review.notes }}</div>
+              {% endif %}
+              {% if row.mapping_review.updated_at %}
+              {% set actor = actor_lookup.get(row.mapping_review.actor_user_id) %}
+              <div class="mt-2 text-xs text-gray-500">Updated {{ row.mapping_review.updated_at }}{% if actor %} by {{ actor.name or actor.email }}{% endif %}</div>
+              {% endif %}
+            </td>
+            <td class="px-4 py-4 align-top">
+              {% if platform_has_permission('subscription_write') %}
+              <form method="post" action="{{ url_for('platform.update_mapping_review', subscription_id=row.subscription.id) }}" class="space-y-2">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <select name="mapping_review_status" title="Mapping review status" aria-label="Mapping review status" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                  <option value="confirmed">Confirmed mapped</option>
+                  <option value="review_required">Flag for review</option>
+                </select>
+                <textarea name="mapping_review_notes" rows="2" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Operator note">{{ row.mapping_review.notes or '' }}</textarea>
+                <button type="submit" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Save Review</button>
+              </form>
+              {% else %}
+              <div class="text-sm text-gray-500">Read-only access</div>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="px-4 py-10 text-center text-sm text-gray-500">No subscriptions are available for pricing review.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</section>
+{% endblock %}

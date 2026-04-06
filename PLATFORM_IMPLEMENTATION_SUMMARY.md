@@ -2,6 +2,31 @@
 
 **Status**: Production-Ready | **Test Coverage**: 3/3 tests passing | **Integration**: Complete
 
+## Phase 5 Status Note (April 2026)
+
+Additional Phase 5 hardening has been completed beyond the original platform blueprint rollout.
+
+Delivered after the initial control-plane launch:
+- Platform security events, rate limiting, and temporary lockout handling
+- Security notification preferences for email and webhook destinations
+- Delivery tracking and throttling to avoid alert floods
+- HMAC-signed outbound webhook payloads
+- Internal relay implementation for Splunk and Sentinel forwarding
+- Relay health and readiness surfaced inside the platform security UI
+
+Operational status:
+- Email delivery is configured and validated
+- Relay validation is complete and staging-safe mode is active
+- Real downstream SIEM forwarding remains externally blocked only on collector values and tokens
+
+Pending external values:
+- `SPLUNK_HEC_URL`
+- `SPLUNK_HEC_TOKEN`
+- Optional `SENTINEL_LOGIC_APP_URL`
+- Optional `SENTINEL_BEARER_TOKEN`
+
+This means the control plane is ready for SIEM hookup immediately once those values are issued.
+
 ## What's Been Delivered
 
 ### 1. **Platform Blueprint Architecture** (`platform_bp/`)

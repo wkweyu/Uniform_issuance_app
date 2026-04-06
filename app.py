@@ -4,10 +4,11 @@ from flask import Flask, render_template, jsonify, session, g, flash
 from datetime import datetime
 import pymysql
 from extensions import db, migrate, csrf
+from models import School, SchoolSettings, UniformPrice, User
 from config import Config
-from core.permissions import login_required, admin_required, super_admin_required
+from core.permissions import login_required, admin_required, super_admin_required, tenant_required
 from core.db import get_db_connection
-from core.tenancy import load_tenant_context
+from core.tenancy import load_tenant_context, resolve_school_request_access
 
 # Re-importing services for compat (though many are now in blueprints)
 from blueprints.classes.services import ClassManagementService, ValidationError, PromotionError
@@ -15,6 +16,7 @@ from blueprints.fees.services import FeesService, FeesError
 from blueprints.exams.services import ExamManagementService, ExamManagementError
 from blueprints.finance.services import FinanceService, FinanceError
 from blueprints.procurement.services import ProcurementService, ProcurementError
+from blueprints.dashboard.services import DashboardService
 
 def create_app(config_class=Config):
     app = Flask(__name__)
@@ -47,6 +49,10 @@ def create_app(config_class=Config):
     app.register_blueprint(transport_bp)
     from blueprints.farm.routes import farm_bp
     app.register_blueprint(farm_bp)
+    from blueprints.attendance.routes import attendance_bp
+    app.register_blueprint(attendance_bp)
+    from platform_bp import init_platform
+    init_platform(app, url_prefix='/platform')
 
     # Context processor for backward compatibility in templates
     @app.context_processor
@@ -63,7 +69,7 @@ def create_app(config_class=Config):
             if endpoint == "super_admin":
                 return url_for("super_admin.super_admin_index", **values)
             if endpoint == "manage_schools":
-                return url_for("super_admin.manage_schools", **values)
+                return url_for("platform.list_schools", **values)
             if endpoint == "update_school_status":
                 return url_for("super_admin.update_school_status", **values)
             if endpoint == "update_school_subscription":
@@ -96,7 +102,7 @@ def create_app(config_class=Config):
             
             # Platform & Uniform
             if endpoint == "platform.login":
-                return url_for("auth.login", **values)
+                return url_for("platform.login", **values)
             if endpoint == "issue_uniform":
                 return url_for("inventory.issue_uniform", **values)
             if endpoint == "receipt":
@@ -119,6 +125,12 @@ def create_app(config_class=Config):
                 return url_for("inventory.manage_term_dates", **values)
             if endpoint == "student_search":
                 return url_for("students.admit_student", **values) # Mapping to admission search as fallback
+            if endpoint == "attendance_dashboard":
+                return url_for("attendance.attendance_dashboard", **values)
+            if endpoint == "take_attendance":
+                return url_for("attendance.take_attendance", **values)
+            if endpoint == "attendance_report":
+                return url_for("attendance.attendance_report", **values)
                                 
             # Add more as needed by templates
 
@@ -159,6 +171,7 @@ def currency_filter(value):
 @app.before_request
 def setup_tenant():
     load_tenant_context()
+    return resolve_school_request_access()
 
 
 @app.route('/health')
@@ -183,31 +196,18 @@ def health_check():
 
 @app.route('/')
 @login_required
+@tenant_required
 def index():
     connection = None
-    total_students = 0
-    total_staff = 0
-    today_collections = 0
+    summary = {
+        'total_students': 0,
+        'total_staff': 0,
+        'today_collections': 0,
+    }
     try:
         connection = get_db_connection()
-        cursor = connection.cursor()
-        school_id = g.school_id or 1
-
-        cursor.execute("SELECT COUNT(*) AS count FROM studentinfo WHERE school_id = %s", (school_id,))
-        total_students = cursor.fetchone()['count']
-
-        cursor.execute("SELECT COUNT(*) AS count FROM users WHERE school_id = %s", (school_id,))
-        total_staff = cursor.fetchone()['count']
-
-        cursor.execute(
-            """
-            SELECT COALESCE(SUM(amount), 0) AS total
-            FROM fee_collections
-            WHERE school_id = %s AND DATE(collection_date) = CURDATE()
-            """,
-            (school_id,)
-        )
-        today_collections = cursor.fetchone()['total']
+        service = DashboardService(connection, school_id=g.school_id)
+        summary = service.get_summary()
     except pymysql.MySQLError as error:
         app.logger.error("Database connection/query failed on index: %s", error)
         flash("Database is temporarily unavailable. Please verify database credentials/account status.", "error")
@@ -217,9 +217,9 @@ def index():
 
     return render_template(
         'index.html',
-        total_students=total_students,
-        total_staff=total_staff,
-        today_collections=today_collections
+        total_students=summary['total_students'],
+        total_staff=summary['total_staff'],
+        today_collections=summary['today_collections']
     )
 
 

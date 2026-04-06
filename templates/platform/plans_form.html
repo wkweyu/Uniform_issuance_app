@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+{% from 'platform/_components.html' import page_header %}
+{% block breadcrumb %}Plans &rsaquo; {{ 'New' if mode == 'create' else form_values.name }}{% endblock %}
+{% block platform_content %}
+<section class="mx-auto max-w-4xl space-y-5">
+  {% call(slot) page_header('Create Plan' if mode == 'create' else 'Edit Plan', 'Define bundle family, included modules, and student-band pricing.') %}
+    <a href="{{ url_for('platform.list_plans') }}" class="platform-btn-secondary text-xs">
+      <i class="fas fa-arrow-left mr-1"></i>Back to Plans
+    </a>
+  {% endcall %}
+
+  <form method="post" class="space-y-5">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <!-- Plan Details -->
+    <div class="platform-card p-5">
+      <h3 class="platform-section-title mb-4">Plan Details</h3>
+      <div class="grid gap-4 md:grid-cols-2">
+        <div class="md:col-span-2">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Plan Name</label>
+          <input name="name" required value="{{ form_values.name }}" class="w-full rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Growth Plan">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Billing Period</label>
+          <select name="billing_period" class="w-full rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+            {% for option in ['monthly', 'annual', 'termly', 'one_time'] %}
+            <option value="{{ option }}" {% if form_values.billing_period == option %}selected{% endif %}>{{ option.replace('_', ' ')|title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Bundle Family</label>
+          <select name="bundle_family" class="w-full rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+            {% for code, label in bundle_family_options %}
+            <option value="{{ code }}" {% if form_values.bundle_family == code %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+          <span class="mt-1 block text-xs text-slate-400">Current: {{ bundle_family_label }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Core Modules -->
+    <div class="platform-card p-5">
+      <h3 class="platform-section-title">Core Modules</h3>
+      <p class="text-xs text-slate-500 mb-3">Select the core modules included in this commercial package.</p>
+      <div class="grid gap-2 md:grid-cols-2">
+        {% for module in core_modules %}
+        <label class="flex items-start gap-2.5 rounded border border-slate-200 p-3 text-sm hover:border-blue-300 hover:bg-blue-50/30 cursor-pointer transition-colors">
+          <input type="checkbox" name="module_codes" value="{{ module.code }}" {% if module.code in selected_module_codes %}checked{% endif %} class="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+          <span>
+            <span class="block text-xs font-semibold text-slate-800">{{ module.name }}</span>
+            <span class="block text-[11px] text-slate-400 uppercase tracking-wide">{{ module.family_label }} &middot; {{ module.group_label }}</span>
+          </span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Add-on Modules -->
+    <div class="platform-card p-5">
+      <h3 class="platform-section-title">Optional Add-ons</h3>
+      <p class="text-xs text-slate-500 mb-3">Operational add-ons that sit above the base Academic or Accounting bundle.</p>
+      <div class="grid gap-2 md:grid-cols-2">
+        {% for module in addon_modules %}
+        <label class="flex items-start gap-2.5 rounded border border-slate-200 p-3 text-sm hover:border-blue-300 hover:bg-blue-50/30 cursor-pointer transition-colors">
+          <input type="checkbox" name="module_codes" value="{{ module.code }}" {% if module.code in selected_module_codes %}checked{% endif %} class="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+          <span>
+            <span class="block text-xs font-semibold text-slate-800">{{ module.name }}</span>
+            <span class="block text-[11px] text-slate-400 uppercase tracking-wide">{{ module.family_label }} &middot; {{ module.group_label }}</span>
+          </span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Band Pricing -->
+    <div class="platform-card p-5">
+      <h3 class="platform-section-title">Student Band Pricing</h3>
+      <p class="text-xs text-slate-500 mb-3">Set the price for each active-student band. The first band is the base price used by existing subscription flows.</p>
+      <div class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+        {% for band in student_bands %}
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">{{ band.label }} Students</label>
+          <input name="band_price_{{ band.id }}" type="number" min="0" step="0.01" required value="{{ band_price_map.get(band.id, '0.00' if loop.first else '') }}" class="w-full rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="0.00">
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex items-center gap-2 pt-1">
+      <button type="submit" class="platform-btn-primary text-xs">
+        <i class="fas fa-check mr-1"></i>{{ 'Create Plan' if mode == 'create' else 'Save Changes' }}
+      </button>
+      <a href="{{ url_for('platform.list_plans') }}" class="platform-btn-secondary text-xs">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

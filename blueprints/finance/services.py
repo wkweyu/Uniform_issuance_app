@@ -19,6 +19,7 @@ from typing import Dict, List, Optional, Tuple
 import logging
 import uuid
 from core.audit import audit_log
+from core.tenancy import require_current_school_id
 from flask import g
 
 logger = logging.getLogger(__name__)
@@ -29,8 +30,48 @@ class FinanceError(Exception):
 class FinanceService:
     def __init__(self, connection: pymysql.Connection, school_id: Optional[int] = None):
         self.connection = connection
-        self.school_id = school_id or g.school_id or 1
+        self.school_id = school_id or require_current_school_id()
         self.cursor = connection.cursor(pymysql.cursors.DictCursor)
+
+    def _assert_account_belongs_to_school(self, account_id: int) -> None:
+        self.cursor.execute(
+            "SELECT id FROM finance_accounts WHERE id = %s AND school_id = %s LIMIT 1",
+            (account_id, self.school_id),
+        )
+        if not self.cursor.fetchone():
+            raise FinanceError("Selected account does not belong to the active school.")
+
+    def _assert_accounts_belong_to_school(self, account_ids: List[int]) -> None:
+        filtered_ids = [account_id for account_id in account_ids if account_id]
+        if not filtered_ids:
+            return
+        placeholders = ', '.join(['%s'] * len(filtered_ids))
+        self.cursor.execute(
+            f"SELECT id FROM finance_accounts WHERE id IN ({placeholders}) AND school_id = %s",
+            tuple(filtered_ids) + (self.school_id,),
+        )
+        found_ids = {row['id'] for row in self.cursor.fetchall()}
+        missing_ids = [account_id for account_id in filtered_ids if account_id not in found_ids]
+        if missing_ids:
+            raise FinanceError("One or more accounts do not belong to the active school.")
+
+    def _assert_supplier_belongs_to_school(self, supplier_id: int) -> None:
+        self.cursor.execute(
+            "SELECT supplierID FROM suppliers WHERE supplierID = %s AND school_id = %s LIMIT 1",
+            (supplier_id, self.school_id),
+        )
+        if not self.cursor.fetchone():
+            raise FinanceError("Supplier not found for the active school.")
+
+    def _get_purchase_order_for_school(self, po_id: int) -> Dict:
+        self.cursor.execute(
+            "SELECT payment_status, total_amount, po_number FROM purchase_orders WHERE id = %s AND school_id = %s",
+            (po_id, self.school_id),
+        )
+        po = self.cursor.fetchone()
+        if not po:
+            raise FinanceError("Purchase order not found for the active school.")
+        return po
 
     # =========================================================================
     # 0. AUDIT & CONTROLS
@@ -78,6 +119,8 @@ class FinanceService:
     def create_account(self, code: str, name: str, type: str, parent_id: Optional[int] = None) -> int:
         """Create a new COA account."""
         try:
+            if parent_id:
+                self._assert_account_belongs_to_school(parent_id)
             self.cursor.execute(
                 "INSERT INTO finance_accounts (code, name, type, parent_id, school_id) VALUES (%s, %s, %s, %s, %s)",
                 (code, name, type, parent_id, self.school_id)
@@ -99,6 +142,8 @@ class FinanceService:
         Debits must equal Credits.
         """
         try:
+            self._assert_accounts_belong_to_school([entry['account_id'] for entry in entries])
+
             # 1. Validate Balance
             total_debit = sum(Decimal(str(e.get('debit', 0))) for e in entries)
             total_credit = sum(Decimal(str(e.get('credit', 0))) for e in entries)
@@ -136,6 +181,14 @@ class FinanceService:
     def create_voucher(self, payee: str, amount: Decimal, mode: str, account_id: int, cheque_no: str, description: str, user_id: int, supplier_id: Optional[int] = None, po_id: Optional[int] = None, source_account_id: Optional[int] = None, vat: Decimal = 0, wht: Decimal = 0) -> int:
         """Issue a payment voucher draft for multi-level approval."""
         try:
+            self._assert_account_belongs_to_school(account_id)
+            if supplier_id:
+                self._assert_supplier_belongs_to_school(supplier_id)
+
+            po = None
+            if po_id:
+                po = self._get_purchase_order_for_school(po_id)
+
             self.connection.begin()
             
             # Budget Check
@@ -143,8 +196,6 @@ class FinanceService:
 
             # Prevent duplicate PO payment
             if po_id:
-                self.cursor.execute("SELECT payment_status, total_amount, po_number FROM purchase_orders WHERE id = %s AND school_id = %s", (po_id, self.school_id))
-                po = self.cursor.fetchone()
                 if po and po['payment_status'] == 'PAID':
                     raise FinanceError(f"Purchase Order {po['po_number']} has already been fully paid.")
                 
@@ -253,10 +304,14 @@ class FinanceService:
             """, (txn_id, tracking_account_id, v['supplier_id'], v['amount'], 0, f"Voucher {v['voucher_no']}", self.school_id))
 
             # CR Bank/Cash
-            if not source_account_id:
+            if source_account_id:
+                self._assert_account_belongs_to_school(source_account_id)
+            else:
                 self.cursor.execute("SELECT id FROM finance_accounts WHERE (name LIKE '%%Bank%%' OR name LIKE '%%Cash%%') AND school_id = %s ORDER BY id ASC LIMIT 1", (self.school_id,))
                 bank_acc = self.cursor.fetchone()
-                source_account_id = bank_acc['id'] if bank_acc else 1
+                if not bank_acc:
+                    raise FinanceError("No tenant-scoped bank or cash account is configured for this school.")
+                source_account_id = bank_acc['id']
 
             self.cursor.execute("""
                 INSERT INTO finance_ledger_entries (transaction_id, account_id, debit, credit, note, school_id)
@@ -465,3 +520,97 @@ class FinanceService:
             'pending_vouchers_amount': pending['total'] or 0,
             'cash_on_hand': cash
         }
+
+    def get_recent_transactions(self, limit: int = 10) -> List[Dict]:
+        """Fetch recent GL transactions for the active school."""
+        self.cursor.execute(
+            """
+            SELECT ft.*, SUM(le.debit) as total_debit, SUM(le.credit) as total_credit,
+                   u.username as created_by_name
+            FROM finance_transactions ft
+            JOIN finance_ledger_entries le ON ft.id = le.transaction_id AND ft.school_id = le.school_id
+            LEFT JOIN users u ON ft.created_by = u.userNo AND ft.school_id = u.school_id
+            WHERE ft.school_id = %s
+            GROUP BY ft.id
+            ORDER BY ft.id DESC
+            LIMIT %s
+            """,
+            (self.school_id, limit),
+        )
+        return self.cursor.fetchall()
+
+    def get_vouchers(self) -> List[Dict]:
+        """Fetch payment vouchers with tenant-scoped joins for related entities."""
+        self.cursor.execute(
+            """
+            SELECT v.*, u.username as created_by_name, a.name as account_name,
+                   s.company as supplier_name, po.po_number, 'VOUCHER' as source_type
+            FROM finance_payment_vouchers v
+            LEFT JOIN users u ON v.created_by = u.userNo AND v.school_id = u.school_id
+            LEFT JOIN finance_accounts a ON v.account_id = a.id AND v.school_id = a.school_id
+            LEFT JOIN suppliers s ON v.supplier_id = s.supplierID AND v.school_id = s.school_id
+            LEFT JOIN purchase_orders po ON v.po_id = po.id AND v.school_id = po.school_id
+            WHERE v.school_id = %s
+            ORDER BY v.created_at DESC
+            """,
+            (self.school_id,),
+        )
+        return self.cursor.fetchall()
+
+    def get_voucher_for_print(self, voucher_id: int) -> Optional[Dict]:
+        """Fetch a single voucher with tenant-scoped joins for printing."""
+        self.cursor.execute(
+            """
+            SELECT v.*, a.name as account_name,
+                   u1.username as created_by_name,
+                   u2.username as verified_by_name,
+                   u3.username as authorized_by_name,
+                   po.po_number
+            FROM finance_payment_vouchers v
+            LEFT JOIN finance_accounts a ON v.account_id = a.id AND v.school_id = a.school_id
+            LEFT JOIN users u1 ON v.created_by = u1.userNo AND v.school_id = u1.school_id
+            LEFT JOIN users u2 ON v.verified_by = u2.userNo AND v.school_id = u2.school_id
+            LEFT JOIN users u3 ON v.authorized_by = u3.userNo AND v.school_id = u3.school_id
+            LEFT JOIN purchase_orders po ON v.po_id = po.id AND v.school_id = po.school_id
+            WHERE v.id = %s AND v.school_id = %s
+            """,
+            (voucher_id, self.school_id),
+        )
+        return self.cursor.fetchone()
+
+    def get_voucher_for_cheque(self, voucher_id: int) -> Optional[Dict]:
+        """Fetch the raw voucher needed for cheque printing."""
+        self.cursor.execute(
+            "SELECT * FROM finance_payment_vouchers WHERE id = %s AND school_id = %s",
+            (voucher_id, self.school_id),
+        )
+        return self.cursor.fetchone()
+
+    def get_pending_purchase_orders(self) -> List[Dict]:
+        """Fetch receipted purchase orders that still have an outstanding payable balance."""
+        self.cursor.execute(
+            "SELECT id, po_number, supplier_id, total_amount FROM purchase_orders WHERE payment_status != 'PAID' AND status = 'RECEIVED' AND school_id = %s",
+            (self.school_id,),
+        )
+        return self.cursor.fetchall()
+
+    def upsert_budget(self, account_id: int, annual_amount: Decimal, fiscal_year: int, created_by: int) -> None:
+        """Create or update a tenant-scoped budget row."""
+        self._assert_account_belongs_to_school(account_id)
+        self.cursor.execute(
+            """
+            INSERT INTO finance_budgets (account_id, annual_amount, fiscal_year, created_by, school_id)
+            VALUES (%s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE annual_amount = %s
+            """,
+            (account_id, annual_amount, fiscal_year, created_by, self.school_id, annual_amount),
+        )
+        self.connection.commit()
+
+    def get_budgets(self) -> List[Dict]:
+        """Fetch tenant-scoped budgets with account metadata."""
+        self.cursor.execute(
+            "SELECT b.*, a.name as account_name, a.code as account_code FROM finance_budgets b JOIN finance_accounts a ON b.account_id = a.id AND b.school_id = a.school_id WHERE b.school_id = %s ORDER BY b.fiscal_year DESC, a.code ASC",
+            (self.school_id,),
+        )
+        return self.cursor.fetchall()

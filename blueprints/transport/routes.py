@@ -6,14 +6,39 @@ from datetime import datetime
 
 transport_bp = Blueprint('transport', __name__)
 
+
+def _required_text(value, field_name):
+    parsed = (value or '').strip()
+    if not parsed:
+        raise ValueError(f"{field_name} is required.")
+    return parsed
+
+
+def _required_int(value, field_name):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field_name} is required and must be a valid integer.")
+
+
+def _parse_float(value, field_name, default=None):
+    if value in (None, ''):
+        if default is not None:
+            return float(default)
+        raise ValueError(f"{field_name} is required and must be a valid number.")
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field_name} must be a valid number.")
+
 @transport_bp.route('/fleet/fleet_dashboard')
 @login_required
 def fleet_dashboard():
     connection = get_db_connection(); service = TransportService(connection)
     try:
         buses = service.get_buses()
-        # Summary calculations could be in service
-        return render_template('fleet_dashboard.html', buses=buses)
+        stats = service.get_fleet_dashboard_summary()
+        return render_template('fleet_dashboard.html', buses=buses, stats=stats)
     finally: connection.close()
 
 @transport_bp.route('/fleet/buses', methods=['GET', 'POST'])
@@ -24,14 +49,15 @@ def manage_buses():
     if request.method == 'POST':
         try:
             data = {
-                'reg_no': request.form.get('reg_no').strip().upper(),
-                'model': request.form.get('model'),
-                'capacity': int(request.form.get('capacity')),
-                'current_mileage': int(request.form.get('current_mileage')),
+                'reg_no': _required_text(request.form.get('reg_no'), 'reg_no').upper(),
+                'model': request.form.get('model') or request.form.get('make'),
+                'capacity': _required_int(request.form.get('capacity'), 'capacity'),
+                'current_mileage': _required_int(request.form.get('current_mileage'), 'current_mileage'),
                 'driver_name': request.form.get('driver_name')
             }
             service.add_bus(data)
-            flash("✅ Bus added successfully.", "success")
+            flash("Bus added successfully.", "success")
+        except ValueError as e: flash(str(e), "error")
         except Exception as e: flash(str(e), "error")
 
     buses = service.get_buses()
@@ -46,15 +72,16 @@ def edit_bus(bus_id):
     if request.method == 'POST':
         try:
             data = {
-                'reg_no': request.form.get('reg_no').strip().upper(),
-                'model': request.form.get('model'),
-                'capacity': int(request.form.get('capacity')),
-                'current_mileage': int(request.form.get('current_mileage')),
+                'reg_no': _required_text(request.form.get('reg_no'), 'reg_no').upper(),
+                'model': request.form.get('model') or request.form.get('make'),
+                'capacity': _required_int(request.form.get('capacity'), 'capacity'),
+                'current_mileage': _required_int(request.form.get('current_mileage'), 'current_mileage'),
                 'driver_name': request.form.get('driver_name')
             }
             service.update_bus(bus_id, data)
-            flash("✅ Bus updated successfully.", "success")
+            flash("Bus updated successfully.", "success")
             return redirect(url_for('transport.manage_buses'))
+        except ValueError as e: flash(str(e), "error")
         except Exception as e: flash(str(e), "error")
 
     bus = service.get_bus_by_id(bus_id)
@@ -68,7 +95,8 @@ def delete_bus(bus_id):
     connection = get_db_connection(); service = TransportService(connection)
     try:
         service.delete_bus(bus_id)
-        flash("✅ Bus deleted.", "success")
+        flash("Bus deleted.", "success")
+    except ValueError as e: flash(str(e), "error")
     except Exception as e: flash(str(e), "error")
     finally: connection.close()
     return redirect(url_for('transport.manage_buses'))
@@ -80,17 +108,18 @@ def record_service():
     if request.method == 'POST':
         try:
             data = {
-                'bus_id': int(request.form.get('bus_id')),
-                'service_date': request.form.get('service_date'),
-                'service_type': request.form.get('service_type'),
+                'bus_id': _required_int(request.form.get('bus_id'), 'bus_id'),
+                'service_date': _required_text(request.form.get('service_date'), 'service_date'),
+                'service_type': _required_text(request.form.get('service_type'), 'service_type'),
                 'description': request.form.get('description'),
-                'cost': float(request.form.get('cost')),
+                'cost': _parse_float(request.form.get('cost'), 'cost'),
                 'garage_name': request.form.get('garage_name'),
-                'mileage_at_service': int(request.form.get('mileage_at_service'))
+                'mileage_at_service': _required_int(request.form.get('mileage_at_service'), 'mileage_at_service')
             }
             service.record_service(data)
-            flash("✅ Service record saved.", "success")
+            flash("Service record saved.", "success")
             return redirect(url_for('transport.service_register'))
+        except ValueError as e: flash(str(e), "error")
         except Exception as e: flash(str(e), "error")
 
     buses = service.get_buses()
@@ -103,7 +132,7 @@ def service_register():
     connection = get_db_connection(); service = TransportService(connection)
     history = service.get_service_history()
     connection.close()
-    return render_template('service_register.html', history=history)
+    return render_template('service_register.html', services=history)
 
 @transport_bp.route('/fleet/issue_fuel', methods=['GET', 'POST'])
 @login_required
@@ -111,21 +140,22 @@ def issue_fuel():
     connection = get_db_connection(); service = TransportService(connection)
     if request.method == 'POST':
         try:
-            qty = float(request.form.get('quantity'))
-            price = float(request.form.get('unit_price'))
+            qty = _parse_float(request.form.get('quantity'), 'quantity')
+            price = _parse_float(request.form.get('unit_price'), 'unit_price')
             data = {
-                'bus_id': int(request.form.get('bus_id')),
-                'date_issued': request.form.get('date_issued'),
-                'fuel_type': request.form.get('fuel_type'),
+                'bus_id': _required_int(request.form.get('bus_id'), 'bus_id'),
+                'date_issued': _required_text(request.form.get('date_issued'), 'date_issued'),
+                'fuel_type': _required_text(request.form.get('fuel_type'), 'fuel_type'),
                 'quantity': qty,
                 'unit_price': price,
                 'total_cost': qty * price,
-                'current_mileage': int(request.form.get('current_mileage')),
+                'current_mileage': _required_int(request.form.get('current_mileage'), 'current_mileage'),
                 'issued_by': session['userNo']
             }
             voucher_no = service.issue_fuel(data)
-            flash(f"✅ Fuel issued. Voucher: {voucher_no}", "success")
+            flash(f"Fuel issued. Voucher: {voucher_no}", "success")
             return redirect(url_for('transport.print_voucher', voucher_no=voucher_no))
+        except ValueError as e: flash(str(e), "error")
         except Exception as e: flash(str(e), "error")
 
     buses = service.get_buses()
@@ -135,10 +165,8 @@ def issue_fuel():
 @transport_bp.route('/fleet/print_voucher/<voucher_no>')
 @login_required
 def print_voucher(voucher_no):
-    connection = get_db_connection()
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT v.*, b.reg_no, u.username as issuer FROM fuel_vouchers v JOIN buses b ON v.bus_id = b.id JOIN users u ON v.issued_by = u.userNo WHERE v.voucher_no = %s AND v.school_id = %s", (voucher_no, g.school_id))
-        voucher = cursor.fetchone()
+    connection = get_db_connection(); service = TransportService(connection)
+    voucher = service.get_fuel_voucher_for_print(voucher_no)
     connection.close()
     return render_template('print_fuel_voucher.html', voucher=voucher)
 
@@ -146,9 +174,22 @@ def print_voucher(voucher_no):
 @login_required
 def voucher_register():
     connection = get_db_connection(); service = TransportService(connection)
-    vouchers = service.get_fuel_vouchers(request.args.get('start_date'), request.args.get('end_date'))
+    date_from = request.args.get('date_from') or request.args.get('start_date') or ''
+    date_to = request.args.get('date_to') or request.args.get('end_date') or ''
+    filters = {
+        'reg_no': request.args.get('registration_no', ''),
+        'driver_name': request.args.get('driver_name', ''),
+        'voucher_no': request.args.get('voucher_no', ''),
+    }
+    vouchers = service.get_fuel_vouchers(date_from or None, date_to or None)
     connection.close()
-    return render_template('voucher_register.html', vouchers=vouchers)
+    return render_template(
+        'fuel_voucher_register.html',
+        vouchers=vouchers,
+        filters=filters,
+        date_from=date_from,
+        date_to=date_to,
+    )
 
 @transport_bp.route('/fleet/routes', methods=['GET', 'POST'])
 @login_required
@@ -158,12 +199,13 @@ def manage_transport_routes():
     if request.method == 'POST':
         try:
             data = {
-                'name': request.form.get('name').strip(),
-                'amount': float(request.form.get('amount', 0)),
+                'name': _required_text(request.form.get('name'), 'name'),
+                'amount': _parse_float(request.form.get('amount', 0), 'amount', default=0),
                 'description': request.form.get('description', '').strip()
             }
             service.add_route(data)
-            flash("✅ Route added.", "success")
+            flash("Route added.", "success")
+        except ValueError as e: flash(str(e), "error")
         except Exception as e: flash(str(e), "error")
 
     routes = service.get_routes()
@@ -177,7 +219,8 @@ def delete_route(route_id):
     connection = get_db_connection(); service = TransportService(connection)
     try:
         service.delete_route(route_id)
-        flash("✅ Route deleted.", "success")
+        flash("Route deleted.", "success")
+    except ValueError as e: flash(str(e), "error")
     except Exception as e: flash(str(e), "error")
     finally: connection.close()
     return redirect(url_for('transport.manage_transport_routes'))
@@ -194,10 +237,10 @@ def get_driver(bus_id):
 @login_required
 def service_reminders():
     connection = get_db_connection(); service = TransportService(connection)
-    buses = service.get_buses()
+    reminders = []
     # Logic for reminders (e.g. mileage > threshold)
     connection.close()
-    return render_template('service_reminders.html', buses=buses)
+    return render_template('service_reminders.html', reminders=reminders)
 
 @transport_bp.route('/fleet/record_fuel_invoice', methods=['GET', 'POST'])
 @login_required

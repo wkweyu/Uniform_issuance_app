@@ -1,9 +1,80 @@
 {% extends 'base.html' %}
-{% block content %}
-<h2>Plans</h2>
-<ul>
-  {% for p in plans %}
-  <li>{{ p.name }} — {{ (p.price_cents/100)|currency }}</li>
-  {% endfor %}
-</ul>
+{% block platform_content %}
+<div class="space-y-6">
+  <div class="flex items-center justify-between border-b border-slate-200 pb-5">
+    <div>
+      <h1 class="text-xl font-extrabold tracking-tight text-slate-900 md:text-2xl">Service Plans</h1>
+      <p class="mt-1 text-xs text-slate-500 font-medium">Subscription pricing tiers and entitlement matrices.</p>
+    </div>
+    <a href="{{ url_for('platform.create_plan') }}" class="platform-btn-primary">Provision Plan</a>
+  </div>
+
+  <div class="platform-card overflow-hidden">
+    <table class="min-w-full divide-y divide-slate-200 text-sm platform-table-compact">
+      <thead class="bg-slate-50">
+        <tr>
+          <th class="text-left font-bold text-slate-500 uppercase tracking-widest text-[10px]">Plan Definition</th>
+          <th class="text-left font-bold text-slate-500 uppercase tracking-widest text-[10px]">Bundle</th>
+          <th class="text-left font-bold text-slate-500 uppercase tracking-widest text-[10px]">Cycle</th>
+          <th class="text-left font-bold text-slate-500 uppercase tracking-widest text-[10px]">Base Price</th>
+          <th class="text-left font-bold text-slate-500 uppercase tracking-widest text-[10px]">Module Entitlements</th>
+          <th class="text-left font-bold text-slate-500 uppercase tracking-widest text-[10px]">Band Pricing</th>
+          <th class="text-left font-bold text-slate-500 uppercase tracking-widest text-[10px]">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 bg-white">
+        {% for p in plans %}
+        {% set plan_modules = modules_by_plan.get(p.id, []) %}
+        {% set band_prices = band_prices_by_plan.get(p.id, {}) %}
+        <tr class="hover:bg-slate-50 transition-colors">
+          <td class="whitespace-now_wrap">
+            <div class="font-bold text-slate-900">{{ p.name }}</div>
+            <div class="text-[10px] text-slate-400 font-medium uppercase tracking-tighter">ID: #{{ p.id }}</div>
+          </td>
+          <td class="text-slate-600 font-medium">{{ bundle_family_labels.get(p.id, p.bundle_family|title) }}</td>
+          <td class="text-slate-600 font-medium uppercase text-[10px] tracking-wide">{{ p.billing_period.replace('_', ' ') }}</td>
+          <td class="text-slate-900 font-bold">{{ (p.price_cents/100)|currency }}</td>
+          <td>
+            {% if plan_modules %}
+            <div class="flex flex-wrap gap-1.5 max-w-xs">
+              {% for module in plan_modules %}
+              <span class="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-blue-700 border border-blue-100" title="{{ module.family_label }} - {{ module.group_label }}">
+                {{ module.name }}
+              </span>
+              {% endfor %}
+            </div>
+            {% else %}
+            <span class="text-[10px] font-bold text-slate-300 uppercase italic">No Entitlements</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if band_prices %}
+            <div class="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px]">
+              {% for band in student_bands %}
+              <div class="flex justify-between gap-2">
+                <span class="text-slate-400 font-medium">{{ band.label }}:</span>
+                <span class="text-slate-700 font-bold">{{ ((band_prices.get(band.id, 0) or 0) / 100)|currency }}</span>
+              </div>
+              {% endfor %}
+            </div>
+            {% else %}
+            <span class="text-[10px] font-bold text-slate-300 uppercase italic">Default Pricing</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="{{ url_for('platform.edit_plan', plan_id=p.id) }}" class="platform-btn-secondary text-[10px] py-1">Configure</a>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="py-12 text-center">
+            <div class="text-slate-300 mb-2"><i class="fas fa-box-open text-3xl"></i></div>
+            <div class="text-sm font-bold text-slate-400 uppercase tracking-widest">No plans defined</div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 {% endblock %}

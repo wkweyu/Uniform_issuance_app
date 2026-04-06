@@ -1,17 +1,108 @@
 {% extends 'base.html' %}
-{% block content %}
-<h2>Create User</h2>
-<form method="post">
-  <label>Email</label>
-  <input name="email" type="email" required>
-  <label>Password</label>
-  <input name="password" type="password" required>
-  <label>Role</label>
-  <select name="role">
-    <option value="support">support</option>
-    <option value="platform_admin">platform_admin</option>
-    <option value="account_manager">account_manager</option>
-  </select>
-  <button type="submit">Create</button>
-</form>
+{% from 'platform/_components.html' import page_header %}
+{% block breadcrumb %}Operators &rsaquo; {{ 'Edit' if is_edit_mode else 'New' }}{% endblock %}
+{% block platform_content %}
+{% set is_edit_mode = editing_user is defined and editing_user %}
+<section class="mx-auto max-w-3xl space-y-5">
+  {% call(slot) page_header('Edit Platform User' if is_edit_mode else 'Create User', 'Assign role, school scope, and portfolio access for a control-plane operator.') %}
+    <a href="{{ url_for('platform.list_users') }}" class="platform-btn-secondary text-xs">
+      <i class="fas fa-arrow-left mr-1"></i>Back to Operators
+    </a>
+  {% endcall %}
+
+  <form method="post" class="space-y-5">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <!-- Identity -->
+    <div class="platform-card p-5">
+      <h3 class="platform-section-title mb-4">Identity</h3>
+      <div class="grid gap-4 md:grid-cols-2">
+        <div class="md:col-span-2">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Email</label>
+          <input name="email" type="email" title="Platform user email" placeholder="name@example.com" value="{{ editing_user.email if is_edit_mode else '' }}" required class="w-full rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Password{% if is_edit_mode %} <span class="text-slate-400">(leave blank to keep)</span>{% endif %}</label>
+          <input name="password" type="password" title="Platform user password" placeholder="Enter a password" {% if not is_edit_mode %}required{% endif %} class="w-full rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Role</label>
+          <select name="role" title="Platform user role" class="w-full rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+            {% for role in role_options %}
+            <option value="{{ role.value }}" {% if is_edit_mode and editing_user.role == role.value %}selected{% endif %}>{{ role.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      {% if is_edit_mode %}
+      <div class="mt-4 flex items-center gap-2">
+        <input id="is-active" name="is_active" type="checkbox" {% if editing_user.is_active %}checked{% endif %} class="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+        <label for="is-active" class="text-xs font-medium text-slate-600">Account is active</label>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- School Scope -->
+    <div class="platform-card p-5">
+      <h3 class="platform-section-title mb-4">School Scope</h3>
+      <div class="grid gap-4 md:grid-cols-2">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Assigned School</label>
+          <select name="assigned_school" title="Assigned school scope" class="w-full rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+            <option value="">No fixed school</option>
+            {% for school in schools %}
+            <option value="{{ school.id }}" {% if is_edit_mode and editing_user.assigned_school_id == school.id %}selected{% endif %}>{{ school.name }} ({{ school.code }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Portfolio Schools</label>
+          <select name="portfolio_school_ids" title="Portfolio school scope" multiple size="5" class="w-full rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+            {% for school in schools %}
+            <option value="{{ school.id }}" {% if school.id in (selected_portfolio_school_ids or []) %}selected{% endif %}>{{ school.name }} ({{ school.code }})</option>
+            {% endfor %}
+          </select>
+          <span class="mt-1 block text-[11px] text-slate-400">Hold Ctrl/Cmd to select multiple.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex items-center gap-2 pt-1">
+      <button type="submit" class="platform-btn-primary text-xs">
+        <i class="fas fa-check mr-1"></i>{{ 'Save Changes' if is_edit_mode else 'Create User' }}
+      </button>
+      <a href="{{ url_for('platform.list_users') }}" class="platform-btn-secondary text-xs">Cancel</a>
+    </div>
+  </form>
+
+  {% if is_edit_mode %}
+  <!-- Audit Log -->
+  <div class="platform-card p-5">
+    <h3 class="platform-section-title mb-3">Recent Changes</h3>
+    <div class="space-y-2">
+      {% for log in recent_audit_logs %}
+      {% set actor = audit_actor_lookup.get(log.actor_user_id) %}
+      <div class="rounded border border-slate-200 px-3 py-2.5 text-xs">
+        <div class="flex items-center justify-between">
+          <span class="font-semibold text-slate-800">{{ log.action }}</span>
+          <span class="text-[11px] text-slate-400">{{ log.created_at }}{% if actor %} &middot; {{ actor.email }}{% endif %}</span>
+        </div>
+        {% if log.changes and log.changes.current %}
+        <div class="mt-1 text-slate-500">
+          Role: {{ log.changes.current.role or editing_user.role }} &middot;
+          Active: {{ 'yes' if log.changes.current.is_active else 'no' }} &middot;
+          Password reset: {{ 'yes' if log.changes.current.password_reset else 'no' }}
+        </div>
+        {% elif log.changes %}
+        <div class="mt-1 text-slate-500">{{ log.changes }}</div>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="rounded border border-dashed border-slate-200 p-4 text-xs text-slate-400 text-center">No changes recorded for this operator yet.</div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</section>
 {% endblock %}

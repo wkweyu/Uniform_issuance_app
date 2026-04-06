@@ -1,0 +1,41 @@
+CREATE TABLE IF NOT EXISTS `security_notification_preferences` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(255) NULL,
+  `channel` VARCHAR(32) NOT NULL,
+  `destination` VARCHAR(512) NOT NULL,
+  `min_severity` VARCHAR(32) NOT NULL DEFAULT 'high',
+  `school_id` INT NULL,
+  `event_types` JSON NULL,
+  `throttle_minutes` INT NOT NULL DEFAULT 30,
+  `enabled` TINYINT(1) NOT NULL DEFAULT 1,
+  `secret_token` VARCHAR(255) NULL,
+  `custom_headers` JSON NULL,
+  `created_by_user_id` INT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_security_notification_preferences_channel` (`channel`),
+  KEY `idx_security_notification_preferences_school_id` (`school_id`),
+  KEY `idx_security_notification_preferences_enabled` (`enabled`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `security_notification_deliveries` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `security_event_id` INT NOT NULL,
+  `preference_id` INT NOT NULL,
+  `channel` VARCHAR(32) NOT NULL,
+  `destination` VARCHAR(512) NOT NULL,
+  `status` VARCHAR(32) NOT NULL,
+  `status_reason` TEXT NULL,
+  `response_code` INT NULL,
+  `response_body` TEXT NULL,
+  `throttle_key` VARCHAR(255) NOT NULL,
+  `attempted_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `delivered_at` DATETIME NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_security_notification_deliveries_event_id` (`security_event_id`),
+  KEY `idx_security_notification_deliveries_preference_id` (`preference_id`),
+  KEY `idx_security_notification_deliveries_status` (`status`),
+  KEY `idx_security_notification_deliveries_throttle_key` (`throttle_key`),
+  KEY `idx_security_notification_deliveries_attempted_at` (`attempted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

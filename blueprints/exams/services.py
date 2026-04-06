@@ -17,6 +17,7 @@ from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 import logging
 from core.audit import audit_log
+from core.tenancy import require_current_school_id
 from flask import g
 
 logging.basicConfig(level=logging.INFO)
@@ -30,7 +31,59 @@ class ExamManagementService:
     def __init__(self, connection: pymysql.Connection, school_id: Optional[int] = None):
         self.connection = connection
         self.cursor = connection.cursor(pymysql.cursors.DictCursor)
-        self.school_id = school_id or g.school_id or 1
+        self.school_id = school_id or require_current_school_id()
+
+    def _assert_academic_year_belongs_to_school(self, academic_year_id: int) -> None:
+        self.cursor.execute("SELECT id FROM academic_years WHERE id = %s AND school_id = %s", (academic_year_id, self.school_id))
+        if not self.cursor.fetchone():
+            raise ExamManagementError("Academic year not found for the active school.")
+
+    def _assert_exam_belongs_to_school(self, exam_id: int) -> None:
+        self.cursor.execute("SELECT id FROM exam_series WHERE id = %s AND school_id = %s", (exam_id, self.school_id))
+        if not self.cursor.fetchone():
+            raise ExamManagementError("Exam series not found for the active school.")
+
+    def _assert_classes_belong_to_school(self, class_ids: List[int]) -> None:
+        if not class_ids:
+            return
+        placeholders = ', '.join(['%s'] * len(class_ids))
+        self.cursor.execute(
+            f"SELECT classID FROM classes WHERE classID IN ({placeholders}) AND school_id = %s",
+            tuple(class_ids) + (self.school_id,),
+        )
+        found = {row['classID'] for row in self.cursor.fetchall()}
+        missing = [class_id for class_id in class_ids if class_id not in found]
+        if missing:
+            raise ExamManagementError("One or more classes do not belong to the active school.")
+
+    def _assert_grading_scale_belongs_to_school(self, scale_id: Optional[int]) -> None:
+        if scale_id is None:
+            return
+        self.cursor.execute("SELECT id FROM grading_scales WHERE id = %s AND school_id = %s", (scale_id, self.school_id))
+        if not self.cursor.fetchone():
+            raise ExamManagementError("Grading scale not found for the active school.")
+
+    def _assert_mark_target_is_valid(self, exam_id: int, student_id: str, subject_id: int) -> int:
+        self.cursor.execute(
+            """
+            SELECT ca.class_id
+            FROM class_allocation ca
+            JOIN exam_classes ec ON ca.class_id = ec.class_id AND ca.school_id = ec.school_id
+            JOIN class_subjects cs ON ca.class_id = cs.class_id AND ca.school_id = cs.school_id
+            WHERE ec.exam_id = %s
+              AND ca.student_id = %s
+              AND cs.subject_id = %s
+              AND ca.is_current = TRUE
+              AND cs.is_active = TRUE
+              AND ca.school_id = %s
+            LIMIT 1
+            """,
+            (exam_id, student_id, subject_id, self.school_id),
+        )
+        row = self.cursor.fetchone()
+        if not row:
+            raise ExamManagementError("Student, subject, and exam assignment do not match for the active school.")
+        return row['class_id']
 
     # =========================================================================
     # 1. EXAM SERIES MANAGEMENT
@@ -40,6 +93,8 @@ class ExamManagementService:
     def create_exam_series(self, name: str, academic_year_id: int, term: int, created_by: int, class_ids: List[int] = None) -> int:
         """Create a new exam series and assign classes."""
         try:
+            self._assert_academic_year_belongs_to_school(academic_year_id)
+            self._assert_classes_belong_to_school(class_ids or [])
             sql = """
                 INSERT INTO exam_series (name, academic_year_id, term, created_by, school_id)
                 VALUES (%s, %s, %s, %s, %s)
@@ -58,6 +113,23 @@ class ExamManagementService:
             self.connection.rollback()
             logger.error(f"Error creating exam series: {str(e)}")
             raise ExamManagementError(f"Failed to create exam series: {str(e)}")
+
+    def get_all_exams(self) -> List[Dict]:
+        """Fetch all exam series for the active school."""
+        sql = """
+            SELECT e.*, ay.year as academic_year_name,
+                   (
+                       SELECT COUNT(DISTINCT ec.class_id)
+                       FROM exam_classes ec
+                       WHERE ec.exam_id = e.id AND ec.school_id = e.school_id
+                   ) as class_count
+            FROM exam_series e
+            JOIN academic_years ay ON e.academic_year_id = ay.id AND e.school_id = ay.school_id
+            WHERE e.school_id = %s
+            ORDER BY e.created_at DESC, e.id DESC
+        """
+        self.cursor.execute(sql, (self.school_id,))
+        return self.cursor.fetchall()
 
     def get_exam_series(self, exam_id: int) -> Optional[Dict]:
         """Fetch a single exam series with year details."""
@@ -86,6 +158,8 @@ class ExamManagementService:
     def update_exam_classes(self, exam_id: int, class_ids: List[int]) -> bool:
         """Update the classes assigned to an exam."""
         try:
+            self._assert_exam_belongs_to_school(exam_id)
+            self._assert_classes_belong_to_school(class_ids or [])
             # Delete existing
             self.cursor.execute("DELETE FROM exam_classes WHERE exam_id = %s AND school_id = %s", (exam_id, self.school_id))
 
@@ -164,12 +238,11 @@ class ExamManagementService:
             if not exam or exam['is_locked']:
                 raise ExamManagementError("Cannot edit marks for a locked exam series.")
 
+            class_id = self._assert_mark_target_is_valid(exam_id, student_id, subject_id)
+
             grade_id = None
             if not is_absent and mark is not None:
-                sql_class = "SELECT class_id FROM class_allocation WHERE student_id = %s AND is_current = TRUE AND school_id = %s LIMIT 1"
-                self.cursor.execute(sql_class, (student_id, self.school_id))
-                alloc = self.cursor.fetchone()
-                scale_id = self.get_class_grading_scale_id(alloc['class_id']) if alloc else None
+                scale_id = self.get_class_grading_scale_id(class_id)
                 grade_rec = self.get_grade_for_mark(mark, scale_id)
                 if grade_rec: grade_id = grade_rec['id']
 
@@ -203,6 +276,7 @@ class ExamManagementService:
     @audit_log('save_grading_details')
     def save_grading_details(self, scale_id: int, grades: List[Dict]) -> bool:
         try:
+            self._assert_grading_scale_belongs_to_school(scale_id)
             self.cursor.execute("DELETE FROM grading_details WHERE scale_id = %s AND school_id = %s", (scale_id, self.school_id))
             sql = "INSERT INTO grading_details (scale_id, grade, min_mark, max_mark, points, remarks, class_teacher_remarks, principal_remarks, school_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
             for g in grades:
@@ -216,6 +290,8 @@ class ExamManagementService:
     @audit_log('assign_grading_scale')
     def assign_scale_to_class(self, class_id: int, scale_id: Optional[int]) -> bool:
         try:
+            self._assert_classes_belong_to_school([class_id])
+            self._assert_grading_scale_belongs_to_school(scale_id)
             self.cursor.execute("UPDATE classes SET grading_scale_id = %s WHERE classID = %s AND school_id = %s", (scale_id, class_id, self.school_id))
             self.connection.commit()
             return True
@@ -238,6 +314,8 @@ class ExamManagementService:
         return self.cursor.fetchone()
 
     def get_marks_for_class_subject(self, exam_id: int, class_id: int, subject_id: int) -> List[Dict]:
+        self._assert_exam_belongs_to_school(exam_id)
+        self._assert_classes_belong_to_school([class_id])
         sql = """
             SELECT s.AdmNo, s.FName, s.SName as LName, m.mark, m.is_absent, gd.grade, m.remarks, m.ct_remarks, m.p_remarks
             FROM studentinfo s
@@ -251,11 +329,11 @@ class ExamManagementService:
 
     def get_class_tabulation(self, exam_id: int, class_id: int) -> Dict:
         # Implementation from previous version (abbreviated here for brevity but should be full in reality)
-        self.cursor.execute("SELECT DISTINCT s.subjectNo as id, s.subjName as name, s.code FROM class_subjects cs JOIN subjects s ON cs.subject_id = s.subjectNo WHERE cs.class_id = %s AND cs.is_active = TRUE AND cs.school_id = %s ORDER BY s.subjectNo", (class_id, self.school_id))
+        self.cursor.execute("SELECT DISTINCT s.subjectNo as id, s.subjName as name, s.code FROM class_subjects cs JOIN subjects s ON cs.subject_id = s.subjectNo AND cs.school_id = s.school_id WHERE cs.class_id = %s AND cs.is_active = TRUE AND cs.school_id = %s ORDER BY s.subjectNo", (class_id, self.school_id))
         subjects = self.cursor.fetchall()
-        self.cursor.execute("SELECT s.AdmNo, s.FName, s.SName as LName FROM studentinfo s JOIN class_allocation ca ON s.AdmNo = ca.student_id AND ca.is_current = TRUE WHERE ca.class_id = %s AND s.school_id = %s ORDER BY s.FName, s.SName", (class_id, self.school_id))
+        self.cursor.execute("SELECT s.AdmNo, s.FName, s.SName as LName FROM studentinfo s JOIN class_allocation ca ON s.AdmNo = ca.student_id AND ca.is_current = TRUE AND s.school_id = ca.school_id WHERE ca.class_id = %s AND s.school_id = %s ORDER BY s.FName, s.SName", (class_id, self.school_id))
         students = self.cursor.fetchall()
-        self.cursor.execute("SELECT m.student_id, m.subject_id, m.mark, gd.grade FROM exam_marks m LEFT JOIN grading_details gd ON m.grade_id = gd.id WHERE m.exam_id = %s AND m.school_id = %s", (exam_id, self.school_id))
+        self.cursor.execute("SELECT m.student_id, m.subject_id, m.mark, gd.grade FROM exam_marks m LEFT JOIN grading_details gd ON m.grade_id = gd.id AND m.school_id = gd.school_id WHERE m.exam_id = %s AND m.school_id = %s", (exam_id, self.school_id))
         marks_raw = self.cursor.fetchall()
         marks_map = {}
         for m in marks_raw:
@@ -283,7 +361,7 @@ class ExamManagementService:
         return {'subjects': subjects, 'tabulation': tabulation}
 
     def get_report_card_data(self, student_id: str, exam_id: int) -> Dict:
-        self.cursor.execute("SELECT s.AdmNo, s.FName, s.SName as LName, c.display_name as class_name, e.name as exam_name, e.term, ay.year as academic_year, c.classID FROM studentinfo s JOIN class_allocation ca ON s.AdmNo = ca.student_id AND ca.is_current = TRUE JOIN classes c ON ca.class_id = c.classID JOIN exam_series e ON e.id = %s JOIN academic_years ay ON e.academic_year_id = ay.id WHERE s.AdmNo = %s AND s.school_id = %s", (exam_id, student_id, self.school_id))
+        self.cursor.execute("SELECT s.AdmNo, s.FName, s.SName as LName, c.display_name as class_name, e.name as exam_name, e.term, ay.year as academic_year, c.classID FROM studentinfo s JOIN class_allocation ca ON s.AdmNo = ca.student_id AND ca.is_current = TRUE AND s.school_id = ca.school_id JOIN classes c ON ca.class_id = c.classID AND ca.school_id = c.school_id JOIN exam_series e ON e.id = %s AND e.school_id = s.school_id JOIN academic_years ay ON e.academic_year_id = ay.id AND e.school_id = ay.school_id WHERE s.AdmNo = %s AND s.school_id = %s", (exam_id, student_id, self.school_id))
         info = self.cursor.fetchone()
         if not info: raise ExamManagementError("Not found")
         # Reuse student results and tabulation for rank
@@ -293,7 +371,7 @@ class ExamManagementService:
         return {'info': info, 'results': results['subjects'], 'summary': results['summary'], 'rank': rank, 'class_size': len(tab['tabulation'])}
 
     def get_student_results(self, student_id: str, exam_id: int) -> Dict:
-        self.cursor.execute("SELECT sub.subjName as subject_name, sub.code as subject_code, m.mark, gd.grade, gd.points, m.remarks, m.is_absent FROM student_subjects ss JOIN class_allocation ca ON ss.class_allocation_id = ca.id JOIN subjects sub ON ss.subject_id = sub.subjectNo LEFT JOIN exam_marks m ON ca.student_id = m.student_id AND m.subject_id = sub.subjectNo AND m.exam_id = %s LEFT JOIN grading_details gd ON m.grade_id = gd.id WHERE ca.student_id = %s AND ca.is_current = TRUE AND ca.school_id = %s", (exam_id, student_id, self.school_id))
+        self.cursor.execute("SELECT sub.subjName as subject_name, sub.code as subject_code, m.mark, gd.grade, gd.points, m.remarks, m.is_absent FROM student_subjects ss JOIN class_allocation ca ON ss.class_allocation_id = ca.id AND ss.school_id = ca.school_id JOIN subjects sub ON ss.subject_id = sub.subjectNo AND ss.school_id = sub.school_id LEFT JOIN exam_marks m ON ca.student_id = m.student_id AND m.subject_id = sub.subjectNo AND m.exam_id = %s AND ca.school_id = m.school_id LEFT JOIN grading_details gd ON m.grade_id = gd.id AND m.school_id = gd.school_id WHERE ca.student_id = %s AND ca.is_current = TRUE AND ca.school_id = %s", (exam_id, student_id, self.school_id))
         res = self.cursor.fetchall()
         total = sum(r['mark'] for r in res if r['mark']); taken = len([r for r in res if r['mark'] or r['is_absent']])
         avg = total / taken if taken > 0 else 0

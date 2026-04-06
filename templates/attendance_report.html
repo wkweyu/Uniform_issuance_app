@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="max-w-6xl mx-auto space-y-6">
+  <div>
+    <h2 class="text-3xl font-bold text-gray-900">Attendance Report</h2>
+    <p class="mt-2 text-sm text-gray-600">Review daily attendance totals by class and status across a selected period.</p>
+  </div>
+
+  <form method="get" class="grid gap-4 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm md:grid-cols-4">
+    <div>
+      <label class="mb-1 block text-sm font-medium text-gray-700">Start Date</label>
+      <input type="date" name="start_date" value="{{ start_date }}" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label class="mb-1 block text-sm font-medium text-gray-700">End Date</label>
+      <input type="date" name="end_date" value="{{ end_date }}" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label class="mb-1 block text-sm font-medium text-gray-700">Class</label>
+      <select name="class_id" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <option value="">All classes</option>
+        {% for class_row in classes %}
+        <option value="{{ class_row.classID }}" {% if selected_class_id == class_row.classID %}selected{% endif %}>{{ class_row.display_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex items-end">
+      <button type="submit" class="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Run Report</button>
+    </div>
+  </form>
+
+  <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">Date</th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">Class</th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">Status</th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">Students</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for row in rows %}
+        <tr>
+          <td class="px-4 py-3 text-gray-700">{{ row.attendance_date }}</td>
+          <td class="px-4 py-3 text-gray-900">{{ row.class_name }}</td>
+          <td class="px-4 py-3 text-gray-700">{{ row.status|replace('_', ' ')|title }}</td>
+          <td class="px-4 py-3 text-gray-900">{{ row.total_students }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="4" class="px-4 py-8 text-center text-sm text-gray-500">No attendance records match the selected filters.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

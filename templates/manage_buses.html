@@ -20,7 +20,7 @@
       <label class="block text-sm font-medium">Make/Model:</label>
       <input
         type="text"
-        name="make"
+        name="model"
         oninput="this.value = this.value.toUpperCase()"
         class="w-full border px-3 py-2 rounded"
         placeholder="Isuzu NQR"
@@ -55,6 +55,7 @@
         name="current_mileage"
         value="0"
         required
+        title="Initial odometer reading"
         class="border px-3 py-2 rounded w-full"
       />
     </div>
@@ -87,7 +88,7 @@
       <tr class="hover:bg-gray-50">
         <td class="border p-2">{{ loop.index }}</td>
         <td class="border p-2">{{ bus.reg_no }}</td>
-        <td class="border p-2">{{ bus.make or 'N/A' }}</td>
+        <td class="border p-2">{{ bus.model or bus.make or 'N/A' }}</td>
         <td class="border p-2 text-center">{{ bus.capacity or 'N/A' }}</td>
         <td class="border p-2">{{ bus.driver_name or 'N/A' }}</td>
         <td class="border p-2">{{ bus.current_mileage }}</td>

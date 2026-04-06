@@ -1,0 +1,226 @@
+{% extends 'base.html' %}
+{% block platform_content %}
+<section class="mx-auto max-w-5xl space-y-6">
+  <div class="flex items-center justify-between gap-4">
+    <div>
+      <h2 class="text-3xl font-bold text-gray-900">Subscription Detail</h2>
+      <p class="mt-2 text-sm text-gray-600">Review tenant access state and apply lifecycle actions for {{ school.name if school else ('School ' ~ subscription.school_id) }}.</p>
+    </div>
+    <a href="{{ url_for('platform.list_subscriptions') }}" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400">Back to Subscriptions</a>
+  </div>
+
+  <div class="grid gap-6 lg:grid-cols-3">
+    <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm lg:col-span-2">
+      <dl class="grid gap-4 md:grid-cols-2">
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">School</dt>
+          <dd class="mt-1 text-lg font-semibold text-gray-900">{{ school.name if school else ('School ' ~ subscription.school_id) }}</dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">Status</dt>
+          <dd class="mt-1"><span class="inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-700">{{ subscription.effective_status }}</span></dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">Billing Cycle</dt>
+          <dd class="mt-1 text-sm text-gray-700">{{ subscription.billing_cycle|capitalize }}</dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">Amount</dt>
+          <dd class="mt-1 text-sm text-gray-700">{{ (subscription.amount_cents / 100)|currency }}</dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">Student Count</dt>
+          <dd class="mt-1 text-sm text-gray-700">{{ current_student_count or 'Not set' }}</dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">Student Band</dt>
+          <dd class="mt-1 text-sm text-gray-700">{{ current_student_band_label or 'Not set' }}</dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">Started</dt>
+          <dd class="mt-1 text-sm text-gray-700">{{ subscription.started_at or 'Not set' }}</dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">Trial Ends</dt>
+          <dd class="mt-1 text-sm text-gray-700">{{ subscription.trial_ends_at or 'Not set' }}</dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">Suspension Reason</dt>
+          <dd class="mt-1 text-sm text-gray-700">{% if suspension_reason_code %}{{ reason_label(suspension_reason_code) }} • {% endif %}{{ suspension_reason or 'Not set' }}</dd>
+        </div>
+        <div>
+          <dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">Cancellation Reason</dt>
+          <dd class="mt-1 text-sm text-gray-700">{% if cancellation_reason_code %}{{ cancellation_reason_code.replace('_', ' ')|title }} • {% endif %}{{ cancellation_reason or 'Not set' }}</dd>
+        </div>
+      </dl>
+    </div>
+
+    <div class="space-y-4 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+      {% if platform_has_permission('subscription_write') %}
+      <h3 class="text-lg font-semibold text-gray-900">Change Plan</h3>
+      <form method="post" action="{{ url_for('platform.change_subscription_plan', subscription_id=subscription.id) }}" class="space-y-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="return_subscription_id" value="{{ subscription.id }}">
+        <div class="grid gap-3 md:grid-cols-2">
+          <label class="block text-sm font-medium text-gray-700">
+            Bundle Family
+            <select name="bundle_family" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+              {% for code, label in bundle_family_options %}
+              <option value="{{ code }}" {% if current_plan and current_plan.bundle_family == code %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="block text-sm font-medium text-gray-700">
+            Billing Period
+            <select name="billing_period" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+              {% for code, label in billing_period_options %}
+              <option value="{{ code }}" {% if subscription.billing_cycle == code %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+        <label class="block text-sm font-medium text-gray-700">
+          Student Count For Repricing
+          <input type="number" name="student_count" min="1" value="{{ current_student_count or '' }}" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Enter enrolled student count" title="Student count used for plan repricing">
+        </label>
+        {% if current_student_band_label %}
+        <p class="text-xs text-gray-500">Current billed band: <span class="font-semibold text-gray-700">{{ current_student_band_label }}</span></p>
+        {% endif %}
+        <p class="text-xs text-gray-500">The commercial selection resolves the underlying plan automatically before repricing.</p>
+        <button type="submit" class="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">Change Commercial Plan</button>
+      </form>
+
+      <div class="border-t border-gray-200 pt-4">
+        <h3 class="text-lg font-semibold text-gray-900">Lifecycle Actions</h3>
+        <div class="mt-3 space-y-2">
+          <form method="post" action="{{ url_for('platform.activate_subscription_route', subscription_id=subscription.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="return_subscription_id" value="{{ subscription.id }}">
+            <button type="submit" class="w-full rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700">Activate</button>
+          </form>
+          <form method="post" action="{{ url_for('platform.start_subscription_grace_period', subscription_id=subscription.id) }}" class="flex gap-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="return_subscription_id" value="{{ subscription.id }}">
+            <label class="sr-only" for="grace-days-{{ subscription.id }}">Grace period days</label>
+            <input id="grace-days-{{ subscription.id }}" name="days" type="number" min="1" value="14" class="w-24 rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Days" title="Grace period days">
+            <button type="submit" class="flex-1 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600">Grace</button>
+          </form>
+          <form method="post" action="{{ url_for('platform.suspend_subscription_route', subscription_id=subscription.id) }}" class="space-y-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="return_subscription_id" value="{{ subscription.id }}">
+            <label class="block text-sm font-medium text-gray-700">
+              Suspension Reason Code
+              <select name="reason_code" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                <option value="">Select reason code</option>
+                {% for code, label in enforcement_reason_options.suspension %}
+                <option value="{{ code }}" {% if suspension_reason_code == code %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <textarea name="reason" rows="3" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Optional suspension reason">{{ suspension_reason or '' }}</textarea>
+            <button type="submit" class="w-full rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700">Suspend</button>
+          </form>
+          <form method="post" action="{{ url_for('platform.cancel_subscription_route', subscription_id=subscription.id) }}" class="space-y-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="return_subscription_id" value="{{ subscription.id }}">
+            <label class="block text-sm font-medium text-gray-700">
+              Cancellation Reason Code
+              <select name="reason_code" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                <option value="">Select reason code</option>
+                {% for code, label in enforcement_reason_options.cancellation %}
+                <option value="{{ code }}" {% if cancellation_reason_code == code %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <textarea name="reason" rows="3" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Optional cancellation reason">{{ cancellation_reason or '' }}</textarea>
+            <button type="submit" class="w-full rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">Cancel</button>
+          </form>
+        </div>
+      </div>
+      {% else %}
+      <h3 class="text-lg font-semibold text-gray-900">Billing Visibility</h3>
+      <p class="text-sm text-gray-600">This operator can review subscription state, entitlement posture, and audit history, but lifecycle mutations remain restricted to super administrators.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+    <div class="flex items-center justify-between gap-4">
+      <div>
+        <h3 class="text-lg font-semibold text-gray-900">Subscription History</h3>
+        <p class="mt-1 text-sm text-gray-600">Recent control-plane events recorded for this subscription.</p>
+      </div>
+      <a href="{{ url_for('platform.view_audit') }}" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400">Open Full Audit</a>
+    </div>
+
+    <div class="mt-4 overflow-hidden rounded-xl border border-gray-100">
+      <table class="min-w-full divide-y divide-gray-100 text-sm">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">When</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Action</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Details</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for log in audit_logs %}
+          <tr>
+            <td class="px-4 py-3 text-gray-600">{{ log.created_at }}</td>
+            <td class="px-4 py-3 font-medium text-gray-900">{{ log.action }}</td>
+            <td class="px-4 py-3 text-gray-600">
+              {% if log.changes %}
+              <div class="space-y-1">
+                {% for key, value in log.changes.items() %}
+                <div><span class="font-medium text-gray-700">{{ key.replace('_', ' ')|title }}:</span> {{ value }}</div>
+                {% endfor %}
+              </div>
+              {% else %}
+              <span class="text-gray-400">No details captured</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="3" class="px-4 py-6 text-center text-sm text-gray-500">No subscription history recorded yet.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+    <div class="flex items-center justify-between gap-3">
+      <div>
+        <h3 class="text-lg font-semibold text-gray-900">Entitled Modules</h3>
+        <p class="mt-1 text-sm text-gray-600">The modules this subscription should unlock for the tenant right now.</p>
+      </div>
+      {% if entitlement_summary.access_mode == 'read_only' %}
+      <span class="inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-700">Grace Period Read Only</span>
+      {% elif entitlement_summary.access_mode == 'read_write' %}
+      <span class="inline-flex rounded-full bg-green-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-green-700">Full Access</span>
+      {% else %}
+      <span class="inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-700">Access Disabled</span>
+      {% endif %}
+    </div>
+
+    {% if entitlement_summary.is_configured %}
+    <div class="mt-4 grid gap-3 md:grid-cols-2">
+      {% for module in entitlement_summary.modules %}
+      <div class="rounded-xl border border-gray-200 px-4 py-3">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <div class="font-medium text-gray-900">{{ module.name }}</div>
+            <div class="text-xs uppercase tracking-wide text-gray-500">{{ module.code }} • {{ module.family_label }} {{ module.group_label }}</div>
+          </div>
+          <span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide {{ 'bg-green-100 text-green-700' if module.access_level == 'read_write' else 'bg-amber-100 text-amber-700' if module.access_level == 'read_only' else 'bg-gray-100 text-gray-600' }}">{{ module.access_label }}</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="mt-4 text-sm text-gray-600">This plan does not have explicit module entitlements configured yet. Access falls back to the legacy unrestricted behavior.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

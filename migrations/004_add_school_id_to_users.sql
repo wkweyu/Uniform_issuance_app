@@ -7,7 +7,7 @@ VALUES (1, 'Default School', 'DEFAULT', 1);
 
 -- Add school_id column to users with default 1 so existing rows are set.
 ALTER TABLE `users`
-  ADD COLUMN `school_id` INT UNSIGNED NOT NULL DEFAULT 1 AFTER `_date`;
+  ADD COLUMN `school_id` INT NOT NULL DEFAULT 1 AFTER `_date`;
 
 -- Add index for efficient lookups by school.
 ALTER TABLE `users`

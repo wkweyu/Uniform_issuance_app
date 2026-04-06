@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block platform_content %}
+<section class="mx-auto max-w-2xl space-y-6">
+  <div>
+    <h2 class="text-3xl font-bold text-gray-900">Create Subscription</h2>
+    <p class="mt-2 text-sm text-gray-600">Assign a school to a plan when you need a manual subscription outside onboarding.</p>
+  </div>
+
+  <form method="post" class="space-y-4 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div>
+      <label class="mb-1 block text-sm font-medium text-gray-700">School</label>
+      <select name="school_id" title="School" class="w-full rounded-lg border border-gray-300 px-3 py-2" required>
+        {% for school in schools %}
+        <option value="{{ school.id }}">{{ school.name }} ({{ school.code }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="grid gap-4 md:grid-cols-2">
+      <div>
+        <label class="mb-1 block text-sm font-medium text-gray-700">Bundle Family</label>
+        <select name="bundle_family" title="Bundle family" class="w-full rounded-lg border border-gray-300 px-3 py-2" required>
+          <option value="">Select bundle family</option>
+          {% for code, label in bundle_family_options %}
+          <option value="{{ code }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="mb-1 block text-sm font-medium text-gray-700">Billing Period</label>
+        <select name="billing_period" title="Billing period" class="w-full rounded-lg border border-gray-300 px-3 py-2" required>
+          <option value="">Select billing period</option>
+          {% for code, label in billing_period_options %}
+          <option value="{{ code }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div>
+      <label class="mb-1 block text-sm font-medium text-gray-700">Student Count</label>
+      <input type="number" name="student_count" min="1" class="w-full rounded-lg border border-gray-300 px-3 py-2" placeholder="e.g. 650">
+      <p class="mt-2 text-xs text-gray-500">Optional forecast only. Live Students data will continue to re-evaluate the billed band automatically after provisioning.</p>
+    </div>
+    <button type="submit" class="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700">Create Subscription</button>
+  </form>
+</section>
+{% endblock %}

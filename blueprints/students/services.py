@@ -1,11 +1,16 @@
 from datetime import datetime
 from flask import g, current_app
 from core.audit import audit_log
+from core.tenancy import require_current_school_id
 
 class StudentService:
     def __init__(self, connection, school_id=None):
         self.connection = connection
-        self.school_id = school_id or g.school_id or 1
+        self.school_id = school_id or require_current_school_id()
+
+    @staticmethod
+    def _has_reference(value):
+        return value not in (None, '', 0, '0')
 
     def get_classes(self):
         cursor = self.connection.cursor()
@@ -22,8 +27,8 @@ class StudentService:
         cursor.execute("""
             SELECT si.AdmNo, si.FName, si.SName, c.display_name as class_name
             FROM studentinfo si
-            LEFT JOIN class_allocation ca ON si.AdmNo = ca.student_id AND ca.is_current = TRUE
-            LEFT JOIN classes c ON ca.class_id = c.classID
+                        LEFT JOIN class_allocation ca ON si.AdmNo = ca.student_id AND ca.is_current = TRUE AND si.school_id = ca.school_id
+                        LEFT JOIN classes c ON ca.class_id = c.classID AND ca.school_id = c.school_id
             WHERE (si.AdmNo LIKE %s OR si.FName LIKE %s OR si.SName LIKE %s)
               AND si.school_id = %s
             LIMIT %s
@@ -46,10 +51,144 @@ class StudentService:
         """, (admno, self.school_id))
         return cursor.fetchone()
 
+    def get_admission_form_profile(self, admno):
+        cursor = self.connection.cursor()
+        cursor.execute(
+            """
+            SELECT
+                s.*,
+                CONCAT(COALESCE(s.FName, ''), ' ', COALESCE(s.MName, ''), ' ', COALESCE(s.SName, '')) as Fullname,
+                c.display_name as class_name,
+                tr.name as route_name,
+                tr.amount as route_amount
+            FROM studentinfo s
+            LEFT JOIN class_allocation ca ON s.AdmNo = ca.student_id AND ca.is_current = TRUE AND s.school_id = ca.school_id
+            LEFT JOIN classes c ON ca.class_id = c.classID AND ca.school_id = c.school_id
+            LEFT JOIN transport_routes tr ON s.route_id = tr.id AND s.school_id = tr.school_id
+            WHERE s.AdmNo = %s AND s.school_id = %s
+            """,
+            (admno, self.school_id),
+        )
+        return cursor.fetchone()
+
+    def get_parent_contact_for_student(self, admno, parent_id=None):
+        cursor = self.connection.cursor()
+        cursor.execute(
+            """
+            SELECT pName, phone1, phone2, email, address, hometown
+            FROM parentinfo WHERE admno = %s AND school_id = %s
+            """,
+            (admno, self.school_id),
+        )
+        parent = cursor.fetchone()
+        if parent or not parent_id:
+            return parent
+
+        cursor.execute(
+            "SELECT pName, phone1, phone2, email, address, hometown FROM parentinfo WHERE parentid = %s AND school_id = %s LIMIT 1",
+            (parent_id, self.school_id),
+        )
+        return cursor.fetchone()
+
+    def get_sibling_profiles(self, parent_id, admno):
+        cursor = self.connection.cursor()
+        cursor.execute(
+            """
+            SELECT
+                s.AdmNo,
+                CONCAT(COALESCE(s.FName, ''), ' ', COALESCE(s.SName, '')) as Fullname,
+                c.display_name as class_name
+            FROM studentinfo s
+            LEFT JOIN class_allocation ca ON s.AdmNo = ca.student_id AND ca.is_current = TRUE AND s.school_id = ca.school_id
+            LEFT JOIN classes c ON ca.class_id = c.classID AND ca.school_id = c.school_id
+            WHERE s.parentID = %s AND s.AdmNo != %s AND s.school_id = %s
+            """,
+            (parent_id, admno, self.school_id),
+        )
+        return cursor.fetchall()
+
     def check_admno_exists(self, admno):
         cursor = self.connection.cursor()
         cursor.execute("SELECT AdmNo FROM studentinfo WHERE AdmNo = %s AND school_id = %s", (admno, self.school_id))
         return cursor.fetchone() is not None
+
+    def _assert_student_belongs_to_school(self, admno):
+        if not self.check_admno_exists(admno):
+            raise ValueError("Student not found for the active school.")
+
+    def _assert_class_belongs_to_school(self, class_id):
+        if not self._has_reference(class_id):
+            raise ValueError("Class is required.")
+        class_data = self.get_class_details(class_id)
+        if not class_data:
+            raise ValueError("Class not found for the active school.")
+        return class_data
+
+    def _assert_academic_year_belongs_to_school(self, academic_year_id):
+        if not self._has_reference(academic_year_id):
+            raise ValueError("Academic year is required.")
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "SELECT id FROM academic_years WHERE id = %s AND school_id = %s",
+            (academic_year_id, self.school_id),
+        )
+        if not cursor.fetchone():
+            raise ValueError("Academic year not found for the active school.")
+
+    def _assert_class_matches_academic_year(self, class_id, academic_year_id):
+        class_data = self._assert_class_belongs_to_school(class_id)
+        self._assert_academic_year_belongs_to_school(academic_year_id)
+        if class_data.get('academic_year_id') != academic_year_id:
+            raise ValueError("Academic year does not match the selected class.")
+        return class_data
+
+    def _assert_route_belongs_to_school(self, route_id):
+        if not self._has_reference(route_id):
+            return
+        if not self.get_transport_route_by_id(route_id):
+            raise ValueError("Transport route not found for the active school.")
+
+    def _assert_student_group_belongs_to_school(self, student_group_id):
+        if not self._has_reference(student_group_id):
+            return
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "SELECT id FROM student_groups WHERE id = %s AND school_id = %s",
+            (student_group_id, self.school_id),
+        )
+        if not cursor.fetchone():
+            raise ValueError("Student group not found for the active school.")
+
+    def _assert_class_allocation_belongs_to_school(self, allocation_id):
+        if not self._has_reference(allocation_id):
+            raise ValueError("Class allocation is required.")
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "SELECT id FROM class_allocation WHERE id = %s AND school_id = %s",
+            (allocation_id, self.school_id),
+        )
+        if not cursor.fetchone():
+            raise ValueError("Class allocation not found for the active school.")
+
+    def _sync_legacy_classallocation(self, cursor, admno, class_id, academic_year_id):
+        if not self._has_reference(academic_year_id):
+            return
+        cursor.execute(
+            "SELECT allocationID FROM classallocation WHERE AdmNo = %s AND thisYear = %s AND school_id = %s",
+            (admno, academic_year_id, self.school_id),
+        )
+        allocation = cursor.fetchone()
+
+        if allocation:
+            cursor.execute(
+                "UPDATE classallocation SET classID = %s WHERE allocationID = %s AND school_id = %s",
+                (class_id, allocation['allocationID'], self.school_id),
+            )
+        else:
+            cursor.execute(
+                "INSERT INTO classallocation (AdmNo, classID, thisYear, AllcDate, school_id) VALUES (%s, %s, %s, NOW(), %s)",
+                (admno, class_id, academic_year_id, self.school_id),
+            )
 
     def get_parent_by_phone(self, phone):
         cursor = self.connection.cursor()
@@ -67,6 +206,10 @@ class StudentService:
 
     @audit_log('admit_student')
     def admit_student(self, student_data, parent_data, class_id, academic_year_id):
+        self._assert_class_matches_academic_year(class_id, academic_year_id)
+        self._assert_route_belongs_to_school(student_data.get('route_id'))
+        self._assert_student_group_belongs_to_school(student_data.get('student_group_id'))
+
         cursor = self.connection.cursor()
         self.connection.begin()
         try:
@@ -97,20 +240,33 @@ class StudentService:
 
             # Parent Info
             if parent_data.get('pName'):
-                cursor.execute("""
-                    INSERT INTO parentinfo (parentid, admno, pName, phone1, email, nationalID, address, hometown, regDate, school_id)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s)
-                    ON DUPLICATE KEY UPDATE
-                    pName=%s, phone1=%s, email=%s, nationalID=%s, address=%s, hometown=%s
-                """, (
-                    final_parent_id, student_data['admno'], parent_data['pName'], parent_data['phone1'],
-                    parent_data['email'], parent_data['nationalID'], parent_data['address'],
-                    parent_data['hometown'], self.school_id,
-                    parent_data['pName'], parent_data['phone1'], parent_data['email'],
-                    parent_data['nationalID'], parent_data['address'], parent_data['hometown']
-                ))
+                cursor.execute(
+                    "SELECT parentid FROM parentinfo WHERE admno = %s AND school_id = %s LIMIT 1",
+                    (student_data['admno'], self.school_id)
+                )
+                existing_parent = cursor.fetchone()
+                if existing_parent:
+                    cursor.execute("""
+                        UPDATE parentinfo
+                        SET pName = %s, phone1 = %s, email = %s, nationalID = %s, address = %s, hometown = %s
+                        WHERE admno = %s AND school_id = %s
+                    """, (
+                        parent_data['pName'], parent_data['phone1'], parent_data['email'],
+                        parent_data['nationalID'], parent_data['address'], parent_data['hometown'],
+                        student_data['admno'], self.school_id
+                    ))
+                else:
+                    cursor.execute("""
+                        INSERT INTO parentinfo (parentid, admno, pName, phone1, email, nationalID, address, hometown, regDate, school_id)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s)
+                    """, (
+                        final_parent_id, student_data['admno'], parent_data['pName'], parent_data['phone1'],
+                        parent_data['email'], parent_data['nationalID'], parent_data['address'],
+                        parent_data['hometown'], self.school_id
+                    ))
 
             # Class Allocation
+            self._sync_legacy_classallocation(cursor, student_data['admno'], class_id, academic_year_id)
             cursor.execute("""
                 INSERT INTO class_allocation (student_id, class_id, academic_year_id, school_id, allocation_date, is_current)
                 VALUES (%s, %s, %s, %s, NOW(), TRUE)
@@ -124,6 +280,11 @@ class StudentService:
 
     @audit_log('update_student')
     def update_student(self, admno, student_data, parent_data, class_id, academic_year_id):
+        self._assert_student_belongs_to_school(admno)
+        self._assert_class_matches_academic_year(class_id, academic_year_id)
+        self._assert_route_belongs_to_school(student_data.get('route_id'))
+        self._assert_student_group_belongs_to_school(student_data.get('student_group_id'))
+
         cursor = self.connection.cursor()
         self.connection.begin()
         try:
@@ -144,34 +305,32 @@ class StudentService:
 
             # Update parentinfo
             if parent_data.get('pName') or parent_data.get('phone1'):
-                cursor.execute("""
-                    INSERT INTO parentinfo (admno, pName, phone1, email, nationalID, address, hometown, regDate, parentid, school_id)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), 0, %s)
-                    ON DUPLICATE KEY UPDATE
-                    pName=%s, phone1=%s, email=%s, nationalID=%s, address=%s, hometown=%s
-                """, (
-                    admno, parent_data['pName'], parent_data['phone1'], parent_data['email'],
-                    parent_data['nationalID'], parent_data['address'], parent_data['hometown'], self.school_id,
-                    parent_data['pName'], parent_data['phone1'], parent_data['email'],
-                    parent_data['nationalID'], parent_data['address'], parent_data['hometown']
-                ))
+                cursor.execute(
+                    "SELECT parentid FROM parentinfo WHERE admno = %s AND school_id = %s LIMIT 1",
+                    (admno, self.school_id)
+                )
+                existing_parent = cursor.fetchone()
+                if existing_parent:
+                    cursor.execute("""
+                        UPDATE parentinfo
+                        SET pName = %s, phone1 = %s, email = %s, nationalID = %s, address = %s, hometown = %s
+                        WHERE admno = %s AND school_id = %s
+                    """, (
+                        parent_data['pName'], parent_data['phone1'], parent_data['email'],
+                        parent_data['nationalID'], parent_data['address'], parent_data['hometown'],
+                        admno, self.school_id
+                    ))
+                else:
+                    cursor.execute("""
+                        INSERT INTO parentinfo (admno, pName, phone1, email, nationalID, address, hometown, regDate, parentid, school_id)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), 0, %s)
+                    """, (
+                        admno, parent_data['pName'], parent_data['phone1'], parent_data['email'],
+                        parent_data['nationalID'], parent_data['address'], parent_data['hometown'], self.school_id
+                    ))
 
             # Sync Class Allocations
-            current_year = datetime.now().year
-            cursor.execute("""
-                SELECT allocationID FROM classallocation WHERE AdmNo = %s AND thisYear = %s AND school_id = %s
-            """, (admno, current_year, self.school_id))
-            allocation = cursor.fetchone()
-
-            if allocation:
-                cursor.execute("""
-                    UPDATE classallocation SET classID = %s WHERE allocationID = %s AND school_id = %s
-                """, (class_id, allocation['allocationID'], self.school_id))
-            else:
-                cursor.execute("""
-                    INSERT INTO classallocation (AdmNo, classID, thisYear, AllcDate, school_id)
-                    VALUES (%s, %s, %s, NOW(), %s)
-                """, (admno, class_id, current_year, self.school_id))
+            self._sync_legacy_classallocation(cursor, admno, class_id, academic_year_id)
 
             if academic_year_id:
                 cursor.execute("""
@@ -279,24 +438,47 @@ class StudentService:
             else:
                 cursor.execute("""
                     SELECT s.AdmNo, s.FName, s.MName, s.SName AS LName, s.Sex AS Gender, s.blocked AS Status,
-                           c.class_name, c.class_group, a.thisYear
+                           COALESCE(c_current.class_name, c_legacy.class_name) as class_name,
+                           COALESCE(c_current.class_group, c_legacy.class_group) as class_group,
+                           COALESCE(modern_ca.academic_year_id, legacy_ca.thisYear) as thisYear
                     FROM studentinfo s
-                    LEFT JOIN classallocation a ON s.AdmNo = a.AdmNo AND s.school_id = a.school_id
-                    LEFT JOIN classes c ON a.classID = c.classID AND a.school_id = c.school_id
+                    LEFT JOIN class_allocation modern_ca ON s.AdmNo = modern_ca.student_id AND modern_ca.is_current = TRUE AND s.school_id = modern_ca.school_id
+                    LEFT JOIN classes c_current ON modern_ca.class_id = c_current.classID AND modern_ca.school_id = c_current.school_id
+                    LEFT JOIN classallocation legacy_ca ON s.AdmNo = legacy_ca.AdmNo AND s.school_id = legacy_ca.school_id
+                    LEFT JOIN classes c_legacy ON legacy_ca.classID = c_legacy.classID AND legacy_ca.school_id = c_legacy.school_id
                     WHERE s.school_id = %s
-                    ORDER BY a.AllcDate DESC, s.FName LIMIT 20
+                    ORDER BY modern_ca.allocation_date DESC, legacy_ca.AllcDate DESC, s.FName LIMIT 20
                 """, (self.school_id,))
         return cursor.fetchall()
 
     def get_student_academic_history(self, admno):
         cursor = self.connection.cursor()
         cursor.execute("""
-            SELECT a.thisYear, a.AllcDate, c.class_name, c.class_group
-            FROM classallocation a
-            JOIN classes c ON a.classID = c.classID AND a.school_id = c.school_id
-            WHERE a.AdmNo = %s AND a.school_id = %s
-            ORDER BY a.thisYear DESC
-        """, (admno, self.school_id))
+            SELECT history.thisYear, history.AllcDate, history.class_name, history.class_group
+            FROM (
+                SELECT ay.year AS thisYear, ca.allocation_date AS AllcDate, c.class_name, c.class_group
+                FROM class_allocation ca
+                JOIN academic_years ay ON ca.academic_year_id = ay.id AND ca.school_id = ay.school_id
+                JOIN classes c ON ca.class_id = c.classID AND ca.school_id = c.school_id
+                WHERE ca.student_id = %s AND ca.school_id = %s
+
+                UNION ALL
+
+                SELECT a.thisYear AS thisYear, a.AllcDate AS AllcDate, c.class_name, c.class_group
+                FROM classallocation a
+                JOIN classes c ON a.classID = c.classID AND a.school_id = c.school_id
+                WHERE a.AdmNo = %s AND a.school_id = %s
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM class_allocation ca2
+                      JOIN academic_years ay2 ON ca2.academic_year_id = ay2.id AND ca2.school_id = ay2.school_id
+                      WHERE ca2.student_id = a.AdmNo
+                        AND ay2.year = a.thisYear
+                        AND ca2.school_id = a.school_id
+                  )
+            ) history
+            ORDER BY history.thisYear DESC, history.AllcDate DESC
+        """, (admno, self.school_id, admno, self.school_id))
         return cursor.fetchall()
 
     def get_uniform_history(self, admno):
@@ -324,11 +506,14 @@ class StudentService:
     def get_siblings(self, phone, current_admno):
         cursor = self.connection.cursor()
         cursor.execute("""
-            SELECT s.AdmNo, s.FName, s.MName, s.SName as LName, c.class_name
+            SELECT s.AdmNo, s.FName, s.MName, s.SName as LName,
+                   COALESCE(c_current.display_name, c_legacy.class_name) as class_name
             FROM studentinfo s
             JOIN parentinfo p ON s.AdmNo = p.admno AND s.school_id = p.school_id
-            LEFT JOIN classallocation ca ON s.AdmNo = ca.AdmNo AND s.school_id = ca.school_id
-            LEFT JOIN classes c ON ca.classID = c.classID AND ca.school_id = c.school_id
+            LEFT JOIN class_allocation modern_ca ON s.AdmNo = modern_ca.student_id AND modern_ca.is_current = TRUE AND s.school_id = modern_ca.school_id
+            LEFT JOIN classes c_current ON modern_ca.class_id = c_current.classID AND modern_ca.school_id = c_current.school_id
+            LEFT JOIN classallocation legacy_ca ON s.AdmNo = legacy_ca.AdmNo AND s.school_id = legacy_ca.school_id
+            LEFT JOIN classes c_legacy ON legacy_ca.classID = c_legacy.classID AND legacy_ca.school_id = c_legacy.school_id
             WHERE p.phone1 = %s AND s.AdmNo != %s AND s.school_id = %s
             GROUP BY s.AdmNo
         """, (phone, current_admno, self.school_id))
@@ -361,11 +546,14 @@ class StudentService:
         cursor = self.connection.cursor()
         # 1. Get Siblings
         cursor.execute("""
-            SELECT s.AdmNo, s.FName, s.MName, s.SName as LName, c.class_name
+            SELECT s.AdmNo, s.FName, s.MName, s.SName as LName,
+                   COALESCE(c_current.display_name, c_legacy.class_name) as class_name
             FROM studentinfo s
             JOIN parentinfo p ON s.AdmNo = p.admno AND s.school_id = p.school_id
-            LEFT JOIN classallocation ca ON s.AdmNo = ca.AdmNo AND s.school_id = ca.school_id
-            LEFT JOIN classes c ON ca.classID = c.classID AND ca.school_id = c.school_id
+            LEFT JOIN class_allocation modern_ca ON s.AdmNo = modern_ca.student_id AND modern_ca.is_current = TRUE AND s.school_id = modern_ca.school_id
+            LEFT JOIN classes c_current ON modern_ca.class_id = c_current.classID AND modern_ca.school_id = c_current.school_id
+            LEFT JOIN classallocation legacy_ca ON s.AdmNo = legacy_ca.AdmNo AND s.school_id = legacy_ca.school_id
+            LEFT JOIN classes c_legacy ON legacy_ca.classID = c_legacy.classID AND legacy_ca.school_id = c_legacy.school_id
             WHERE p.phone1 = %s AND s.school_id = %s
             GROUP BY s.AdmNo
         """, (phone, self.school_id))
@@ -384,11 +572,18 @@ class StudentService:
     def get_student_class_info(self, admno):
         cursor = self.connection.cursor()
         cursor.execute("""
-            SELECT c.class_name, c.class_group, c.classID, a.thisYear
-            FROM classallocation a
-            LEFT JOIN classes c ON a.classID = c.classID AND a.school_id = c.school_id
-            WHERE a.AdmNo = %s AND a.school_id = %s
-            ORDER BY a.thisYear DESC, a.AllcDate DESC LIMIT 1
+            SELECT
+                COALESCE(c_current.class_name, c_legacy.class_name) as class_name,
+                COALESCE(c_current.class_group, c_legacy.class_group) as class_group,
+                COALESCE(c_current.classID, c_legacy.classID) as classID,
+                COALESCE(modern_ca.academic_year_id, legacy_ca.thisYear) as thisYear
+            FROM studentinfo s
+            LEFT JOIN class_allocation modern_ca ON s.AdmNo = modern_ca.student_id AND modern_ca.is_current = TRUE AND s.school_id = modern_ca.school_id
+            LEFT JOIN classes c_current ON modern_ca.class_id = c_current.classID AND modern_ca.school_id = c_current.school_id
+            LEFT JOIN classallocation legacy_ca ON s.AdmNo = legacy_ca.AdmNo AND s.school_id = legacy_ca.school_id
+            LEFT JOIN classes c_legacy ON legacy_ca.classID = c_legacy.classID AND legacy_ca.school_id = c_legacy.school_id
+            WHERE s.AdmNo = %s AND s.school_id = %s
+            ORDER BY modern_ca.allocation_date DESC, legacy_ca.AllcDate DESC LIMIT 1
         """, (admno, self.school_id))
         return cursor.fetchone()
 
@@ -422,12 +617,12 @@ class StudentService:
             SELECT e.id as exam_id, e.name as exam_name, e.term, ay.year as academic_year,
                    COUNT(m.id) as subjects_count, SUM(m.mark) as total_marks, AVG(m.mark) as mean_mark
             FROM exam_marks m
-            JOIN exam_series e ON m.exam_id = e.id
-            JOIN academic_years ay ON e.academic_year_id = ay.id
-            WHERE m.student_id = %s
+            JOIN exam_series e ON m.exam_id = e.id AND m.school_id = e.school_id
+            JOIN academic_years ay ON e.academic_year_id = ay.id AND e.school_id = ay.school_id
+            WHERE m.student_id = %s AND m.school_id = %s
             GROUP BY e.id, e.name, e.term, ay.year
             ORDER BY ay.year DESC, e.term DESC
-        """, (str(admno),))
+        """, (str(admno), self.school_id))
         return cursor.fetchall()
 
     def get_class_details(self, class_id):
@@ -529,14 +724,29 @@ class StudentService:
 
                 pn = p_names[i].strip()
                 if pn:
-                    cursor.execute("""
-                        INSERT INTO parentinfo (parentid, admno, pName, phone1, email, nationalID, address, hometown, regDate, school_id)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s)
-                        ON DUPLICATE KEY UPDATE pName=%s
-                    """, (
-                        final_parent_id, admno, pn, p_phone, p_emails[i],
-                        p_ids[i], p_addresses[i], p_residencies[i], self.school_id, pn
-                    ))
+                    cursor.execute(
+                        "SELECT parentid FROM parentinfo WHERE admno = %s AND school_id = %s LIMIT 1",
+                        (admno, self.school_id)
+                    )
+                    existing_parent = cursor.fetchone()
+                    if existing_parent:
+                        cursor.execute("""
+                            UPDATE parentinfo
+                            SET pName = %s, phone1 = %s, email = %s, nationalID = %s, address = %s, hometown = %s
+                            WHERE admno = %s AND school_id = %s
+                        """, (
+                            pn, p_phone, p_emails[i], p_ids[i], p_addresses[i], p_residencies[i], admno, self.school_id
+                        ))
+                    else:
+                        cursor.execute("""
+                            INSERT INTO parentinfo (parentid, admno, pName, phone1, email, nationalID, address, hometown, regDate, school_id)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s)
+                        """, (
+                            final_parent_id, admno, pn, p_phone, p_emails[i],
+                            p_ids[i], p_addresses[i], p_residencies[i], self.school_id
+                        ))
+
+                self._sync_legacy_classallocation(cursor, admno, class_id, class_info['academic_year_id'])
 
                 cursor.execute("""
                     INSERT INTO class_allocation (student_id, class_id, academic_year_id, school_id, allocation_date, is_current)
@@ -568,10 +778,13 @@ class StudentService:
     def search_students_for_subjects(self, query):
         cursor = self.connection.cursor()
         cursor.execute("""
-            SELECT s.AdmNo, s.FName, s.MName, s.SName as LName, c.class_name
-            FROM studentinfo s
-            LEFT JOIN classallocation ca ON s.AdmNo = ca.AdmNo AND s.school_id = ca.school_id
-            LEFT JOIN classes c ON ca.classID = c.classID AND ca.school_id = c.school_id
+                        SELECT s.AdmNo, s.FName, s.MName, s.SName as LName,
+                                     COALESCE(c_current.display_name, c_legacy.class_name) as class_name
+                        FROM studentinfo s
+                        LEFT JOIN class_allocation modern_ca ON s.AdmNo = modern_ca.student_id AND modern_ca.is_current = TRUE AND s.school_id = modern_ca.school_id
+                        LEFT JOIN classes c_current ON modern_ca.class_id = c_current.classID AND modern_ca.school_id = c_current.school_id
+                        LEFT JOIN classallocation legacy_ca ON s.AdmNo = legacy_ca.AdmNo AND s.school_id = legacy_ca.school_id
+                        LEFT JOIN classes c_legacy ON legacy_ca.classID = c_legacy.classID AND legacy_ca.school_id = c_legacy.school_id
             WHERE (s.AdmNo LIKE %s OR s.FName LIKE %s OR s.SName LIKE %s)
               AND s.school_id = %s
             GROUP BY s.AdmNo
@@ -584,8 +797,8 @@ class StudentService:
         cursor.execute("""
             SELECT ca.*, c.display_name, c.classID, ay.year
             FROM class_allocation ca
-            JOIN classes c ON ca.class_id = c.classID
-            JOIN academic_years ay ON ca.academic_year_id = ay.id
+            JOIN classes c ON ca.class_id = c.classID AND ca.school_id = c.school_id
+            JOIN academic_years ay ON ca.academic_year_id = ay.id AND ca.school_id = ay.school_id
             WHERE ca.student_id = %s AND ca.is_current = TRUE AND ca.school_id = %s
             LIMIT 1
         """, (student_id, self.school_id))
@@ -596,7 +809,7 @@ class StudentService:
         cursor.execute("""
             SELECT s.subjectNo as id, s.code, s.subjName as name, cs.is_compulsory
             FROM class_subjects cs
-            JOIN subjects s ON cs.subject_id = s.subjectNo
+                        JOIN subjects s ON cs.subject_id = s.subjectNo AND cs.school_id = s.school_id
             WHERE cs.class_id = %s AND cs.is_active = TRUE
               AND cs.school_id = %s AND s.school_id = %s
             ORDER BY s.code
@@ -610,3 +823,12 @@ class StudentService:
             WHERE class_allocation_id = %s AND is_active = TRUE AND school_id = %s
         """, (allocation_id, self.school_id))
         return [row['subject_id'] for row in cursor.fetchall()]
+
+    def clear_student_subject_enrollments(self, allocation_id):
+        self._assert_class_allocation_belongs_to_school(allocation_id)
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "UPDATE student_subjects SET is_active = FALSE WHERE class_allocation_id = %s AND school_id = %s",
+            (allocation_id, self.school_id),
+        )
+        self.connection.commit()

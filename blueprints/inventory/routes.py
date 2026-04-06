@@ -8,14 +8,36 @@ from datetime import datetime
 
 inventory_bp = Blueprint('inventory', __name__)
 
+
+def _required_text(value, field_name):
+    parsed = (value or '').strip()
+    if not parsed:
+        raise ValueError(f"{field_name} is required.")
+    return parsed
+
+
+def _required_int(value, field_name):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field_name} is required and must be a valid integer.")
+
+
+def _parse_float(value, field_name, default=0):
+    try:
+        return float(value if value not in (None, '') else default)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field_name} must be a valid number.")
+
 @inventory_bp.route('/admin/add_uniform_item', methods=['POST'])
 @login_required
 @admin_required
 def add_uniform_item():
     connection = get_db_connection(); service = InventoryService(connection)
     try:
-        service.add_uniform_item(request.form.get('item_name').strip(), request.form.getlist('class_groups[]'))
-        flash("✅ Item added.", "success")
+        service.add_uniform_item(_required_text(request.form.get('item_name'), 'item_name'), request.form.getlist('class_groups[]'))
+        flash("Item added.", "success")
+    except ValueError as e: flash(str(e), "error")
     except Exception as e: flash(str(e), "error")
     finally: connection.close()
     return redirect(request.referrer or url_for('index'))
@@ -26,9 +48,12 @@ def add_uniform_item():
 def delete_uniform_item():
     connection = get_db_connection(); service = InventoryService(connection)
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
+        if not data.get('item_name'):
+            return jsonify({'success': False, 'message': 'item_name is required.'}), 400
         service.delete_uniform_item(data.get('item_name'))
         return jsonify({'success': True})
+    except ValueError as e: return jsonify({'success': False, 'message': str(e)}), 400
     except Exception as e: return jsonify({'success': False, 'message': str(e)}), 500
     finally: connection.close()
 
@@ -41,17 +66,17 @@ def manage_uniform_items():
         if request.method == 'POST':
             item_name = request.form.get('item_name')
             class_group = request.form.get('class_group')
-            price = float(request.form.get('price', 0))
+            price = _parse_float(request.form.get('price', 0), 'price')
             service.update_price(item_name, class_group, price)
-            flash(f"✅ Price updated for {item_name} ({class_group}).", "success")
+            flash(f"Price updated for {item_name} ({class_group}).", "success")
 
         prices = service.get_all_prices()
-        # Get class groups for the 'add' modal
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT code, name FROM class_group_settings WHERE school_id = %s", (service.school_id,))
-            class_groups = cursor.fetchall()
+        class_groups = service.get_class_groups()
 
         return render_template('manage_prices.html', prices=prices, class_groups=class_groups)
+    except ValueError as e:
+        flash(f"Error: {str(e)}", "error")
+        return redirect(url_for('inventory.manage_stock'))
     except Exception as e:
         flash(f"Error: {str(e)}", "error")
         return redirect(url_for('inventory.manage_stock'))
@@ -72,10 +97,10 @@ def manage_term_dates():
                     request.form.get('start_date'),
                     request.form.get('end_date')
                 )
-                flash("✅ Term dates added.", "success")
+                flash("Term dates added.", "success")
             elif action == 'delete':
                 service.delete_term_date(request.form.get('term_id'))
-                flash("✅ Term deleted.", "success")
+                flash("Term deleted.", "success")
 
         terms = service.get_all_term_dates()
         return render_template('manage_term_dates.html', term_dates=terms, now=datetime.now())
@@ -89,10 +114,11 @@ def manage_stock():
         action = request.form.get('action')
         try:
             if action == 'add_stock':
-                service.adjust_stock(request.form.get('item_name'), int(request.form.get('quantity', 0)), 'PURCHASE', session['userNo'], f"Purchased from {request.form.get('supplier', '')}", request.form.get('purchase_ref', ''))
+                service.adjust_stock(request.form.get('item_name'), _required_int(request.form.get('quantity', 0), 'quantity'), 'PURCHASE', session['userNo'], f"Purchased from {request.form.get('supplier', '')}", request.form.get('purchase_ref', ''))
             elif action == 'adjust_stock':
-                service.adjust_stock(request.form.get('item_name'), int(request.form.get('new_quantity', 0)), 'ADJUSTMENT', session['userNo'], request.form.get('reason', ''))
-            flash("✅ Stock updated.", "success")
+                service.adjust_stock(request.form.get('item_name'), _required_int(request.form.get('new_quantity', 0), 'new_quantity'), 'ADJUSTMENT', session['userNo'], request.form.get('reason', ''))
+            flash("Stock updated.", "success")
+        except ValueError as e: flash(str(e), "error")
         except Exception as e: flash(str(e), "error")
 
     items = service.get_stock_levels()
@@ -130,9 +156,7 @@ def stock_ledger():
         elif row['movement_type'] == 'ADJUSTMENT': running_balance = row['new_stock']
         row['running_balance'] = running_balance
 
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT DISTINCT item_name FROM uniform_prices WHERE school_id = %s", (service.school_id,))
-        items = cursor.fetchall()
+    items = service.get_item_name_options()
     connection.close()
     return render_template('stock_ledger.html', items=items, ledger_data=ledger_data, selected_item=item_name)
 
@@ -160,16 +184,22 @@ def issue_uniform():
 def submit_issuance():
     connection = get_db_connection(); service = InventoryService(connection)
     try:
-        data = request.get_json()
-        admno = data.get('admno')
+        data = request.get_json(silent=True) or {}
+        admno = (data.get('admno') or '').strip()
         items = data.get('items')
+        if not admno:
+            return jsonify({'success': False, 'message': 'Student admission number is required.'}), 400
+        if not isinstance(items, list) or not items:
+            return jsonify({'success': False, 'message': 'At least one issuance item is required.'}), 400
         receipt_no = f"UNI-{datetime.now().strftime('%m%d%H%M')}-{admno[-2:]}" # Simple generated ref, adjust logic as needed
-        total_amount = sum(float(i['total']) for i in items)
+        total_amount = 0
         
         success = service.process_issuance(admno, items, session['userNo'], receipt_no, total_amount)
         if success:
             return jsonify({'success': True, 'receipt_no': receipt_no})
         return jsonify({'success': False, 'message': "Failed to process issuance"})
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
     finally: connection.close()

@@ -1,0 +1,391 @@
+{% extends 'base.html' %}
+{% from 'platform/_components.html' import page_header %}
+{% block breadcrumb %}Tenants &rsaquo; {{ school.name }}{% endblock %}
+{% block platform_content %}
+<section class="max-w-6xl space-y-5">
+  <div class="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-4">
+    <div>
+      <div class="flex flex-wrap items-center gap-2">
+        <h2 class="text-lg font-extrabold tracking-tight text-slate-900">{{ school.name }}</h2>
+        <span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide {{ 'bg-green-100 text-green-700' if school.is_active else 'bg-red-100 text-red-700' }}">
+          {{ 'active' if school.is_active else 'inactive' }}
+        </span>
+        <span class="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+          {{ latest_subscription.effective_status if latest_subscription else (school.subscription_status or 'trial') }}
+        </span>
+      </div>
+      <p class="mt-1 text-xs text-slate-500">Code {{ school.code }}{% if school.email %} &middot; {{ school.email }}{% endif %}</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <a href="{{ url_for('platform.list_schools') }}" class="platform-btn-secondary text-xs"><i class="fas fa-arrow-left mr-1"></i>Tenants</a>
+      <a href="{{ url_for('platform.list_subscriptions') }}" class="platform-btn-secondary text-xs"><i class="fas fa-file-invoice mr-1"></i>Subscriptions</a>
+    </div>
+  </div>
+
+  <div class="grid gap-5 lg:grid-cols-[1.3fr,0.7fr]">
+    <div class="space-y-5">
+      <div class="platform-card p-5">
+        <h3 class="platform-section-title mb-3">Tenant Overview</h3>
+        <dl class="grid gap-3 sm:grid-cols-2 text-xs">
+          <div>
+            <dt class="font-medium text-slate-400">Subscription End</dt>
+            <dd class="mt-0.5 text-slate-800 font-semibold">{{ school.subscription_end or 'Not set' }}</dd>
+          </div>
+          <div>
+            <dt class="font-medium text-slate-400">Created</dt>
+            <dd class="mt-0.5 text-slate-800 font-semibold">{{ school.created_at.strftime('%Y-%m-%d %H:%M') if school.created_at else 'Unknown' }}</dd>
+          </div>
+          <div>
+            <dt class="font-medium text-slate-400">Current Plan</dt>
+            <dd class="mt-0.5 text-slate-800 font-semibold">{{ current_plan.name if current_plan else 'Not provisioned' }}</dd>
+          </div>
+          <div>
+            <dt class="font-medium text-slate-400">Billing State</dt>
+            <dd class="mt-0.5 text-slate-800 font-semibold">{{ latest_subscription.effective_status if latest_subscription else (school.subscription_status or 'trial') }}</dd>
+          </div>
+        </dl>
+      </div>
+
+      <div class="platform-card p-5">
+        <div class="flex items-center justify-between gap-3">
+          <h3 class="platform-section-title">Billing Enforcement Timeline</h3>
+          <span class="text-[11px] uppercase tracking-wide text-slate-400">Auditable decisions</span>
+        </div>
+        <div class="mt-4 overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200 text-sm">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-4 py-3 text-left font-semibold text-gray-600">When</th>
+                <th class="px-4 py-3 text-left font-semibold text-gray-600">Actor</th>
+                <th class="px-4 py-3 text-left font-semibold text-gray-600">Action</th>
+                <th class="px-4 py-3 text-left font-semibold text-gray-600">Reason / Details</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              {% for entry in enforcement_timeline %}
+              {% set actor = timeline_actor_lookup.get(entry.actor_user_id) %}
+              <tr>
+                <td class="px-4 py-3 text-gray-600">{{ entry.created_at.strftime('%Y-%m-%d %H:%M') if entry.created_at else 'Unknown' }}</td>
+                <td class="px-4 py-3 text-gray-600">
+                  {% if actor %}
+                  <div class="font-medium text-gray-900">{{ actor.name }}</div>
+                  <div class="text-xs text-gray-500">{{ actor.email }}</div>
+                  <div class="text-xs uppercase tracking-wide text-gray-400">{{ actor.role }}</div>
+                  {% elif entry.actor_user_id %}
+                  Platform user #{{ entry.actor_user_id }}
+                  {% else %}
+                  System
+                  {% endif %}
+                </td>
+                <td class="px-4 py-3 font-medium text-gray-900">{{ entry.action }}</td>
+                <td class="px-4 py-3 text-gray-600">
+                  {% if entry.changes %}
+                  {% set reason = entry.changes.get('suspension_reason') or entry.changes.get('cancellation_reason') %}
+                  {% set reason_code = entry.changes.get('suspension_reason_code') or entry.changes.get('cancellation_reason_code') %}
+                  {% if reason_code %}
+                  <div class="mb-1 inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700">{{ reason_label(reason_code) }}</div>
+                  {% endif %}
+                  {% if reason %}
+                  <div class="font-medium text-gray-900">{{ reason }}</div>
+                  {% endif %}
+                  <div class="space-y-1 text-xs text-gray-500">
+                    {% for key, value in entry.changes.items() %}
+                    <div>{{ key.replace('_', ' ')|title }}: {{ value if value is not none else 'Not set' }}</div>
+                    {% endfor %}
+                  </div>
+                  {% else %}
+                  <span class="text-gray-400">No details captured</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="4" class="px-4 py-8 text-center text-sm text-gray-500">No enforcement actions recorded for this school yet.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="platform-card p-5">
+        <div class="flex items-center justify-between gap-3">
+          <h3 class="platform-section-title">Recent Platform Activity</h3>
+          <span class="text-[11px] uppercase tracking-wide text-slate-400">School-scoped audit feed</span>
+        </div>
+        <div class="mt-4 overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200 text-sm">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-4 py-3 text-left font-semibold text-gray-600">When</th>
+                <th class="px-4 py-3 text-left font-semibold text-gray-600">Action</th>
+                <th class="px-4 py-3 text-left font-semibold text-gray-600">Target</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              {% for entry in audit_logs %}
+              <tr>
+                <td class="px-4 py-3 text-gray-600">{{ entry.created_at.strftime('%Y-%m-%d %H:%M') if entry.created_at else 'Unknown' }}</td>
+                <td class="px-4 py-3 font-medium text-gray-900">{{ entry.action }}</td>
+                <td class="px-4 py-3 text-gray-600">{{ entry.target_table }}{% if entry.target_id %} #{{ entry.target_id }}{% endif %}</td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="3" class="px-4 py-8 text-center text-sm text-gray-500">No platform activity recorded for this school yet.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="space-y-5">
+      <div class="platform-card p-5">
+        <h3 class="platform-section-title">Subscription Enforcement</h3>
+        <p class="mt-1 text-xs text-slate-500">Assign or change plans and enforce billing state.</p>
+
+        <div class="mt-4 space-y-4">
+          {% if platform_has_permission('subscription_write') %}
+          {% if latest_subscription %}
+          <form method="post" action="{{ url_for('platform.change_subscription_plan', subscription_id=latest_subscription.id) }}" class="space-y-3 rounded-xl border border-gray-200 p-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="school_id" value="{{ school.id }}">
+            <div class="grid gap-3 md:grid-cols-2">
+              <label class="block text-sm font-medium text-gray-700">
+                Bundle Family
+                <select name="bundle_family" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                  {% for code, label in bundle_family_options %}
+                  <option value="{{ code }}" {% if current_plan and current_plan.bundle_family == code %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label class="block text-sm font-medium text-gray-700">
+                Billing Period
+                <select name="billing_period" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                  {% for code, label in billing_period_options %}
+                  <option value="{{ code }}" {% if latest_subscription.billing_cycle == code %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
+            <label class="block text-sm font-medium text-gray-700">
+              Student Count For Repricing
+              <input type="number" name="student_count" min="1" value="{{ current_student_count or '' }}" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Enter enrolled student count" title="Student count used for plan repricing">
+            </label>
+            {% if current_student_band_label %}
+            <p class="text-xs text-gray-500">Current billed band: <span class="font-semibold text-gray-700">{{ current_student_band_label }}</span></p>
+            {% endif %}
+            <p class="text-xs text-gray-500">The control plane resolves the exact plan internally from the commercial bundle family and billing period.</p>
+            <button type="submit" class="platform-btn-primary text-xs w-full">Update Commercial Plan</button>
+          </form>
+          {% else %}
+          <form method="post" action="{{ url_for('platform.assign_school_plan_route', school_id=school.id) }}" class="space-y-3 rounded-xl border border-gray-200 p-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="grid gap-3 md:grid-cols-2">
+              <label class="block text-sm font-medium text-gray-700">
+                Bundle Family
+                <select name="bundle_family" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                  <option value="">Select bundle family</option>
+                  {% for code, label in bundle_family_options %}
+                  <option value="{{ code }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label class="block text-sm font-medium text-gray-700">
+                Billing Period
+                <select name="billing_period" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                  <option value="">Select billing period</option>
+                  {% for code, label in billing_period_options %}
+                  <option value="{{ code }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
+            <label class="block text-sm font-medium text-gray-700">
+              Student Count For Pricing
+              <input type="number" name="student_count" min="1" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Enter enrolled student count" title="Student count used for initial plan pricing">
+            </label>
+            <button type="submit" class="platform-btn-primary text-xs w-full">Assign Commercial Plan And Provision Subscription</button>
+          </form>
+          {% endif %}
+          {% else %}
+          <div class="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">This operator has billing visibility only. Subscription changes and lifecycle actions require a super administrator.</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="platform-card p-5">
+        <h3 class="platform-section-title">Lifecycle Controls</h3>
+        <p class="mt-1 text-xs text-slate-500">Restricted to super administrators.</p>
+
+        <div class="mt-4 space-y-4">
+          {% if platform_has_permission('subscription_write') %}
+          {% if school.is_active %}
+          <form method="post" action="{{ url_for('platform.deactivate_school', school_id=school.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="w-full rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">Deactivate School</button>
+          </form>
+          {% else %}
+          <form method="post" action="{{ url_for('platform.activate_school', school_id=school.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="w-full rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700">Activate School</button>
+          </form>
+          {% endif %}
+
+          <form method="post" action="{{ url_for('platform.update_school_subscription_window', school_id=school.id) }}" class="space-y-3 rounded-xl border border-gray-200 p-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label class="block text-sm font-medium text-gray-700">
+              Subscription End Date
+              <input type="date" name="subscription_end" value="{{ school.subscription_end.isoformat() if school.subscription_end else '' }}" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+            </label>
+            <button type="submit" class="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400">Update Subscription Window</button>
+          </form>
+          {% else %}
+          <div class="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">Lifecycle controls are hidden for non-super-admin operators during staged rollout.</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="platform-card p-5">
+        <h3 class="platform-section-title">Latest Subscription</h3>
+        {% if latest_subscription %}
+        <dl class="mt-4 space-y-3 text-sm">
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-gray-500">Subscription ID</dt>
+            <dd class="font-medium text-gray-900">{{ latest_subscription.id }}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-gray-500">Plan ID</dt>
+            <dd class="font-medium text-gray-900">{{ current_plan.name if current_plan else latest_subscription.plan_id }}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-gray-500">Effective Status</dt>
+            <dd class="font-medium text-gray-900">{{ latest_subscription.effective_status }}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-gray-500">Renewal Date</dt>
+            <dd class="font-medium text-gray-900">{{ latest_subscription.renewal_date or 'Not set' }}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-gray-500">Student Count</dt>
+            <dd class="font-medium text-gray-900">{{ current_student_count or 'Not set' }}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-gray-500">Student Band</dt>
+            <dd class="font-medium text-gray-900">{{ current_student_band_label or 'Not set' }}</dd>
+          </div>
+          <div class="flex items-start justify-between gap-3">
+            <dt class="text-gray-500">Suspension Reason</dt>
+            <dd class="text-right font-medium text-gray-900">
+              {% if suspension_reason_code %}<div class="text-xs uppercase tracking-wide text-gray-500">{{ reason_label(suspension_reason_code) }}</div>{% endif %}
+              {{ suspension_reason or 'Not set' }}
+            </dd>
+          </div>
+          <div class="flex items-start justify-between gap-3">
+            <dt class="text-gray-500">Cancellation Reason</dt>
+            <dd class="text-right font-medium text-gray-900">
+              {% if cancellation_reason_code %}<div class="text-xs uppercase tracking-wide text-gray-500">{{ reason_label(cancellation_reason_code) }}</div>{% endif %}
+              {{ cancellation_reason or 'Not set' }}
+            </dd>
+          </div>
+        </dl>
+        <div class="mt-4 space-y-3 rounded-xl border border-gray-200 p-4">
+          <h4 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Enforcement Actions</h4>
+          {% if platform_has_permission('subscription_write') %}
+          <form method="post" action="{{ url_for('platform.activate_subscription_route', subscription_id=latest_subscription.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="school_id" value="{{ school.id }}">
+            <button type="submit" class="w-full rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700">Activate Subscription</button>
+          </form>
+          <form method="post" action="{{ url_for('platform.start_subscription_grace_period', subscription_id=latest_subscription.id) }}" class="flex gap-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="school_id" value="{{ school.id }}">
+            <label class="sr-only" for="school-grace-days-{{ school.id }}">Grace period days</label>
+            <input id="school-grace-days-{{ school.id }}" name="days" type="number" min="1" value="14" class="w-24 rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Days" title="Grace period days">
+            <button type="submit" class="flex-1 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600">Start Grace Period</button>
+          </form>
+          <form method="post" action="{{ url_for('platform.suspend_subscription_route', subscription_id=latest_subscription.id) }}" class="space-y-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="school_id" value="{{ school.id }}">
+            <label class="block text-sm font-medium text-gray-700">
+              Suspension Reason Code
+              <select name="reason_code" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                <option value="">Select reason code</option>
+                {% for code, label in enforcement_reason_options.suspension %}
+                <option value="{{ code }}" {% if suspension_reason_code == code %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label class="block text-sm font-medium text-gray-700">
+              Suspension Reason
+              <textarea name="reason" rows="3" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="e.g. Billing delinquency after grace period">{{ suspension_reason or '' }}</textarea>
+            </label>
+            <button type="submit" class="w-full rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700">Suspend Subscription</button>
+          </form>
+          <form method="post" action="{{ url_for('platform.cancel_subscription_route', subscription_id=latest_subscription.id) }}" class="space-y-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="school_id" value="{{ school.id }}">
+            <label class="block text-sm font-medium text-gray-700">
+              Cancellation Reason Code
+              <select name="reason_code" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                <option value="">Select reason code</option>
+                {% for code, label in enforcement_reason_options.cancellation %}
+                <option value="{{ code }}" {% if cancellation_reason_code == code %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label class="block text-sm font-medium text-gray-700">
+              Cancellation Reason
+              <textarea name="reason" rows="3" class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="e.g. Tenant offboarded or contract terminated">{{ cancellation_reason or '' }}</textarea>
+            </label>
+            <button type="submit" class="w-full rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">Cancel Subscription</button>
+          </form>
+          {% else %}
+          <div class="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">Subscription enforcement actions require super-admin approval.</div>
+          {% endif %}
+        </div>
+        <a href="{{ url_for('platform.subscription_detail', subscription_id=latest_subscription.id) }}" class="mt-4 inline-flex rounded-lg border border-purple-300 px-4 py-2 text-sm font-semibold text-purple-700 hover:border-purple-400">View Subscription Detail</a>
+        {% else %}
+        <p class="mt-4 text-sm text-gray-600">No subscription record is linked yet. Use the subscriptions page to provision one for this tenant.</p>
+        {% if platform_has_permission('subscription_write') %}
+        <a href="{{ url_for('platform.create_subscription') }}" class="mt-4 inline-flex rounded-lg border border-purple-300 px-4 py-2 text-sm font-semibold text-purple-700 hover:border-purple-400">Create Subscription</a>
+        {% endif %}
+        {% endif %}
+      </div>
+
+      <div class="platform-card p-5">
+        <div class="flex items-center justify-between gap-3">
+          <h3 class="platform-section-title">Entitled Modules</h3>
+          {% if entitlement_summary.access_mode == 'read_only' %}
+          <span class="inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-700">Grace Period Read Only</span>
+          {% elif entitlement_summary.access_mode == 'read_write' %}
+          <span class="inline-flex rounded-full bg-green-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-green-700">Full Access</span>
+          {% elif latest_subscription %}
+          <span class="inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-700">Access Disabled</span>
+          {% endif %}
+        </div>
+        {% if entitlement_summary.is_configured %}
+        <div class="mt-4 space-y-3">
+          {% for module in entitlement_summary.modules %}
+          <div class="rounded-xl border border-gray-200 px-4 py-3">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <div class="font-medium text-gray-900">{{ module.name }}</div>
+                <div class="text-xs uppercase tracking-wide text-gray-500">{{ module.code }} • {{ module.family_label }} {{ module.group_label }}</div>
+              </div>
+              <span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide {{ 'bg-green-100 text-green-700' if module.access_level == 'read_write' else 'bg-amber-100 text-amber-700' if module.access_level == 'read_only' else 'bg-gray-100 text-gray-600' }}">{{ module.access_label }}</span>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% elif latest_subscription %}
+        <p class="mt-4 text-sm text-gray-600">This subscription does not have explicit module entitlements configured yet. Access falls back to the legacy unrestricted behavior.</p>
+        {% else %}
+        <p class="mt-4 text-sm text-gray-600">Provision a subscription to see the exact modules this tenant should have.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

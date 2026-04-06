@@ -1,19 +1,130 @@
 {% extends 'base.html' %}
-{% block content %}
-<h2>Platform Users</h2>
-<div class="mb-4">
-  <h3 class="text-lg font-medium">Impersonate Tenant User</h3>
-  <form method="post" action="{{ url_for('platform.start_impersonation') }}" class="mt-2 flex items-center space-x-2">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <label class="text-sm">Tenant User ID</label>
-    <input name="tenant_user_no" type="number" required class="border px-2 py-1 rounded" placeholder="Enter tenant userNo">
-    <button type="submit" class="bg-blue-600 text-white px-3 py-1 rounded">Impersonate</button>
-  </form>
-</div>
+{% from 'platform/_components.html' import page_header, status_badge %}
+{% block breadcrumb %}Operators{% endblock %}
+{% block platform_content %}
+<section class="space-y-5">
+  {% call(slot) page_header('Platform Operators', 'Manage control-plane users, roles, and school scope assignments.') %}
+    {% if platform_has_permission('platform_settings') %}
+    <a href="{{ url_for('platform.create_user') }}" class="platform-btn-primary text-xs">
+      <i class="fas fa-plus mr-1"></i>Create User
+    </a>
+    {% endif %}
+  {% endcall %}
 
-<ul>
-  {% for u in users %}
-  <li class="py-1">{{ u.email }} — {{ u.role }} {% if u.assigned_school_id %}<span class="text-xs text-gray-500">(school {{ u.assigned_school_id }})</span>{% endif %}</li>
-  {% endfor %}
-</ul>
+  <!-- Filters -->
+  <form method="get" class="platform-card p-4">
+    <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Search</label>
+        <input name="q" type="text" value="{{ filters.q }}" placeholder="email, name, role" class="w-full rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Role</label>
+        <select name="role" title="Filter platform users by role" class="w-full rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+          <option value="">All roles</option>
+          {% for role in role_options %}
+          <option value="{{ role.value }}" {% if filters.role == role.value %}selected{% endif %}>{{ role.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Status</label>
+        <select name="status" title="Filter platform users by status" class="w-full rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+          <option value="">All statuses</option>
+          <option value="active" {% if filters.status == 'active' %}selected{% endif %}>Active</option>
+          <option value="inactive" {% if filters.status == 'inactive' %}selected{% endif %}>Inactive</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">School Scope</label>
+        <select name="school_id" title="Filter platform users by school scope" class="w-full rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+          <option value="">Any school</option>
+          {% for school in schools %}
+          <option value="{{ school.id }}" {% if filters.school_id == school.id %}selected{% endif %}>{{ school.name }} ({{ school.code }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="flex items-end gap-2">
+        <button type="submit" class="platform-btn-primary text-xs">Apply</button>
+        <a href="{{ url_for('platform.list_users') }}" class="platform-btn-secondary text-xs">Reset</a>
+      </div>
+    </div>
+  </form>
+
+  <!-- Impersonation -->
+  <div class="platform-card p-4">
+    <h3 class="platform-section-title mb-2">Impersonate Tenant User</h3>
+    <form method="post" action="{{ url_for('platform.start_impersonation') }}" class="flex items-center gap-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="sr-only" for="tenant-user-no">Tenant User ID</label>
+      <input id="tenant-user-no" name="tenant_user_no" type="number" required class="rounded border border-slate-300 px-3 py-1.5 text-sm w-48 focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Tenant userNo">
+      <button type="submit" class="platform-btn-primary text-xs">
+        <i class="fas fa-user-secret mr-1"></i>Impersonate
+      </button>
+    </form>
+  </div>
+
+  <!-- Users Table -->
+  <div class="platform-card overflow-hidden">
+    <table class="platform-table-compact w-full">
+      <thead>
+        <tr>
+          <th class="text-left">User</th>
+          <th class="text-left">Role</th>
+          <th class="text-left">Status</th>
+          <th class="text-left">Scope</th>
+          <th class="text-left">Last Login</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        {% set scope = user_scope_lookup.get(u.id) %}
+        <tr>
+          <td>
+            <div class="text-xs font-semibold text-slate-800">{{ u.email }}</div>
+            {% if u.created_at %}
+            <div class="text-[11px] text-slate-400">Created {{ u.created_at }}{% if u.created_by and creator_lookup.get(u.created_by) %} by {{ creator_lookup[u.created_by].email }}{% endif %}</div>
+            {% endif %}
+          </td>
+          <td>
+            <span class="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-700">{{ platform_role_label(u.role) }}</span>
+          </td>
+          <td>
+            {% if u.is_active %}
+            <span class="inline-flex items-center gap-1 text-[11px] font-semibold text-green-700"><span class="h-1.5 w-1.5 rounded-full bg-green-500"></span>Active</span>
+            {% else %}
+            <span class="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400"><span class="h-1.5 w-1.5 rounded-full bg-slate-300"></span>Inactive</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="flex flex-wrap gap-1">
+              {% if scope and scope.assigned_school %}
+              <span class="inline-flex rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700">{{ scope.assigned_school.label }}</span>
+              {% endif %}
+              {% if scope and scope.portfolio_badges %}
+                {% for badge in scope.portfolio_badges %}
+                <span class="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">{{ badge.label }}</span>
+                {% endfor %}
+              {% elif scope and scope.is_unrestricted %}
+              <span class="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">All schools</span>
+              {% endif %}
+            </div>
+          </td>
+          <td class="text-[11px] text-slate-500">{{ u.last_login_at or 'Never' }}</td>
+          <td class="text-right">
+            {% if platform_has_permission('platform_settings') %}
+            <a href="{{ url_for('platform.edit_user', user_id=u.id) }}" class="platform-btn-secondary text-[11px] px-2 py-1">Edit</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" class="text-center py-8 text-sm text-slate-400">No platform users found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
 {% endblock %}

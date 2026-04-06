@@ -19,13 +19,14 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Dict, List, Optional, Tuple, Any
 import logging
+from core.tenancy import require_current_school_id
 from flask import g
 
 class FarmManagementService:
     def __init__(self, connection, school_id=None):
         self.connection = connection
         self.cursor = connection.cursor(pymysql.cursors.DictCursor)
-        self.school_id = school_id or g.school_id or 1
+        self.school_id = school_id or require_current_school_id()
         self.logger = logging.getLogger(__name__)
 
     # --- ACTIVITY MANAGEMENT (COST CENTERS) ---
@@ -34,6 +35,16 @@ class FarmManagementService:
         if active_only: query += " AND is_active = TRUE"
         self.cursor.execute(query, (self.school_id,))
         return self.cursor.fetchall()
+
+    def _assert_activity_belongs_to_school(self, activity_id: int) -> None:
+        self.cursor.execute("SELECT id FROM income_activities WHERE id = %s AND school_id = %s", (activity_id, self.school_id))
+        if not self.cursor.fetchone():
+            raise ValueError("Activity not found for the active school.")
+
+    def _assert_expense_belongs_to_school(self, expense_id: int) -> None:
+        self.cursor.execute("SELECT id FROM income_expenses WHERE id = %s AND school_id = %s", (expense_id, self.school_id))
+        if not self.cursor.fetchone():
+            raise ValueError("Expense not found for the active school.")
 
     def create_activity(self, name: str, unit_of_measure: str, income_gl: str, expense_gl: str, description: str = "") -> int:
         query = """
@@ -47,6 +58,7 @@ class FarmManagementService:
     # --- PRODUCTION & SPOILAGE ---
     def record_production(self, activity_id: int, quantity: Decimal, spoilage: Decimal, internal: Decimal, recorded_by: int, notes: str = "") -> int:
         try:
+            self._assert_activity_belongs_to_school(activity_id)
             query = """
                 INSERT INTO income_production_log (school_id, activity_id, production_date, quantity, spoilage_quantity, internal_consumption, recorded_by, notes)
                 VALUES (%s, %s, CURDATE(), %s, %s, %s, %s, %s)
@@ -64,6 +76,7 @@ class FarmManagementService:
     # --- SALES & RECEIPTING ---
     def record_sale(self, activity_id: int, customer: str, quantity: Decimal, unit_price: Decimal, recorded_by: int, is_paid: bool = True) -> int:
         try:
+            self._assert_activity_belongs_to_school(activity_id)
             total = quantity * unit_price
             receipt_no = f"FRM-{datetime.now().strftime('%y%m%d%H%M%S')}"
             
@@ -84,6 +97,7 @@ class FarmManagementService:
 
     # --- EXPENSE MANAGEMENT (APPROVAL WORKFLOW) ---
     def request_expense(self, activity_id: int, category: str, amount: Decimal, description: str, recorded_by: int) -> int:
+        self._assert_activity_belongs_to_school(activity_id)
         query = """
             INSERT INTO income_expenses (school_id, activity_id, expense_date, description, amount, category, status, recorded_by)
             VALUES (%s, %s, CURDATE(), %s, %s, %s, 'PENDING', %s)
@@ -94,6 +108,7 @@ class FarmManagementService:
 
     def approve_expense(self, expense_id: int, approver_id: int) -> bool:
         try:
+            self._assert_expense_belongs_to_school(expense_id)
             self.cursor.execute("UPDATE income_expenses SET status = 'APPROVED', approved_by = %s WHERE id = %s AND school_id = %s", (approver_id, expense_id, self.school_id))
             self.connection.commit()
             return True

@@ -1,0 +1,413 @@
+{% extends 'base.html' %}
+{% block platform_content %}
+<section class="mx-auto max-w-7xl space-y-6">
+  <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+    <div>
+      <div class="flex flex-wrap items-center gap-3">
+        <h2 class="text-3xl font-bold text-gray-900">Platform Security Events</h2>
+        {% if view_preferences.has_saved_page_size_badge %}
+        <span title="Using saved preference for security page size" class="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-rose-700">Saved page size: {{ view_preferences.saved_page_size }}</span>
+        {% endif %}
+      </div>
+      <p class="mt-2 text-sm text-gray-600">Track repeated failed logins, impersonation bursts, and follow event acknowledgement or resolution from one control-plane view.</p>
+      {% if not security_scope.is_unrestricted and security_scope.effective_badges %}
+      <div class="mt-3 flex flex-wrap gap-2">
+        {% for badge in security_scope.effective_badges %}
+        <span class="inline-flex items-center rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-rose-700">{{ badge.label }}</span>
+        {% endfor %}
+      </div>
+      <p class="mt-2 text-xs text-gray-500">Security ownership is limited to the schools shown above.</p>
+      {% endif %}
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <a href="{{ url_for('platform.export_security_events') }}{% if export_query_string %}?{{ export_query_string }}{% endif %}" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">Export CSV</a>
+      <a href="{{ url_for('platform.view_audit') }}" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400">Open Audit Log</a>
+    </div>
+  </div>
+
+  <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Failed Login Threshold</div>
+      <div class="mt-2 text-2xl font-bold text-gray-900">{{ policy.login_failure_threshold }}</div>
+      <div class="mt-2 text-sm text-gray-600">failures in {{ policy.login_failure_window_minutes }} minutes</div>
+    </div>
+    <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Temporary Lockout</div>
+      <div class="mt-2 text-2xl font-bold text-gray-900">{{ 'Enabled' if policy.login_lockout_enabled else 'Disabled' }}</div>
+      <div class="mt-2 text-sm text-gray-600">{{ policy.login_lockout_minutes }} minute lockout window</div>
+    </div>
+    <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Impersonation Burst Threshold</div>
+      <div class="mt-2 text-2xl font-bold text-gray-900">{{ policy.impersonation_threshold }}</div>
+      <div class="mt-2 text-sm text-gray-600">starts in {{ policy.impersonation_window_minutes }} minutes</div>
+    </div>
+    <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Auto Ticketing</div>
+      <div class="mt-2 text-2xl font-bold text-gray-900">{{ 'On' if policy.auto_create_support_tickets else 'Off' }}</div>
+      <div class="mt-2 text-sm text-gray-600">Open: {{ status_counts.open }} | Ack: {{ status_counts.acknowledged }} | Resolved: {{ status_counts.resolved }}</div>
+    </div>
+  </div>
+
+  <section class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div>
+        <h3 class="text-xl font-bold text-gray-900">Security Relay Status</h3>
+        <p class="mt-2 text-sm text-gray-600">Signed webhook relay health and forwarding readiness for downstream SIEM delivery.</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide {% if relay_status.ok and relay_status.forwarding_enabled %}bg-emerald-100 text-emerald-700{% elif relay_status.ok %}bg-amber-100 text-amber-700{% else %}bg-rose-100 text-rose-700{% endif %}">
+          {% if relay_status.ok and relay_status.forwarding_enabled %}
+          healthy
+          {% elif relay_status.ok %}
+          staging mode
+          {% else %}
+          unavailable
+          {% endif %}
+        </span>
+      </div>
+    </div>
+    <div class="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div class="rounded-xl border border-gray-200 p-4">
+        <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Relay URL</div>
+        <div class="mt-2 break-all text-sm text-gray-900">{{ relay_status.relay_url }}</div>
+      </div>
+      <div class="rounded-xl border border-gray-200 p-4">
+        <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Health Endpoint</div>
+        <div class="mt-2 break-all text-sm text-gray-900">{{ relay_status.health_url }}</div>
+      </div>
+      <div class="rounded-xl border border-gray-200 p-4">
+        <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Forwarding</div>
+        <div class="mt-2 text-sm text-gray-900">{{ 'Enabled' if relay_status.forwarding_enabled else 'Disabled' }}</div>
+      </div>
+      <div class="rounded-xl border border-gray-200 p-4">
+        <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Downstream Targets</div>
+        <div class="mt-2 text-sm text-gray-900">
+          Splunk: {{ 'configured' if relay_status.destinations and relay_status.destinations.splunk else 'not configured' }}
+          <br>
+          Sentinel: {{ 'configured' if relay_status.destinations and relay_status.destinations.sentinel else 'not configured' }}
+        </div>
+      </div>
+    </div>
+    <div class="mt-4 rounded-xl {% if relay_status.ok %}border border-amber-200 bg-amber-50{% else %}border border-rose-200 bg-rose-50{% endif %} p-4 text-sm {% if relay_status.ok %}text-amber-800{% else %}text-rose-800{% endif %}">
+      {{ relay_status.warning or 'Relay is healthy and forwarding is enabled.' }}
+      {% if relay_status.error %}
+      <div class="mt-2 text-xs">{{ relay_status.error }}</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="grid gap-6 xl:grid-cols-[1.2fr_1.8fr]">
+    <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <h3 class="text-xl font-bold text-gray-900">Notification Preferences</h3>
+          <p class="mt-2 text-sm text-gray-600">Send high or critical security events to email inboxes and webhook consumers. Throttle windows suppress duplicate alerts for the same signal key.</p>
+        </div>
+        <div class="text-right text-sm text-gray-600">
+          <div>Enabled: {{ notification_preference_counts.enabled }}</div>
+          <div>Email: {{ notification_preference_counts.email }}</div>
+          <div>Webhook: {{ notification_preference_counts.webhook }}</div>
+        </div>
+      </div>
+      <form method="post" action="{{ url_for('platform.create_security_notification_preference_route') }}" class="mt-6 grid gap-4 md:grid-cols-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ current_view_path }}">
+        <div>
+          <label for="notification-name" class="mb-1 block text-sm font-medium text-gray-700">Name</label>
+          <input id="notification-name" name="name" type="text" placeholder="SOC email, SIEM webhook" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        </div>
+        <div>
+          <label for="notification-channel" class="mb-1 block text-sm font-medium text-gray-700">Channel</label>
+          <select id="notification-channel" name="channel" title="Choose a notification channel" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+            <option value="email">Email</option>
+            <option value="webhook">Webhook</option>
+          </select>
+        </div>
+        <div class="md:col-span-2">
+          <label for="notification-destination" class="mb-1 block text-sm font-medium text-gray-700">Destination</label>
+          <input id="notification-destination" name="destination" type="text" placeholder="security@example.com or https://hooks.example/security" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        </div>
+        <div>
+          <label for="notification-min-severity" class="mb-1 block text-sm font-medium text-gray-700">Minimum Severity</label>
+          <select id="notification-min-severity" name="min_severity" title="Minimum severity to notify" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+            <option value="high">high</option>
+            <option value="critical">critical</option>
+          </select>
+        </div>
+        <div>
+          <label for="notification-throttle-minutes" class="mb-1 block text-sm font-medium text-gray-700">Throttle Window</label>
+          <input id="notification-throttle-minutes" name="throttle_minutes" type="number" min="1" value="{{ policy.notification_default_throttle_minutes }}" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        </div>
+        <div>
+          <label for="notification-school-id" class="mb-1 block text-sm font-medium text-gray-700">School Scope</label>
+          <select id="notification-school-id" name="school_id" title="Optional school scope for notifications" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+            {% if security_scope.is_unrestricted %}
+            <option value="">All schools / platform-wide</option>
+            {% else %}
+            <option value="">Select a scoped school</option>
+            {% endif %}
+            {% for school in schools %}
+            <option value="{{ school.id }}">{{ school.name }} ({{ school.code }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="notification-event-types" class="mb-1 block text-sm font-medium text-gray-700">Event Types</label>
+          <input id="notification-event-types" name="event_types" type="text" placeholder="optional comma-separated list" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        </div>
+        <div class="md:col-span-2">
+          <label for="notification-secret-token" class="mb-1 block text-sm font-medium text-gray-700">Webhook Shared Secret</label>
+          <input id="notification-secret-token" name="secret_token" type="text" placeholder="Optional. Used for HMAC signature headers and sent as a compatibility token header" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+          <p class="mt-2 text-xs text-gray-500">When provided, the platform signs the request body with HMAC SHA-256 and sends `X-Security-Webhook-Timestamp` and `X-Security-Webhook-Signature` headers.</p>
+        </div>
+        <div class="md:col-span-2 flex items-center justify-between gap-4">
+          <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" name="enabled" checked class="rounded border-gray-300 text-rose-600 focus:ring-rose-500">
+            Enable immediately
+          </label>
+          <button type="submit" class="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-black">Save Preference</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+      <h3 class="text-xl font-bold text-gray-900">Configured Destinations</h3>
+      <div class="mt-4 space-y-3">
+        {% for preference in notification_preferences %}
+        {% set school = school_lookup.get(preference.school_id or 0) %}
+        <div class="rounded-xl border border-gray-200 p-4">
+          <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div class="flex flex-wrap items-center gap-2">
+                <div class="font-semibold text-gray-900">{{ preference.name or preference.destination }}</div>
+                <span class="inline-flex rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-gray-700">{{ preference.channel }}</span>
+                <span class="inline-flex rounded-full px-2 py-1 text-xs font-semibold uppercase tracking-wide {% if preference.enabled %}bg-emerald-100 text-emerald-700{% else %}bg-gray-200 text-gray-700{% endif %}">{{ 'enabled' if preference.enabled else 'disabled' }}</span>
+              </div>
+              <div class="mt-2 text-sm text-gray-600">{{ preference.destination }}</div>
+              <div class="mt-2 text-xs text-gray-500">Min severity: {{ preference.min_severity }} | Throttle: {{ preference.throttle_minutes }} min | Scope: {{ school.name if school else 'All schools / platform-wide' }}</div>
+              <div class="mt-1 text-xs text-gray-500">Event types: {{ (preference.event_types | join(', ')) if preference.event_types else 'All event types' }}</div>
+            </div>
+            <form method="post" action="{{ url_for('platform.toggle_security_notification_preference_route', preference_id=preference.id) }}" class="flex items-center gap-2">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="next" value="{{ current_view_path }}">
+              <input type="hidden" name="enabled" value="{{ '0' if preference.enabled else '1' }}">
+              <button type="submit" class="rounded-lg border px-3 py-2 text-xs font-semibold {% if preference.enabled %}border-gray-300 text-gray-700 hover:border-gray-400{% else %}border-emerald-300 text-emerald-700 hover:border-emerald-400{% endif %}">{{ 'Disable' if preference.enabled else 'Enable' }}</button>
+            </form>
+          </div>
+        </div>
+        {% else %}
+        <div class="rounded-xl border border-dashed border-gray-300 p-6 text-sm text-gray-500">No notification preferences configured yet.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <section class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+    <div class="flex items-center justify-between gap-4">
+      <div>
+        <h3 class="text-xl font-bold text-gray-900">Recent Notification Delivery</h3>
+        <p class="mt-2 text-sm text-gray-600">Best-effort outbound delivery log for email and webhook channels, including throttled attempts.</p>
+      </div>
+      <div class="text-sm text-gray-600">Throttled duplicates are recorded without sending a second message.</div>
+    </div>
+    <div class="mt-4 overflow-hidden rounded-xl border border-gray-200">
+      <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Time</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Channel</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Destination</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Event</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Status</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Reason</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for delivery in recent_deliveries %}
+          {% set event = delivery_event_lookup.get(delivery.security_event_id) %}
+          {% set preference = delivery_preference_lookup.get(delivery.preference_id) %}
+          <tr>
+            <td class="px-4 py-3 text-gray-700">{{ delivery.attempted_at }}</td>
+            <td class="px-4 py-3 text-gray-700">{{ delivery.channel }}</td>
+            <td class="px-4 py-3 text-gray-700">{{ preference.name or delivery.destination if preference else delivery.destination }}</td>
+            <td class="px-4 py-3 text-gray-700">{{ event.title if event else ('Event #' ~ delivery.security_event_id) }}</td>
+            <td class="px-4 py-3">
+              <span class="inline-flex rounded-full px-2 py-1 text-xs font-semibold uppercase tracking-wide {% if delivery.status == 'sent' %}bg-emerald-100 text-emerald-700{% elif delivery.status == 'throttled' %}bg-amber-100 text-amber-700{% else %}bg-rose-100 text-rose-700{% endif %}">{{ delivery.status }}</span>
+            </td>
+            <td class="px-4 py-3 text-gray-600">{{ delivery.status_reason or 'n/a' }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="6" class="px-4 py-6 text-center text-sm text-gray-500">No notification deliveries recorded yet.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <form method="get" class="grid gap-4 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm md:grid-cols-2 xl:grid-cols-6">
+    <div>
+      <label for="security-school-id" class="mb-1 block text-sm font-medium text-gray-700">School</label>
+      <select id="security-school-id" name="school_id" title="Filter security events by school" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <option value="">{{ 'All schools' if security_scope.is_unrestricted else 'All scoped schools' }}</option>
+        {% for school in schools %}
+        <option value="{{ school.id }}" {% if filters.school_id == school.id %}selected{% endif %}>{{ school.name }} ({{ school.code }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="security-status" class="mb-1 block text-sm font-medium text-gray-700">Status</label>
+      <select id="security-status" name="status" title="Filter security events by status" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <option value="">All statuses</option>
+        {% for item in ['open', 'acknowledged', 'resolved'] %}
+        <option value="{{ item }}" {% if filters.status == item %}selected{% endif %}>{{ item.replace('_', ' ') }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="security-severity" class="mb-1 block text-sm font-medium text-gray-700">Severity</label>
+      <select id="security-severity" name="severity" title="Filter security events by severity" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <option value="">All severities</option>
+        {% for item in ['low', 'medium', 'high', 'critical'] %}
+        <option value="{{ item }}" {% if filters.severity == item %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="security-event-type" class="mb-1 block text-sm font-medium text-gray-700">Event Type</label>
+      <select id="security-event-type" name="event_type" title="Filter security events by event type" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <option value="">All event types</option>
+        {% for item in event_types %}
+        <option value="{{ item }}" {% if filters.event_type == item %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="mb-1 block text-sm font-medium text-gray-700">Date Range</label>
+      <div class="grid grid-cols-2 gap-2">
+        <input id="security-start-date" name="start_date" type="date" value="{{ filters.start_date or '' }}" title="Filter security events starting on this date" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <input id="security-end-date" name="end_date" type="date" value="{{ filters.end_date or '' }}" title="Filter security events ending on this date" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+      </div>
+    </div>
+    <div>
+      <label class="mb-1 block text-sm font-medium text-gray-700">Search</label>
+      <div class="flex gap-2">
+        <input name="search" type="text" value="{{ filters.search or '' }}" placeholder="title, description, key" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <button type="submit" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">Apply</button>
+      </div>
+    </div>
+    <div>
+      <label for="security-page-size" class="mb-1 block text-sm font-medium text-gray-700">Page Size</label>
+      <select id="security-page-size" name="page_size" title="Set security events page size" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        {% for option in page_size_options %}
+        <option value="{{ option }}" {% if filters.page_size == option %}selected{% endif %}>{{ option }} per page</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex items-end gap-2 xl:col-span-2">
+      <a href="{{ url_for('platform.list_security_events') }}" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400">Reset Filters</a>
+      <a href="{{ url_for('platform.list_security_events') }}{% if reset_preferences_query_string %}?{{ reset_preferences_query_string }}{% endif %}" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400">Reset View Preferences</a>
+    </div>
+  </form>
+
+  <div class="flex items-center justify-between text-sm text-gray-600">
+    <div>Showing {{ pagination.start_index }}-{{ pagination.end_index }} of {{ pagination.total_count }} security events</div>
+    <div class="flex gap-3">
+      <a href="{{ sort_urls.last_seen_at }}" class="font-semibold text-gray-700 hover:text-gray-900">Sort by last seen</a>
+      <a href="{{ sort_urls.severity }}" class="font-semibold text-gray-700 hover:text-gray-900">Sort by severity</a>
+      <a href="{{ sort_urls.status }}" class="font-semibold text-gray-700 hover:text-gray-900">Sort by status</a>
+    </div>
+  </div>
+
+  <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">Event</th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">School</th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">Severity</th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">Status</th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">Threshold</th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">Support</th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for event in events %}
+        {% set school = school_lookup.get(event.school_id or 0) %}
+        <tr class="align-top">
+          <td class="px-4 py-4">
+            <div class="font-semibold text-gray-900">{{ event.title }}</div>
+            <div class="mt-1 text-xs uppercase tracking-wide text-gray-500">{{ event.event_type }}</div>
+            <div class="mt-2 text-sm text-gray-600">{{ event.description }}</div>
+            <div class="mt-2 text-xs text-gray-500">Signal: {{ event.signal_key }} | First seen: {{ event.first_seen_at }} | Last seen: {{ event.last_seen_at }}</div>
+          </td>
+          <td class="px-4 py-4 text-gray-700">{{ school.name if school else 'Platform' }}</td>
+          <td class="px-4 py-4">
+            <span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide {% if event.severity == 'critical' %}bg-red-100 text-red-700{% elif event.severity == 'high' %}bg-rose-100 text-rose-700{% elif event.severity == 'medium' %}bg-amber-100 text-amber-700{% else %}bg-gray-100 text-gray-700{% endif %}">{{ event.severity }}</span>
+          </td>
+          <td class="px-4 py-4">
+            <span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide {% if event.status == 'open' %}bg-rose-100 text-rose-700{% elif event.status == 'acknowledged' %}bg-blue-100 text-blue-700{% else %}bg-emerald-100 text-emerald-700{% endif %}">{{ event.status }}</span>
+            {% if event.acknowledged_at %}
+            <div class="mt-2 text-xs text-gray-500">Ack: {{ event.acknowledged_at }}</div>
+            {% endif %}
+            {% if event.resolved_at %}
+            <div class="mt-1 text-xs text-gray-500">Resolved: {{ event.resolved_at }}</div>
+            {% endif %}
+          </td>
+          <td class="px-4 py-4 text-gray-700">
+            <div>{{ event.observed_value or 0 }} observed</div>
+            <div class="text-xs text-gray-500">Threshold {{ event.threshold_value or 'n/a' }}</div>
+            <div class="text-xs text-gray-500">Occurrences {{ event.occurrence_count }}</div>
+          </td>
+          <td class="px-4 py-4 text-gray-700">
+            {% if event.related_support_ticket_id %}
+            Ticket #{{ event.related_support_ticket_id }}
+            {% else %}
+            <span class="text-gray-400">No linked ticket</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-4">
+            <div class="flex flex-col gap-2">
+              {% if event.status != 'acknowledged' and event.status != 'resolved' %}
+              <form method="post" action="{{ url_for('platform.acknowledge_security_event_route', event_id=event.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="next" value="{{ current_view_path }}">
+                <button type="submit" class="w-full rounded-lg border border-blue-300 px-3 py-2 text-xs font-semibold text-blue-700 hover:border-blue-400">Acknowledge</button>
+              </form>
+              {% endif %}
+              {% if event.status != 'resolved' %}
+              <form method="post" action="{{ url_for('platform.resolve_security_event_route', event_id=event.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="next" value="{{ current_view_path }}">
+                <button type="submit" class="w-full rounded-lg border border-emerald-300 px-3 py-2 text-xs font-semibold text-emerald-700 hover:border-emerald-400">Resolve</button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500">No security events match the current filters.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if pagination.total_pages > 1 %}
+  <nav class="flex items-center justify-center gap-2" aria-label="Security event pagination">
+    {% if pagination.prev_url %}
+    <a href="{{ pagination.prev_url }}" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400">Previous</a>
+    {% endif %}
+    {% for page_link in pagination.page_links %}
+    <a href="{{ page_link.url }}" class="rounded-lg px-3 py-2 text-sm font-semibold {% if page_link.is_current %}bg-rose-600 text-white{% else %}border border-gray-300 text-gray-700 hover:border-gray-400{% endif %}">{{ page_link.number }}</a>
+    {% endfor %}
+    {% if pagination.next_url %}
+    <a href="{{ pagination.next_url }}" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400">Next</a>
+    {% endif %}
+  </nav>
+  {% endif %}
+</section>
+{% endblock %}

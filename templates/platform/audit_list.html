@@ -1,9 +1,255 @@
 {% extends 'base.html' %}
-{% block content %}
-<h2>Audit Logs</h2>
-<ul>
-  {% for l in logs %}
-  <li>{{ l.created_at }} — {{ l.action }} — {{ l.target_table }} #{{ l.target_id }}</li>
-  {% endfor %}
-</ul>
+{% block platform_content %}
+<section class="mx-auto max-w-7xl space-y-6">
+  <div>
+    <div class="flex flex-wrap items-center gap-3">
+      <h2 class="text-3xl font-bold text-gray-900">Audit Logs</h2>
+      {% if view_preferences.has_saved_page_size_badge %}
+      <span title="Using saved preference for audit page size" aria-label="Using saved preference for audit page size: {{ view_preferences.saved_page_size }} per page" class="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-blue-700">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-3.5 w-3.5" aria-hidden="true">
+          <path fill-rule="evenodd" d="M8 1.75a6.25 6.25 0 1 0 0 12.5A6.25 6.25 0 0 0 8 1.75ZM6.97 9.78l3.5-3.5a.75.75 0 1 1 1.06 1.06L7.5 11.37a.75.75 0 0 1-1.06 0L4.47 9.41a.75.75 0 1 1 1.06-1.06l1.44 1.43Z" clip-rule="evenodd" />
+        </svg>
+        <span>Saved page size: {{ view_preferences.saved_page_size }}</span>
+      </span>
+      {% endif %}
+    </div>
+    <p class="mt-2 text-sm text-gray-600">Filter control-plane activity by school, target table, action, actor role, IP, and date range to review tenant changes more quickly.</p>
+  </div>
+
+  <form method="get" class="grid gap-4 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm md:grid-cols-3 xl:grid-cols-9">
+    <div>
+      <label class="mb-1 block text-sm font-medium text-gray-700">School</label>
+      <select name="school_id" title="Filter audit logs by school" aria-label="Filter audit logs by school" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <option value="">All schools</option>
+        {% for school in schools %}
+        <option value="{{ school.id }}" {% if filters.school_id == school.id %}selected{% endif %}>{{ school.name }} ({{ school.code }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="mb-1 block text-sm font-medium text-gray-700">Start Date</label>
+      <input name="start_date" type="date" title="Filter audit logs from this date" aria-label="Filter audit logs from this date" value="{{ filters.start_date or '' }}" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label class="mb-1 block text-sm font-medium text-gray-700">End Date</label>
+      <input name="end_date" type="date" title="Filter audit logs until this date" aria-label="Filter audit logs until this date" value="{{ filters.end_date or '' }}" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label class="mb-1 block text-sm font-medium text-gray-700">Target Table</label>
+      <select name="target_table" title="Filter audit logs by target table" aria-label="Filter audit logs by target table" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <option value="">All targets</option>
+        {% for item in target_tables %}
+        <option value="{{ item }}" {% if filters.target_table == item %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="mb-1 block text-sm font-medium text-gray-700">Action</label>
+      <select name="action" title="Filter audit logs by action" aria-label="Filter audit logs by action" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <option value="">All actions</option>
+        {% for item in actions %}
+        <option value="{{ item }}" {% if filters.action == item %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="mb-1 block text-sm font-medium text-gray-700">Reason Code</label>
+      <select name="reason_code" title="Filter audit logs by enforcement reason code" aria-label="Filter audit logs by enforcement reason code" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <option value="">All reason codes</option>
+        {% for code, label in enforcement_reason_options.suspension %}
+        <option value="{{ code }}" {% if filters.reason_code == code %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+        {% for code, label in enforcement_reason_options.cancellation %}
+        <option value="{{ code }}" {% if filters.reason_code == code %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="mb-1 block text-sm font-medium text-gray-700">Actor Role</label>
+      <select name="actor_role" title="Filter audit logs by actor role" aria-label="Filter audit logs by actor role" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <option value="">All roles</option>
+        {% for item in actor_roles %}
+        <option value="{{ item }}" {% if filters.actor_role == item %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="mb-1 block text-sm font-medium text-gray-700">IP Contains</label>
+      <input name="ip" type="text" value="{{ filters.ip or '' }}" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="127.0.0.1">
+    </div>
+    <div>
+      <label class="mb-1 block text-sm font-medium text-gray-700">Page Size</label>
+      <select name="page_size" title="Set audit page size" aria-label="Set audit page size" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        {% for option in page_size_options %}
+        <option value="{{ option }}" {% if filters.page_size == option %}selected{% endif %}>{{ option }} per page</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex items-end gap-2 xl:col-span-2">
+      <button type="submit" class="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Apply Filters</button>
+      <a href="{{ url_for('platform.view_audit') }}" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400">Reset</a>
+    </div>
+  </form>
+
+  <div class="flex justify-end">
+    <div class="flex gap-2">
+      <a href="{{ url_for('platform.view_audit') }}{% if reset_preferences_query_string %}?{{ reset_preferences_query_string }}{% endif %}" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400">Reset View Preferences</a>
+      <a href="{{ url_for('platform.export_audit_csv') }}{% if export_query_string %}?{{ export_query_string }}{% endif %}" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Export CSV</a>
+    </div>
+  </div>
+
+  <p class="text-sm text-gray-500">Reset View Preferences clears the saved page-size choice only. Current filters and sorting stay applied.</p>
+
+  <div class="flex items-center justify-between text-sm text-gray-600">
+    <div>Showing {{ pagination.start_index }}-{{ pagination.end_index }} of {{ pagination.total_count }} audit records</div>
+    {% if pagination.total_pages > 1 %}
+    <div>Page {{ pagination.current_page }} of {{ pagination.total_pages }}</div>
+    {% endif %}
+  </div>
+
+  <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">
+            <a href="{{ sorting.sort_urls.created_at.url }}" title="{{ sorting.sort_urls.created_at.title }}" aria-label="{{ sorting.sort_urls.created_at.title }} by when" class="inline-flex items-center gap-1 hover:text-gray-900">
+              <span>When</span>
+              {% if sorting.sort_by == 'created_at' %}
+              <span class="text-blue-600" aria-hidden="true">{% if sorting.sort_dir == 'asc' %}
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-4 w-4">
+                  <path fill-rule="evenodd" d="M8 3.5a.75.75 0 0 1 .53.22l4 4a.75.75 0 1 1-1.06 1.06L8.75 6.06V12.5a.75.75 0 0 1-1.5 0V6.06L4.53 8.78a.75.75 0 1 1-1.06-1.06l4-4A.75.75 0 0 1 8 3.5Z" clip-rule="evenodd" />
+                </svg>
+              {% else %}
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-4 w-4">
+                  <path fill-rule="evenodd" d="M8 12.5a.75.75 0 0 1-.53-.22l-4-4a.75.75 0 1 1 1.06-1.06l2.72 2.72V3.5a.75.75 0 0 1 1.5 0v6.44l2.72-2.72a.75.75 0 1 1 1.06 1.06l-4 4A.75.75 0 0 1 8 12.5Z" clip-rule="evenodd" />
+                </svg>
+              {% endif %}</span>
+              <span class="sr-only">sorted {{ sorting.sort_dir }}</span>
+              {% else %}
+              <span class="text-gray-400" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-4 w-4">
+                  <path d="M8.53 3.22a.75.75 0 0 0-1.06 0l-2 2a.75.75 0 1 0 1.06 1.06L7.25 5.56v4.88a.75.75 0 0 0 1.5 0V5.56l.72.72a.75.75 0 0 0 1.06-1.06l-2-2Z" />
+                  <path d="M7.47 12.78a.75.75 0 0 0 1.06 0l2-2a.75.75 0 0 0-1.06-1.06l-.72.72V5.56a.75.75 0 0 0-1.5 0v4.88l-.72-.72a.75.75 0 0 0-1.06 1.06l2 2Z" />
+                </svg>
+              </span>
+              {% endif %}
+            </a>
+          </th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">
+            <a href="{{ sorting.sort_urls.school.url }}" title="{{ sorting.sort_urls.school.title }}" aria-label="{{ sorting.sort_urls.school.title }} by school" class="inline-flex items-center gap-1 hover:text-gray-900">
+              <span>School</span>
+              {% if sorting.sort_by == 'school' %}
+              <span class="text-blue-600" aria-hidden="true">{% if sorting.sort_dir == 'asc' %}
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-4 w-4">
+                  <path fill-rule="evenodd" d="M8 3.5a.75.75 0 0 1 .53.22l4 4a.75.75 0 1 1-1.06 1.06L8.75 6.06V12.5a.75.75 0 0 1-1.5 0V6.06L4.53 8.78a.75.75 0 1 1-1.06-1.06l4-4A.75.75 0 0 1 8 3.5Z" clip-rule="evenodd" />
+                </svg>
+              {% else %}
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-4 w-4">
+                  <path fill-rule="evenodd" d="M8 12.5a.75.75 0 0 1-.53-.22l-4-4a.75.75 0 1 1 1.06-1.06l2.72 2.72V3.5a.75.75 0 0 1 1.5 0v6.44l2.72-2.72a.75.75 0 1 1 1.06 1.06l-4 4A.75.75 0 0 1 8 12.5Z" clip-rule="evenodd" />
+                </svg>
+              {% endif %}</span>
+              <span class="sr-only">sorted {{ sorting.sort_dir }}</span>
+              {% else %}
+              <span class="text-gray-400" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-4 w-4">
+                  <path d="M8.53 3.22a.75.75 0 0 0-1.06 0l-2 2a.75.75 0 1 0 1.06 1.06L7.25 5.56v4.88a.75.75 0 0 0 1.5 0V5.56l.72.72a.75.75 0 0 0 1.06-1.06l-2-2Z" />
+                  <path d="M7.47 12.78a.75.75 0 0 0 1.06 0l2-2a.75.75 0 0 0-1.06-1.06l-.72.72V5.56a.75.75 0 0 0-1.5 0v4.88l-.72-.72a.75.75 0 0 0-1.06 1.06l2 2Z" />
+                </svg>
+              </span>
+              {% endif %}
+            </a>
+          </th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">Actor</th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">
+            <a href="{{ sorting.sort_urls.action.url }}" title="{{ sorting.sort_urls.action.title }}" aria-label="{{ sorting.sort_urls.action.title }} by action" class="inline-flex items-center gap-1 hover:text-gray-900">
+              <span>Action</span>
+              {% if sorting.sort_by == 'action' %}
+              <span class="text-blue-600" aria-hidden="true">{% if sorting.sort_dir == 'asc' %}
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-4 w-4">
+                  <path fill-rule="evenodd" d="M8 3.5a.75.75 0 0 1 .53.22l4 4a.75.75 0 1 1-1.06 1.06L8.75 6.06V12.5a.75.75 0 0 1-1.5 0V6.06L4.53 8.78a.75.75 0 1 1-1.06-1.06l4-4A.75.75 0 0 1 8 3.5Z" clip-rule="evenodd" />
+                </svg>
+              {% else %}
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-4 w-4">
+                  <path fill-rule="evenodd" d="M8 12.5a.75.75 0 0 1-.53-.22l-4-4a.75.75 0 1 1 1.06-1.06l2.72 2.72V3.5a.75.75 0 0 1 1.5 0v6.44l2.72-2.72a.75.75 0 1 1 1.06 1.06l-4 4A.75.75 0 0 1 8 12.5Z" clip-rule="evenodd" />
+                </svg>
+              {% endif %}</span>
+              <span class="sr-only">sorted {{ sorting.sort_dir }}</span>
+              {% else %}
+              <span class="text-gray-400" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-4 w-4">
+                  <path d="M8.53 3.22a.75.75 0 0 0-1.06 0l-2 2a.75.75 0 1 0 1.06 1.06L7.25 5.56v4.88a.75.75 0 0 0 1.5 0V5.56l.72.72a.75.75 0 0 0 1.06-1.06l-2-2Z" />
+                  <path d="M7.47 12.78a.75.75 0 0 0 1.06 0l2-2a.75.75 0 0 0-1.06-1.06l-.72.72V5.56a.75.75 0 0 0-1.5 0v4.88l-.72-.72a.75.75 0 0 0-1.06 1.06l2 2Z" />
+                </svg>
+              </span>
+              {% endif %}
+            </a>
+          </th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">Target</th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">Details</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for l in logs %}
+        <tr>
+          <td class="px-4 py-3 text-gray-600">{{ l.created_at }}</td>
+          <td class="px-4 py-3 text-gray-700">
+            {% if l.school_id and school_lookup.get(l.school_id) %}
+            <div class="font-medium text-gray-900">{{ school_lookup[l.school_id].name }}</div>
+            <div class="text-xs text-gray-500">{{ school_lookup[l.school_id].code }}</div>
+            {% else %}
+            Platform
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 text-gray-700">
+            {% if l.actor_user_id and actor_lookup.get(l.actor_user_id) %}
+            <div class="font-medium text-gray-900">{{ actor_lookup[l.actor_user_id].name }}</div>
+            <div class="text-xs text-gray-500">{{ actor_lookup[l.actor_user_id].email }}</div>
+            <div class="text-xs uppercase tracking-wide text-gray-400">{{ actor_lookup[l.actor_user_id].role }}</div>
+            {% elif l.actor_platform and l.actor_user_id %}
+            Platform user #{{ l.actor_user_id }}
+            {% else %}
+            System
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 font-medium text-gray-900">{{ l.action }}</td>
+          <td class="px-4 py-3 text-gray-700">{{ l.target_table }}{% if l.target_id %} #{{ l.target_id }}{% endif %}</td>
+          <td class="px-4 py-3 text-gray-600">
+            {% if l.changes %}
+            <div class="space-y-1">
+              {% set reason_code = l.changes.get('suspension_reason_code') or l.changes.get('cancellation_reason_code') %}
+              {% if reason_code %}
+              <div class="mb-2 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700">{{ reason_label(reason_code) }}</div>
+              {% endif %}
+              {% for key, value in l.changes.items() %}
+              <div><span class="font-medium text-gray-700">{{ key.replace('_', ' ')|title }}:</span> {{ value }}</div>
+              {% endfor %}
+            </div>
+            {% else %}
+            <span class="text-gray-400">No details captured</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500">No audit records match the selected filters.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if pagination.total_pages > 1 %}
+  <nav class="flex items-center justify-center gap-2" aria-label="Audit pagination">
+    {% if pagination.prev_url %}
+    <a href="{{ pagination.prev_url }}" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400">Previous</a>
+    {% endif %}
+    {% for page_link in pagination.page_links %}
+    <a href="{{ page_link.url }}" class="rounded-lg px-3 py-2 text-sm font-semibold {% if page_link.is_current %}bg-blue-600 text-white{% else %}border border-gray-300 text-gray-700 hover:border-gray-400{% endif %}">{{ page_link.number }}</a>
+    {% endfor %}
+    {% if pagination.next_url %}
+    <a href="{{ pagination.next_url }}" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400">Next</a>
+    {% endif %}
+  </nav>
+  {% endif %}
+</section>
 {% endblock %}

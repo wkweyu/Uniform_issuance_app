@@ -1,0 +1,36 @@
+ALTER TABLE `platform_users`
+  ADD COLUMN IF NOT EXISTS `failed_login_count` INT NOT NULL DEFAULT 0 AFTER `mfa_enabled`,
+  ADD COLUMN IF NOT EXISTS `last_failed_login_at` DATETIME NULL AFTER `failed_login_count`,
+  ADD COLUMN IF NOT EXISTS `locked_until` DATETIME NULL AFTER `last_failed_login_at`;
+
+CREATE TABLE IF NOT EXISTS `security_events` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `event_type` VARCHAR(128) NOT NULL,
+  `severity` VARCHAR(32) NOT NULL DEFAULT 'medium',
+  `status` VARCHAR(32) NOT NULL DEFAULT 'open',
+  `title` VARCHAR(255) NOT NULL,
+  `description` TEXT NULL,
+  `signal_key` VARCHAR(255) NOT NULL,
+  `school_id` INT NULL,
+  `related_audit_log_id` INT NULL,
+  `related_support_ticket_id` INT NULL,
+  `threshold_value` INT NULL,
+  `observed_value` INT NULL,
+  `occurrence_count` INT NOT NULL DEFAULT 1,
+  `details` JSON NULL,
+  `first_seen_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `last_seen_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `acknowledged_at` DATETIME NULL,
+  `acknowledged_by_user_id` INT NULL,
+  `resolved_at` DATETIME NULL,
+  `resolved_by_user_id` INT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_security_events_school_id` (`school_id`),
+  KEY `idx_security_events_event_type` (`event_type`),
+  KEY `idx_security_events_status` (`status`),
+  KEY `idx_security_events_signal_key` (`signal_key`),
+  KEY `idx_security_events_last_seen_at` (`last_seen_at`),
+  KEY `idx_security_events_related_support_ticket_id` (`related_support_ticket_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -5,6 +5,34 @@
 **Test Result**: 3/3 PASSED ✅  
 **Database Migration**: Applied ✅
 
+## Phase 5 Status Note (April 2026)
+
+Phase 5 platform security notification work is functionally complete in the application and staging-ready in operations.
+
+Implemented and verified:
+- Security events with acknowledgement, resolution, CSV export, and dashboard visibility
+- Platform login rate limiting and temporary lockout
+- Auto-created support tickets for repeated failed logins and impersonation bursts
+- Email alerts for high and critical security events
+- Webhook notification preferences, delivery logs, and HMAC-signed webhook payloads
+- Internal relay for Splunk and Microsoft Sentinel with health endpoint and staging-safe disabled-forwarding mode
+- Control-plane UI visibility for relay readiness and downstream configuration state
+
+Current live posture:
+- SMTP is configured and authenticated
+- Email alerts are live
+- The signed webhook relay is running and healthy
+- Downstream SIEM forwarding is intentionally disabled until real external collector values are provided
+
+External dependency still pending:
+- `SPLUNK_HEC_URL`
+- `SPLUNK_HEC_TOKEN`
+- Optional `SENTINEL_LOGIC_APP_URL`
+- Optional `SENTINEL_BEARER_TOKEN`
+
+Conclusion:
+Phase 5 is complete from an engineering and validation standpoint for internal platform security notifications. Final production completion of SIEM forwarding depends only on external Splunk and/or Sentinel credentials, not on missing application code.
+
 ---
 
 ## Executive Summary

@@ -1,10 +1,11 @@
 from datetime import datetime
 from flask import g
 from core.db import get_db_connection
+from core.tenancy import require_current_school_id
 
 def get_current_term_and_year():
     """Get the currently active term and academic year for the current tenant."""
-    school_id = g.school_id or 1
+    school_id = require_current_school_id()
     connection = get_db_connection()
     try:
         with connection.cursor() as cursor:
@@ -73,7 +74,7 @@ def generate_receipt_number(year, school_id):
 # This is your actual route function
 def get_class_name(cursor, admno, year):
     try:
-        school_id = g.school_id or 1
+        school_id = require_current_school_id()
         cursor.execute("""
             SELECT c.class_name
             FROM classallocation a

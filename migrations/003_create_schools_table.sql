@@ -2,7 +2,7 @@
 -- This migration is additive and does not modify existing tables.
 
 CREATE TABLE IF NOT EXISTS `schools` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `id` INT NOT NULL AUTO_INCREMENT,
   `name` VARCHAR(255) NOT NULL,
   `code` VARCHAR(20) NOT NULL,
   `is_active` TINYINT(1) NOT NULL DEFAULT 1,

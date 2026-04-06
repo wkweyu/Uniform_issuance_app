@@ -23,8 +23,8 @@
       <label class="block text-sm font-medium">Make/Model:</label>
       <input
         type="text"
-        name="make"
-        value="{{ bus.make }}"
+        name="model"
+        value="{{ bus.model or bus.make }}"
         class="w-full border px-3 py-2 rounded"
         placeholder="Isuzu NQR"
       />

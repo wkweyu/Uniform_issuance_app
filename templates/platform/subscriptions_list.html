@@ -1,9 +1,298 @@
 {% extends 'base.html' %}
-{% block content %}
-<h2>Subscriptions</h2>
-<ul>
-  {% for s in subscriptions %}
-  <li>{{ s.id }} — School: {{ s.school_id }} — Plan: {{ s.plan_id }} — {{ s.status }}</li>
-  {% endfor %}
-</ul>
+{% from 'platform/_components.html' import status_badge %}
+
+{% block platform_content %}
+<div class="space-y-6">
+  <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between border-b border-slate-200 pb-6">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight text-slate-900">Subscriptions</h1>
+      <p class="mt-1 text-sm text-slate-500">Manage plan changes, lifecycle state transitions, and review each tenant subscription.</p>
+    </div>
+    <div class="flex flex-wrap items-center gap-3">
+      <a href="{{ url_for('platform.export_subscriptions_csv') }}{% if export_query_string %}?{{ export_query_string }}{% endif %}" class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-600 hover:text-slate-900 shadow-sm transition-all hover:border-slate-300">
+        <i class="fas fa-download text-xs"></i>
+        <span>Export CSV</span>
+      </a>
+      {% if platform_has_permission('subscription_write') %}
+      <a href="{{ url_for('platform.create_subscription') }}" class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 shadow-sm transition-all shadow-blue-200">
+        <i class="fas fa-plus text-xs"></i>
+        <span>Create Subscription</span>
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Configured</div>
+      <div class="flex items-baseline gap-2">
+        <span class="text-xl font-bold text-slate-900">{{ entitlement_state_counts.configured }}</span>
+        <span class="text-[10px] font-bold text-slate-400 uppercase">tenants</span>
+      </div>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Unconfigured</div>
+      <div class="flex items-baseline gap-2">
+        <span class="text-xl font-bold text-slate-900">{{ entitlement_state_counts.unconfigured }}</span>
+        <span class="text-[10px] font-bold text-slate-400 uppercase">legacy</span>
+      </div>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Read Only</div>
+      <div class="flex items-baseline gap-2">
+        <span class="text-xl font-bold text-amber-600">{{ entitlement_state_counts.read_only }}</span>
+        <span class="text-[10px] font-bold text-amber-500/80 uppercase">grace</span>
+      </div>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Read / Write</div>
+      <div class="flex items-baseline gap-2">
+        <span class="text-xl font-bold text-emerald-600">{{ entitlement_state_counts.read_write }}</span>
+        <span class="text-[10px] font-bold text-emerald-500/80 uppercase">active</span>
+      </div>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Disabled</div>
+      <div class="flex items-baseline gap-2">
+        <span class="text-xl font-bold text-slate-400">{{ entitlement_state_counts.disabled }}</span>
+        <span class="text-[10px] font-bold text-slate-400 uppercase">blocked</span>
+      </div>
+    </div>
+  </div>
+
+  <form method="get" class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm overflow-hidden">
+    <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 items-end">
+      <div class="space-y-2">
+        <label class="text-[10px] font-bold uppercase tracking-widest text-slate-500 ml-1">Status</label>
+        <select name="status" class="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all">
+          <option value="">All statuses</option>
+          {% for status in ['trial', 'active', 'grace_period', 'suspended', 'cancelled', 'archived', 'expired'] %}
+          <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ status.replace('_', ' ')|title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="space-y-2">
+        <label class="text-[10px] font-bold uppercase tracking-widest text-slate-500 ml-1">Enforcement</label>
+        <select name="reason_code" class="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all">
+          <option value="">All reason codes</option>
+          {% for code, label in enforcement_reason_options.suspension %}
+          <option value="{{ code }}" {% if filters.reason_code == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+          {% for code, label in enforcement_reason_options.cancellation %}
+          <option value="{{ code }}" {% if filters.reason_code == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="space-y-2">
+        <label class="text-[10px] font-bold uppercase tracking-widest text-slate-500 ml-1">Included Module</label>
+        <select name="included_module_code" class="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all">
+          <option value="">Any included module</option>
+          {% for code, label in entitlement_filter_options %}
+          <option value="{{ code }}" {% if filters.included_module_code == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="space-y-2">
+        <label class="text-[10px] font-bold uppercase tracking-widest text-slate-500 ml-1">Entitlement State</label>
+        <select name="entitlement_state" class="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all">
+          <option value="">All entitlement states</option>
+          {% for code, label in entitlement_state_filter_options %}
+          <option value="{{ code }}" {% if filters.entitlement_state == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="flex gap-2">
+        <button type="submit" class="flex-1 rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800 transition-all">Apply</button>
+        <a href="{{ url_for('platform.list_subscriptions') }}" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-600 hover:border-slate-300 transition-all">Reset</a>
+      </div>
+    </div>
+  </form>
+
+  <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <thead class="bg-slate-50">
+        <tr>
+          <th class="px-6 py-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Tenant & Context</th>
+          <th class="px-6 py-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Entitlements</th>
+          <th class="px-6 py-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Lifecycle</th>
+          <th class="px-6 py-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Financials</th>
+          <th class="px-6 py-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for s in subscriptions %}
+        {% set school = schools.get(s.school_id) %}
+        {% set reason = subscription_reason_context.get(s.id) %}
+        {% set entitlement_summary = entitlement_summaries.get(s.id) %}
+        <tr class="align-top hover:bg-slate-50/50 transition-colors">
+          <td class="px-6 py-6">
+            <div class="flex flex-col gap-2">
+              <div class="font-bold text-slate-900 leading-none">{{ school.name if school else ('School ' ~ s.school_id) }}</div>
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] font-semibold text-slate-400 space-x-1">
+                  <span>ID</span>
+                  <span class="text-slate-600">{{ s.id }}</span>
+                </span>
+                {% if school and school.code %}
+                <span class="h-1 w-1 rounded-full bg-slate-300"></span>
+                <span class="text-[10px] font-bold text-blue-600 uppercase">{{ school.code }}</span>
+                {% endif %}
+              </div>
+              {% if reason and reason.code %}
+              <div class="mt-2 text-[11px] font-semibold text-amber-700 bg-amber-50 px-2 py-1 rounded inline-flex self-start border border-amber-100 italic">
+                {{ reason.label }}
+              </div>
+              {% endif %}
+            </div>
+          </td>
+          <td class="px-6 py-6 min-w-[280px]">
+            <div class="flex flex-col gap-3">
+              <div class="flex items-center gap-2">
+                {{ status_badge(entitlement_summary.configuration_label, 'slate' if entitlement_summary.configuration_state == 'unconfigured' else 'blue') }}
+                {% if entitlement_summary.configuration_state == 'configured' %}
+                {{ status_badge(entitlement_summary.state_label, 'emerald' if entitlement_summary.state_key == 'read_write' else 'amber' if entitlement_summary.state_key == 'read_only' else 'slate') }}
+                {% endif %}
+              </div>
+              
+              {% if entitlement_summary and entitlement_summary.is_configured %}
+              <div class="grid grid-cols-1 gap-1.5 mt-1">
+                {% for module in entitlement_summary.modules[:3] %}
+                <div class="flex items-center justify-between gap-3 px-3 py-1.5 rounded-lg border border-slate-100 bg-slate-50/50">
+                  <div class="flex flex-col">
+                    <span class="text-[11px] font-bold text-slate-700 mb-0.5">{{ module.name }}</span>
+                    <span class="text-[9px] font-bold uppercase tracking-widest text-slate-400">{{ module.family_label }}</span>
+                  </div>
+                  <span class="text-[9px] font-black uppercase text-slate-500">
+                    {{ module.access_label.replace('Read / Write', 'R/W').replace('Read Only', 'R/O') }}
+                  </span>
+                </div>
+                {% endfor %}
+                {% if entitlement_summary.modules|length > 3 %}
+                <div class="text-center mt-1">
+                   <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                    +{{ entitlement_summary.modules|length - 3 }} more
+                  </span>
+                </div>
+                {% endif %}
+              </div>
+              {% else %}
+              <div class="py-4 rounded-lg border border-dashed border-slate-200 bg-slate-50/50 flex items-center justify-center">
+                 <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest italic">Unconfigured</span>
+              </div>
+              {% endif %}
+            </div>
+          </td>
+          <td class="px-6 py-6">
+            <div class="flex flex-col gap-3">
+              {{ status_badge(s.effective_status.replace('_', ' '), 
+                  'emerald' if s.effective_status == 'active' else 
+                  'blue' if s.effective_status == 'trial' else
+                  'amber' if s.effective_status == 'grace_period' else
+                  'rose' if s.effective_status in ['suspended', 'cancelled'] else
+                  'slate') }}
+              
+              <div class="text-[10px] font-semibold text-slate-500 space-y-1 mt-1">
+                <div class="flex justify-between items-center bg-slate-50 px-2 py-1 rounded">
+                  <span class="uppercase tracking-tighter opacity-70">Started</span>
+                  <span class="text-slate-800">{{ s.started_at.strftime('%Y-%m-%d') if s.started_at else '–' }}</span>
+                </div>
+                {% if s.renewal_date %}
+                <div class="flex justify-between items-center bg-blue-50/50 px-2 py-1 rounded">
+                  <span class="uppercase tracking-tighter text-blue-500 opacity-80">Renew</span>
+                  <span class="text-blue-700">{{ s.renewal_date.strftime('%Y-%m-%d') }}</span>
+                </div>
+                {% endif %}
+              </div>
+            </div>
+          </td>
+          <td class="px-6 py-6">
+            {% if platform_has_permission('subscription_write') %}
+            <div class="flex flex-col gap-4">
+              <form method="post" action="{{ url_for('platform.change_subscription_plan', subscription_id=s.id) }}" class="flex flex-col gap-1.5">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="flex items-center gap-1.5">
+                  <select name="plan_id" title="Change Plan" class="flex-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 transition-all">
+                    {% for plan in plans %}
+                    <option value="{{ plan.id }}" {% if plan.id == s.plan_id %}selected{% endif %}>
+                      {{ plan.name }}
+                    </option>
+                    {% endfor %}
+                  </select>
+                  <button type="submit" class="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-400 hover:text-blue-600 hover:border-blue-100 hover:bg-blue-50 transition-all" title="Apply change">
+                    <i class="fas fa-check text-xs"></i>
+                  </button>
+                </div>
+              </form>
+
+              <div class="flex flex-col gap-2 p-3 rounded-lg bg-slate-50 border border-slate-100 mt-1">
+                <div class="flex items-center justify-between">
+                  <span class="text-[9px] font-bold uppercase tracking-widest text-slate-400">{{ s.billing_cycle|default('monthly')|replace('_', ' ') }}</span>
+                  <span class="text-xs font-bold text-slate-900">{{ (s.amount_cents / 100)|currency }}</span>
+                </div>
+                <div class="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                  <div class="h-full bg-blue-500 rounded-full" style="width: 100%"></div>
+                </div>
+              </div>
+            </div>
+            {% else %}
+            <div class="py-4 border border-dashed border-slate-200 rounded-lg bg-slate-50/50 text-center">
+              <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest italic">View Only</span>
+            </div>
+            {% endif %}
+          </td>
+          <td class="px-6 py-6 lg:min-w-[180px]">
+            <div class="flex flex-col gap-2">
+              <a href="{{ url_for('platform.subscription_detail', subscription_id=s.id) }}" class="flex items-center justify-center p-2 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all font-bold text-[10px] uppercase tracking-widest shadow-sm">
+                View Profile
+              </a>
+
+              {% if platform_has_permission('subscription_write') %}
+              <div class="grid grid-cols-2 gap-2 mt-2">
+                {% if s.effective_status != 'active' %}
+                <form method="post" action="{{ url_for('platform.activate_subscription_route', subscription_id=s.id) }}" class="col-span-2">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="w-full py-2 rounded-lg bg-blue-600 font-bold text-white text-[9px] uppercase tracking-widest hover:bg-blue-700 shadow-sm transition-all shadow-blue-100">Activate</button>
+                </form>
+                {% endif %}
+
+                {% if s.effective_status in ['active', 'trial'] %}
+                <form method="post" action="{{ url_for('platform.start_subscription_grace_period', subscription_id=s.id) }}" class="col-span-1">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input name="days" type="hidden" value="14">
+                  <button type="submit" class="w-full py-2 rounded-lg border border-amber-200 bg-amber-50 font-bold text-amber-700 text-[9px] uppercase tracking-widest hover:bg-amber-100 transition-all">Grace</button>
+                </form>
+                {% endif %}
+
+                {% if s.effective_status not in ['suspended', 'cancelled'] %}
+                <form method="post" action="{{ url_for('platform.suspend_subscription_route', subscription_id=s.id) }}" class="col-span-1">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="w-full py-2 rounded-lg border border-slate-200 bg-white font-bold text-slate-600 text-[9px] uppercase tracking-widest hover:bg-slate-50 transition-all">Suspend</button>
+                </form>
+
+                <form method="post" action="{{ url_for('platform.cancel_subscription_route', subscription_id=s.id) }}" class="col-span-2 mt-1">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="w-full py-2 rounded-lg border border-rose-200 bg-white font-bold text-rose-600 text-[9px] uppercase tracking-widest hover:bg-rose-50 transition-all">Abort Subscription</button>
+                </form>
+                {% endif %}
+              </div>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="px-6 py-20 text-center">
+            <div class="flex flex-col items-center gap-3">
+              <div class="h-12 w-12 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100">
+                <i class="fas fa-search text-slate-300"></i>
+              </div>
+              <span class="text-slate-400 font-bold uppercase tracking-widest text-xs">No Matching Subscriptions Found</span>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 {% endblock %}

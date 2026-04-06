@@ -3,9 +3,34 @@ from core.permissions import admin_required, login_required
 from core.db import get_db_connection
 from blueprints.farm.services import FarmManagementService
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 farm_bp = Blueprint('farm', __name__, url_prefix='/farm')
+
+
+def _required_text(value, field_name):
+    parsed = (value or '').strip()
+    if not parsed:
+        raise ValueError(f"{field_name} is required.")
+    return parsed
+
+
+def _required_int(value, field_name):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field_name} is required and must be a valid integer.")
+
+
+def _parse_decimal(value, field_name, default=None):
+    if value in (None, ''):
+        if default is not None:
+            return Decimal(str(default))
+        raise ValueError(f"{field_name} is required and must be a valid number.")
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValueError(f"{field_name} must be a valid number.")
 
 @farm_bp.route('/dashboard')
 @login_required
@@ -29,14 +54,16 @@ def record_production():
     if request.method == 'POST':
         try:
             service.record_production(
-                activity_id=int(request.form.get('activity_id')),
-                quantity=Decimal(request.form.get('quantity', 0)),
-                spoilage=Decimal(request.form.get('spoilage', 0)),
-                internal=Decimal(request.form.get('internal', 0)),
+                activity_id=_required_int(request.form.get('activity_id'), 'activity_id'),
+                quantity=_parse_decimal(request.form.get('quantity'), 'quantity'),
+                spoilage=_parse_decimal(request.form.get('spoilage'), 'spoilage', default=0),
+                internal=_parse_decimal(request.form.get('internal'), 'internal', default=0),
                 recorded_by=session['userNo'],
                 notes=request.form.get('notes', '')
             )
-            flash("✅ Production recorded successfully.", "success")
+            flash("Production recorded successfully.", "success")
+        except ValueError as e:
+            flash(f"Error: {str(e)}", "error")
         except Exception as e:
             flash(f"Error: {str(e)}", "error")
         return redirect(url_for('farm.dashboard'))
@@ -53,13 +80,15 @@ def record_sale():
     if request.method == 'POST':
         try:
             service.record_sale(
-                activity_id=int(request.form.get('activity_id')),
-                customer=request.form.get('customer'),
-                quantity=Decimal(request.form.get('quantity', 0)),
-                unit_price=Decimal(request.form.get('unit_price', 0)),
+                activity_id=_required_int(request.form.get('activity_id'), 'activity_id'),
+                customer=_required_text(request.form.get('customer'), 'customer'),
+                quantity=_parse_decimal(request.form.get('quantity'), 'quantity'),
+                unit_price=_parse_decimal(request.form.get('unit_price'), 'unit_price'),
                 recorded_by=session['userNo']
             )
-            flash("✅ Sale recorded and receipt generated.", "success")
+            flash("Sale recorded and receipt generated.", "success")
+        except ValueError as e:
+            flash(f"Error: {str(e)}", "error")
         except Exception as e:
             flash(f"Error: {str(e)}", "error")
         return redirect(url_for('farm.dashboard'))
@@ -76,13 +105,15 @@ def farm_expenses():
     if request.method == 'POST':
         try:
             service.request_expense(
-                activity_id=int(request.form.get('activity_id')),
-                category=request.form.get('category'),
-                amount=Decimal(request.form.get('amount', 0)),
-                description=request.form.get('description'),
+                activity_id=_required_int(request.form.get('activity_id'), 'activity_id'),
+                category=_required_text(request.form.get('category'), 'category'),
+                amount=_parse_decimal(request.form.get('amount'), 'amount'),
+                description=_required_text(request.form.get('description'), 'description'),
                 recorded_by=session['userNo']
             )
-            flash("✅ Expense request submitted for approval.", "success")
+            flash("Expense request submitted for approval.", "success")
+        except ValueError as e:
+            flash(f"Error: {str(e)}", "error")
         except Exception as e:
             flash(f"Error: {str(e)}", "error")
             

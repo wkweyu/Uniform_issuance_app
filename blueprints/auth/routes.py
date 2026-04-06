@@ -28,6 +28,8 @@ def login():
             session['is_admin'] = bool(user.TA)
             session['is_super_admin'] = bool(user.TA == 2)
             session['school_id'] = school.id
+            session['school_code'] = school.code
+            session['school_name'] = school.name
             session['logged_in'] = True
             session.permanent = True
             current_app.permanent_session_lifetime = timedelta(hours=8)

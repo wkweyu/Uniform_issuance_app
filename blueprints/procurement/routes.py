@@ -3,10 +3,105 @@ from core.permissions import admin_required, login_required
 from core.db import get_db_connection
 from blueprints.procurement.services import ProcurementService, ProcurementError
 from blueprints.finance.services import FinanceService
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from datetime import datetime
 
 procurement_bp = Blueprint('procurement', __name__)
+
+
+def _required_text(value, field_name):
+    parsed = (value or '').strip()
+    if not parsed:
+        raise ValueError(f"{field_name} is required.")
+    return parsed
+
+
+def _required_int(value, field_name):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field_name} is required and must be a valid integer.")
+
+
+def _optional_int(value, field_name):
+    if value in (None, ''):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field_name} must be a valid integer.")
+
+
+def _parse_decimal(value, field_name, default=None):
+    if value in (None, ''):
+        if default is not None:
+            return Decimal(str(default))
+        raise ValueError(f"{field_name} is required and must be a valid number.")
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValueError(f"{field_name} must be a valid number.")
+
+
+def _parse_float(value, field_name, default=None):
+    if value in (None, ''):
+        if default is not None:
+            return float(default)
+        raise ValueError(f"{field_name} is required and must be a valid number.")
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field_name} must be a valid number.")
+
+
+def _build_requisition_items(form):
+    items = []
+    for index, (description, quantity, price) in enumerate(
+        zip(form.getlist('description[]'), form.getlist('quantity[]'), form.getlist('price[]')),
+        start=1,
+    ):
+        if (description or '').strip() and quantity:
+            items.append({
+                'description': description.strip(),
+                'quantity': _parse_float(quantity, f'quantity[{index}]'),
+                'estimated_unit_price': _parse_float(price, f'price[{index}]', default=0),
+            })
+    return items
+
+
+def _build_grn_items(form):
+    items = []
+    for index, (po_item_id, quantity) in enumerate(
+        zip(form.getlist('po_item_id[]'), form.getlist('receive_qty[]')),
+        start=1,
+    ):
+        if quantity and _parse_float(quantity, f'receive_qty[{index}]') > 0:
+            items.append({
+                'po_item_id': _required_int(po_item_id, f'po_item_id[{index}]'),
+                'quantity': _parse_float(quantity, f'receive_qty[{index}]'),
+            })
+    return items
+
+
+def _build_purchase_order_items(form):
+    items = []
+    for index, (item_id, description, quantity, price) in enumerate(
+        zip(
+            form.getlist('item_id[]'),
+            form.getlist('item_description[]'),
+            form.getlist('item_qty[]'),
+            form.getlist('item_price[]'),
+        ),
+        start=1,
+    ):
+        if (description or '').strip() and quantity and price:
+            items.append({
+                'item_id': _optional_int(item_id, f'item_id[{index}]'),
+                'description': description.strip(),
+                'quantity': _parse_float(quantity, f'item_qty[{index}]'),
+                'unit_price': _parse_float(price, f'item_price[{index}]'),
+            })
+    return items
 
 @procurement_bp.route('/admin/procurement/requisitions')
 @login_required
@@ -23,19 +118,22 @@ def create_requisition():
     connection = get_db_connection(); service = ProcurementService(connection)
     if request.method == 'POST':
         try:
-            items = []
-            for d, q, p in zip(request.form.getlist('description[]'), request.form.getlist('quantity[]'), request.form.getlist('price[]')):
-                if d.strip() and q: items.append({'description': d.strip(), 'quantity': float(q), 'estimated_unit_price': float(p) if p else 0})
-            service.create_requisition(int(request.form.get('department_id')), items, session['userNo'], request.form.get('justification'), category=request.form.get('category', 'General'), academic_year_id=int(request.form.get('academic_year_id')) if request.form.get('academic_year_id') else None)
-            flash("✓ Requisition submitted.", "success")
+            items = _build_requisition_items(request.form)
+            service.create_requisition(
+                _required_int(request.form.get('department_id'), 'department_id'),
+                items,
+                session['userNo'],
+                request.form.get('justification'),
+                category=request.form.get('category', 'General'),
+                academic_year_id=_optional_int(request.form.get('academic_year_id'), 'academic_year_id'),
+            )
+            flash("Requisition submitted.", "success")
             return redirect(url_for('procurement.manage_requisitions'))
+        except (ValueError, ProcurementError) as e: flash(str(e), "error")
         except Exception as e: flash(str(e), "error")
 
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT * FROM staffdepts WHERE school_id = %s ORDER BY dept", (service.school_id,))
-        depts = cursor.fetchall()
-        cursor.execute("SELECT * FROM academic_years WHERE school_id = %s ORDER BY year DESC", (service.school_id,))
-        years = cursor.fetchall()
+    depts = service.get_departments()
+    years = service.get_academic_years()
     connection.close()
     return render_template('create_requisition.html', depts=depts, academic_years=years)
 
@@ -58,7 +156,8 @@ def approve_requisition(req_id):
     connection = get_db_connection(); service = ProcurementService(connection)
     try:
         service.update_requisition_status(req_id, 'APPROVED', session['userNo'])
-        flash("✓ Approved.", "success")
+        flash("Approved.", "success")
+    except ProcurementError as e: flash(str(e), "error")
     except Exception as e: flash(str(e), "error")
     finally: connection.close()
     return redirect(url_for('procurement.view_requisition', req_id=req_id))
@@ -70,7 +169,8 @@ def reject_requisition(req_id):
     connection = get_db_connection(); service = ProcurementService(connection)
     try:
         service.update_requisition_status(req_id, 'REJECTED', session['userNo'])
-        flash("✓ Rejected.", "warning")
+        flash("Rejected.", "warning")
+    except ProcurementError as e: flash(str(e), "error")
     except Exception as e: flash(str(e), "error")
     finally: connection.close()
     return redirect(url_for('procurement.view_requisition', req_id=req_id))
@@ -81,9 +181,10 @@ def reject_requisition(req_id):
 def convert_requisition(req_id):
     connection = get_db_connection(); service = ProcurementService(connection)
     try:
-        po = service.convert_requisition_to_po(req_id, int(request.form.get('supplier_id')), session['userNo'])
-        flash("✓ Converted to PO.", "success")
+        po = service.convert_requisition_to_po(req_id, _required_int(request.form.get('supplier_id'), 'supplier_id'), session['userNo'])
+        flash("Converted to PO.", "success")
         return redirect(url_for('procurement.view_purchase_order', po_id=po['id']))
+    except (ValueError, ProcurementError) as e: flash(str(e), "error"); return redirect(url_for('procurement.view_requisition', req_id=req_id))
     except Exception as e: flash(str(e), "error"); return redirect(url_for('procurement.view_requisition', req_id=req_id))
     finally: connection.close()
 
@@ -94,10 +195,11 @@ def receive_goods(po_id):
     connection = get_db_connection(); service = ProcurementService(connection)
     if request.method == 'POST':
         try:
-            items = [{'po_item_id': int(i_id), 'quantity': float(q)} for i_id, q in zip(request.form.getlist('po_item_id[]'), request.form.getlist('receive_qty[]')) if q and float(q) > 0]
+            items = _build_grn_items(request.form)
             service.record_grn(po_id, session['userNo'], items, request.form.get('delivery_note_ref'), request.form.get('notes'))
-            flash("✓ GRN recorded.", "success")
+            flash("GRN recorded.", "success")
             return redirect(url_for('procurement.view_purchase_order', po_id=po_id))
+        except (ValueError, ProcurementError) as e: flash(str(e), "error")
         except Exception as e: flash(str(e), "error")
     po = service.get_po_details(po_id)
     connection.close()
@@ -120,10 +222,11 @@ def register_asset():
     if request.method == 'POST':
         try:
             data = {k: v for k, v in request.form.items()}
-            data['purchase_value'] = float(data['purchase_value'])
+            data['purchase_value'] = _parse_float(data.get('purchase_value'), 'purchase_value')
             service.register_asset(data, session['userNo'])
-            flash("✓ Asset registered.", "success")
+            flash("Asset registered.", "success")
             return redirect(url_for('procurement.manage_assets'))
+        except (ValueError, ProcurementError) as e: flash(str(e), "error")
         except Exception as e: flash(str(e), "error")
     connection.close()
     return render_template('register_asset.html')
@@ -135,7 +238,8 @@ def update_asset(asset_id):
     connection = get_db_connection(); service = ProcurementService(connection)
     try:
         service.update_asset_condition(asset_id, {'condition': request.form.get('condition_status'), 'location': request.form.get('location')}, session['userNo'])
-        flash("✓ Asset updated.", "success")
+        flash("Asset updated.", "success")
+    except ProcurementError as e: flash(str(e), "error")
     except Exception as e: flash(str(e), "error")
     finally: connection.close()
     return redirect(url_for('procurement.manage_assets'))
@@ -145,14 +249,13 @@ def update_asset(asset_id):
 @admin_required
 def procurement_dashboard():
     connection = get_db_connection(); service = ProcurementService(connection)
-    pos = service.get_purchase_orders(request.args.get('status'), request.args.get('po_number'), int(request.args.get('supplier_id')) if request.args.get('supplier_id') else None)
+    try:
+        pos = service.get_purchase_orders(request.args.get('status'), request.args.get('po_number'), _optional_int(request.args.get('supplier_id'), 'supplier_id'))
+    except ValueError as e:
+        flash(str(e), 'error')
+        pos = []
     suppliers = service.get_suppliers()
-    with connection.cursor() as cursor:
-        if service._table_has_column('purchase_orders', 'school_id'):
-            cursor.execute("SELECT status, COUNT(*) as count FROM purchase_orders WHERE school_id = %s GROUP BY status", (service.school_id,))
-        else:
-            cursor.execute("SELECT status, COUNT(*) as count FROM purchase_orders GROUP BY status")
-        stats = cursor.fetchall()
+    stats = service.get_purchase_order_status_counts()
     connection.close()
     return render_template('procurement_dashboard.html', pos=pos, suppliers=suppliers, stats=stats)
 
@@ -163,22 +266,24 @@ def manage_procurement_budgets():
     connection = get_db_connection(); service = ProcurementService(connection)
     year_id = request.args.get('academic_year_id')
     if not year_id:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT id FROM academic_years WHERE is_current = 1 AND school_id = %s LIMIT 1", (service.school_id,))
-            ay = cursor.fetchone(); year_id = ay['id'] if ay else 1
+        year_id = service.get_current_academic_year_id() or 1
+    current_year_id = int(year_id)
     if request.method == 'POST':
         try:
-            service.set_budget(request.form.get('department_id'), year_id, request.form.get('category'), Decimal(request.form.get('allocated_amount')))
-            flash("✓ Budget updated.", "success")
+            service.set_budget(
+                _required_int(request.form.get('department_id'), 'department_id'),
+                current_year_id,
+                request.form.get('category'),
+                _parse_decimal(request.form.get('allocated_amount'), 'allocated_amount'),
+            )
+            flash("Budget updated.", "success")
+        except (ValueError, ProcurementError) as e: flash(str(e), "error")
         except Exception as e: flash(str(e), "error")
     budgets = service.get_budgets(year_id)
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT * FROM staffdepts WHERE school_id = %s ORDER BY dept", (service.school_id,))
-        depts = cursor.fetchall()
-        cursor.execute("SELECT * FROM academic_years WHERE school_id = %s ORDER BY year DESC", (service.school_id,))
-        years = cursor.fetchall()
+    depts = service.get_departments()
+    years = service.get_academic_years()
     connection.close()
-    return render_template('procurement_budgets.html', budgets=budgets, departments=depts, academic_years=years, current_year_id=int(year_id))
+    return render_template('procurement_budgets.html', budgets=budgets, departments=depts, academic_years=years, current_year_id=current_year_id)
 
 @procurement_bp.route('/admin/procurement/reports/aging')
 @login_required
@@ -197,7 +302,8 @@ def manage_suppliers():
     if request.method == 'POST':
         try:
             service.create_supplier(request.form.get('company'), request.form.get('contact_person'), request.form.get('email'), request.form.get('phone'), request.form.get('address'), request.form.get('cert_no',''), request.form.get('pin_no',''))
-            flash("✓ Supplier added.", "success")
+            flash("Supplier added.", "success")
+        except ProcurementError as e: flash(str(e), "error")
         except Exception as e: flash(str(e), "error")
     suppliers = service.get_suppliers(active_only=False)
     connection.close()
@@ -208,12 +314,7 @@ def manage_suppliers():
 @admin_required
 def vendor_statement(supplier_id):
     connection = get_db_connection(); service = ProcurementService(connection)
-    with connection.cursor() as cursor:
-        if service._table_has_column('suppliers', 'school_id'):
-            cursor.execute("SELECT * FROM suppliers WHERE supplierID = %s AND school_id = %s", (supplier_id, service.school_id))
-        else:
-            cursor.execute("SELECT * FROM suppliers WHERE supplierID = %s", (supplier_id,))
-        supplier = cursor.fetchone()
+    supplier = service.get_supplier_by_id(supplier_id)
     if not supplier: flash("Not found", "error"); connection.close(); return redirect(url_for('procurement.manage_suppliers'))
     txns = service.get_vendor_statement(supplier_id, request.args.get('start_date', datetime.now().replace(day=1).strftime('%Y-%m-%d')), request.args.get('end_date', datetime.now().strftime('%Y-%m-%d')))
     connection.close()
@@ -226,17 +327,15 @@ def create_purchase_order():
     connection = get_db_connection(); service = ProcurementService(connection)
     if request.method == 'POST':
         try:
-            items = [{'item_id': int(i_id) if i_id else None, 'description': d.strip(), 'quantity': float(q), 'unit_price': float(p)} for i_id, d, q, p in zip(request.form.getlist('item_id[]'), request.form.getlist('item_description[]'), request.form.getlist('item_qty[]'), request.form.getlist('item_price[]')) if d.strip() and q and p]
-            po = service.create_purchase_order(int(request.form.get('supplier_id')), request.form.get('order_date'), items, session['userNo'], request.form.get('notes'))
-            flash("✓ PO created.", "success")
+            items = _build_purchase_order_items(request.form)
+            po = service.create_purchase_order(_required_int(request.form.get('supplier_id'), 'supplier_id'), request.form.get('order_date'), items, session['userNo'], request.form.get('notes'))
+            flash("PO created.", "success")
             return redirect(url_for('procurement.view_purchase_order', po_id=po['id']))
+        except (ValueError, ProcurementError) as e: flash(str(e), "error")
         except Exception as e: flash(str(e), "error")
     suppliers = service.get_suppliers()
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT item_id, item_name, current_stock FROM item_stock WHERE school_id = %s ORDER BY item_name", (service.school_id,))
-        stock_items = cursor.fetchall()
-        cursor.execute("SELECT DISTINCT p.item_name, s.item_id, COALESCE(s.current_stock, 0) as current_stock FROM uniform_prices p LEFT JOIN item_stock s ON p.item_name = s.item_name AND p.school_id = s.school_id WHERE p.school_id = %s ORDER BY p.item_name", (service.school_id,))
-        uniform_items = cursor.fetchall()
+    stock_items = service.get_stock_items()
+    uniform_items = service.get_uniform_items_with_stock()
     connection.close()
     return render_template('create_purchase_order.html', suppliers=suppliers, stock_items=stock_items, uniform_items=uniform_items)
 
@@ -247,10 +346,11 @@ def edit_purchase_order(po_id):
     connection = get_db_connection(); service = ProcurementService(connection)
     if request.method == 'POST':
         try:
-            items = [{'item_id': int(i_id) if i_id else None, 'description': d.strip(), 'quantity': float(q), 'unit_price': float(p)} for i_id, d, q, p in zip(request.form.getlist('item_id[]'), request.form.getlist('item_description[]'), request.form.getlist('item_qty[]'), request.form.getlist('item_price[]')) if d.strip() and q and p]
-            service.update_purchase_order(po_id, int(request.form.get('supplier_id')), request.form.get('order_date'), items, request.form.get('notes'))
-            flash("✓ PO updated.", "success")
+            items = _build_purchase_order_items(request.form)
+            service.update_purchase_order(po_id, _required_int(request.form.get('supplier_id'), 'supplier_id'), request.form.get('order_date'), items, request.form.get('notes'))
+            flash("PO updated.", "success")
             return redirect(url_for('procurement.view_purchase_order', po_id=po_id))
+        except (ValueError, ProcurementError) as e: flash(str(e), "error")
         except Exception as e: flash(str(e), "error")
     po = service.get_po_details(po_id)
     suppliers = service.get_suppliers()
@@ -264,7 +364,8 @@ def delete_purchase_order(po_id):
     connection = get_db_connection(); service = ProcurementService(connection)
     try:
         service.delete_purchase_order(po_id)
-        flash("✓ PO deleted.", "success")
+        flash("PO deleted.", "success")
+    except ProcurementError as e: flash(str(e), "error")
     except Exception as e: flash(str(e), "error")
     finally: connection.close()
     return redirect(url_for('procurement.procurement_dashboard'))
@@ -292,9 +393,7 @@ def view_purchase_order(po_id):
     connection = get_db_connection(); service = ProcurementService(connection)
     finance_service = FinanceService(connection, service.school_id)
     po = service.get_po_details(po_id)
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT * FROM supplier_payments WHERE po_id = %s AND school_id = %s ORDER BY payment_date DESC", (po_id, service.school_id))
-        payments = cursor.fetchall()
+    payments = service.get_purchase_order_payments(po_id)
     accounts = finance_service.get_accounts()
     connection.close()
     return render_template('view_purchase_order.html', po=po, accounts=accounts, payments=payments)
@@ -306,7 +405,8 @@ def update_po_status(po_id):
     connection = get_db_connection(); service = ProcurementService(connection)
     try:
         service.update_po_status(po_id, request.form.get('status'), session['userNo'])
-        flash("✓ Status updated.", "success")
+        flash("Status updated.", "success")
+    except ProcurementError as e: flash(str(e), "error")
     except Exception as e: flash(str(e), "error")
     finally: connection.close()
     return redirect(url_for('procurement.view_purchase_order', po_id=po_id))
@@ -317,8 +417,10 @@ def update_po_status(po_id):
 def record_po_payment(po_id):
     connection = get_db_connection(); service = ProcurementService(connection)
     try:
-        service.record_po_payment(po_id, Decimal(request.form.get('amount')), request.form.get('payment_mode'), request.form.get('reference_no'), request.form.get('payment_date'), session['userNo'], int(request.form.get('source_account_id')))
-        flash("✓ Payment recorded.", "success")
+        source_account_id = _required_int(request.form.get('source_account_id'), 'source_account_id')
+        service.record_po_payment(po_id, _parse_decimal(request.form.get('amount'), 'amount'), request.form.get('payment_mode'), request.form.get('reference_no'), request.form.get('payment_date'), session['userNo'], source_account_id)
+        flash("Payment recorded.", "success")
+    except (ValueError, ProcurementError) as e: flash(str(e), "error")
     except Exception as e: flash(str(e), "error")
     finally: connection.close()
     return redirect(url_for('procurement.view_purchase_order', po_id=po_id))

@@ -5,7 +5,7 @@ import os
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 sys.path.insert(0, BASE_DIR)
 
-from app import get_db_connection
+from app import app, get_db_connection
 
 
 def run_sql_file(path):
@@ -44,5 +44,6 @@ if __name__ == '__main__':
         print("Usage: python3 run_migration_sql.py path/to/file.sql")
         sys.exit(1)
     path = sys.argv[1]
-    code = run_sql_file(path)
+    with app.app_context():
+        code = run_sql_file(path)
     sys.exit(code)

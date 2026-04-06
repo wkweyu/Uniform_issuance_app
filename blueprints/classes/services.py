@@ -4,6 +4,7 @@ from typing import Dict, List, Optional
 import logging
 import uuid
 from core.audit import audit_log
+from core.tenancy import require_current_school_id
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -18,10 +19,115 @@ class PromotionError(ClassManagementException):
     pass
 
 class ClassManagementService:
-    def __init__(self, connection: pymysql.Connection, school_id: int = 1):
+    def __init__(self, connection: pymysql.Connection, school_id: Optional[int] = None):
         self.connection = connection
         self.cursor = connection.cursor(pymysql.cursors.DictCursor)
-        self.school_id = school_id
+        self.school_id = school_id or require_current_school_id()
+
+    def _assert_academic_year_belongs_to_school(self, academic_year_id: int) -> None:
+        self.cursor.execute(
+            "SELECT id FROM academic_years WHERE id = %s AND school_id = %s",
+            (academic_year_id, self.school_id),
+        )
+        if not self.cursor.fetchone():
+            raise ValidationError("Academic year not found for the active school.")
+
+    def _assert_class_belongs_to_school(self, class_id: int) -> Dict:
+        self.cursor.execute(
+            "SELECT classID, academic_year_id FROM classes WHERE classID = %s AND school_id = %s",
+            (class_id, self.school_id),
+        )
+        class_row = self.cursor.fetchone()
+        if not class_row:
+            raise ValidationError("Class not found for the active school.")
+        return class_row
+
+    def _assert_teacher_belongs_to_school(self, teacher_id: int) -> None:
+        self.cursor.execute(
+            "SELECT userNo FROM users WHERE userNo = %s AND school_id = %s AND access_flag = 1",
+            (teacher_id, self.school_id),
+        )
+        if not self.cursor.fetchone():
+            raise ValidationError("Teacher not found for the active school.")
+
+    def _assert_students_belong_to_school(self, student_ids: List[int]) -> List[int]:
+        filtered_ids = [student_id for student_id in student_ids if student_id is not None]
+        if not filtered_ids:
+            return []
+        placeholders = ', '.join(['%s'] * len(filtered_ids))
+        self.cursor.execute(
+            f"SELECT AdmNo FROM studentinfo WHERE AdmNo IN ({placeholders}) AND school_id = %s",
+            tuple(filtered_ids) + (self.school_id,),
+        )
+        found_ids = {str(row['AdmNo']) for row in self.cursor.fetchall()}
+        missing_ids = [student_id for student_id in filtered_ids if str(student_id) not in found_ids]
+        if missing_ids:
+            raise ValidationError("One or more students do not belong to the active school.")
+        return filtered_ids
+
+    def _assert_stream_belongs_to_school(self, stream_code: str) -> None:
+        if not self.validate_stream(stream_code):
+            raise ValidationError("Stream not found for the active school.")
+
+    def _assert_subjects_belong_to_school(self, subject_ids: List[int]) -> None:
+        filtered_ids = [subject_id for subject_id in subject_ids if subject_id is not None]
+        if not filtered_ids:
+            return
+        placeholders = ', '.join(['%s'] * len(filtered_ids))
+        try:
+            self.cursor.execute(
+                f"SELECT subjectNo as id FROM subjects WHERE subjectNo IN ({placeholders}) AND school_id = %s",
+                tuple(filtered_ids) + (self.school_id,),
+            )
+        except Exception:
+            self.cursor.execute(
+                f"SELECT id FROM subjects WHERE id IN ({placeholders}) AND school_id = %s",
+                tuple(filtered_ids) + (self.school_id,),
+            )
+        found_ids = {row['id'] for row in self.cursor.fetchall()}
+        missing_ids = [subject_id for subject_id in filtered_ids if subject_id not in found_ids]
+        if missing_ids:
+            raise ValidationError("One or more subjects do not belong to the active school.")
+
+    def _assert_allocation_belongs_to_school(self, allocation_id: int) -> Dict:
+        self.cursor.execute(
+            "SELECT id, class_id FROM class_allocation WHERE id = %s AND school_id = %s",
+            (allocation_id, self.school_id),
+        )
+        allocation = self.cursor.fetchone()
+        if not allocation:
+            raise ValidationError("Class allocation not found for the active school.")
+        return allocation
+
+    def _assert_students_not_allocated_in_academic_year(self, student_ids: List[int], academic_year_id: int) -> None:
+        filtered_ids = [student_id for student_id in student_ids if student_id is not None]
+        if not filtered_ids:
+            return
+        placeholders = ', '.join(['%s'] * len(filtered_ids))
+        self.cursor.execute(
+            f"SELECT student_id FROM class_allocation WHERE academic_year_id = %s AND is_current = TRUE AND student_id IN ({placeholders}) AND school_id = %s",
+            (academic_year_id, *filtered_ids, self.school_id),
+        )
+        already_allocated_ids = {str(row['student_id']) for row in self.cursor.fetchall()}
+        if already_allocated_ids:
+            raise ValidationError("One or more students are already allocated in the selected academic year.")
+
+    def _assert_subjects_belong_to_class(self, class_id: int, subject_ids: List[int]) -> None:
+        filtered_ids = [subject_id for subject_id in subject_ids if subject_id is not None]
+        if not filtered_ids:
+            return
+        placeholders = ', '.join(['%s'] * len(filtered_ids))
+        self.cursor.execute(
+            f"SELECT subject_id FROM class_subjects WHERE class_id = %s AND subject_id IN ({placeholders}) AND is_active = TRUE AND school_id = %s",
+            (class_id, *filtered_ids, self.school_id),
+        )
+        allowed_subject_ids = {row['subject_id'] for row in self.cursor.fetchall()}
+        missing_subject_ids = [subject_id for subject_id in filtered_ids if subject_id not in allowed_subject_ids]
+        if missing_subject_ids:
+            raise ValidationError("One or more subjects are not allocated to the student's class.")
+
+    def _assert_subjects_belong_to_allocation_class(self, allocation_id: int, class_id: int, subject_ids: List[int]) -> None:
+        self._assert_subjects_belong_to_class(class_id, subject_ids)
 
     def get_dashboard_stats(self) -> Dict:
         self.cursor.execute("SELECT COUNT(*) as count FROM academic_years WHERE school_id = %s", (self.school_id,))
@@ -53,8 +159,8 @@ class ClassManagementService:
             SELECT c.classID, c.class_name, c.class_group, c.stream_code,
                    c.display_name, a.year, COUNT(ca.id) as student_count
             FROM classes c
-            LEFT JOIN academic_years a ON c.academic_year_id = a.id
-            LEFT JOIN class_allocation ca ON c.classID = ca.class_id AND ca.is_current = TRUE
+            LEFT JOIN academic_years a ON c.academic_year_id = a.id AND c.school_id = a.school_id
+            LEFT JOIN class_allocation ca ON c.classID = ca.class_id AND ca.is_current = TRUE AND c.school_id = ca.school_id
             WHERE a.is_current = TRUE AND c.school_id = %s
             GROUP BY c.classID
             ORDER BY c.class_name ASC
@@ -66,7 +172,7 @@ class ClassManagementService:
             SELECT c.display_name
             FROM classes c
             LEFT JOIN class_subjects cs ON c.classID = cs.class_id AND cs.is_active = TRUE AND cs.school_id = %s
-            LEFT JOIN academic_years ay ON c.academic_year_id = ay.id
+            LEFT JOIN academic_years ay ON c.academic_year_id = ay.id AND c.school_id = ay.school_id
             WHERE ay.is_current = TRUE AND c.is_active = TRUE AND c.school_id = %s
             GROUP BY c.classID
             HAVING COUNT(cs.subject_id) = 0
@@ -77,7 +183,7 @@ class ClassManagementService:
         self.cursor.execute("""
             SELECT c.display_name
             FROM classes c
-            LEFT JOIN academic_years ay ON c.academic_year_id = ay.id
+            LEFT JOIN academic_years ay ON c.academic_year_id = ay.id AND c.school_id = ay.school_id
             LEFT JOIN class_teachers ct ON c.classID = ct.class_id AND ct.academic_year_id = ay.id AND ct.is_active = TRUE AND ct.school_id = %s
             WHERE ay.is_current = TRUE AND c.is_active = TRUE AND c.school_id = %s
             GROUP BY c.classID
@@ -94,7 +200,7 @@ class ClassManagementService:
                 JOIN class_subjects cs ON c.classID = cs.class_id AND cs.is_active = TRUE AND cs.school_id = %s
                 JOIN subjects s ON cs.subject_id = s.subjectNo AND s.school_id = %s
                 LEFT JOIN teacher_allocations ta ON c.classID = ta.class_id AND cs.subject_id = ta.subject_id AND ta.is_active = TRUE AND ta.school_id = %s
-                LEFT JOIN academic_years ay ON c.academic_year_id = ay.id
+                LEFT JOIN academic_years ay ON c.academic_year_id = ay.id AND c.school_id = ay.school_id
                 WHERE ay.is_current = TRUE AND c.is_active = TRUE AND c.school_id = %s
                 GROUP BY c.classID, cs.subject_id
                 HAVING COUNT(ta.teacher_id) = 0
@@ -104,12 +210,15 @@ class ClassManagementService:
             return []
 
     def update_class(self, class_id: int, class_name: str, class_group: str, stream_code: str):
+        self._assert_class_belongs_to_school(class_id)
+        self._assert_stream_belongs_to_school(stream_code)
         self.cursor.execute("""
             UPDATE classes SET class_name = %s, class_group = %s, stream_code = %s WHERE classID = %s AND school_id = %s
         """, (class_name, class_group, stream_code, class_id, self.school_id))
         self.connection.commit()
 
     def delete_class(self, class_id: int):
+        self._assert_class_belongs_to_school(class_id)
         self.cursor.execute("SELECT COUNT(*) as count FROM class_allocation WHERE class_id = %s AND school_id = %s", (class_id, self.school_id))
         if self.cursor.fetchone()['count'] > 0:
             raise ValidationError("Cannot delete class with students.")
@@ -168,6 +277,8 @@ class ClassManagementService:
     @audit_log('create_class')
     def create_class(self, academic_year_id: int, class_group_code: str, stream_code: str, created_by: int, class_name: str) -> Dict:
         display_name = f"{class_name} – Stream {stream_code}"
+        self._assert_academic_year_belongs_to_school(academic_year_id)
+        self._assert_stream_belongs_to_school(stream_code)
         self.connection.begin()
         try:
             self.cursor.execute("""
@@ -176,7 +287,7 @@ class ClassManagementService:
             """, (academic_year_id, class_group_code, stream_code, display_name, created_by, class_name, class_group_code, self.school_id))
             class_id = self.cursor.lastrowid
             self.connection.commit()
-            self.cursor.execute("SELECT * FROM classes WHERE classID = %s", (class_id,))
+            self.cursor.execute("SELECT * FROM classes WHERE classID = %s AND school_id = %s", (class_id, self.school_id))
             return self.cursor.fetchone()
         except Exception as e:
             self.connection.rollback()
@@ -219,10 +330,16 @@ class ClassManagementService:
         self.connection.commit()
 
     def toggle_stream(self, stream_id: int):
+        self.cursor.execute("SELECT id FROM stream_settings WHERE id = %s AND school_id = %s", (stream_id, self.school_id))
+        if not self.cursor.fetchone():
+            raise ValidationError("Stream not found for the active school.")
         self.cursor.execute("UPDATE stream_settings SET is_active = NOT is_active WHERE id = %s AND school_id = %s", (stream_id, self.school_id))
         self.connection.commit()
 
     def delete_stream(self, stream_id: int):
+        self.cursor.execute("SELECT id FROM stream_settings WHERE id = %s AND school_id = %s", (stream_id, self.school_id))
+        if not self.cursor.fetchone():
+            raise ValidationError("Stream not found for the active school.")
         self.cursor.execute("DELETE FROM stream_settings WHERE id = %s AND school_id = %s", (stream_id, self.school_id))
         self.connection.commit()
 
@@ -239,6 +356,8 @@ class ClassManagementService:
 
     @audit_log('allocate_subjects_to_class')
     def allocate_subjects_to_class(self, class_id: int, subject_ids: List[int], compulsory: bool = True):
+        self._assert_class_belongs_to_school(class_id)
+        self._assert_subjects_belong_to_school(subject_ids)
         self.connection.begin()
         try:
             self.cursor.execute("DELETE FROM class_subjects WHERE class_id = %s AND school_id = %s", (class_id, self.school_id))
@@ -255,6 +374,9 @@ class ClassManagementService:
 
     @audit_log('set_class_teacher')
     def set_class_teacher(self, class_id: int, teacher_id: int, ay_id: int):
+        self._assert_class_belongs_to_school(class_id)
+        self._assert_teacher_belongs_to_school(teacher_id)
+        self._assert_academic_year_belongs_to_school(ay_id)
         self.connection.begin()
         try:
             self.cursor.execute("UPDATE class_teachers SET is_active = FALSE WHERE class_id = %s AND academic_year_id = %s AND school_id = %s", (class_id, ay_id, self.school_id))
@@ -266,6 +388,10 @@ class ClassManagementService:
 
     @audit_log('allocate_teacher_to_subject')
     def allocate_teacher_to_class_subject(self, teacher_id: int, class_id: int, subject_id: int, ay_id: int):
+        self._assert_class_belongs_to_school(class_id)
+        self._assert_teacher_belongs_to_school(teacher_id)
+        self._assert_subjects_belong_to_school([subject_id])
+        self._assert_academic_year_belongs_to_school(ay_id)
         self.connection.begin()
         try:
             self.cursor.execute("UPDATE teacher_allocations SET is_active = FALSE WHERE class_id = %s AND subject_id = %s AND academic_year_id = %s AND school_id = %s", (class_id, subject_id, ay_id, self.school_id))
@@ -328,11 +454,14 @@ class ClassManagementService:
         return res['academic_year_id'] if res else None
 
     def enroll_all_students_in_class_subjects(self, class_id: int, subject_ids: Optional[List[int]]) -> int:
+        self._assert_class_belongs_to_school(class_id)
         self.cursor.execute("SELECT id FROM class_allocation WHERE class_id = %s AND is_current = TRUE AND school_id = %s", (class_id, self.school_id))
         allocs = self.cursor.fetchall()
         if not subject_ids:
             self.cursor.execute("SELECT subject_id FROM class_subjects WHERE class_id = %s AND is_active = TRUE AND school_id = %s", (class_id, self.school_id))
             subject_ids = [s['subject_id'] for s in self.cursor.fetchall()]
+        self._assert_subjects_belong_to_school(subject_ids)
+        self._assert_subjects_belong_to_class(class_id, subject_ids)
 
         self.connection.begin()
         count = 0
@@ -347,11 +476,61 @@ class ClassManagementService:
             self.connection.rollback()
             raise e
 
+    def allocate_students_to_class(self, class_id: int, student_ids: List[int], academic_year_id: Optional[int] = None) -> int:
+        class_row = self._assert_class_belongs_to_school(class_id)
+        resolved_academic_year_id = academic_year_id or class_row['academic_year_id']
+        if not resolved_academic_year_id:
+            raise ValidationError("Academic year is required for class allocation.")
+        self._assert_academic_year_belongs_to_school(resolved_academic_year_id)
+        if class_row.get('academic_year_id') and class_row['academic_year_id'] != resolved_academic_year_id:
+            raise ValidationError("Academic year does not match the selected class.")
+
+        unique_student_ids = list(dict.fromkeys(self._assert_students_belong_to_school(student_ids)))
+        if not unique_student_ids:
+            return 0
+        self._assert_students_not_allocated_in_academic_year(unique_student_ids, resolved_academic_year_id)
+
+        self.connection.begin()
+        try:
+            for student_id in unique_student_ids:
+                self.cursor.execute(
+                    "INSERT INTO class_allocation (student_id, class_id, academic_year_id, allocation_date, is_current, school_id) VALUES (%s, %s, %s, NOW(), TRUE, %s)",
+                    (student_id, class_id, resolved_academic_year_id, self.school_id),
+                )
+            self.connection.commit()
+            return len(unique_student_ids)
+        except Exception as e:
+            self.connection.rollback()
+            raise e
+
     def enroll_student_in_subjects(self, allocation_id: int, subject_ids: List[int]):
+        allocation = self._assert_allocation_belongs_to_school(allocation_id)
+        self._assert_subjects_belong_to_school(subject_ids)
+        self._assert_subjects_belong_to_allocation_class(allocation_id, allocation['class_id'], subject_ids)
         self.connection.begin()
         try:
             for sid in subject_ids:
                 self.cursor.execute("INSERT INTO student_subjects (class_allocation_id, subject_id, enrollment_date, is_active, school_id) VALUES (%s, %s, NOW(), TRUE, %s) ON DUPLICATE KEY UPDATE is_active = TRUE", (allocation_id, sid, self.school_id))
+            self.connection.commit()
+        except Exception as e:
+            self.connection.rollback()
+            raise e
+
+    def replace_student_subject_enrollments(self, allocation_id: int, subject_ids: List[int]):
+        allocation = self._assert_allocation_belongs_to_school(allocation_id)
+        self._assert_subjects_belong_to_school(subject_ids)
+        self._assert_subjects_belong_to_allocation_class(allocation_id, allocation['class_id'], subject_ids)
+        self.connection.begin()
+        try:
+            self.cursor.execute(
+                "UPDATE student_subjects SET is_active = FALSE WHERE class_allocation_id = %s AND school_id = %s",
+                (allocation_id, self.school_id),
+            )
+            for sid in subject_ids:
+                self.cursor.execute(
+                    "INSERT INTO student_subjects (class_allocation_id, subject_id, enrollment_date, is_active, school_id) VALUES (%s, %s, NOW(), TRUE, %s) ON DUPLICATE KEY UPDATE is_active = TRUE",
+                    (allocation_id, sid, self.school_id),
+                )
             self.connection.commit()
         except Exception as e:
             self.connection.rollback()
@@ -381,5 +560,6 @@ class ClassManagementService:
         return self.cursor.fetchall()
 
     def remove_student_from_class(self, allocation_id: int):
+        self._assert_allocation_belongs_to_school(allocation_id)
         self.cursor.execute("UPDATE class_allocation SET is_current = FALSE WHERE id = %s AND school_id = %s", (allocation_id, self.school_id))
         self.connection.commit()

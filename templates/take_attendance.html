@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="max-w-6xl mx-auto space-y-6">
+  <div>
+    <h2 class="text-3xl font-bold text-gray-900">Take Attendance</h2>
+    <p class="mt-2 text-sm text-gray-600">Select a class and mark each learner as present, absent, late, or excused for the selected day.</p>
+  </div>
+
+  <form method="get" class="grid gap-4 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm md:grid-cols-3">
+    <div>
+      <label class="mb-1 block text-sm font-medium text-gray-700">Class</label>
+      <select name="class_id" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <option value="">Select class</option>
+        {% for class_row in classes %}
+        <option value="{{ class_row.classID }}" {% if selected_class_id == class_row.classID %}selected{% endif %}>{{ class_row.display_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="mb-1 block text-sm font-medium text-gray-700">Attendance Date</label>
+      <input type="date" name="attendance_date" value="{{ attendance_date }}" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+    </div>
+    <div class="flex items-end">
+      <button type="submit" class="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400">Load Register</button>
+    </div>
+  </form>
+
+  {% if selected_class_id and students %}
+  <form method="post" class="space-y-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="class_id" value="{{ selected_class_id }}">
+    <input type="hidden" name="attendance_date" value="{{ attendance_date }}">
+
+    <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Student</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Status</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Remarks</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for student in students %}
+          <tr>
+            <td class="px-4 py-3 text-gray-900">
+              <input type="hidden" name="student_id" value="{{ student.student_id }}">
+              <div class="font-semibold">{{ student.full_name }}</div>
+              <div class="text-xs text-gray-500">ADM {{ student.student_id }}</div>
+            </td>
+            <td class="px-4 py-3">
+              <select name="status" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                {% for option in status_options %}
+                <option value="{{ option }}" {% if student.status == option %}selected{% endif %}>{{ option|replace('_', ' ')|title }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td class="px-4 py-3">
+              <input type="text" name="remarks" value="{{ student.remarks }}" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Optional note">
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="flex justify-end">
+      <button type="submit" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Save Attendance</button>
+    </div>
+  </form>
+  {% elif selected_class_id %}
+  <div class="rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">No active students are allocated to the selected class.</div>
+  {% endif %}
+</section>
+{% endblock %}

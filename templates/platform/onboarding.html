@@ -1,26 +1,101 @@
 {% extends 'base.html' %}
-{% block content %}
-<h2>School Onboarding Wizard</h2>
-<form method="post" class="space-y-3 max-w-xl">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{% block platform_content %}
+<section class="mx-auto max-w-5xl space-y-6">
   <div>
-    <label class="block text-sm">School Name</label>
-    <input name="name" required class="border px-2 py-1 rounded w-full">
+    <h2 class="text-3xl font-bold text-gray-900">School Onboarding Wizard</h2>
+    <p class="mt-2 text-sm text-gray-600">Provision the tenant, assign a starting subscription, and create the first admin account in one workflow.</p>
   </div>
-  <div>
-    <label class="block text-sm">Code</label>
-    <input name="code" required class="border px-2 py-1 rounded w-full">
-  </div>
-  <div>
-    <label class="block text-sm">Timezone</label>
-    <input name="timezone" class="border px-2 py-1 rounded w-full" placeholder="UTC">
-  </div>
-  <div>
-    <label class="block text-sm">Default Plan (optional)</label>
-    <input name="default_plan" class="border px-2 py-1 rounded w-full" placeholder="Basic">
-  </div>
-  <div>
-    <button class="bg-blue-600 text-white px-3 py-2 rounded">Create School</button>
-  </div>
-</form>
+
+  <form method="post" class="grid gap-6 lg:grid-cols-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="space-y-4 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm lg:col-span-2">
+      <h3 class="text-lg font-semibold text-gray-900">School Profile</h3>
+      <div class="grid gap-4 md:grid-cols-2">
+        <div class="md:col-span-2">
+          <label class="mb-1 block text-sm font-medium text-gray-700">School Name</label>
+          <input name="name" required class="w-full rounded-lg border border-gray-300 px-3 py-2" placeholder="Riverbank Academy">
+        </div>
+        <div>
+          <label class="mb-1 block text-sm font-medium text-gray-700">School Code</label>
+          <input name="code" required class="w-full rounded-lg border border-gray-300 px-3 py-2 uppercase" placeholder="RBA01">
+        </div>
+        <div>
+          <label class="mb-1 block text-sm font-medium text-gray-700">Timezone</label>
+          <input name="timezone" title="School timezone" class="w-full rounded-lg border border-gray-300 px-3 py-2" value="UTC" placeholder="UTC">
+        </div>
+        <div>
+          <label class="mb-1 block text-sm font-medium text-gray-700">Contact Email</label>
+          <input name="contact_email" type="email" class="w-full rounded-lg border border-gray-300 px-3 py-2" placeholder="office@school.example">
+        </div>
+        <div>
+          <label class="mb-1 block text-sm font-medium text-gray-700">Contact Phone</label>
+          <input name="contact_phone" class="w-full rounded-lg border border-gray-300 px-3 py-2" placeholder="0700000000">
+        </div>
+        <div class="md:col-span-2">
+          <label class="mb-1 block text-sm font-medium text-gray-700">Address</label>
+          <input name="address" class="w-full rounded-lg border border-gray-300 px-3 py-2" placeholder="P.O. Box 123">
+        </div>
+        <div>
+          <label class="mb-1 block text-sm font-medium text-gray-700">City</label>
+          <input name="city" class="w-full rounded-lg border border-gray-300 px-3 py-2" placeholder="Nairobi">
+        </div>
+        <div>
+          <label class="mb-1 block text-sm font-medium text-gray-700">Country</label>
+          <input name="country" class="w-full rounded-lg border border-gray-300 px-3 py-2" placeholder="Kenya">
+        </div>
+      </div>
+    </div>
+
+    <div class="space-y-4 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+      <h3 class="text-lg font-semibold text-gray-900">Provisioning Defaults</h3>
+      <div class="grid gap-4 md:grid-cols-2">
+        <div>
+          <label class="mb-1 block text-sm font-medium text-gray-700">Bundle Family</label>
+          <select name="bundle_family" title="Bundle family" class="w-full rounded-lg border border-gray-300 px-3 py-2">
+            <option value="">Auto-select default bundle</option>
+            {% for code, label in bundle_family_options %}
+            <option value="{{ code }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="mb-1 block text-sm font-medium text-gray-700">Billing Period</label>
+          <select name="billing_period" title="Billing period" class="w-full rounded-lg border border-gray-300 px-3 py-2">
+            <option value="">Auto-select default period</option>
+            {% for code, label in billing_period_options %}
+            <option value="{{ code }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <p class="mt-2 text-xs text-gray-500">Operators now choose the commercial bundle family and billing period. The platform resolves the matching plan automatically.</p>
+      <div>
+        <label class="mb-1 block text-sm font-medium text-gray-700">Forecast Student Count</label>
+        <input name="student_count" type="number" min="1" class="w-full rounded-lg border border-gray-300 px-3 py-2" placeholder="e.g. 420">
+        <p class="mt-2 text-xs text-gray-500">Optional for onboarding. The system will auto-move the tenant between student bands later using live Students data.</p>
+      </div>
+
+      <div class="border-t border-gray-200 pt-4">
+        <h4 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Initial Admin Account</h4>
+        <div class="mt-3 space-y-3">
+          <div>
+            <label class="mb-1 block text-sm font-medium text-gray-700">Admin Username</label>
+            <input name="admin_username" required class="w-full rounded-lg border border-gray-300 px-3 py-2" placeholder="schooladmin">
+          </div>
+          <div>
+            <label class="mb-1 block text-sm font-medium text-gray-700">Admin Password</label>
+            <input name="admin_password" type="password" required class="w-full rounded-lg border border-gray-300 px-3 py-2" placeholder="Create a strong password">
+          </div>
+          <div>
+            <label class="mb-1 block text-sm font-medium text-gray-700">Staff ID</label>
+            <input name="admin_staff_id" class="w-full rounded-lg border border-gray-300 px-3 py-2" placeholder="ADM001">
+          </div>
+        </div>
+      </div>
+
+      <button type="submit" class="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700">Create Tenant and Provision Access</button>
+    </div>
+  </form>
+</section>
 {% endblock %}

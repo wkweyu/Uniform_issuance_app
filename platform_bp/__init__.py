@@ -14,8 +14,8 @@ def init_platform(app, url_prefix='/platform'):
 
     # Import route modules and have them attach their routes to `bp`.
     try:
-        from .routes import users, schools, plans, subscriptions, support, audit, tenant_user_search, onboarding  # noqa
-        for mod in (users, schools, plans, subscriptions, support, audit, tenant_user_search, onboarding):
+        from .routes import users, schools, plans, subscriptions, support, audit, security, tenant_user_search, onboarding, access_settings, reports  # noqa
+        for mod in (users, schools, plans, subscriptions, support, audit, security, tenant_user_search, onboarding, access_settings, reports):
             try:
                 if hasattr(mod, 'register_routes'):
                     mod.register_routes(bp)
@@ -35,3 +35,21 @@ def init_platform(app, url_prefix='/platform'):
         register_platform_middleware(app)
     except Exception as e:
         print(f"WARNING: Could not register platform middleware: {e}")
+
+    @app.context_processor
+    def inject_platform_access_context():
+        from .decorators import get_current_platform_user
+        from .services.access import platform_user_has_permission, role_label
+
+        current_user = get_current_platform_user()
+        
+        def is_saas_user():
+            # A user is a SaaS user if they are logged in as a platform operator
+            return current_user is not None
+
+        return {
+            'platform_current_user': current_user,
+            'platform_has_permission': lambda permission: platform_user_has_permission(current_user, permission),
+            'platform_role_label': role_label,
+            'platform_is_saas_user': is_saas_user,
+        }

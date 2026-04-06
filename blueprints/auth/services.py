@@ -1,7 +1,8 @@
 from flask import session, current_app, flash
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from models import User, School
 from .utils import verify_legacy_password
+from platform_bp.services.subscriptions import get_subscription_by_school
 
 class AuthService:
     def authenticate(self, school_code, username, password):
@@ -12,8 +13,17 @@ class AuthService:
         if not school:
             return None, "Invalid school code."
 
-        today = datetime.utcnow().date()
-        if not school.is_active or (school.subscription_end and school.subscription_end < today):
+        today = datetime.now(UTC).date()
+        subscription = get_subscription_by_school(school.id)
+        effective_status = subscription.effective_status if subscription else None
+
+        if not school.is_active:
+            return None, "School is inactive or subscription has expired."
+
+        if subscription and not subscription.allows_login:
+            return None, f"School subscription is {effective_status.replace('_', ' ')}. Please contact support."
+
+        if not subscription and school.subscription_end and school.subscription_end < today:
             return None, "School is inactive or subscription has expired."
 
         user = User.query.filter_by(username=username, school_id=school.id).first()

@@ -1,0 +1,208 @@
+You are a senior full-stack SaaS engineer.
+
+I have an existing school management system with partial multi-tenancy already implemented. Your task is to upgrade it into a production-grade SaaS platform.
+
+IMPORTANT CONSTRAINTS:
+- Do NOT break existing functionality
+- Reuse existing models, services, and tenancy logic
+- Maintain backward compatibility
+- Do NOT redesign database unless absolutely necessary (extend instead)
+- Stack is Flask backend + React/Vue frontend (adapt to existing project)
+
+-----------------------------------
+CURRENT SYSTEM FEATURES
+-----------------------------------
+- Multi-tenancy using school_id scoping
+- Platform admin dashboard (basic)
+- Subscription plans (module-based + student bands)
+- Onboarding wizard (partially working)
+- Tenant lifecycle states
+- Audit logging
+- Basic support ticketing
+
+-----------------------------------
+PRIMARY OBJECTIVE
+-----------------------------------
+Transform this into a complete SaaS control plane with:
+- Modern responsive UI
+- Fully automated onboarding
+- Email notification system
+- Tenant subdomain routing
+- Advanced subscription management
+- Production-ready infrastructure
+
+-----------------------------------
+PHASED IMPLEMENTATION (STRICT ORDER)
+-----------------------------------
+
+PHASE 1: UI/UX MODERNIZATION
+-----------------------------------
+1. Redesign ALL admin pages with modern UI:
+   - Use card-based layouts
+   - Add metric cards (MRR, active schools, revenue)
+   - Add charts (Chart.js or Recharts)
+   - Add skeleton loaders
+   - Add toast notifications
+   - Add hover animations
+   - Add inter-page standard navigation buttons e.g to homepage
+   - Improve the login page for platform
+2. Make UI fully responsive:
+   - Desktop (1920px)
+   - Tablet (768px)
+   - Mobile (375px)
+
+3. Implement reusable components:
+   - MetricCard
+   - DataTable (sortable, filterable)
+   - StatusBadge
+   - NotificationCenter
+   - ConfirmDialog
+   - ChartContainer
+
+4. Add:
+   - Collapsible sidebar
+   - Mobile navigation drawer
+   
+
+-----------------------------------
+PHASE 2: ONBOARDING AUTOMATION
+-----------------------------------
+Fix and enhance onboarding:
+
+1. AUTO-GENERATION:
+   - School Code → auto-generate unique
+   - Staff ID → format: ADM{YY}{0001}
+   - Username → short format (not long emails)
+   - Password → secure 8-char, show once, force reset
+
+2. Convert onboarding into multi-step wizard:
+   Steps:
+   - School Profile
+   - Subscription Selection
+   - Admin Account
+   - Review & Confirm
+
+3. Add:
+   - Draft saving
+   - Live validation
+   - Student count slider
+   - Real-time pricing calculation
+
+4. After onboarding:
+   - Redirect to production URL (NOT localhost)
+   - Show credentials card
+   - Auto-create support ticket
+
+-----------------------------------
+PHASE 3: URL & TENANT ROUTING
+-----------------------------------
+1. Remove ALL hardcoded localhost URLs
+
+2. Use environment variables:
+   APP_BASE_URL
+   APP_DOMAIN
+
+3. Implement subdomain routing:
+   Example:
+   schoolA.domain.com
+
+4. Build tenant resolver:
+   - Extract school_code from subdomain
+   - Load tenant context
+
+-----------------------------------
+PHASE 4: EMAIL SYSTEM
+-----------------------------------
+1. Build provider-agnostic email service:
+   - SMTP (dev)
+   - SendGrid (primary)
+   - Fallback support
+
+2. Add email queue:
+   - Retry logic (3 attempts)
+   - Exponential backoff
+
+3. Implement triggers:
+   - Onboarding email (credentials)
+   - Password reset
+   - Subscription invoices
+   - Expiry warnings
+   - Ticket updates
+
+4. Use responsive templates (MJML or HTML)
+
+-----------------------------------
+PHASE 5: SUBSCRIPTION MANAGEMENT
+-----------------------------------
+Enhance billing system:
+
+- Trial management (auto-convert)
+- Proration for upgrades/downgrades
+- Usage tracking per module
+- Auto-suspension workflow:
+  warn → grace → suspend
+
+- Invoice generation (PDF)
+- Payment tracking
+
+-----------------------------------
+PHASE 6: SUPPORT SYSTEM
+-----------------------------------
+Upgrade ticketing:
+
+- SLA rules
+- Ticket assignment automation
+- Internal notes
+- Escalation rules
+- CSAT surveys
+
+-----------------------------------
+PHASE 7: SECURITY & COMPLIANCE
+-----------------------------------
+Implement:
+
+- Row-level security enforcement
+- API rate limiting per tenant
+- Session isolation
+- Audit logging for ALL admin actions
+
+-----------------------------------
+PHASE 8: PLATFORM ADMIN FEATURES
+-----------------------------------
+Add:
+
+- Tenant impersonation (audited)
+- Feature flags per tenant
+- Announcement system
+- System health dashboard
+
+-----------------------------------
+CODE QUALITY REQUIREMENTS
+-----------------------------------
+- Use TypeScript where applicable
+- Add unit + integration tests
+- Add API documentation (Swagger)
+- Structured logging
+- Error boundaries (frontend)
+
+-----------------------------------
+DELIVERABLES
+-----------------------------------
+- Updated source code
+- Migration scripts
+- .env configuration
+- API documentation
+- Admin user guide
+
+-----------------------------------
+STARTING POINT
+-----------------------------------
+1. Analyze:
+   - app.py
+   - routes.py
+   - services.py
+   - models.py
+
+2. Begin with PHASE 1 (UI redesign)
+3. Then proceed sequentially phase by phase
+4. Commit changes incrementally
