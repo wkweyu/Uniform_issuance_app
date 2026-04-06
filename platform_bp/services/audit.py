@@ -6,10 +6,14 @@ from flask import has_request_context, request, session
 from sqlalchemy import case, or_
 
 
-def log(actor_user_id=None, action=None, target_table=None, target_id=None, school_id=None, changes=None):
+def log(actor_user_id=None, action=None, target_table=None, target_id=None, school_id=None, changes=None, ip=None):
     resolved_actor = actor_user_id
     if resolved_actor is None and has_request_context():
         resolved_actor = session.get('platform_user_id')
+
+    resolved_ip = ip
+    if resolved_ip is None and has_request_context():
+        resolved_ip = request.remote_addr
 
     entry = AuditLog(
         actor_user_id=resolved_actor,
@@ -19,7 +23,7 @@ def log(actor_user_id=None, action=None, target_table=None, target_id=None, scho
         target_id=str(target_id) if target_id is not None else None,
         school_id=school_id,
         changes=changes,
-        ip=request.remote_addr if has_request_context() else None,
+        ip=resolved_ip,
     )
     db.session.add(entry)
     db.session.commit()
