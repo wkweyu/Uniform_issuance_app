@@ -97,33 +97,12 @@
           <td>
             {{ status_badge((latest_subscription.effective_status if latest_subscription else (s.subscription_status or 'trial'))|upper, 'blue' if (latest_subscription and latest_subscription.effective_status in ['trial', 'active']) else 'amber' if (latest_subscription and latest_subscription.effective_status == 'grace_period') else 'rose' if (latest_subscription and latest_subscription.effective_status in ['suspended', 'cancelled']) else 'slate') }}
           </td>
-            <div class="mt-2">
-              {{ status_badge(entitlement_summary.configuration_label, 'slate' if entitlement_summary.configuration_state == 'unconfigured' else 'violet') }}
-              {% if entitlement_summary.configuration_state == 'configured' %}
-              <span class="ml-1">{{ status_badge(entitlement_summary.state_label, 'emerald' if entitlement_summary.state_key == 'read_write' else 'amber' if entitlement_summary.state_key == 'read_only' else 'slate') }}</span>
-              {% endif %}
-            </div>
-            {% if entitlement_summary and entitlement_summary.is_configured %}
-            <div class="mt-2 grid gap-2">
-              {% for module in entitlement_summary.modules[:2] %}
-              <div class="rounded-lg border border-gray-200 px-3 py-2">
-                <div class="text-xs font-semibold text-gray-900">{{ module.name }}</div>
-                <div class="text-[11px] uppercase tracking-wide text-gray-500">{{ module.family_label }} {{ module.group_label }}</div>
-              </div>
-              {% endfor %}
-              {% if entitlement_summary.modules|length > 2 %}
-              <span class="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-700">+{{ entitlement_summary.modules|length - 2 }} more</span>
-              {% endif %}
-            </div>
-            {% endif %}
-          </td>
           <td class="px-4 py-4 text-sm text-gray-600">
             {{ s.subscription_end or 'Not set' }}
           </td>
           <td class="px-4 py-4">
             <div class="flex flex-wrap gap-2">
               <a href="{{ url_for('platform.school_detail', school_id=s.id) }}" class="rounded-lg border border-gray-300 px-3 py-2 font-medium text-gray-700 hover:border-gray-400">Manage</a>
-              <a href="{{ url_for('platform.onboarding_status', school_id=s.id) }}" class="rounded-lg border border-gray-300 px-3 py-2 font-medium text-gray-700 hover:border-gray-400">Onboarding Status</a>
               <a href="{{ url_for('platform.list_subscriptions') }}" class="rounded-lg border border-purple-300 px-3 py-2 font-medium text-purple-700 hover:border-purple-400">Subscriptions</a>
             </div>
           </td>
