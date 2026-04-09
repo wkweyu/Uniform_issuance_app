@@ -32,9 +32,7 @@ ROLE_LABELS = {
     'security': 'Security Operator',
     'billing': 'Billing Operator',
     'account_manager': 'Account Manager',
-    'support': 'Support Admin',
-    'marketers': 'Marketer',
-    'viewer': 'Viewer',
+    'support': 'Support Operator',
 }
 
 PERMISSION_LABELS = {
@@ -70,8 +68,6 @@ ROLE_CAPABILITIES = {
     'billing': {'dashboard', 'billing_access', 'audit_access'},
     'account_manager': {'dashboard', 'billing_access', 'audit_access'},
     'support': {'dashboard', 'support_access', 'support_write'},
-    'marketers': {'dashboard', 'billing_access'},
-    'viewer': {'dashboard'},
 }
 
 
@@ -85,7 +81,7 @@ def role_label(role: str | None) -> str:
 
 
 def available_platform_roles(include_super_admin: bool = True) -> list[dict[str, str]]:
-    ordered_roles = ['super_admin', 'platform_admin', 'security', 'billing', 'account_manager', 'support', 'marketers', 'viewer']
+    ordered_roles = ['super_admin', 'platform_admin', 'security', 'billing', 'account_manager', 'support']
     if not include_super_admin:
         ordered_roles = [role for role in ordered_roles if role != 'super_admin']
     return [{'value': role, 'label': role_label(role)} for role in ordered_roles]
@@ -306,7 +302,7 @@ def describe_user_school_scope(user, school_lookup):
 
 def role_capability_rows() -> list[dict[str, object]]:
     rows = []
-    for role in ['super_admin', 'platform_admin', 'security', 'billing', 'account_manager', 'support', 'marketers', 'viewer']:
+    for role in ['super_admin', 'platform_admin', 'security', 'billing', 'account_manager', 'support']:
         capabilities = ROLE_CAPABILITIES.get(role, set())
         labels = ['All platform capabilities'] if 'all' in capabilities else [PERMISSION_LABELS[capability] for capability in capabilities if capability in PERMISSION_LABELS]
         rows.append(

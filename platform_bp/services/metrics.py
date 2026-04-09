@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 from app import School
-from ..models import AuditLog, Plan, PlatformUser, Subscription, SupportTicket, ErrorLog, utc_now
+from ..models import AuditLog, Plan, PlatformUser, Subscription, SupportTicket, utc_now
 
 
 def _empty_subscription_counts():
@@ -100,41 +100,17 @@ def _build_security_alerts(window_days=7):
 
 def build_dashboard_metrics(window_days=7):
     from ..services.subscriptions import build_entitlement_state_counts, build_subscription_entitlement_summary
-    from extensions import db
-    from sqlalchemy import text
 
-    from models import User
     schools = School.query.order_by(School.created_at.desc()).all()
     subscriptions = Subscription.query.order_by(Subscription.started_at.desc()).all()
     support_tickets = SupportTicket.query.order_by(SupportTicket.created_at.desc()).all()
-    active_tenant_users = User.query.filter_by(access_flag=1).count()
     recent_window_start = utc_now() - timedelta(days=window_days)
     recent_audit_count = (
         AuditLog.query
         .filter(AuditLog.created_at >= recent_window_start)
         .count()
     )
-    recent_error_count = (
-        ErrorLog.query
-        .filter(ErrorLog.created_at >= recent_window_start)
-        .count()
-    )
-
-    db_status = "Healthy"
-    try:
-        db.session.execute(text("SELECT 1"))
-    except Exception:
-        db_status = "Unhealthy"
-
     security_alerts = _build_security_alerts(window_days=window_days)
-
-    # Placeholder for background job status
-    job_status = "Idle"
-    try:
-        # If we had Celery or RQ, we would check queue size here
-        job_status = "0 Pending"
-    except Exception:
-        job_status = "Error"
 
     subscription_counts = _empty_subscription_counts()
     subscriptions_by_school = {}
@@ -189,13 +165,6 @@ def build_dashboard_metrics(window_days=7):
     entitlement_counts = build_entitlement_state_counts(entitlement_summaries)
     module_adoption_rows = sorted(module_adoption.values(), key=lambda item: (-item['tenant_count'], item['name']))[:6]
 
-    recent_errors = (
-        ErrorLog.query
-        .order_by(ErrorLog.created_at.desc())
-        .limit(5)
-        .all()
-    )
-
     summary = {
         'metrics_cards': [
             {
@@ -204,39 +173,34 @@ def build_dashboard_metrics(window_days=7):
                 'detail': f"{active_school_count} active / {inactive_school_count} inactive",
             },
             {
-                'label': 'Active Users',
-                'value': active_tenant_users,
-                'detail': "Active users across all tenants",
-            },
-            {
-                'label': 'API Activity',
-                'value': recent_audit_count,
-                'detail': f"Audit events in last {window_days}d",
-            },
-            {
-                'label': 'Error Rate',
-                'value': f"{min(100, round((recent_error_count / max(1, recent_audit_count)) * 100, 2))}%",
-                'detail': f"{recent_error_count} total errors logged",
-            },
-            {
                 'label': 'Subscriptions',
                 'value': len(subscriptions),
-                'detail': f"{subscription_counts['active']} active, {subscription_counts['trial']} trial",
+                'detail': f"{subscription_counts['active']} active, {subscription_counts['trial']} trial, {subscription_counts['grace_period']} in grace",
             },
             {
-                'label': 'DB Connection',
-                'value': db_status,
-                'detail': 'Real-time database connectivity',
+                'label': 'Platform Users',
+                'value': PlatformUser.query.count(),
+                'detail': f"{PlatformUser.query.filter_by(is_active=True).count()} active accounts",
             },
             {
-                'label': 'Background Jobs',
-                'value': job_status,
-                'detail': 'System queue and worker health',
-            },
-            {
-                'label': 'Open Tickets',
+                'label': 'Open Support Tickets',
                 'value': open_support_count,
                 'detail': f"{len(support_tickets)} total tickets logged",
+            },
+            {
+                'label': 'Plans',
+                'value': Plan.query.count(),
+                'detail': 'Metadata catalog available to onboarding and subscription flows',
+            },
+            {
+                'label': 'Entitlement Coverage',
+                'value': entitlement_counts['configured'],
+                'detail': f"{entitlement_counts['unconfigured']} unconfigured, {entitlement_counts['read_only']} read-only, {entitlement_counts['read_write']} read/write",
+            },
+            {
+                'label': f'Audit Events ({window_days}d)',
+                'value': recent_audit_count,
+                'detail': 'Recent control-plane write activity',
             },
         ],
         'subscription_counts': subscription_counts,
@@ -249,7 +213,6 @@ def build_dashboard_metrics(window_days=7):
             'total': len(support_tickets),
         },
         'security_alerts': security_alerts,
-        'recent_errors': recent_errors,
     }
     return summary
 

@@ -222,7 +222,7 @@
         <div class="mt-4 space-y-4">
           {% if platform_has_permission('subscription_write') %}
           {% if school.is_active %}
-          <form method="post" action="{{ url_for('platform.deactivate_school', school_id=school.id) }}" onsubmit="return confirm('Are you sure you want to DEACTIVATE this school? This will block all tenant access immediately.')">
+          <form method="post" action="{{ url_for('platform.deactivate_school', school_id=school.id) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="w-full rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">Deactivate School</button>
           </form>
@@ -305,7 +305,7 @@
             <input id="school-grace-days-{{ school.id }}" name="days" type="number" min="1" value="14" class="w-24 rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Days" title="Grace period days">
             <button type="submit" class="flex-1 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600">Start Grace Period</button>
           </form>
-          <form method="post" action="{{ url_for('platform.suspend_subscription_route', subscription_id=latest_subscription.id) }}" class="space-y-3" onsubmit="return confirm('Are you sure you want to SUSPEND this subscription?')">
+          <form method="post" action="{{ url_for('platform.suspend_subscription_route', subscription_id=latest_subscription.id) }}" class="space-y-3">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="school_id" value="{{ school.id }}">
             <label class="block text-sm font-medium text-gray-700">
@@ -323,7 +323,7 @@
             </label>
             <button type="submit" class="w-full rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700">Suspend Subscription</button>
           </form>
-          <form method="post" action="{{ url_for('platform.cancel_subscription_route', subscription_id=latest_subscription.id) }}" class="space-y-3" onsubmit="return confirm('Are you sure you want to CANCEL this subscription? This action is usually permanent.')">
+          <form method="post" action="{{ url_for('platform.cancel_subscription_route', subscription_id=latest_subscription.id) }}" class="space-y-3">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="school_id" value="{{ school.id }}">
             <label class="block text-sm font-medium text-gray-700">
