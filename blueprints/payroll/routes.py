@@ -501,3 +501,282 @@ def settings_gl_mapping():
     finally:
         conn.close()
     return redirect(url_for('payroll.settings'))
+
+
+# ==================================================================
+# PHASE B: Voteheads & Funds
+# ==================================================================
+
+@payroll_bp.route('/voteheads')
+@admin_required
+def voteheads():
+    conn, svc = _service()
+    try:
+        items = svc.get_voteheads()
+        return render_template('payroll/voteheads.html', voteheads=items)
+    finally:
+        conn.close()
+
+
+@payroll_bp.route('/voteheads/new', methods=['POST'])
+@admin_required
+def votehead_create():
+    conn, svc = _service()
+    try:
+        svc.create_votehead(
+            code=request.form['code'].strip().upper(),
+            name=request.form['name'].strip(),
+            category=request.form.get('category', 'other'),
+        )
+        flash('Votehead created.', 'success')
+    except (PayrollError, ValueError) as e:
+        flash(str(e), 'error')
+    finally:
+        conn.close()
+    return redirect(url_for('payroll.voteheads'))
+
+
+@payroll_bp.route('/funds')
+@admin_required
+def funds():
+    conn, svc = _service()
+    try:
+        items = svc.get_funds()
+        return render_template('payroll/funds.html', funds=items)
+    finally:
+        conn.close()
+
+
+@payroll_bp.route('/funds/new', methods=['POST'])
+@admin_required
+def fund_create():
+    conn, svc = _service()
+    try:
+        svc.create_fund(
+            code=request.form['code'].strip().upper(),
+            name=request.form['name'].strip(),
+            fund_type=request.form.get('fund_type', 'general'),
+        )
+        flash('Fund created.', 'success')
+    except (PayrollError, ValueError) as e:
+        flash(str(e), 'error')
+    finally:
+        conn.close()
+    return redirect(url_for('payroll.funds'))
+
+
+@payroll_bp.route('/runs/<int:run_id>/voteheads', methods=['GET', 'POST'])
+@admin_required
+def run_voteheads(run_id):
+    conn, svc = _service()
+    try:
+        if request.method == 'POST':
+            try:
+                allocations = []
+                line_ids = request.form.getlist('line_id[]')
+                votehead_ids = request.form.getlist('votehead_id[]')
+                fund_ids = request.form.getlist('fund_id[]')
+                amounts = request.form.getlist('alloc_amount[]')
+                for i in range(len(line_ids)):
+                    allocations.append({
+                        'payroll_line_id': int(line_ids[i]),
+                        'votehead_id': int(votehead_ids[i]),
+                        'fund_id': int(fund_ids[i]) if fund_ids[i] else None,
+                        'amount': Decimal(amounts[i]),
+                    })
+                svc.set_votehead_allocations(run_id, allocations)
+                flash('Votehead allocations saved.', 'success')
+                return redirect(url_for('payroll.run_detail', run_id=run_id))
+            except (PayrollError, ValueError) as e:
+                flash(str(e), 'error')
+
+        run = svc.get_payroll_run(run_id)
+        existing = svc.get_votehead_allocations(run_id)
+        all_voteheads = svc.get_voteheads()
+        all_funds = svc.get_funds()
+        return render_template('payroll/votehead_allocation.html',
+                               run=run, allocations=existing,
+                               voteheads=all_voteheads, funds=all_funds)
+    finally:
+        conn.close()
+
+
+@payroll_bp.route('/reports/voteheads/<int:run_id>')
+@login_required
+def report_voteheads(run_id):
+    conn, svc = _service()
+    try:
+        run = svc._assert_run_belongs(run_id)
+        data = svc.get_votehead_report(run_id)
+        return render_template('payroll/report_voteheads.html', run=run, data=data)
+    finally:
+        conn.close()
+
+
+@payroll_bp.route('/reports/fund/<int:run_id>')
+@login_required
+def report_fund(run_id):
+    conn, svc = _service()
+    try:
+        run = svc._assert_run_belongs(run_id)
+        data = svc.get_fund_payroll_report(run_id)
+        return render_template('payroll/report_fund.html', run=run, data=data)
+    finally:
+        conn.close()
+
+
+@payroll_bp.route('/reports/fund-annual')
+@login_required
+def report_fund_annual():
+    conn, svc = _service()
+    try:
+        year = int(request.args.get('year', datetime.now().year))
+        data = svc.get_payroll_by_fund_annual(year)
+        budget_vs_actual = svc.get_budget_vs_actual(year)
+        return render_template('payroll/report_fund_annual.html',
+                               year=year, data=data, budget_vs_actual=budget_vs_actual)
+    finally:
+        conn.close()
+
+
+# ==================================================================
+# PHASE B: Payment Batching
+# ==================================================================
+
+@payroll_bp.route('/runs/<int:run_id>/payments')
+@login_required
+def run_payments(run_id):
+    conn, svc = _service()
+    try:
+        run = svc._assert_run_belongs(run_id)
+        grouped = svc.get_payment_advice_grouped(run_id)
+        return render_template('payroll/payment_advice.html', run=run, grouped=grouped)
+    finally:
+        conn.close()
+
+
+@payroll_bp.route('/runs/<int:run_id>/generate-payments', methods=['POST'])
+@admin_required
+def run_generate_payments(run_id):
+    conn, svc = _service()
+    try:
+        batch_id = svc.generate_payment_advice(run_id)
+        flash(f'Payment advice generated (Batch: {batch_id}).', 'success')
+    except PayrollError as e:
+        flash(str(e), 'error')
+    finally:
+        conn.close()
+    return redirect(url_for('payroll.run_payments', run_id=run_id))
+
+
+@payroll_bp.route('/runs/<int:run_id>/mark-batch-paid', methods=['POST'])
+@admin_required
+def run_mark_batch_paid(run_id):
+    conn, svc = _service()
+    try:
+        batch_id = request.form['batch_id']
+        payment_ref = request.form.get('payment_ref', '').strip() or None
+        payment_date = request.form.get('payment_date') or None
+        count = svc.mark_batch_paid(batch_id, payment_ref, payment_date)
+        flash(f'{count} payments marked as paid.', 'success')
+    except PayrollError as e:
+        flash(str(e), 'error')
+    finally:
+        conn.close()
+    return redirect(url_for('payroll.run_payments', run_id=run_id))
+
+
+@payroll_bp.route('/runs/<int:run_id>/delete-payments', methods=['POST'])
+@admin_required
+def run_delete_payments(run_id):
+    conn, svc = _service()
+    try:
+        count = svc.delete_payment_batch(run_id)
+        flash(f'{count} pending payments deleted.', 'success')
+    except PayrollError as e:
+        flash(str(e), 'error')
+    finally:
+        conn.close()
+    return redirect(url_for('payroll.run_payments', run_id=run_id))
+
+
+# ==================================================================
+# PHASE B: Bulk Employee Operations
+# ==================================================================
+
+@payroll_bp.route('/employees/bulk-edit', methods=['GET', 'POST'])
+@admin_required
+def employees_bulk_edit():
+    conn, svc = _service()
+    try:
+        if request.method == 'POST':
+            try:
+                changes = []
+                emp_ids = request.form.getlist('employee_id[]')
+                salaries = request.form.getlist('new_salary[]')
+                eff_dates = request.form.getlist('effective_from[]')
+                for i, eid in enumerate(emp_ids):
+                    sal = salaries[i].strip() if i < len(salaries) else ''
+                    if sal:
+                        changes.append({
+                            'employee_id': int(eid),
+                            'basic_salary': Decimal(sal),
+                            'effective_from': eff_dates[i] if i < len(eff_dates) and eff_dates[i] else datetime.now().strftime('%Y-%m-%d'),
+                        })
+                count = svc.bulk_update_employees(changes)
+                flash(f'{count} employees updated.', 'success')
+                return redirect(url_for('payroll.employees'))
+            except (PayrollError, ValueError) as e:
+                flash(str(e), 'error')
+
+        emps = svc.get_employees(active_only=True)
+        return render_template('payroll/bulk_edit.html', employees=emps)
+    finally:
+        conn.close()
+
+
+@payroll_bp.route('/employees/import', methods=['GET', 'POST'])
+@admin_required
+def employees_import():
+    conn, svc = _service()
+    try:
+        if request.method == 'POST':
+            import csv
+            import io
+
+            file = request.files.get('csv_file')
+            if not file:
+                flash('No file selected.', 'error')
+                return redirect(url_for('payroll.employees_import'))
+
+            stream = io.StringIO(file.stream.read().decode('utf-8'))
+            reader = csv.DictReader(stream)
+            rows = list(reader)
+            result = svc.import_employees_from_csv(rows)
+            flash(f"Import complete: {result['created']} created, {result['skipped']} skipped.", 'success')
+            if result['errors']:
+                for err in result['errors'][:10]:
+                    flash(err, 'warning')
+            return redirect(url_for('payroll.employees'))
+
+        return render_template('payroll/employee_import.html')
+    finally:
+        conn.close()
+
+
+# ==================================================================
+# PHASE B: Enhanced post_to_gl with votehead support
+# ==================================================================
+
+@payroll_bp.route('/runs/<int:run_id>/post-with-voteheads', methods=['POST'])
+@admin_required
+def run_post_with_voteheads(run_id):
+    conn, svc = _service()
+    try:
+        txn_id = svc.post_to_gl_with_voteheads(run_id)
+        flash(f'Payroll posted to GL with votehead allocations (transaction #{txn_id}).', 'success')
+    except PayrollError as e:
+        flash(str(e), 'error')
+    finally:
+        conn.close()
+    return redirect(url_for('payroll.run_detail', run_id=run_id))

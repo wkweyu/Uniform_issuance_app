@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-6 no-print">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-800">Fund Payroll Report (IPSAS)</h1>
+            <p class="text-gray-500">Pay Period: {{ run.pay_period }}</p>
+        </div>
+        <div class="flex gap-2">
+            <a href="{{ url_for('payroll.run_detail', run_id=run.id) }}" class="text-indigo-600 hover:underline"><i class="fas fa-arrow-left"></i> Back</a>
+            <button onclick="window.print()" class="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700"><i class="fas fa-print"></i> Print</button>
+        </div>
+    </div>
+
+    <!-- Fund Summary -->
+    <div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-8">
+        <div class="px-4 py-3 bg-blue-50 border-b"><h2 class="font-semibold text-blue-900">Fund Summary</h2></div>
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="text-left px-4 py-3">Fund Code</th>
+                    <th class="text-left px-4 py-3">Fund Name</th>
+                    <th class="text-left px-4 py-3">Type</th>
+                    <th class="text-right px-4 py-3">Employees</th>
+                    <th class="text-right px-4 py-3">Total Amount</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% set ns = namespace(grand=0) %}
+                {% for row in data.fund_summary %}
+                {% set ns.grand = ns.grand + row.total_amount|float %}
+                <tr>
+                    <td class="px-4 py-2 font-mono">{{ row.fund_code }}</td>
+                    <td class="px-4 py-2">{{ row.fund_name }}</td>
+                    <td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-800">{{ row.fund_type }}</span></td>
+                    <td class="px-4 py-2 text-right">{{ row.employee_count }}</td>
+                    <td class="px-4 py-2 text-right font-mono">{{ "%.2f"|format(row.total_amount|float) }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="px-4 py-4 text-center text-gray-400">No fund allocations for this run.</td></tr>
+                {% endfor %}
+                {% if data.fund_summary %}
+                <tr class="bg-gray-50 font-bold">
+                    <td colspan="4" class="px-4 py-2 text-right">Grand Total</td>
+                    <td class="px-4 py-2 text-right font-mono">{{ "%.2f"|format(ns.grand) }}</td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Fund × Votehead Detail -->
+    <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+        <div class="px-4 py-3 bg-blue-50 border-b"><h2 class="font-semibold text-blue-900">Fund × Votehead Detail</h2></div>
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="text-left px-4 py-3">Fund</th>
+                    <th class="text-left px-4 py-3">Votehead Code</th>
+                    <th class="text-left px-4 py-3">Votehead Name</th>
+                    <th class="text-right px-4 py-3">Amount</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for row in data.fund_votehead_detail %}
+                <tr>
+                    <td class="px-4 py-2 font-mono">{{ row.fund_code }}</td>
+                    <td class="px-4 py-2 font-mono">{{ row.votehead_code }}</td>
+                    <td class="px-4 py-2">{{ row.votehead_name }}</td>
+                    <td class="px-4 py-2 text-right font-mono">{{ "%.2f"|format(row.total_amount|float) }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="px-4 py-4 text-center text-gray-400">No detail data.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+<style>@media print { .no-print { display: none !important; } }</style>
+{% endblock %}

@@ -1092,3 +1092,651 @@ class PayrollService:
             'latest_run': latest_run,
             'pending_adjustments': pending_adjustments,
         }
+
+    # ==================================================================
+    # PHASE B: Votehead & Fund Management
+    # ==================================================================
+
+    def _ensure_school_voteheads(self):
+        """Copy template voteheads (school_id=0) to this school if none exist."""
+        self.cursor.execute(
+            "SELECT COUNT(*) AS cnt FROM payroll_voteheads WHERE school_id = %s",
+            (self.school_id,),
+        )
+        if self.cursor.fetchone()['cnt'] == 0:
+            self.cursor.execute(
+                "INSERT INTO payroll_voteheads (school_id, code, name, category) "
+                "SELECT %s, code, name, category FROM payroll_voteheads WHERE school_id = 0",
+                (self.school_id,),
+            )
+            self.connection.commit()
+
+    def _ensure_school_funds(self):
+        """Copy template funds (school_id=0) to this school if none exist."""
+        self.cursor.execute(
+            "SELECT COUNT(*) AS cnt FROM funds WHERE school_id = %s",
+            (self.school_id,),
+        )
+        if self.cursor.fetchone()['cnt'] == 0:
+            self.cursor.execute(
+                "INSERT INTO funds (school_id, code, name, fund_type) "
+                "SELECT %s, code, name, fund_type FROM funds WHERE school_id = 0",
+                (self.school_id,),
+            )
+            self.connection.commit()
+
+    def get_voteheads(self, category: str = None) -> List[Dict]:
+        self._ensure_school_voteheads()
+        sql = "SELECT * FROM payroll_voteheads WHERE school_id = %s AND is_active = 1"
+        params: list = [self.school_id]
+        if category:
+            sql += " AND category = %s"
+            params.append(category)
+        sql += " ORDER BY code"
+        self.cursor.execute(sql, params)
+        return self.cursor.fetchall()
+
+    def create_votehead(self, code: str, name: str, category: str = 'other') -> int:
+        try:
+            self.cursor.execute(
+                "INSERT INTO payroll_voteheads (school_id, code, name, category) VALUES (%s, %s, %s, %s)",
+                (self.school_id, code, name, category),
+            )
+            vid = self.cursor.lastrowid
+            self._audit('votehead', vid, 'created', new_values={'code': code, 'name': name})
+            self.connection.commit()
+            return vid
+        except pymysql.IntegrityError:
+            self.connection.rollback()
+            raise PayrollError(f"Votehead '{code}' already exists.")
+
+    def get_funds(self) -> List[Dict]:
+        self._ensure_school_funds()
+        self.cursor.execute(
+            "SELECT * FROM funds WHERE school_id = %s AND is_active = 1 ORDER BY code",
+            (self.school_id,),
+        )
+        return self.cursor.fetchall()
+
+    def create_fund(self, code: str, name: str, fund_type: str = 'general') -> int:
+        try:
+            self.cursor.execute(
+                "INSERT INTO funds (school_id, code, name, fund_type) VALUES (%s, %s, %s, %s)",
+                (self.school_id, code, name, fund_type),
+            )
+            fid = self.cursor.lastrowid
+            self._audit('fund', fid, 'created', new_values={'code': code, 'name': name})
+            self.connection.commit()
+            return fid
+        except pymysql.IntegrityError:
+            self.connection.rollback()
+            raise PayrollError(f"Fund '{code}' already exists.")
+
+    # ------------------------------------------------------------------
+    # Votehead Allocations on Payroll Lines
+    # ------------------------------------------------------------------
+
+    def get_votehead_allocations(self, run_id: int) -> List[Dict]:
+        """Get all votehead allocations for a payroll run."""
+        self._assert_run_belongs(run_id)
+        self.cursor.execute(
+            "SELECT pva.*, v.code AS votehead_code, v.name AS votehead_name, "
+            "f.code AS fund_code, f.name AS fund_name, "
+            "pe.staff_id, s.surname, s.firstname, pl.gross_pay "
+            "FROM payroll_votehead_allocations pva "
+            "JOIN payroll_lines pl ON pva.payroll_line_id = pl.id "
+            "JOIN payroll_employees pe ON pl.employee_id = pe.id "
+            "LEFT JOIN staff s ON pe.staff_id = s.staffID "
+            "JOIN payroll_voteheads v ON pva.votehead_id = v.id "
+            "LEFT JOIN funds f ON pva.fund_id = f.id "
+            "WHERE pl.run_id = %s AND pva.school_id = %s "
+            "ORDER BY s.surname, v.code",
+            (run_id, self.school_id),
+        )
+        return self.cursor.fetchall()
+
+    def set_votehead_allocations(self, run_id: int, allocations: List[Dict]):
+        """
+        Set votehead allocations for payroll lines.
+        allocations: [{'payroll_line_id': int, 'votehead_id': int, 'fund_id': int|None, 'amount': Decimal}, ...]
+        Validates that allocations per line sum to gross_pay.
+        """
+        run = self._assert_run_belongs(run_id)
+        if run['status'] not in ('generated', 'approved'):
+            raise PayrollError("Votehead allocations can only be set on generated or approved runs.")
+
+        # Get all lines for this run
+        self.cursor.execute(
+            "SELECT id, gross_pay FROM payroll_lines WHERE run_id = %s", (run_id,),
+        )
+        lines = {row['id']: Decimal(str(row['gross_pay'])) for row in self.cursor.fetchall()}
+
+        # Validate allocations sum per line
+        line_sums: Dict[int, Decimal] = {}
+        for alloc in allocations:
+            lid = alloc['payroll_line_id']
+            if lid not in lines:
+                raise PayrollError(f"Payroll line {lid} does not belong to run {run_id}.")
+            amt = Decimal(str(alloc['amount']))
+            line_sums[lid] = line_sums.get(lid, ZERO) + amt
+
+        for lid, total in line_sums.items():
+            if abs(total - lines[lid]) > Decimal('0.02'):
+                raise PayrollError(
+                    f"Votehead allocations for line {lid} sum to {total}, "
+                    f"but gross pay is {lines[lid]}."
+                )
+
+        # Clear existing allocations and insert new
+        self.cursor.execute(
+            "DELETE pva FROM payroll_votehead_allocations pva "
+            "JOIN payroll_lines pl ON pva.payroll_line_id = pl.id "
+            "WHERE pl.run_id = %s AND pva.school_id = %s",
+            (run_id, self.school_id),
+        )
+        for alloc in allocations:
+            self.cursor.execute(
+                "INSERT INTO payroll_votehead_allocations "
+                "(school_id, payroll_line_id, votehead_id, fund_id, amount) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (self.school_id, alloc['payroll_line_id'],
+                 alloc['votehead_id'], alloc.get('fund_id'), alloc['amount']),
+            )
+
+        self._audit('payroll_run', run_id, 'voteheads_allocated',
+                     new_values={'allocation_count': len(allocations)})
+        self.connection.commit()
+
+    def get_votehead_report(self, run_id: int) -> Dict:
+        """Votehead breakdown report for a payroll run."""
+        self._assert_run_belongs(run_id)
+        # By votehead
+        self.cursor.execute(
+            "SELECT v.code, v.name, SUM(pva.amount) AS total_amount, COUNT(*) AS line_count "
+            "FROM payroll_votehead_allocations pva "
+            "JOIN payroll_lines pl ON pva.payroll_line_id = pl.id "
+            "JOIN payroll_voteheads v ON pva.votehead_id = v.id "
+            "WHERE pl.run_id = %s AND pva.school_id = %s "
+            "GROUP BY v.id ORDER BY v.code",
+            (run_id, self.school_id),
+        )
+        by_votehead = self.cursor.fetchall()
+
+        # By fund
+        self.cursor.execute(
+            "SELECT COALESCE(f.code, 'UNALLOCATED') AS fund_code, "
+            "COALESCE(f.name, 'Unallocated') AS fund_name, "
+            "SUM(pva.amount) AS total_amount, COUNT(*) AS line_count "
+            "FROM payroll_votehead_allocations pva "
+            "JOIN payroll_lines pl ON pva.payroll_line_id = pl.id "
+            "LEFT JOIN funds f ON pva.fund_id = f.id "
+            "WHERE pl.run_id = %s AND pva.school_id = %s "
+            "GROUP BY pva.fund_id ORDER BY fund_code",
+            (run_id, self.school_id),
+        )
+        by_fund = self.cursor.fetchall()
+
+        return {'by_votehead': by_votehead, 'by_fund': by_fund}
+
+    def post_to_gl_with_voteheads(self, run_id: int) -> int:
+        """
+        Enhanced GL posting that splits expense entries per votehead/fund allocation.
+        Falls back to standard post_to_gl if no allocations exist.
+        """
+        run = self._assert_run_belongs(run_id)
+        if run['status'] != 'approved':
+            raise PayrollError(f"Cannot post: run status is '{run['status']}'. Must be 'approved'.")
+
+        # Check if votehead allocations exist
+        self.cursor.execute(
+            "SELECT COUNT(*) AS cnt FROM payroll_votehead_allocations pva "
+            "JOIN payroll_lines pl ON pva.payroll_line_id = pl.id "
+            "WHERE pl.run_id = %s AND pva.school_id = %s",
+            (run_id, self.school_id),
+        )
+        if self.cursor.fetchone()['cnt'] == 0:
+            # No allocations — use standard posting
+            return self.post_to_gl(run_id)
+
+        gl_map = self._gl_map()
+        pay_period = run['pay_period']
+
+        # Get allocations with line info
+        self.cursor.execute(
+            "SELECT pva.*, pl.salary_source, pl.govt_salary_pct, "
+            "pl.paye, pl.shif, pl.nssf_employee, pl.nssf_employer, "
+            "pl.housing_levy_employee, pl.housing_levy_employer, "
+            "pl.net_pay, pl.gross_pay "
+            "FROM payroll_votehead_allocations pva "
+            "JOIN payroll_lines pl ON pva.payroll_line_id = pl.id "
+            "WHERE pl.run_id = %s AND pva.school_id = %s",
+            (run_id, self.school_id),
+        )
+        allocs = self.cursor.fetchall()
+
+        # Also get all lines for the statutory credit side
+        self.cursor.execute("SELECT * FROM payroll_lines WHERE run_id = %s", (run_id,))
+        lines = self.cursor.fetchall()
+
+        entries = []
+
+        def _add(account_key, debit=ZERO, credit=ZERO, note='',
+                 votehead_id=None, fund_id=None):
+            acct_id = gl_map.get(account_key)
+            if not acct_id:
+                raise PayrollError(f"GL mapping missing for '{account_key}'.")
+            if debit > ZERO or credit > ZERO:
+                entries.append({
+                    'account_id': acct_id,
+                    'debit': float(debit),
+                    'credit': float(credit),
+                    'note': note,
+                    'votehead_id': votehead_id,
+                    'fund_id': fund_id,
+                })
+
+        # Debit side: split salary expense per votehead/fund allocation
+        for alloc in allocs:
+            amt = Decimal(str(alloc['amount']))
+            src = alloc['salary_source']
+
+            if src == 'mixed':
+                govt_pct = Decimal(str(alloc['govt_salary_pct'])) / Decimal('100')
+                school_pct = Decimal('1') - govt_pct
+                school_amt = amt * school_pct
+                govt_amt = amt * govt_pct
+
+                if school_amt > ZERO:
+                    _add('salary_expense', debit=school_amt,
+                         note=f'Salary {pay_period}',
+                         votehead_id=alloc['votehead_id'], fund_id=alloc.get('fund_id'))
+                if govt_amt > ZERO:
+                    _add('govt_receivable', debit=govt_amt,
+                         note=f'Govt salary {pay_period}',
+                         votehead_id=alloc['votehead_id'], fund_id=alloc.get('fund_id'))
+            elif src == 'government':
+                _add('govt_receivable', debit=amt,
+                     note=f'Govt salary {pay_period}',
+                     votehead_id=alloc['votehead_id'], fund_id=alloc.get('fund_id'))
+            else:
+                _add('salary_expense', debit=amt,
+                     note=f'Salary {pay_period}',
+                     votehead_id=alloc['votehead_id'], fund_id=alloc.get('fund_id'))
+
+        # Employer statutory as separate DR entries (not allocated per votehead)
+        total_er_nssf = ZERO
+        total_er_hl = ZERO
+        for line in lines:
+            src = line['salary_source']
+            er_nssf = Decimal(str(line['nssf_employer']))
+            er_hl = Decimal(str(line['housing_levy_employer']))
+
+            if src == 'mixed':
+                govt_pct = Decimal(str(line['govt_salary_pct'])) / Decimal('100')
+                school_pct = Decimal('1') - govt_pct
+                total_er_nssf += er_nssf * school_pct
+                total_er_hl += er_hl * school_pct
+                # Govt portion goes to receivable (handled below)
+            elif src == 'school':
+                total_er_nssf += er_nssf
+                total_er_hl += er_hl
+
+        if total_er_nssf > ZERO:
+            _add('employer_nssf_expense', debit=total_er_nssf,
+                 note=f'Employer NSSF {pay_period}')
+        if total_er_hl > ZERO:
+            _add('employer_hl_expense', debit=total_er_hl,
+                 note=f'Employer HL {pay_period}')
+
+        # Govt employer statutory to receivable
+        govt_er_total = ZERO
+        for line in lines:
+            src = line['salary_source']
+            er_nssf = Decimal(str(line['nssf_employer']))
+            er_hl = Decimal(str(line['housing_levy_employer']))
+            if src == 'government':
+                govt_er_total += er_nssf + er_hl
+            elif src == 'mixed':
+                govt_pct = Decimal(str(line['govt_salary_pct'])) / Decimal('100')
+                govt_er_total += (er_nssf + er_hl) * govt_pct
+
+        if govt_er_total > ZERO:
+            _add('govt_receivable', debit=govt_er_total,
+                 note=f'Govt employer statutory {pay_period}')
+
+        # Credit side: statutory payables + net pay (combined, no votehead split)
+        total_paye = sum(Decimal(str(l['paye'])) for l in lines)
+        total_shif = sum(Decimal(str(l['shif'])) for l in lines)
+        total_nssf = sum(Decimal(str(l['nssf_employee'])) + Decimal(str(l['nssf_employer'])) for l in lines)
+        total_hl = sum(Decimal(str(l['housing_levy_employee'])) + Decimal(str(l['housing_levy_employer'])) for l in lines)
+        total_net = sum(Decimal(str(l['net_pay'])) for l in lines)
+
+        _add('paye_payable', credit=total_paye, note=f'PAYE payable {pay_period}')
+        _add('shif_payable', credit=total_shif, note=f'SHIF payable {pay_period}')
+        _add('nssf_payable', credit=total_nssf, note=f'NSSF payable {pay_period}')
+        _add('housing_levy_payable', credit=total_hl, note=f'HL payable {pay_period}')
+        _add('net_pay_payable', credit=total_net, note=f'Net salary payable {pay_period}')
+
+        # Post via FinanceService
+        from blueprints.finance.services import FinanceService
+        finance = FinanceService(self.connection, self.school_id)
+        posted_by = session.get('userNo', 0)
+        txn_id = finance.record_transaction(
+            date=f"{pay_period}-28",
+            reference=f"PAY-{pay_period}",
+            description=f"Payroll for {pay_period} (votehead-allocated)",
+            entries=entries,
+            user_id=posted_by,
+        )
+
+        self.cursor.execute(
+            "UPDATE payroll_runs SET status = 'posted', gl_transaction_id = %s, "
+            "posted_by = %s, posted_at = NOW() WHERE id = %s",
+            (txn_id, posted_by, run_id),
+        )
+        self._audit('payroll_run', run_id, 'posted_with_voteheads',
+                     new_values={'gl_transaction_id': txn_id})
+        self.connection.commit()
+        return txn_id
+
+    # ==================================================================
+    # PHASE B: Payment Batching & Bank Grouping
+    # ==================================================================
+
+    def generate_payment_advice(self, run_id: int) -> str:
+        """
+        Generate payment records for a posted payroll run.
+        Returns batch_id.
+        """
+        run = self._assert_run_belongs(run_id)
+        if run['status'] not in ('posted',):
+            raise PayrollError("Payments can only be generated for posted runs.")
+
+        # Check if payments already exist
+        self.cursor.execute(
+            "SELECT COUNT(*) AS cnt FROM payroll_payments WHERE run_id = %s AND school_id = %s",
+            (run_id, self.school_id),
+        )
+        if self.cursor.fetchone()['cnt'] > 0:
+            raise PayrollError("Payments already generated for this run. Delete existing batch first.")
+
+        import uuid
+        batch_id = f"BATCH-{run['pay_period']}-{uuid.uuid4().hex[:6].upper()}"
+
+        # Get lines with employee bank details
+        self.cursor.execute(
+            "SELECT pl.*, pe.staff_id, pe.bank_name, pe.bank_branch, pe.bank_account, "
+            "s.surname, s.firstname "
+            "FROM payroll_lines pl "
+            "JOIN payroll_employees pe ON pl.employee_id = pe.id "
+            "LEFT JOIN staff s ON pe.staff_id = s.staffID "
+            "WHERE pl.run_id = %s ORDER BY pe.bank_name, s.surname",
+            (run_id,),
+        )
+        lines = self.cursor.fetchall()
+
+        for line in lines:
+            self.cursor.execute(
+                "INSERT INTO payroll_payments "
+                "(school_id, run_id, employee_id, amount, bank_name, bank_branch, "
+                " bank_account, batch_id) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (self.school_id, run_id, line['employee_id'],
+                 line['net_pay'], line['bank_name'], line['bank_branch'],
+                 line['bank_account'], batch_id),
+            )
+
+        self._audit('payroll_run', run_id, 'payments_generated',
+                     new_values={'batch_id': batch_id, 'count': len(lines)})
+        self.connection.commit()
+        return batch_id
+
+    def get_payments(self, run_id: int) -> List[Dict]:
+        """Get payment records for a run, grouped by bank."""
+        self._assert_run_belongs(run_id)
+        self.cursor.execute(
+            "SELECT pp.*, pe.staff_id, s.surname, s.firstname "
+            "FROM payroll_payments pp "
+            "JOIN payroll_employees pe ON pp.employee_id = pe.id "
+            "LEFT JOIN staff s ON pe.staff_id = s.staffID "
+            "WHERE pp.run_id = %s AND pp.school_id = %s "
+            "ORDER BY pp.bank_name, s.surname",
+            (run_id, self.school_id),
+        )
+        return self.cursor.fetchall()
+
+    def get_payment_advice_grouped(self, run_id: int) -> Dict:
+        """Get payments grouped by bank for a payment advice report."""
+        payments = self.get_payments(run_id)
+        if not payments:
+            return {'banks': {}, 'total': ZERO, 'batch_id': None}
+
+        banks: Dict[str, Dict] = {}
+        total = ZERO
+        batch_id = payments[0].get('batch_id') if payments else None
+
+        for p in payments:
+            bank = p['bank_name'] or 'Unknown Bank'
+            if bank not in banks:
+                banks[bank] = {'payments': [], 'subtotal': ZERO, 'count': 0}
+            banks[bank]['payments'].append(p)
+            amt = Decimal(str(p['amount']))
+            banks[bank]['subtotal'] += amt
+            banks[bank]['count'] += 1
+            total += amt
+
+        return {'banks': banks, 'total': total, 'batch_id': batch_id}
+
+    def update_payment_status(self, payment_id: int, status: str,
+                              payment_ref: str = None, payment_date: str = None):
+        """Update a single payment's status."""
+        self.cursor.execute(
+            "SELECT * FROM payroll_payments WHERE id = %s AND school_id = %s",
+            (payment_id, self.school_id),
+        )
+        pmt = self.cursor.fetchone()
+        if not pmt:
+            raise PayrollError("Payment not found.")
+
+        sets = ["status = %s"]
+        params = [status]
+        if payment_ref:
+            sets.append("payment_ref = %s")
+            params.append(payment_ref)
+        if payment_date:
+            sets.append("payment_date = %s")
+            params.append(payment_date)
+        params.append(payment_id)
+        self.cursor.execute(
+            f"UPDATE payroll_payments SET {', '.join(sets)} WHERE id = %s", params,
+        )
+        self._audit('payroll_payment', payment_id, 'status_updated',
+                     new_values={'status': status, 'payment_ref': payment_ref})
+        self.connection.commit()
+
+    def mark_batch_paid(self, batch_id: str, payment_ref: str = None, payment_date: str = None):
+        """Mark all payments in a batch as paid."""
+        if not payment_date:
+            payment_date = date.today().isoformat()
+        self.cursor.execute(
+            "UPDATE payroll_payments SET status = 'paid', payment_ref = %s, payment_date = %s "
+            "WHERE batch_id = %s AND school_id = %s AND status = 'pending'",
+            (payment_ref, payment_date, batch_id, self.school_id),
+        )
+        affected = self.cursor.rowcount
+        self._audit('payroll_payment', 0, 'batch_paid',
+                     new_values={'batch_id': batch_id, 'count': affected})
+        self.connection.commit()
+        return affected
+
+    def delete_payment_batch(self, run_id: int):
+        """Delete all pending payment records for a run."""
+        self.cursor.execute(
+            "DELETE FROM payroll_payments WHERE run_id = %s AND school_id = %s AND status = 'pending'",
+            (run_id, self.school_id),
+        )
+        affected = self.cursor.rowcount
+        self._audit('payroll_run', run_id, 'payments_deleted',
+                     new_values={'deleted_count': affected})
+        self.connection.commit()
+        return affected
+
+    # ==================================================================
+    # PHASE B: Bulk Employee Operations
+    # ==================================================================
+
+    def bulk_update_employees(self, changes: List[Dict]):
+        """
+        Apply salary changes to multiple employees at once.
+        changes: [{'employee_id': int, 'basic_salary': Decimal, 'effective_from': str}, ...]
+        All changes are applied atomically with full history + audit.
+        """
+        if not changes:
+            return 0
+
+        count = 0
+        for ch in changes:
+            emp_id = ch['employee_id']
+            fields = {}
+            if 'basic_salary' in ch:
+                fields['basic_salary'] = ch['basic_salary']
+            if 'salary_source' in ch:
+                fields['salary_source'] = ch['salary_source']
+            if 'govt_salary_pct' in ch:
+                fields['govt_salary_pct'] = ch['govt_salary_pct']
+            if 'effective_from' in ch:
+                fields['effective_from'] = ch['effective_from']
+            if fields:
+                self.update_employee(emp_id, **fields)
+                count += 1
+
+        self._audit('payroll_employee', 0, 'bulk_updated',
+                     new_values={'employee_count': count})
+        return count
+
+    def import_employees_from_csv(self, rows: List[Dict]) -> Dict:
+        """
+        Import employees from CSV-parsed rows.
+        rows: [{'staff_id': str, 'basic_salary': str, 'salary_source': str,
+                'bank_name': str, 'bank_account': str, ...}, ...]
+        Returns {'created': int, 'skipped': int, 'errors': [str]}
+        """
+        created = 0
+        skipped = 0
+        errors = []
+
+        for i, row in enumerate(rows, start=1):
+            try:
+                staff_id = row.get('staff_id', '').strip()
+                if not staff_id:
+                    errors.append(f"Row {i}: missing staff_id")
+                    continue
+
+                salary = Decimal(str(row.get('basic_salary', '0')))
+                if salary <= ZERO:
+                    errors.append(f"Row {i}: invalid salary")
+                    continue
+
+                self.create_employee(
+                    staff_id=staff_id,
+                    basic_salary=salary,
+                    salary_source=row.get('salary_source', 'school').strip(),
+                    govt_salary_pct=Decimal(str(row.get('govt_salary_pct', '0'))),
+                    kra_pin=row.get('kra_pin', '').strip() or None,
+                    nhif_no=row.get('nhif_no', '').strip() or None,
+                    nssf_no=row.get('nssf_no', '').strip() or None,
+                    bank_name=row.get('bank_name', '').strip() or None,
+                    bank_branch=row.get('bank_branch', '').strip() or None,
+                    bank_account=row.get('bank_account', '').strip() or None,
+                    effective_from=row.get('effective_from', None),
+                )
+                created += 1
+            except PayrollError as e:
+                skipped += 1
+                errors.append(f"Row {i} ({staff_id}): {e}")
+            except (ValueError, InvalidOperation) as e:
+                errors.append(f"Row {i}: {e}")
+
+        return {'created': created, 'skipped': skipped, 'errors': errors}
+
+    # ==================================================================
+    # PHASE B: IPSAS Fund Reports
+    # ==================================================================
+
+    def get_fund_payroll_report(self, run_id: int) -> Dict:
+        """IPSAS-aligned fund breakdown for a payroll run."""
+        self._assert_run_belongs(run_id)
+        self.cursor.execute(
+            "SELECT COALESCE(f.code, 'UNALLOCATED') AS fund_code, "
+            "COALESCE(f.name, 'Unallocated') AS fund_name, "
+            "COALESCE(f.fund_type, 'general') AS fund_type, "
+            "SUM(pva.amount) AS total_amount, COUNT(DISTINCT pl.employee_id) AS employee_count "
+            "FROM payroll_votehead_allocations pva "
+            "JOIN payroll_lines pl ON pva.payroll_line_id = pl.id "
+            "LEFT JOIN funds f ON pva.fund_id = f.id "
+            "WHERE pl.run_id = %s AND pva.school_id = %s "
+            "GROUP BY pva.fund_id ORDER BY fund_code",
+            (run_id, self.school_id),
+        )
+        fund_summary = self.cursor.fetchall()
+
+        # Votehead within each fund
+        self.cursor.execute(
+            "SELECT COALESCE(f.code, 'UNALLOCATED') AS fund_code, "
+            "v.code AS votehead_code, v.name AS votehead_name, "
+            "SUM(pva.amount) AS total_amount "
+            "FROM payroll_votehead_allocations pva "
+            "JOIN payroll_lines pl ON pva.payroll_line_id = pl.id "
+            "JOIN payroll_voteheads v ON pva.votehead_id = v.id "
+            "LEFT JOIN funds f ON pva.fund_id = f.id "
+            "WHERE pl.run_id = %s AND pva.school_id = %s "
+            "GROUP BY pva.fund_id, pva.votehead_id ORDER BY fund_code, v.code",
+            (run_id, self.school_id),
+        )
+        fund_votehead_detail = self.cursor.fetchall()
+
+        return {'fund_summary': fund_summary, 'fund_votehead_detail': fund_votehead_detail}
+
+    def get_payroll_by_fund_annual(self, year: int) -> List[Dict]:
+        """Annual payroll expenditure summary by fund (for IPSAS Statement of Financial Performance)."""
+        self._ensure_school_funds()
+        self.cursor.execute(
+            "SELECT COALESCE(f.code, 'UNALLOCATED') AS fund_code, "
+            "COALESCE(f.name, 'Unallocated') AS fund_name, "
+            "pr.pay_period, SUM(pva.amount) AS total_amount "
+            "FROM payroll_votehead_allocations pva "
+            "JOIN payroll_lines pl ON pva.payroll_line_id = pl.id "
+            "JOIN payroll_runs pr ON pl.run_id = pr.id "
+            "LEFT JOIN funds f ON pva.fund_id = f.id "
+            "WHERE pr.school_id = %s AND pr.pay_period LIKE %s "
+            "AND pr.status IN ('posted') AND pr.is_reversed = 0 "
+            "GROUP BY pva.fund_id, pr.pay_period ORDER BY fund_code, pr.pay_period",
+            (self.school_id, f"{year}-%"),
+        )
+        return self.cursor.fetchall()
+
+    def get_budget_vs_actual(self, year: int) -> List[Dict]:
+        """Compare budgeted amounts against actual payroll by votehead for a year."""
+        self.cursor.execute(
+            "SELECT v.code AS votehead_code, v.name AS votehead_name, "
+            "COALESCE(fb.annual_amount, 0) AS budgeted, "
+            "COALESCE(actual.total_spent, 0) AS actual_spent "
+            "FROM payroll_voteheads v "
+            "LEFT JOIN finance_budgets fb ON fb.account_id IN ( "
+            "    SELECT account_id FROM payroll_gl_mapping WHERE school_id = %s "
+            ") AND fb.fiscal_year = %s AND fb.school_id = %s "
+            "LEFT JOIN ( "
+            "    SELECT pva.votehead_id, SUM(pva.amount) AS total_spent "
+            "    FROM payroll_votehead_allocations pva "
+            "    JOIN payroll_lines pl ON pva.payroll_line_id = pl.id "
+            "    JOIN payroll_runs pr ON pl.run_id = pr.id "
+            "    WHERE pr.school_id = %s AND pr.pay_period LIKE %s "
+            "    AND pr.status = 'posted' AND pr.is_reversed = 0 "
+            "    GROUP BY pva.votehead_id "
+            ") actual ON actual.votehead_id = v.id "
+            "WHERE v.school_id = %s AND v.category = 'salary' "
+            "ORDER BY v.code",
+            (self.school_id, year, self.school_id,
+             self.school_id, f"{year}-%", self.school_id),
+        )
+        return self.cursor.fetchall()

@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-6 no-print">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-800">Annual Fund Payroll Report (IPSAS)</h1>
+            <p class="text-gray-500">Year: {{ year }}</p>
+        </div>
+        <div class="flex gap-2">
+            <a href="{{ url_for('payroll.dashboard') }}" class="text-indigo-600 hover:underline"><i class="fas fa-arrow-left"></i> Dashboard</a>
+            <button onclick="window.print()" class="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700"><i class="fas fa-print"></i> Print</button>
+        </div>
+    </div>
+
+    <!-- Year Selector -->
+    <form method="GET" class="mb-6 no-print">
+        <div class="flex items-center gap-3">
+            <label class="text-sm font-medium text-gray-600">Year</label>
+            <select name="year" class="border rounded-lg px-3 py-2 text-sm">
+                {% for y in range(year|int - 2, year|int + 2) %}
+                <option value="{{ y }}" {{ 'selected' if y == year|int }}>{{ y }}</option>
+                {% endfor %}
+            </select>
+            <button class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Apply</button>
+        </div>
+    </form>
+
+    <!-- Monthly Fund Breakdown -->
+    <div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-8">
+        <div class="px-4 py-3 bg-blue-50 border-b"><h2 class="font-semibold text-blue-900">Monthly Fund Payroll</h2></div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="text-left px-4 py-3">Month</th>
+                        <th class="text-left px-4 py-3">Fund Code</th>
+                        <th class="text-left px-4 py-3">Fund Name</th>
+                        <th class="text-right px-4 py-3">Employees</th>
+                        <th class="text-right px-4 py-3">Total Amount</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% set ns = namespace(grand=0) %}
+                    {% for row in data %}
+                    {% set ns.grand = ns.grand + row.total_amount|float %}
+                    <tr>
+                        <td class="px-4 py-2">{{ row.pay_month }}</td>
+                        <td class="px-4 py-2 font-mono">{{ row.fund_code }}</td>
+                        <td class="px-4 py-2">{{ row.fund_name }}</td>
+                        <td class="px-4 py-2 text-right">{{ row.employee_count }}</td>
+                        <td class="px-4 py-2 text-right font-mono">{{ "%.2f"|format(row.total_amount|float) }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5" class="px-4 py-4 text-center text-gray-400">No fund data for {{ year }}.</td></tr>
+                    {% endfor %}
+                    {% if data %}
+                    <tr class="bg-gray-50 font-bold">
+                        <td colspan="4" class="px-4 py-2 text-right">Annual Total</td>
+                        <td class="px-4 py-2 text-right font-mono">{{ "%.2f"|format(ns.grand) }}</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Budget vs Actual -->
+    <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+        <div class="px-4 py-3 bg-green-50 border-b"><h2 class="font-semibold text-green-900">Budget vs Actual (by Votehead)</h2></div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="text-left px-4 py-3">Votehead Code</th>
+                        <th class="text-left px-4 py-3">Votehead Name</th>
+                        <th class="text-right px-4 py-3">Budget</th>
+                        <th class="text-right px-4 py-3">Actual</th>
+                        <th class="text-right px-4 py-3">Variance</th>
+                        <th class="text-right px-4 py-3">% Used</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for row in budget_vs_actual %}
+                    {% set budget = row.budget_amount|float %}
+                    {% set actual = row.actual_amount|float %}
+                    {% set variance = budget - actual %}
+                    {% set pct = (actual / budget * 100) if budget > 0 else 0 %}
+                    <tr>
+                        <td class="px-4 py-2 font-mono">{{ row.votehead_code }}</td>
+                        <td class="px-4 py-2">{{ row.votehead_name }}</td>
+                        <td class="px-4 py-2 text-right font-mono">{{ "%.2f"|format(budget) }}</td>
+                        <td class="px-4 py-2 text-right font-mono">{{ "%.2f"|format(actual) }}</td>
+                        <td class="px-4 py-2 text-right font-mono {{ 'text-red-600' if variance < 0 else 'text-green-600' }}">{{ "%.2f"|format(variance) }}</td>
+                        <td class="px-4 py-2 text-right">
+                            <span class="px-2 py-0.5 rounded-full text-xs {{ 'bg-red-100 text-red-800' if pct > 100 else 'bg-green-100 text-green-800' }}">{{ "%.1f"|format(pct) }}%</span>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6" class="px-4 py-4 text-center text-gray-400">No budget data for {{ year }}.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<style>@media print { .no-print { display: none !important; } }</style>
+{% endblock %}

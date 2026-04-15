@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-6 no-print">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-800">Votehead Breakdown Report</h1>
+            <p class="text-gray-500">Pay Period: {{ run.pay_period }}</p>
+        </div>
+        <div class="flex gap-2">
+            <a href="{{ url_for('payroll.run_detail', run_id=run.id) }}" class="text-indigo-600 hover:underline"><i class="fas fa-arrow-left"></i> Back</a>
+            <button onclick="window.print()" class="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700"><i class="fas fa-print"></i> Print</button>
+        </div>
+    </div>
+
+    <!-- By Votehead -->
+    <div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-8">
+        <div class="px-4 py-3 bg-gray-50 border-b"><h2 class="font-semibold">By Votehead</h2></div>
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="text-left px-4 py-3">Code</th>
+                    <th class="text-left px-4 py-3">Name</th>
+                    <th class="text-right px-4 py-3">Lines</th>
+                    <th class="text-right px-4 py-3">Total Amount</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% set ns = namespace(grand=0) %}
+                {% for row in data.by_votehead %}
+                {% set ns.grand = ns.grand + row.total_amount|float %}
+                <tr>
+                    <td class="px-4 py-2 font-mono">{{ row.code }}</td>
+                    <td class="px-4 py-2">{{ row.name }}</td>
+                    <td class="px-4 py-2 text-right">{{ row.line_count }}</td>
+                    <td class="px-4 py-2 text-right font-mono">{{ "%.2f"|format(row.total_amount|float) }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="px-4 py-4 text-center text-gray-400">No votehead allocations for this run.</td></tr>
+                {% endfor %}
+                {% if data.by_votehead %}
+                <tr class="bg-gray-50 font-bold">
+                    <td colspan="3" class="px-4 py-2 text-right">Grand Total</td>
+                    <td class="px-4 py-2 text-right font-mono">{{ "%.2f"|format(ns.grand) }}</td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- By Fund -->
+    <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+        <div class="px-4 py-3 bg-gray-50 border-b"><h2 class="font-semibold">By Fund</h2></div>
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="text-left px-4 py-3">Fund Code</th>
+                    <th class="text-left px-4 py-3">Fund Name</th>
+                    <th class="text-right px-4 py-3">Lines</th>
+                    <th class="text-right px-4 py-3">Total Amount</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for row in data.by_fund %}
+                <tr>
+                    <td class="px-4 py-2 font-mono">{{ row.fund_code }}</td>
+                    <td class="px-4 py-2">{{ row.fund_name }}</td>
+                    <td class="px-4 py-2 text-right">{{ row.line_count }}</td>
+                    <td class="px-4 py-2 text-right font-mono">{{ "%.2f"|format(row.total_amount|float) }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="px-4 py-4 text-center text-gray-400">No fund allocations.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+<style>@media print { .no-print { display: none !important; } }</style>
+{% endblock %}

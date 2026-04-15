@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-6 no-print">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-800">Payment Advice</h1>
+            <p class="text-gray-500">Pay Period: {{ run.pay_period }} &middot; Batch: <span class="font-mono">{{ grouped.batch_id or 'Not generated' }}</span></p>
+        </div>
+        <div class="flex gap-2">
+            <a href="{{ url_for('payroll.run_detail', run_id=run.id) }}" class="text-indigo-600 hover:underline"><i class="fas fa-arrow-left"></i> Back</a>
+            <button onclick="window.print()" class="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700"><i class="fas fa-print"></i> Print</button>
+        </div>
+    </div>
+
+    <!-- Action Buttons -->
+    {% if grouped.banks %}
+    <div class="flex gap-3 mb-6 no-print">
+        {% set has_pending = grouped.banks|selectattr('payments')|list|length > 0 %}
+        <form method="POST" action="{{ url_for('payroll.mark_batch_paid', run_id=run.id) }}" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="flex items-center gap-2">
+                <input type="text" name="payment_ref" placeholder="Payment reference" class="border rounded-lg px-3 py-2 text-sm" required>
+                <input type="date" name="payment_date" value="{{ now().strftime('%Y-%m-%d') }}" class="border rounded-lg px-3 py-2 text-sm" required>
+                <button class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700"><i class="fas fa-check"></i> Mark Batch Paid</button>
+            </div>
+        </form>
+        <form method="POST" action="{{ url_for('payroll.delete_payments', run_id=run.id) }}" class="inline" onsubmit="return confirm('Delete all pending payments in this batch?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="bg-red-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-red-700"><i class="fas fa-trash"></i> Delete Batch</button>
+        </form>
+    </div>
+    {% else %}
+    <div class="mb-6 no-print">
+        <form method="POST" action="{{ url_for('payroll.generate_payments', run_id=run.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700"><i class="fas fa-file-invoice-dollar"></i> Generate Payment Advice</button>
+        </form>
+    </div>
+    {% endif %}
+
+    <!-- Summary Card -->
+    {% if grouped.banks %}
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div class="bg-white rounded-xl shadow-sm border p-4">
+            <div class="text-sm text-gray-500">Total Payments</div>
+            <div class="text-2xl font-bold text-gray-800">{{ grouped.banks|sum(attribute='payments')|list|length if grouped.banks else 0 }}</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border p-4">
+            <div class="text-sm text-gray-500">Total Amount</div>
+            <div class="text-2xl font-bold text-gray-800 font-mono">{{ "%.2f"|format(grouped.total|float) }}</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border p-4">
+            <div class="text-sm text-gray-500">Batch ID</div>
+            <div class="text-lg font-mono text-gray-800 truncate">{{ grouped.batch_id }}</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Payment Tables by Bank -->
+    {% for bank in grouped.banks %}
+    <div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-6">
+        <div class="px-4 py-3 bg-indigo-50 border-b flex justify-between items-center">
+            <h2 class="font-semibold text-indigo-900"><i class="fas fa-university"></i> {{ bank.bank_name or 'Unknown Bank' }}</h2>
+            <span class="text-sm text-indigo-700 font-mono">Subtotal: {{ "%.2f"|format(bank.subtotal|float) }} ({{ bank.payments|length }} payments)</span>
+        </div>
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="text-left px-4 py-3">Employee</th>
+                    <th class="text-left px-4 py-3">Staff ID</th>
+                    <th class="text-left px-4 py-3">Account No</th>
+                    <th class="text-right px-4 py-3">Net Pay</th>
+                    <th class="text-left px-4 py-3">Status</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for p in bank.payments %}
+                <tr>
+                    <td class="px-4 py-2">{{ p.employee_name }}</td>
+                    <td class="px-4 py-2 font-mono">{{ p.staff_id or '-' }}</td>
+                    <td class="px-4 py-2 font-mono">{{ p.bank_account_no or '-' }}</td>
+                    <td class="px-4 py-2 text-right font-mono">{{ "%.2f"|format(p.amount|float) }}</td>
+                    <td class="px-4 py-2">
+                        {% if p.status == 'paid' %}
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-800">Paid</span>
+                        {% elif p.status == 'failed' %}
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-800">Failed</span>
+                        {% else %}
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-800">Pending</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endfor %}
+
+    {% if not grouped.banks %}
+    <div class="bg-white rounded-xl shadow-sm border p-8 text-center text-gray-400">
+        <i class="fas fa-file-invoice-dollar text-4xl mb-3"></i>
+        <p>No payment advice generated yet. Click "Generate Payment Advice" above.</p>
+    </div>
+    {% endif %}
+</div>
+<style>@media print { .no-print { display: none !important; } }</style>
+{% endblock %}

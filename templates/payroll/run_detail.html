@@ -117,7 +117,19 @@
         <a href="{{ url_for('payroll.report_reconciliation', run_id=run.id) }}" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition text-sm"><i class="fas fa-balance-scale mr-1"></i> GL Reconciliation</a>
         {% endif %}
         <a href="{{ url_for('payroll.report_audit', run_id=run.id) }}" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition text-sm"><i class="fas fa-shield-alt mr-1"></i> Audit Trail</a>
+        <a href="{{ url_for('payroll.report_voteheads', run_id=run.id) }}" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition text-sm"><i class="fas fa-tags mr-1"></i> Votehead Report</a>
+        <a href="{{ url_for('payroll.report_fund', run_id=run.id) }}" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition text-sm"><i class="fas fa-piggy-bank mr-1"></i> Fund Report</a>
+        <a href="{{ url_for('payroll.run_voteheads', run_id=run.id) }}" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition text-sm"><i class="fas fa-sliders-h mr-1"></i> Votehead Allocations</a>
+        <a href="{{ url_for('payroll.run_payments', run_id=run.id) }}" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition text-sm"><i class="fas fa-money-check-alt mr-1"></i> Payment Advice</a>
     </div>
+    {% if run.status == 'approved' %}
+    <div class="flex flex-wrap gap-3 mb-4">
+        <form method="POST" action="{{ url_for('payroll.post_with_voteheads', run_id=run.id) }}" onsubmit="return confirm('Post to GL with votehead allocations?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition text-sm"><i class="fas fa-book mr-1"></i> Post to GL (with Voteheads)</button>
+        </form>
+    </div>
+    {% endif %}
     {% endif %}
 
     <a href="{{ url_for('payroll.runs') }}" class="text-indigo-600 hover:underline text-sm"><i class="fas fa-arrow-left mr-1"></i> All Runs</a>

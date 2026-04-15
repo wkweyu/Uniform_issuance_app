@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-800">Funds</h1>
+            <p class="text-gray-500">IPSAS-aligned fund tracking for financial reporting</p>
+        </div>
+        <a href="{{ url_for('payroll.settings') }}" class="text-indigo-600 hover:underline"><i class="fas fa-arrow-left"></i> Settings</a>
+    </div>
+
+    <!-- Create Form -->
+    <div class="bg-white rounded-xl shadow-sm border p-6 mb-8 max-w-xl">
+        <h2 class="font-semibold text-lg mb-4">Add Fund</h2>
+        <form method="POST" action="{{ url_for('payroll.fund_create') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Code</label>
+                    <input name="code" required maxlength="30" class="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="e.g. BOM">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                    <input name="name" required maxlength="100" class="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="e.g. BOM Operations Fund">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Fund Type</label>
+                    <select name="fund_type" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                        <option value="general">General</option>
+                        <option value="restricted">Restricted</option>
+                        <option value="designated">Designated</option>
+                        <option value="capital">Capital</option>
+                    </select>
+                </div>
+            </div>
+            <button type="submit" class="mt-4 bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition">
+                <i class="fas fa-plus"></i> Add Fund
+            </button>
+        </form>
+    </div>
+
+    <!-- Fund List -->
+    <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="text-left px-4 py-3 font-semibold text-gray-600">Code</th>
+                    <th class="text-left px-4 py-3 font-semibold text-gray-600">Name</th>
+                    <th class="text-left px-4 py-3 font-semibold text-gray-600">Fund Type</th>
+                    <th class="text-left px-4 py-3 font-semibold text-gray-600">Status</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for f in funds %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3 font-mono text-indigo-700">{{ f.code }}</td>
+                    <td class="px-4 py-3">{{ f.name }}</td>
+                    <td class="px-4 py-3"><span class="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-800">{{ f.fund_type }}</span></td>
+                    <td class="px-4 py-3">
+                        {% if f.is_active %}<span class="text-green-600">Active</span>
+                        {% else %}<span class="text-red-500">Inactive</span>{% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="px-4 py-6 text-center text-gray-400">No funds configured.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

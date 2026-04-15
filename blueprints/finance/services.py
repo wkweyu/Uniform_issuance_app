@@ -138,7 +138,8 @@ class FinanceService:
     def record_transaction(self, date: str, reference: str, description: str, entries: List[Dict], user_id: int) -> int:
         """
         Record a double-entry transaction.
-        Entries: list of {'account_id': id, 'debit': D, 'credit': C, 'note': text}
+        Entries: list of {'account_id': id, 'debit': D, 'credit': C, 'note': text,
+                          'votehead_id': int (optional), 'fund_id': int (optional)}
         Debits must equal Credits.
         """
         try:
@@ -160,12 +161,14 @@ class FinanceService:
             """, (date, reference, description, user_id, self.school_id))
             txn_id = self.cursor.lastrowid
             
-            # 3. Create Ledger Entries
+            # 3. Create Ledger Entries (with optional votehead_id and fund_id)
             for entry in entries:
                 self.cursor.execute("""
-                    INSERT INTO finance_ledger_entries (transaction_id, account_id, debit, credit, note, school_id)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                """, (txn_id, entry['account_id'], entry.get('debit', 0), entry.get('credit', 0), entry.get('note', ''), self.school_id))
+                    INSERT INTO finance_ledger_entries
+                        (transaction_id, account_id, debit, credit, note, votehead_id, fund_id, school_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (txn_id, entry['account_id'], entry.get('debit', 0), entry.get('credit', 0),
+                      entry.get('note', ''), entry.get('votehead_id'), entry.get('fund_id'), self.school_id))
                 
             self.connection.commit()
             return txn_id
