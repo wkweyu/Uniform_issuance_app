@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mx-auto px-4 py-8 max-w-5xl">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Payroll Settings</h1>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <!-- Statutory Rates -->
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <h2 class="text-lg font-semibold text-gray-700 mb-4"><i class="fas fa-percentage text-indigo-500 mr-2"></i>Statutory Rates</h2>
+            <p class="text-sm text-gray-500 mb-4">Current rates used for payroll computation. Edit individual rate types below.</p>
+
+            {% set rate_types = [] %}
+            {% for r in rates %}
+                {% if r.rate_type not in rate_types %}
+                    {% if rate_types.append(r.rate_type) %}{% endif %}
+                {% endif %}
+            {% endfor %}
+
+            {% for rt in rate_types %}
+            <div class="mb-6 border-b pb-4 last:border-b-0">
+                <h3 class="font-medium text-gray-800 mb-2">{{ rt | replace('_', ' ') | title }}</h3>
+                <table class="w-full text-xs mb-2">
+                    <thead>
+                        <tr class="text-gray-500">
+                            <th class="text-left py-1">From</th>
+                            <th class="text-left py-1">To</th>
+                            <th class="text-right py-1">Rate</th>
+                            <th class="text-right py-1">Fixed</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in rates if r.rate_type == rt %}
+                        <tr class="border-b border-gray-50">
+                            <td class="py-1">{{ r.band_from | currency }}</td>
+                            <td class="py-1">{{ r.band_to | currency }}</td>
+                            <td class="py-1 text-right">{{ r.rate }}%</td>
+                            <td class="py-1 text-right">{{ r.fixed_amount | currency if r.fixed_amount else '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endfor %}
+
+            {% if not rates %}
+            <p class="text-gray-400 text-sm">No rates configured. They will be seeded from the template on first payroll generation.</p>
+            {% endif %}
+        </div>
+
+        <!-- GL Mapping -->
+        <div id="gl-mapping" class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <h2 class="text-lg font-semibold text-gray-700 mb-4"><i class="fas fa-book text-green-500 mr-2"></i>GL Account Mapping</h2>
+            <p class="text-sm text-gray-500 mb-4">Map payroll items to General Ledger accounts for posting.</p>
+
+            {% if gl_mappings %}
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b">
+                        <th class="text-left py-2">Mapping Key</th>
+                        <th class="text-left py-2">Account</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for m in gl_mappings %}
+                    <tr class="border-b border-gray-50">
+                        <td class="py-2 font-medium">{{ m.mapping_key | replace('_', ' ') | title }}</td>
+                        <td class="py-2">{{ m.account_code }} — {{ m.account_name }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="text-gray-400 text-sm">GL mappings will be auto-created on first payroll generation.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="mt-6">
+        <a href="{{ url_for('payroll.dashboard') }}" class="text-indigo-600 hover:underline text-sm"><i class="fas fa-arrow-left mr-1"></i> Dashboard</a>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+@media print {
+    .no-print { display: none !important; }
+    body { font-size: 11pt; }
+    .container { max-width: 100%; padding: 0; }
+}
+</style>
+<div class="container mx-auto px-4 py-8 max-w-3xl">
+    <div class="no-print flex justify-between items-center mb-4">
+        <a href="{{ url_for('payroll.run_detail', run_id=run.id) }}" class="text-indigo-600 hover:underline text-sm"><i class="fas fa-arrow-left mr-1"></i> Back to Run</a>
+        <button onclick="window.print()" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition text-sm"><i class="fas fa-print mr-1"></i> Print</button>
+    </div>
+
+    <div class="bg-white p-8 rounded-xl shadow-sm border border-gray-100">
+        <div class="text-center mb-6">
+            <h1 class="text-xl font-bold text-gray-800">PAYSLIP</h1>
+            <p class="text-gray-500">Pay Period: {{ run.pay_period }}</p>
+        </div>
+
+        <!-- Employee Info -->
+        <div class="grid grid-cols-2 gap-4 mb-6 text-sm border-b pb-4">
+            <div>
+                <p><span class="text-gray-500">Name:</span> <strong>{{ slip.surname or '' }} {{ slip.firstname or '' }}</strong></p>
+                <p><span class="text-gray-500">Staff ID:</span> {{ slip.staff_id }}</p>
+                <p><span class="text-gray-500">ID/Passport:</span> {{ slip.natID_ppNo or '-' }}</p>
+                <p><span class="text-gray-500">Source:</span> {{ slip.salary_source | title }}{% if slip.salary_source == 'mixed' %} ({{ slip.govt_salary_pct }}% govt){% endif %}</p>
+            </div>
+            <div class="text-right">
+                <p><span class="text-gray-500">KRA PIN:</span> {{ slip.kra_pin or '-' }}</p>
+                <p><span class="text-gray-500">NHIF/SHIF:</span> {{ slip.nhif_no or '-' }}</p>
+                <p><span class="text-gray-500">NSSF:</span> {{ slip.nssf_no or '-' }}</p>
+                <p><span class="text-gray-500">Bank:</span> {{ slip.bank_name or '-' }} {{ slip.bank_account or '' }}</p>
+            </div>
+        </div>
+
+        {% set bd = slip.breakdown if slip.breakdown else {} %}
+
+        <!-- Earnings -->
+        <div class="mb-4">
+            <h3 class="font-semibold text-gray-700 mb-2 text-sm uppercase">Earnings</h3>
+            <table class="w-full text-sm">
+                {% for e in bd.get('earnings', []) %}
+                <tr class="border-b border-gray-50">
+                    <td class="py-1">{{ e.name or e.code }}</td>
+                    <td class="py-1 text-right">{{ e.amount | currency }}</td>
+                </tr>
+                {% endfor %}
+                {% for a in bd.get('adjustments', []) if a.type == 'earning' %}
+                <tr class="border-b border-gray-50 text-green-700">
+                    <td class="py-1">{{ a.name }} <span class="text-xs">(adj)</span></td>
+                    <td class="py-1 text-right">{{ a.amount | currency }}</td>
+                </tr>
+                {% endfor %}
+                <tr class="font-semibold border-t">
+                    <td class="py-1">Gross Pay</td>
+                    <td class="py-1 text-right">{{ slip.gross_pay | currency }}</td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- Statutory Deductions -->
+        <div class="mb-4">
+            <h3 class="font-semibold text-gray-700 mb-2 text-sm uppercase">Statutory Deductions</h3>
+            <table class="w-full text-sm">
+                <tr class="border-b border-gray-50">
+                    <td class="py-1">PAYE (Income Tax)</td>
+                    <td class="py-1 text-right text-red-600">{{ slip.paye | currency }}</td>
+                </tr>
+                <tr class="border-b border-gray-50">
+                    <td class="py-1">SHIF (Health Insurance)</td>
+                    <td class="py-1 text-right text-red-600">{{ slip.shif | currency }}</td>
+                </tr>
+                <tr class="border-b border-gray-50">
+                    <td class="py-1">NSSF (Employee)</td>
+                    <td class="py-1 text-right text-red-600">{{ slip.nssf_employee | currency }}</td>
+                </tr>
+                <tr class="border-b border-gray-50">
+                    <td class="py-1">Housing Levy (Employee)</td>
+                    <td class="py-1 text-right text-red-600">{{ slip.housing_levy_employee | currency }}</td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- Voluntary Deductions -->
+        {% set vol_deds = bd.get('deductions', []) %}
+        {% set adj_deds = [] %}
+        {% for a in bd.get('adjustments', []) if a.type == 'deduction' %}
+            {% if adj_deds.append(a) %}{% endif %}
+        {% endfor %}
+        {% if vol_deds or adj_deds %}
+        <div class="mb-4">
+            <h3 class="font-semibold text-gray-700 mb-2 text-sm uppercase">Other Deductions</h3>
+            <table class="w-full text-sm">
+                {% for d in vol_deds %}
+                <tr class="border-b border-gray-50">
+                    <td class="py-1">{{ d.name or d.code }}</td>
+                    <td class="py-1 text-right text-red-600">{{ d.amount | currency }}</td>
+                </tr>
+                {% endfor %}
+                {% for d in adj_deds %}
+                <tr class="border-b border-gray-50">
+                    <td class="py-1">{{ d.name }} <span class="text-xs text-gray-400">(adj)</span></td>
+                    <td class="py-1 text-right text-red-600">{{ d.amount | currency }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+        {% endif %}
+
+        <!-- Totals -->
+        <div class="border-t-2 border-gray-300 pt-3">
+            <table class="w-full text-sm">
+                <tr><td class="py-1 text-gray-500">Total Deductions</td><td class="py-1 text-right font-semibold text-red-600">{{ slip.total_deductions | currency }}</td></tr>
+                <tr class="text-lg"><td class="py-2 font-bold">NET PAY</td><td class="py-2 text-right font-bold text-green-700">{{ slip.net_pay | currency }}</td></tr>
+            </table>
+        </div>
+
+        <!-- Employer Contributions -->
+        <div class="mt-4 pt-3 border-t text-sm text-gray-500">
+            <p class="font-medium mb-1">Employer Contributions (not deducted from salary)</p>
+            <div class="flex gap-6">
+                <span>NSSF (ER): {{ slip.nssf_employer | currency }}</span>
+                <span>Housing Levy (ER): {{ slip.housing_levy_employer | currency }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

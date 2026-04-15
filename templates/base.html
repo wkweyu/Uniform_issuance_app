@@ -137,10 +137,12 @@
                         <i class="fas fa-shield-halved"></i> <span>Security</span>
                     </a>
                     {% endif %}
-                    {% if platform_has_permission('platform_settings') %}
+                    {% if platform_has_permission('user_admin') %}
                     <a href="{{ url_for('platform.list_users') }}" class="platform-nav-link {% if request.endpoint in ['platform.list_users', 'platform.create_user', 'platform.edit_user'] %}platform-nav-link--active{% endif %}">
                         <i class="fas fa-users-gear"></i> <span>Operators</span>
                     </a>
+                    {% endif %}
+                    {% if platform_has_permission('platform_settings') %}
                     <a href="{{ url_for('platform.view_access_settings') }}" class="platform-nav-link {% if request.endpoint == 'platform.view_access_settings' %}platform-nav-link--active{% endif %}">
                         <i class="fas fa-sliders"></i> <span>Access Policy</span>
                     </a>
@@ -226,7 +228,7 @@
                     <div class="flex items-center space-x-3">
                         <h1 class="text-2xl font-bold">🎒 SkoolTrack Pro</h1>
                         {% if session.get('logged_in') and session.get('is_admin') %}
-                            <a href="{{ url_for('admin_settings') }}" class="bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded text-sm font-medium"><i class="fas fa-cog"></i> Admin</a>
+                            <a href="{{ url_for('auth.admin_settings') }}" class="bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded text-sm font-medium"><i class="fas fa-cog"></i> Admin</a>
                         {% endif %}
                     </div>
                     <div class="flex items-center space-x-4">
@@ -255,10 +257,17 @@
                         {% if session.get('logged_in') %}
                             <a href="{{ url_for('index') }}" class="px-3 py-2 rounded-lg transition hover:bg-blue-700 {% if request.endpoint == 'index' %}nav-active bg-blue-900{% endif %}"><i class="fas fa-home"></i> Home</a>
                             <a href="{{ url_for('students_list') }}" class="px-3 py-2 rounded-lg transition hover:bg-blue-700"><i class="fas fa-users"></i> Students</a>
+                            <a href="{{ url_for('classes.manage_classes') }}" class="px-3 py-2 rounded-lg transition hover:bg-blue-700"><i class="fas fa-chalkboard"></i> Classes</a>
+                            <a href="{{ url_for('exams.exams_dashboard') }}" class="px-3 py-2 rounded-lg transition hover:bg-blue-700"><i class="fas fa-file-pen"></i> Exams</a>
+                            <a href="{{ url_for('attendance.attendance_dashboard') }}" class="px-3 py-2 rounded-lg transition hover:bg-blue-700"><i class="fas fa-clipboard-check"></i> Attendance</a>
                             <a href="{{ url_for('fees_dashboard') }}" class="px-3 py-2 rounded-lg transition hover:bg-blue-700"><i class="fas fa-money-check-dollar"></i> Fees</a>
+                            <a href="{{ url_for('finance.finance_dashboard') }}" class="px-3 py-2 rounded-lg transition hover:bg-blue-700"><i class="fas fa-chart-line"></i> Finance</a>
                             <a href="{{ url_for('uniform_dashboard') }}" class="px-3 py-2 rounded-lg transition hover:bg-blue-700"><i class="fas fa-tshirt"></i> Uniforms</a>
+                            <a href="{{ url_for('procurement.procurement_dashboard') }}" class="px-3 py-2 rounded-lg transition hover:bg-blue-700"><i class="fas fa-cart-shopping"></i> Procurement</a>
                             <a href="{{ url_for('fleet_dashboard') }}" class="px-3 py-2 rounded-lg transition hover:bg-blue-700"><i class="fas fa-bus"></i> Fleet</a>
-                            {% if platform_is_saas_user() %}
+                            <a href="{{ url_for('farm.dashboard') }}" class="px-3 py-2 rounded-lg transition hover:bg-blue-700"><i class="fas fa-seedling"></i> Farm</a>
+                            <a href="{{ url_for('payroll.dashboard') }}" class="px-3 py-2 rounded-lg transition hover:bg-blue-700"><i class="fas fa-money-bill-transfer"></i> Payroll</a>
+                            {% if session.get('is_admin') and platform_is_saas_user() %}
                             <a href="{{ url_for('platform.index') }}" class="px-3 py-2 rounded-lg text-cyan-300 font-bold hover:bg-blue-700"><i class="fas fa-microchip"></i> Control Plane</a>
                             {% endif %}
                         {% endif %}

@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mx-auto px-4 py-8 max-w-4xl">
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-800">{{ employee.surname or '' }} {{ employee.firstname or '' }}</h1>
+            <p class="text-gray-500">Staff ID: {{ employee.staff_id }} &mdash; {{ employee.salary_source | title }}
+            {% if employee.salary_source == 'mixed' %}({{ employee.govt_salary_pct }}% govt){% endif %}</p>
+        </div>
+        <div class="flex gap-2">
+            <a href="{{ url_for('payroll.employee_edit', employee_id=employee.id) }}" class="bg-yellow-500 text-white px-4 py-2 rounded-lg hover:bg-yellow-600 transition text-sm"><i class="fas fa-edit mr-1"></i> Edit</a>
+            <a href="{{ url_for('payroll.employee_components', employee_id=employee.id) }}" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition text-sm"><i class="fas fa-cogs mr-1"></i> Components</a>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+        <!-- Profile -->
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <h2 class="font-semibold text-gray-700 mb-3"><i class="fas fa-id-card mr-2 text-indigo-500"></i>Profile</h2>
+            <dl class="space-y-2 text-sm">
+                <div class="flex justify-between"><dt class="text-gray-500">Basic Salary</dt><dd class="font-medium">{{ employee.basic_salary | currency }}</dd></div>
+                <div class="flex justify-between"><dt class="text-gray-500">KRA PIN</dt><dd>{{ employee.kra_pin or '-' }}</dd></div>
+                <div class="flex justify-between"><dt class="text-gray-500">NHIF / SHIF</dt><dd>{{ employee.nhif_no or '-' }}</dd></div>
+                <div class="flex justify-between"><dt class="text-gray-500">NSSF</dt><dd>{{ employee.nssf_no or '-' }}</dd></div>
+                <div class="flex justify-between"><dt class="text-gray-500">Bank</dt><dd>{{ employee.bank_name or '-' }} {{ employee.bank_branch or '' }}</dd></div>
+                <div class="flex justify-between"><dt class="text-gray-500">Account</dt><dd>{{ employee.bank_account or '-' }}</dd></div>
+                <div class="flex justify-between"><dt class="text-gray-500">Effective From</dt><dd>{{ employee.effective_from }}</dd></div>
+                <div class="flex justify-between"><dt class="text-gray-500">Active</dt><dd>{{ 'Yes' if employee.is_active else 'No' }}</dd></div>
+            </dl>
+        </div>
+
+        <!-- Components -->
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <h2 class="font-semibold text-gray-700 mb-3"><i class="fas fa-list-ul mr-2 text-green-500"></i>Pay Components</h2>
+            {% if employee.components %}
+            <table class="w-full text-sm">
+                <thead><tr class="border-b"><th class="text-left py-1">Component</th><th class="text-left py-1">Mode</th><th class="text-right py-1">Amount</th></tr></thead>
+                <tbody>
+                {% for c in employee.components %}
+                <tr class="border-b border-gray-50">
+                    <td class="py-1">{{ c.name }} <span class="text-xs text-gray-400">({{ c.type }})</span></td>
+                    <td class="py-1"><span class="px-1 py-0.5 rounded text-xs bg-gray-100">{{ c.mode }}</span></td>
+                    <td class="py-1 text-right">{{ c.amount | currency }}{% if c.is_percent %} %{% endif %}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="text-gray-400 text-sm">No components assigned. <a href="{{ url_for('payroll.employee_components', employee_id=employee.id) }}" class="text-indigo-600 underline">Assign now</a></p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Pending Adjustments -->
+    {% if employee.pending_adjustments %}
+    <div class="bg-yellow-50 p-6 rounded-xl border border-yellow-200 mb-6">
+        <h2 class="font-semibold text-yellow-800 mb-3"><i class="fas fa-exclamation-triangle mr-2"></i>Pending Adjustments</h2>
+        <table class="w-full text-sm">
+            <thead><tr class="border-b border-yellow-200"><th class="text-left py-1">Name</th><th class="text-left py-1">Type</th><th class="text-right py-1">Amount</th><th class="text-left py-1">Recurring</th></tr></thead>
+            <tbody>
+            {% for adj in employee.pending_adjustments %}
+            <tr class="border-b border-yellow-100">
+                <td class="py-1">{{ adj.name }}</td>
+                <td class="py-1">{{ adj.type }}</td>
+                <td class="py-1 text-right">{{ adj.amount | currency }}</td>
+                <td class="py-1">{{ 'Yes' if adj.is_recurring else 'No' }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- Quick Links -->
+    <div class="flex flex-wrap gap-3">
+        <a href="{{ url_for('payroll.employee_payslips', employee_id=employee.id) }}" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition text-sm"><i class="fas fa-file-alt mr-1"></i> Payslips</a>
+        <a href="{{ url_for('payroll.employee_history', employee_id=employee.id) }}" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition text-sm"><i class="fas fa-history mr-1"></i> Change History</a>
+        <a href="{{ url_for('payroll.report_p9', employee_id=employee.id) }}" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition text-sm"><i class="fas fa-file-invoice mr-1"></i> P9 Tax Cert.</a>
+        <a href="{{ url_for('payroll.employees') }}" class="text-indigo-600 hover:underline text-sm ml-auto"><i class="fas fa-arrow-left mr-1"></i> Back to Employees</a>
+    </div>
+</div>
+{% endblock %}

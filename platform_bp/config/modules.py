@@ -79,6 +79,14 @@ MODULE_CATALOG = (
         'is_addon': True,
         'sort_order': 100,
     },
+    {
+        'code': 'payroll',
+        'name': 'Payroll Management',
+        'family': 'accounting',
+        'is_core': False,
+        'is_addon': True,
+        'sort_order': 65,
+    },
 )
 
 BUNDLE_FAMILY_OPTIONS = (
@@ -118,6 +126,7 @@ BLUEPRINT_MODULE_CODES = {
     'procurement': 'procurement_assets',
     'transport': 'fleet_transport',
     'farm': 'farm_operations',
+    'payroll': 'payroll',
 }
 
 PATH_PREFIX_MODULE_CODES = (
@@ -151,6 +160,7 @@ PATH_PREFIX_MODULE_CODES = (
     ('/api/exams/', 'exams'),
     ('/attendance', 'attendance'),
     ('/farm/', 'farm_operations'),
+    ('/payroll/', 'payroll'),
     ('/admit', 'students'),
     ('/students', 'students'),
     ('/student/', 'students'),

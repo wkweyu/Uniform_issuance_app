@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mx-auto px-4 py-8 max-w-4xl">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Audit Trail — {{ run.pay_period }}</h1>
+
+    <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Timestamp</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">User</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">IP</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Details</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                    {% for a in data %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-4 py-2 text-xs">{{ a.performed_at.strftime('%Y-%m-%d %H:%M:%S') if a.performed_at else '' }}</td>
+                        <td class="px-4 py-2 font-medium">{{ a.action }}</td>
+                        <td class="px-4 py-2">{{ a.performed_by }}</td>
+                        <td class="px-4 py-2 text-xs text-gray-500">{{ a.ip_address or '' }}</td>
+                        <td class="px-4 py-2 text-xs">
+                            {% if a.new_values %}
+                            <pre class="whitespace-pre-wrap text-xs text-gray-600 max-w-md">{{ a.new_values }}</pre>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5" class="px-4 py-8 text-center text-gray-400">No audit records.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="mt-4">
+        <a href="{{ url_for('payroll.run_detail', run_id=run.id) }}" class="text-indigo-600 hover:underline text-sm"><i class="fas fa-arrow-left mr-1"></i> Back to Run</a>
+    </div>
+</div>
+{% endblock %}

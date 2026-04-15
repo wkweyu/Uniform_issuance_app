@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold text-gray-800">Payroll Runs</h1>
+        <form method="POST" action="{{ url_for('payroll.run_create') }}" class="flex items-end gap-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="month" name="pay_period" required class="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+            <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition text-sm"><i class="fas fa-plus mr-1"></i> New Run</button>
+        </form>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Gross</th>
+                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">PAYE</th>
+                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">SHIF</th>
+                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">NSSF</th>
+                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Net</th>
+                        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                    {% for run in runs %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-4 py-3 font-medium">{{ run.pay_period }}</td>
+                        <td class="px-4 py-3">
+                            {% set colors = {'draft':'bg-gray-100 text-gray-800','generated':'bg-blue-100 text-blue-800','approved':'bg-yellow-100 text-yellow-800','posted':'bg-green-100 text-green-800','reversed':'bg-red-100 text-red-800'} %}
+                            <span class="px-2 py-1 rounded-full text-xs font-semibold {{ colors.get(run.status, 'bg-gray-100') }}">{{ run.status | upper }}</span>
+                        </td>
+                        <td class="px-4 py-3 text-right">{{ run.total_gross | currency }}</td>
+                        <td class="px-4 py-3 text-right">{{ run.total_paye | currency }}</td>
+                        <td class="px-4 py-3 text-right">{{ run.total_shif | currency }}</td>
+                        <td class="px-4 py-3 text-right">{{ run.total_nssf | currency }}</td>
+                        <td class="px-4 py-3 text-right font-semibold">{{ run.total_net | currency }}</td>
+                        <td class="px-4 py-3 text-center">
+                            <a href="{{ url_for('payroll.run_detail', run_id=run.id) }}" class="text-indigo-600 hover:underline">View</a>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="8" class="px-4 py-8 text-center text-gray-400">No payroll runs yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="mt-4">
+        <a href="{{ url_for('payroll.dashboard') }}" class="text-indigo-600 hover:underline text-sm"><i class="fas fa-arrow-left mr-1"></i> Dashboard</a>
+    </div>
+</div>
+{% endblock %}

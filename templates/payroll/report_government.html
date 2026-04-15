@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+<style>@media print { .no-print { display: none !important; } }</style>
+<div class="container mx-auto px-4 py-8">
+    <div class="no-print flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold text-gray-800">Government Payroll Report — {{ run.pay_period }}</h1>
+        <button onclick="window.print()" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 text-sm"><i class="fas fa-print mr-1"></i> Print</button>
+    </div>
+
+    {% if data %}
+    <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Staff ID</th>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Source</th>
+                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Govt %</th>
+                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Gross</th>
+                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Net</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                    {% for d in data %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-3 py-2 font-medium">{{ d.surname or '' }} {{ d.firstname or '' }}</td>
+                        <td class="px-3 py-2">{{ d.staff_id }}</td>
+                        <td class="px-3 py-2">{{ d.salary_source }}</td>
+                        <td class="px-3 py-2 text-right">{{ d.govt_salary_pct }}%</td>
+                        <td class="px-3 py-2 text-right">{{ d.gross_pay | currency }}</td>
+                        <td class="px-3 py-2 text-right font-semibold">{{ d.net_pay | currency }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% else %}
+    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center text-yellow-700">
+        No government-paid employees in this payroll run.
+    </div>
+    {% endif %}
+
+    <div class="mt-4 no-print">
+        <a href="{{ url_for('payroll.run_detail', run_id=run.id) }}" class="text-indigo-600 hover:underline text-sm"><i class="fas fa-arrow-left mr-1"></i> Back to Run</a>
+    </div>
+</div>
+{% endblock %}

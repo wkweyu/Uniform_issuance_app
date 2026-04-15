@@ -49,6 +49,8 @@ def create_app(config_class=Config):
     app.register_blueprint(transport_bp)
     from blueprints.farm.routes import farm_bp
     app.register_blueprint(farm_bp)
+    from blueprints.payroll.routes import payroll_bp
+    app.register_blueprint(payroll_bp)
     from blueprints.attendance.routes import attendance_bp
     app.register_blueprint(attendance_bp)
     from platform_bp import init_platform
@@ -75,7 +77,7 @@ def create_app(config_class=Config):
             if endpoint == "update_school_subscription":
                 return url_for("super_admin.update_school_subscription", **values)
             if endpoint == "admin_settings":
-                return url_for("super_admin.manage_schools", **values)
+                return url_for("auth.admin_settings", **values)
             # Students
             if endpoint == "admit_student":
                 return url_for("students.admit_student", **values)

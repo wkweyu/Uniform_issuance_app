@@ -1,0 +1,92 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Module Access — {{ target_user.username }}</h1>
+      <p class="text-sm text-gray-500 mt-1">
+        Staff ID: {{ target_user.StaffID or '—' }} &bull;
+        Role: {% if target_user.TA == 2 %}Super Admin{% elif target_user.TA == 1 %}Admin{% else %}Staff{% endif %} &bull;
+        {{ granted_count }} module{{ 's' if granted_count != 1 }} assigned
+      </p>
+    </div>
+    <a href="{{ url_for('auth.manage_users') }}" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium">
+      <i class="fas fa-arrow-left mr-1"></i> Back to Users
+    </a>
+  </div>
+
+  {% if target_user.TA == 2 %}
+  <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+    <p class="text-sm text-blue-800"><i class="fas fa-info-circle mr-1"></i> This user is a <strong>Super Admin</strong> and bypasses all module restrictions automatically.</p>
+  </div>
+  {% endif %}
+
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide">Assign Modules</h2>
+        <label class="text-xs text-gray-500 flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" id="select-all" class="rounded border-gray-300">
+          Select All
+        </label>
+      </div>
+
+      <div class="divide-y divide-gray-100">
+        {% set current_family = namespace(val='') %}
+        {% for m in modules %}
+          {% if m.family != current_family.val %}
+            {% set current_family.val = m.family %}
+            <div class="px-5 py-2 bg-gray-50">
+              <span class="text-xs font-bold uppercase tracking-wider
+                {% if m.family == 'academic' %}text-blue-600
+                {% elif m.family == 'accounting' %}text-emerald-600
+                {% else %}text-orange-600{% endif %}">
+                {{ m.family | capitalize }}
+              </span>
+            </div>
+          {% endif %}
+          <label class="flex items-center gap-4 px-5 py-3 hover:bg-gray-50 cursor-pointer transition-colors">
+            <input type="checkbox" name="modules" value="{{ m.code }}"
+              {% if m.granted %}checked{% endif %}
+              class="module-checkbox rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-medium text-gray-900">{{ m.name }}</div>
+              <div class="text-xs text-gray-400">{{ m.code }}{% if m.is_core %} &bull; Core{% else %} &bull; Add-on{% endif %}</div>
+            </div>
+            {% if m.granted %}
+            <span class="inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded-full bg-green-100 text-green-700">Granted</span>
+            {% endif %}
+          </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="mt-6 flex items-center justify-between">
+      <p class="text-xs text-gray-400">Users with no modules assigned cannot access any features.</p>
+      <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold shadow-sm transition-colors">
+        <i class="fas fa-save mr-1"></i> Save Access
+      </button>
+    </div>
+  </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const selectAll = document.getElementById('select-all');
+    const checkboxes = document.querySelectorAll('.module-checkbox');
+    if (selectAll) {
+        // Set initial state
+        selectAll.checked = checkboxes.length > 0 && Array.from(checkboxes).every(cb => cb.checked);
+        selectAll.addEventListener('change', function() {
+            checkboxes.forEach(cb => cb.checked = selectAll.checked);
+        });
+        checkboxes.forEach(cb => cb.addEventListener('change', function() {
+            selectAll.checked = Array.from(checkboxes).every(c => c.checked);
+        }));
+    }
+});
+</script>
+{% endblock %}

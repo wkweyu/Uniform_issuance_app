@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-800">Payroll Dashboard</h1>
+            <p class="text-gray-600">Employee payroll management &amp; statutory compliance</p>
+        </div>
+        <div class="flex gap-2">
+            <a href="{{ url_for('payroll.employees') }}" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition"><i class="fas fa-users"></i> Employees</a>
+            <a href="{{ url_for('payroll.runs') }}" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"><i class="fas fa-play-circle"></i> Payroll Runs</a>
+            <a href="{{ url_for('payroll.adjustments') }}" class="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition"><i class="fas fa-sliders-h"></i> Adjustments</a>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <div class="flex items-center gap-4">
+                <div class="p-3 bg-indigo-100 text-indigo-600 rounded-lg"><i class="fas fa-user-tie fa-lg"></i></div>
+                <div>
+                    <p class="text-sm text-gray-500 uppercase font-semibold">Active Employees</p>
+                    <p class="text-2xl font-bold">{{ stats.active_employees }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <div class="flex items-center gap-4">
+                <div class="p-3 bg-green-100 text-green-600 rounded-lg"><i class="fas fa-calendar-check fa-lg"></i></div>
+                <div>
+                    <p class="text-sm text-gray-500 uppercase font-semibold">Latest Run</p>
+                    <p class="text-2xl font-bold">{{ stats.latest_run.pay_period if stats.latest_run else 'None' }}</p>
+                    {% if stats.latest_run %}
+                    <p class="text-xs text-gray-400">{{ stats.latest_run.status }}</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <div class="flex items-center gap-4">
+                <div class="p-3 bg-blue-100 text-blue-600 rounded-lg"><i class="fas fa-money-bill-wave fa-lg"></i></div>
+                <div>
+                    <p class="text-sm text-gray-500 uppercase font-semibold">Latest Net Pay</p>
+                    <p class="text-2xl font-bold">{{ stats.latest_run.total_net | currency if stats.latest_run else '0.00' }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <div class="flex items-center gap-4">
+                <div class="p-3 bg-yellow-100 text-yellow-600 rounded-lg"><i class="fas fa-exclamation-triangle fa-lg"></i></div>
+                <div>
+                    <p class="text-sm text-gray-500 uppercase font-semibold">Pending Adjustments</p>
+                    <p class="text-2xl font-bold">{{ stats.pending_adjustments }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <!-- New Payroll Run -->
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <h2 class="text-lg font-semibold mb-4"><i class="fas fa-plus-circle text-green-600 mr-2"></i>New Payroll Run</h2>
+            <form method="POST" action="{{ url_for('payroll.run_create') }}" class="flex items-end gap-4">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="flex-1">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Pay Period (YYYY-MM)</label>
+                    <input type="month" name="pay_period" required
+                           class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <button type="submit" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition">Create</button>
+            </form>
+        </div>
+
+        <!-- Settings -->
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <h2 class="text-lg font-semibold mb-4"><i class="fas fa-cog text-gray-600 mr-2"></i>Payroll Settings</h2>
+            <div class="flex flex-wrap gap-3">
+                <a href="{{ url_for('payroll.settings') }}" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition text-sm"><i class="fas fa-percentage mr-1"></i> Statutory Rates</a>
+                <a href="{{ url_for('payroll.settings') }}#gl-mapping" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition text-sm"><i class="fas fa-book mr-1"></i> GL Mapping</a>
+                <a href="{{ url_for('payroll.employee_new') }}" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition text-sm"><i class="fas fa-user-plus mr-1"></i> Add Employee</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Runs Table -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="p-6 border-b border-gray-100">
+            <h2 class="text-lg font-semibold">Recent Payroll Runs</h2>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Gross</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Net</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">PAYE</th>
+                        <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                    {% for run in runs[:10] %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4 font-medium">{{ run.pay_period }}</td>
+                        <td class="px-6 py-4">
+                            {% set colors = {'draft':'bg-gray-100 text-gray-800','generated':'bg-blue-100 text-blue-800','approved':'bg-yellow-100 text-yellow-800','posted':'bg-green-100 text-green-800','reversed':'bg-red-100 text-red-800'} %}
+                            <span class="px-2 py-1 rounded-full text-xs font-semibold {{ colors.get(run.status, 'bg-gray-100') }}">{{ run.status | upper }}</span>
+                        </td>
+                        <td class="px-6 py-4 text-right">{{ run.total_gross | currency }}</td>
+                        <td class="px-6 py-4 text-right">{{ run.total_net | currency }}</td>
+                        <td class="px-6 py-4 text-right">{{ run.total_paye | currency }}</td>
+                        <td class="px-6 py-4 text-center">
+                            <a href="{{ url_for('payroll.run_detail', run_id=run.id) }}" class="text-indigo-600 hover:underline text-sm">View</a>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6" class="px-6 py-8 text-center text-gray-400">No payroll runs yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

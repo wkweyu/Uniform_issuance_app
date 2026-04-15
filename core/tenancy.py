@@ -4,6 +4,37 @@ from platform_bp.config.modules import blueprint_module_codes, module_label, pat
 
 SAFE_METHODS = {'GET', 'HEAD', 'OPTIONS'}
 
+# Cache for user module permissions (cleared each request via before_request)
+_user_module_cache = {}
+
+
+def get_user_allowed_modules(user_id, school_id):
+    """Return set of module codes the user is granted, or None if no rows exist."""
+    cache_key = (user_id, school_id)
+    if cache_key in _user_module_cache:
+        return _user_module_cache[cache_key]
+
+    from core.db import get_db_connection
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT module_code, can_write FROM user_module_access "
+                "WHERE user_id = %s AND school_id = %s",
+                (user_id, school_id),
+            )
+            rows = cursor.fetchall()
+    finally:
+        connection.close()
+
+    if not rows:
+        result = set()  # No entries = blocked from all modules
+    else:
+        result = {r['module_code'] for r in rows}
+
+    _user_module_cache[cache_key] = result
+    return result
+
 
 class TenantContextError(RuntimeError):
     """Raised when a tenant-scoped operation runs without an active school context."""
@@ -203,6 +234,10 @@ def resolve_school_request_access():
     if 'userNo' not in session or not session.get('school_id'):
         return None
 
+    # Application owner / super-admin bypasses all subscription & module enforcement
+    if session.get('is_super_admin', False):
+        return None
+
     school = get_current_school(required=True)
     subscription = get_current_subscription(school.id)
     access_state = get_school_access_state(school=school, subscription=subscription)
@@ -291,6 +326,19 @@ def resolve_school_request_access():
                 redirect_target=url_for('index'),
             )
 
+    # ── User-level module access control ──
+    # Super-admin already bypassed above. For all other users,
+    # check the user_module_access table. No entries = no access.
+    if required_module_code:
+        user_id = session.get('userNo')
+        school_id = session.get('school_id')
+        if user_id and school_id:
+            allowed = get_user_allowed_modules(user_id, school_id)
+            if required_module_code not in allowed:
+                label = module_label(required_module_code)
+                flash(f'You do not have access to the {label} module. Contact your administrator.', 'error')
+                return redirect(url_for('index'))
+
     return None
 
 
@@ -309,6 +357,7 @@ def filter_by_school(query, model=None, school_id=None):
 
 def load_tenant_context():
     """Load tenant data for the current request without silently defaulting a school."""
+    _user_module_cache.clear()
     g.school_id = session.get("school_id")
     g.current_school = None
     g.current_subscription = None

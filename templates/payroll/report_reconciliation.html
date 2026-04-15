@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mx-auto px-4 py-8 max-w-4xl">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">GL Reconciliation — {{ recon.run.pay_period if recon.run else '' }}</h1>
+
+    {% if not recon.posted %}
+    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center text-yellow-700">
+        This payroll run has not been posted to the GL yet.
+    </div>
+    {% else %}
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div class="bg-white p-4 rounded-lg shadow-sm border text-center">
+            <p class="text-xs text-gray-500 uppercase">GL Debit Total</p>
+            <p class="text-xl font-bold">{{ recon.gl_total_debit | currency }}</p>
+        </div>
+        <div class="bg-white p-4 rounded-lg shadow-sm border text-center">
+            <p class="text-xs text-gray-500 uppercase">GL Credit Total</p>
+            <p class="text-xl font-bold">{{ recon.gl_total_credit | currency }}</p>
+        </div>
+        <div class="bg-white p-4 rounded-lg shadow-sm border text-center">
+            <p class="text-xs text-gray-500 uppercase">Status</p>
+            {% if recon.balanced and recon.matches %}
+            <p class="text-xl font-bold text-green-600"><i class="fas fa-check-circle"></i> Balanced</p>
+            {% else %}
+            <p class="text-xl font-bold text-red-600"><i class="fas fa-exclamation-circle"></i> Mismatch</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+        <div class="p-4 border-b"><h2 class="font-semibold text-gray-700">GL Entries</h2></div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Account</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Debit</th>
+                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Credit</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Note</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                    {% for e in recon.gl_entries %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-4 py-2 font-mono text-xs">{{ e.code }}</td>
+                        <td class="px-4 py-2">{{ e.account_name }}</td>
+                        <td class="px-4 py-2 text-right">{{ e.debit | currency if e.debit else '' }}</td>
+                        <td class="px-4 py-2 text-right">{{ e.credit | currency if e.credit else '' }}</td>
+                        <td class="px-4 py-2 text-xs text-gray-500">{{ e.note or '' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="mt-4">
+        <a href="{{ url_for('payroll.run_detail', run_id=recon.run.id) }}" class="text-indigo-600 hover:underline text-sm"><i class="fas fa-arrow-left mr-1"></i> Back to Run</a>
+    </div>
+</div>
+{% endblock %}

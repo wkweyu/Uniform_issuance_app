@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-800">Payroll Run: {{ run.pay_period }}</h1>
+            <div class="flex items-center gap-2 mt-1">
+                {% set colors = {'draft':'bg-gray-100 text-gray-800','generated':'bg-blue-100 text-blue-800','approved':'bg-yellow-100 text-yellow-800','posted':'bg-green-100 text-green-800','reversed':'bg-red-100 text-red-800'} %}
+                <span class="px-3 py-1 rounded-full text-sm font-semibold {{ colors.get(run.status, 'bg-gray-100') }}">{{ run.status | upper }}</span>
+                {% if run.is_reversed %}<span class="text-red-500 text-sm">(Reversed)</span>{% endif %}
+            </div>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            {% if run.status == 'draft' %}
+            <form method="POST" action="{{ url_for('payroll.run_generate', run_id=run.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition text-sm"><i class="fas fa-calculator mr-1"></i> Generate</button>
+            </form>
+            {% endif %}
+            {% if run.status == 'generated' %}
+            <form method="POST" action="{{ url_for('payroll.run_generate', run_id=run.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition text-sm"><i class="fas fa-redo mr-1"></i> Re-generate</button>
+            </form>
+            <form method="POST" action="{{ url_for('payroll.run_approve', run_id=run.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition text-sm"><i class="fas fa-check-double mr-1"></i> Approve</button>
+            </form>
+            {% endif %}
+            {% if run.status == 'approved' %}
+            <form method="POST" action="{{ url_for('payroll.run_post', run_id=run.id) }}" onsubmit="return confirm('Post to General Ledger? This will create accounting entries.')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition text-sm"><i class="fas fa-book mr-1"></i> Post to GL</button>
+            </form>
+            {% endif %}
+            {% if run.status == 'posted' and not run.is_reversed %}
+            <form method="POST" action="{{ url_for('payroll.run_reverse', run_id=run.id) }}" onsubmit="return confirm('REVERSE this payroll? This will create reversing GL entries.')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition text-sm"><i class="fas fa-undo mr-1"></i> Reverse</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white p-4 rounded-lg shadow-sm border text-center">
+            <p class="text-xs text-gray-500 uppercase">Gross Pay</p>
+            <p class="text-xl font-bold text-gray-800">{{ run.total_gross | currency }}</p>
+        </div>
+        <div class="bg-white p-4 rounded-lg shadow-sm border text-center">
+            <p class="text-xs text-gray-500 uppercase">PAYE</p>
+            <p class="text-xl font-bold text-red-600">{{ run.total_paye | currency }}</p>
+        </div>
+        <div class="bg-white p-4 rounded-lg shadow-sm border text-center">
+            <p class="text-xs text-gray-500 uppercase">NSSF (EE+ER)</p>
+            <p class="text-xl font-bold text-blue-600">{{ (run.total_nssf + run.total_employer_nssf) | currency }}</p>
+        </div>
+        <div class="bg-white p-4 rounded-lg shadow-sm border text-center">
+            <p class="text-xs text-gray-500 uppercase">Net Pay</p>
+            <p class="text-xl font-bold text-green-700">{{ run.total_net | currency }}</p>
+        </div>
+    </div>
+
+    <!-- Employee Lines -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-6">
+        <div class="p-4 border-b flex justify-between items-center">
+            <h2 class="font-semibold text-gray-700">Employee Payroll Lines</h2>
+            <span class="text-sm text-gray-500">{{ run.lines | length }} employees</span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Staff</th>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Source</th>
+                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Gross</th>
+                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">PAYE</th>
+                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">SHIF</th>
+                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">NSSF</th>
+                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">H.Levy</th>
+                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Net</th>
+                        <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Slip</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                    {% for line in run.lines %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-3 py-2">{{ line.staff_id }}</td>
+                        <td class="px-3 py-2 font-medium">{{ line.surname or '' }} {{ line.firstname or '' }}</td>
+                        <td class="px-3 py-2"><span class="text-xs">{{ line.salary_source }}</span></td>
+                        <td class="px-3 py-2 text-right">{{ line.gross_pay | currency }}</td>
+                        <td class="px-3 py-2 text-right">{{ line.paye | currency }}</td>
+                        <td class="px-3 py-2 text-right">{{ line.shif | currency }}</td>
+                        <td class="px-3 py-2 text-right">{{ line.nssf_employee | currency }}</td>
+                        <td class="px-3 py-2 text-right">{{ line.housing_levy_employee | currency }}</td>
+                        <td class="px-3 py-2 text-right font-semibold">{{ line.net_pay | currency }}</td>
+                        <td class="px-3 py-2 text-center">
+                            <a href="{{ url_for('payroll.payslip', run_id=run.id, employee_id=line.employee_id) }}" class="text-indigo-600 hover:underline text-xs">View</a>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="10" class="px-4 py-8 text-center text-gray-400">No lines generated yet. Click "Generate" to compute payroll.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Report Links -->
+    {% if run.lines %}
+    <div class="flex flex-wrap gap-3 mb-4">
+        <a href="{{ url_for('payroll.report_statutory', run_id=run.id) }}" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition text-sm"><i class="fas fa-file-invoice mr-1"></i> Statutory Report</a>
+        <a href="{{ url_for('payroll.report_government', run_id=run.id) }}" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition text-sm"><i class="fas fa-landmark mr-1"></i> Government Report</a>
+        {% if run.gl_transaction_id %}
+        <a href="{{ url_for('payroll.report_reconciliation', run_id=run.id) }}" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition text-sm"><i class="fas fa-balance-scale mr-1"></i> GL Reconciliation</a>
+        {% endif %}
+        <a href="{{ url_for('payroll.report_audit', run_id=run.id) }}" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition text-sm"><i class="fas fa-shield-alt mr-1"></i> Audit Trail</a>
+    </div>
+    {% endif %}
+
+    <a href="{{ url_for('payroll.runs') }}" class="text-indigo-600 hover:underline text-sm"><i class="fas fa-arrow-left mr-1"></i> All Runs</a>
+</div>
+{% endblock %}

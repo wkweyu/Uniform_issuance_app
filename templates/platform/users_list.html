@@ -4,7 +4,7 @@
 {% block platform_content %}
 <section class="space-y-5">
   {% call(slot) page_header('Platform Operators', 'Manage control-plane users, roles, and school scope assignments.') %}
-    {% if platform_has_permission('platform_settings') %}
+    {% if platform_has_permission('user_admin') %}
     <a href="{{ url_for('platform.create_user') }}" class="platform-btn-primary text-xs">
       <i class="fas fa-plus mr-1"></i>Create User
     </a>
@@ -113,7 +113,7 @@
           </td>
           <td class="text-[11px] text-slate-500">{{ u.last_login_at or 'Never' }}</td>
           <td class="text-right">
-            {% if platform_has_permission('platform_settings') %}
+            {% if platform_has_permission('user_admin') %}
             <a href="{{ url_for('platform.edit_user', user_id=u.id) }}" class="platform-btn-secondary text-[11px] px-2 py-1">Edit</a>
             {% endif %}
           </td>

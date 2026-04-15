@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block content %}
+<style>@media print { .no-print { display: none !important; } }</style>
+<div class="container mx-auto px-4 py-8">
+    <div class="no-print flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold text-gray-800">Statutory Deductions Report — {{ run.pay_period }}</h1>
+        <button onclick="window.print()" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 text-sm"><i class="fas fa-print mr-1"></i> Print</button>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">KRA PIN</th>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">NSSF No</th>
+                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Gross</th>
+                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">PAYE</th>
+                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">SHIF</th>
+                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">NSSF EE</th>
+                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">NSSF ER</th>
+                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">H.Levy EE</th>
+                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">H.Levy ER</th>
+                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Net</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                    {% set totals = namespace(gross=0, paye=0, shif=0, nssf_ee=0, nssf_er=0, hl_ee=0, hl_er=0, net=0) %}
+                    {% for d in data %}
+                    {% set totals.gross = totals.gross + (d.gross_pay|float) %}
+                    {% set totals.paye = totals.paye + (d.paye|float) %}
+                    {% set totals.shif = totals.shif + (d.shif|float) %}
+                    {% set totals.nssf_ee = totals.nssf_ee + (d.nssf_employee|float) %}
+                    {% set totals.nssf_er = totals.nssf_er + (d.nssf_employer|float) %}
+                    {% set totals.hl_ee = totals.hl_ee + (d.housing_levy_employee|float) %}
+                    {% set totals.hl_er = totals.hl_er + (d.housing_levy_employer|float) %}
+                    {% set totals.net = totals.net + (d.net_pay|float) %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-3 py-2 font-medium">{{ d.surname or '' }} {{ d.firstname or '' }}</td>
+                        <td class="px-3 py-2">{{ d.kra_pin or '-' }}</td>
+                        <td class="px-3 py-2">{{ d.nssf_no or '-' }}</td>
+                        <td class="px-3 py-2 text-right">{{ d.gross_pay | currency }}</td>
+                        <td class="px-3 py-2 text-right">{{ d.paye | currency }}</td>
+                        <td class="px-3 py-2 text-right">{{ d.shif | currency }}</td>
+                        <td class="px-3 py-2 text-right">{{ d.nssf_employee | currency }}</td>
+                        <td class="px-3 py-2 text-right">{{ d.nssf_employer | currency }}</td>
+                        <td class="px-3 py-2 text-right">{{ d.housing_levy_employee | currency }}</td>
+                        <td class="px-3 py-2 text-right">{{ d.housing_levy_employer | currency }}</td>
+                        <td class="px-3 py-2 text-right font-semibold">{{ d.net_pay | currency }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="bg-gray-100 font-semibold">
+                    <tr>
+                        <td class="px-3 py-2" colspan="3">TOTALS</td>
+                        <td class="px-3 py-2 text-right">{{ "%.2f" | format(totals.gross) }}</td>
+                        <td class="px-3 py-2 text-right">{{ "%.2f" | format(totals.paye) }}</td>
+                        <td class="px-3 py-2 text-right">{{ "%.2f" | format(totals.shif) }}</td>
+                        <td class="px-3 py-2 text-right">{{ "%.2f" | format(totals.nssf_ee) }}</td>
+                        <td class="px-3 py-2 text-right">{{ "%.2f" | format(totals.nssf_er) }}</td>
+                        <td class="px-3 py-2 text-right">{{ "%.2f" | format(totals.hl_ee) }}</td>
+                        <td class="px-3 py-2 text-right">{{ "%.2f" | format(totals.hl_er) }}</td>
+                        <td class="px-3 py-2 text-right">{{ "%.2f" | format(totals.net) }}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+    <div class="mt-4 no-print">
+        <a href="{{ url_for('payroll.run_detail', run_id=run.id) }}" class="text-indigo-600 hover:underline text-sm"><i class="fas fa-arrow-left mr-1"></i> Back to Run</a>
+    </div>
+</div>
+{% endblock %}
