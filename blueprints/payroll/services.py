@@ -155,6 +155,7 @@ class PayrollService:
             ('2112', 'NSSF Payable',                    'LIABILITY'),
             ('2113', 'Housing Levy Payable',            'LIABILITY'),
             ('2114', 'Net Salary Payable',              'LIABILITY'),
+            ('2115', 'Other Deductions Payable',        'LIABILITY'),
             ('1400', 'Government Salary Receivable',    'ASSET'),
         ]
 
@@ -187,6 +188,7 @@ class PayrollService:
             'nssf_payable':             account_ids['2112'],
             'housing_levy_payable':     account_ids['2113'],
             'net_pay_payable':          account_ids['2114'],
+            'other_deductions_payable': account_ids['2115'],
             'govt_receivable':          account_ids['1400'],
         }
         for key, acct_id in mapping.items():
@@ -859,10 +861,26 @@ class PayrollService:
                     agg['school']['housing_levy_employer'] + agg['government']['housing_levy_employer'])
         total_net = agg['school']['net_pay'] + agg['government']['net_pay']
 
+        # Custom deductions (SACCO, loans, etc.) = total_deductions - statutory
+        total_custom = ZERO
+        for line in lines:
+            statutory = (Decimal(str(line['paye'])) + Decimal(str(line['shif'])) +
+                         Decimal(str(line['nssf_employee'])) + Decimal(str(line['housing_levy_employee'])))
+            custom = Decimal(str(line['total_deductions'])) - statutory
+            src = line['salary_source']
+            if src == 'mixed':
+                govt_pct = Decimal(str(line['govt_salary_pct'])) / Decimal('100')
+                total_custom += custom  # custom deductions apply regardless of source split
+            else:
+                total_custom += custom
+
         _add('paye_payable', credit=total_paye, note=f'PAYE payable {pay_period}')
         _add('shif_payable', credit=total_shif, note=f'SHIF payable {pay_period}')
         _add('nssf_payable', credit=total_nssf, note=f'NSSF payable {pay_period}')
         _add('housing_levy_payable', credit=total_hl, note=f'Housing levy payable {pay_period}')
+        if total_custom > ZERO:
+            _add('other_deductions_payable', credit=total_custom,
+                 note=f'Other deductions payable {pay_period}')
         _add('net_pay_payable', credit=total_net, note=f'Net salary payable {pay_period}')
 
         # Post via FinanceService
@@ -1411,10 +1429,20 @@ class PayrollService:
         total_hl = sum(Decimal(str(l['housing_levy_employee'])) + Decimal(str(l['housing_levy_employer'])) for l in lines)
         total_net = sum(Decimal(str(l['net_pay'])) for l in lines)
 
+        # Custom deductions (SACCO, loans, etc.) = total_deductions - statutory
+        total_custom = ZERO
+        for line in lines:
+            statutory = (Decimal(str(line['paye'])) + Decimal(str(line['shif'])) +
+                         Decimal(str(line['nssf_employee'])) + Decimal(str(line['housing_levy_employee'])))
+            total_custom += Decimal(str(line['total_deductions'])) - statutory
+
         _add('paye_payable', credit=total_paye, note=f'PAYE payable {pay_period}')
         _add('shif_payable', credit=total_shif, note=f'SHIF payable {pay_period}')
         _add('nssf_payable', credit=total_nssf, note=f'NSSF payable {pay_period}')
         _add('housing_levy_payable', credit=total_hl, note=f'HL payable {pay_period}')
+        if total_custom > ZERO:
+            _add('other_deductions_payable', credit=total_custom,
+                 note=f'Other deductions payable {pay_period}')
         _add('net_pay_payable', credit=total_net, note=f'Net salary payable {pay_period}')
 
         # Post via FinanceService
