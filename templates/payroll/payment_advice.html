@@ -18,9 +18,10 @@
         {% set has_pending = grouped.banks|selectattr('payments')|list|length > 0 %}
         <form method="POST" action="{{ url_for('payroll.run_mark_batch_paid', run_id=run.id) }}" class="inline">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="batch_id" value="{{ grouped.batch_id }}">
             <div class="flex items-center gap-2">
                 <input type="text" name="payment_ref" placeholder="Payment reference" class="border rounded-lg px-3 py-2 text-sm" required>
-                <input type="date" name="payment_date" value="{{ now().strftime('%Y-%m-%d') }}" class="border rounded-lg px-3 py-2 text-sm" required>
+                <input type="date" name="payment_date" value="{{ datetime.now().strftime('%Y-%m-%d') }}" class="border rounded-lg px-3 py-2 text-sm" required>
                 <button class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700"><i class="fas fa-check"></i> Mark Batch Paid</button>
             </div>
         </form>
@@ -43,7 +44,7 @@
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <div class="bg-white rounded-xl shadow-sm border p-4">
             <div class="text-sm text-gray-500">Total Payments</div>
-            <div class="text-2xl font-bold text-gray-800">{{ grouped.banks|sum(attribute='payments')|list|length if grouped.banks else 0 }}</div>
+            <div class="text-2xl font-bold text-gray-800">{{ grouped.banks|sum(attribute='count') }}</div>
         </div>
         <div class="bg-white rounded-xl shadow-sm border p-4">
             <div class="text-sm text-gray-500">Total Amount</div>

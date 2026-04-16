@@ -1537,23 +1537,23 @@ class PayrollService:
         """Get payments grouped by bank for a payment advice report."""
         payments = self.get_payments(run_id)
         if not payments:
-            return {'banks': {}, 'total': ZERO, 'batch_id': None}
+            return {'banks': [], 'total': ZERO, 'batch_id': None}
 
-        banks: Dict[str, Dict] = {}
+        banks_dict: Dict[str, Dict] = {}
         total = ZERO
         batch_id = payments[0].get('batch_id') if payments else None
 
         for p in payments:
             bank = p['bank_name'] or 'Unknown Bank'
-            if bank not in banks:
-                banks[bank] = {'payments': [], 'subtotal': ZERO, 'count': 0}
-            banks[bank]['payments'].append(p)
+            if bank not in banks_dict:
+                banks_dict[bank] = {'bank_name': bank, 'payments': [], 'subtotal': ZERO, 'count': 0}
+            banks_dict[bank]['payments'].append(p)
             amt = Decimal(str(p['amount']))
-            banks[bank]['subtotal'] += amt
-            banks[bank]['count'] += 1
+            banks_dict[bank]['subtotal'] += amt
+            banks_dict[bank]['count'] += 1
             total += amt
 
-        return {'banks': banks, 'total': total, 'batch_id': batch_id}
+        return {'banks': list(banks_dict.values()), 'total': total, 'batch_id': batch_id}
 
     def update_payment_status(self, payment_id: int, status: str,
                               payment_ref: str = None, payment_date: str = None):
