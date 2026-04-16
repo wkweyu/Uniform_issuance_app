@@ -124,7 +124,7 @@
     </div>
     {% if run.status == 'approved' %}
     <div class="flex flex-wrap gap-3 mb-4">
-        <form method="POST" action="{{ url_for('payroll.post_with_voteheads', run_id=run.id) }}" onsubmit="return confirm('Post to GL with votehead allocations?')">
+        <form method="POST" action="{{ url_for('payroll.run_post_with_voteheads', run_id=run.id) }}" onsubmit="return confirm('Post to GL with votehead allocations?')">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition text-sm"><i class="fas fa-book mr-1"></i> Post to GL (with Voteheads)</button>
         </form>

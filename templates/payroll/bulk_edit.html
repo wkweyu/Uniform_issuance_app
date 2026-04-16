@@ -14,7 +14,7 @@
     {% endif %}
     {% endwith %}
 
-    <form method="POST" action="{{ url_for('payroll.bulk_edit') }}">
+    <form method="POST" action="{{ url_for('payroll.employees_bulk_edit') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
         <div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-6">

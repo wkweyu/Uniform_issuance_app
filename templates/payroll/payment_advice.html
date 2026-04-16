@@ -16,7 +16,7 @@
     {% if grouped.banks %}
     <div class="flex gap-3 mb-6 no-print">
         {% set has_pending = grouped.banks|selectattr('payments')|list|length > 0 %}
-        <form method="POST" action="{{ url_for('payroll.mark_batch_paid', run_id=run.id) }}" class="inline">
+        <form method="POST" action="{{ url_for('payroll.run_mark_batch_paid', run_id=run.id) }}" class="inline">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="flex items-center gap-2">
                 <input type="text" name="payment_ref" placeholder="Payment reference" class="border rounded-lg px-3 py-2 text-sm" required>
@@ -24,14 +24,14 @@
                 <button class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700"><i class="fas fa-check"></i> Mark Batch Paid</button>
             </div>
         </form>
-        <form method="POST" action="{{ url_for('payroll.delete_payments', run_id=run.id) }}" class="inline" onsubmit="return confirm('Delete all pending payments in this batch?')">
+        <form method="POST" action="{{ url_for('payroll.run_delete_payments', run_id=run.id) }}" class="inline" onsubmit="return confirm('Delete all pending payments in this batch?')">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="bg-red-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-red-700"><i class="fas fa-trash"></i> Delete Batch</button>
         </form>
     </div>
     {% else %}
     <div class="mb-6 no-print">
-        <form method="POST" action="{{ url_for('payroll.generate_payments', run_id=run.id) }}">
+        <form method="POST" action="{{ url_for('payroll.run_generate_payments', run_id=run.id) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700"><i class="fas fa-file-invoice-dollar"></i> Generate Payment Advice</button>
         </form>
