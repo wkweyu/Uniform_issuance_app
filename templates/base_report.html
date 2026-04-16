@@ -82,16 +82,26 @@
       <!-- Standard Professional Header -->
       <div class="flex justify-between items-start border-b-2 border-gray-800 pb-3 mb-4">
         <div class="flex items-center gap-4">
+          {% if school.school_logo %}
+          <img
+            src="{{ url_for('static', filename=school.school_logo) }}"
+            alt="Logo"
+            style="height: 60px"
+          />
+          {% else %}
           <img
             src="{{ url_for('static', filename='images/school_logo.png') }}"
             alt="Logo"
             style="height: 60px"
           />
+          {% endif %}
           <div>
-            <h1 class="text-xl font-black text-gray-900 uppercase leading-none">Mother Kevin Comprehensive School</h1>
+            <h1 class="text-xl font-black text-gray-900 uppercase leading-none">{{ school.school_name }}</h1>
             <p class="text-[10px] text-gray-600 mt-1">
-              P.O. Box 12345 - 50200, Bungoma | Tel: +254 700 000 000<br>
-              Email: info@motherkevin.edu | Web: www.motherkevin.edu
+              {% if school.school_address %}{{ school.school_address }}{% endif %}
+              {% if school.school_phone %} | Tel: {{ school.school_phone }}{% endif %}<br>
+              {% if school.school_email %}Email: {{ school.school_email }}{% endif %}
+              {% if school.school_website %} | Web: {{ school.school_website }}{% endif %}
             </p>
           </div>
         </div>
@@ -130,7 +140,7 @@
 
       <!-- Compact Footer -->
       <div class="mt-8 pt-4 border-t border-gray-100 text-[8px] text-gray-400 flex justify-between items-end no-page-break">
-        <p>This is a system generated document. Mother Kevin School High-Efficiency ERP System.</p>
+        <p>This is a system generated document. {{ school.school_name }} — SkoolTrack Pro ERP.</p>
         <div class="no-print flex gap-2">
           <button onclick="window.print()" class="bg-gray-800 text-white px-4 py-1.5 rounded font-bold text-xs flex items-center gap-2">
             <i class="fas fa-print"></i> Print

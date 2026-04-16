@@ -17,11 +17,16 @@
     
     <!-- ─── Hero ─── -->
     <div class="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
-        <div>
-            <h1 class="text-3xl font-extrabold text-gray-900">
-                Welcome back, <span class="text-blue-600">{{ session.username }}</span>! 👋
-            </h1>
-            <p class="text-gray-500 mt-1">Here's what's happening in your school today.</p>
+        <div class="flex items-center gap-4">
+            {% if school.school_logo %}
+            <img src="{{ url_for('static', filename=school.school_logo) }}" alt="Logo" class="h-14 w-14 rounded-xl object-contain bg-white border shadow-sm p-1">
+            {% endif %}
+            <div>
+                <h1 class="text-3xl font-extrabold text-gray-900">
+                    Welcome back, <span class="text-blue-600">{{ session.username }}</span>! 👋
+                </h1>
+                <p class="text-gray-500 mt-1">{{ school.school_name }} — Here's what's happening today.</p>
+            </div>
         </div>
         <div class="flex items-center gap-3">
             {% if term_number and year %}

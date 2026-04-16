@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from core.permissions import login_required, admin_required, super_admin_required
 from datetime import datetime, timedelta
 from .services import AuthService
+import os
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -53,6 +54,82 @@ def logout():
 def admin_settings():
     """School-level admin settings hub page."""
     return render_template('admin_settings.html')
+
+
+@auth_bp.route('/school_profile', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def school_profile():
+    """Edit school name, logo, contact details."""
+    from core.db import get_db_connection
+    import pymysql
+    school_id = session.get('school_id')
+    connection = get_db_connection()
+    try:
+        with connection.cursor(pymysql.cursors.DictCursor) as cursor:
+            # Ensure school_settings row exists
+            cursor.execute("SELECT * FROM school_settings WHERE school_id = %s", (school_id,))
+            settings = cursor.fetchone()
+            if not settings:
+                cursor.execute(
+                    "INSERT INTO school_settings (school_id, school_name) "
+                    "SELECT id, name FROM schools WHERE id = %s", (school_id,))
+                connection.commit()
+                cursor.execute("SELECT * FROM school_settings WHERE school_id = %s", (school_id,))
+                settings = cursor.fetchone()
+
+            if request.method == 'POST':
+                school_name = request.form.get('school_name', '').strip()
+                address = request.form.get('address', '').strip()
+                phone = request.form.get('phone', '').strip()
+                email = request.form.get('email', '').strip()
+                website = request.form.get('website', '').strip()
+                motto = request.form.get('motto', '').strip()
+                currency = request.form.get('currency', 'KES').strip()
+
+                logo_path = settings.get('logo') or ''
+
+                # Handle logo upload
+                logo_file = request.files.get('logo')
+                if logo_file and logo_file.filename:
+                    allowed = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'}
+                    ext = logo_file.filename.rsplit('.', 1)[-1].lower() if '.' in logo_file.filename else ''
+                    if ext not in allowed:
+                        flash('Invalid image format. Use PNG, JPG, GIF, WebP, or SVG.', 'error')
+                        return redirect(url_for('auth.school_profile'))
+                    # Limit to 2MB
+                    logo_file.seek(0, 2)
+                    size = logo_file.tell()
+                    logo_file.seek(0)
+                    if size > 2 * 1024 * 1024:
+                        flash('Logo must be under 2 MB.', 'error')
+                        return redirect(url_for('auth.school_profile'))
+
+                    filename = f"school_{school_id}_logo.{ext}"
+                    upload_dir = os.path.join(current_app.static_folder, 'uploads', 'logos')
+                    os.makedirs(upload_dir, exist_ok=True)
+                    save_path = os.path.join(upload_dir, filename)
+                    logo_file.save(save_path)
+                    logo_path = f"uploads/logos/{filename}"
+
+                cursor.execute(
+                    "UPDATE school_settings SET school_name=%s, address=%s, phone=%s, "
+                    "email=%s, website=%s, logo=%s, currency=%s WHERE school_id=%s",
+                    (school_name, address, phone, email, website, logo_path, currency, school_id))
+                # Also update schools.name for session consistency
+                cursor.execute("UPDATE schools SET name=%s WHERE id=%s", (school_name, school_id))
+                connection.commit()
+
+                # Update session cache
+                session['school_name'] = school_name
+                session.pop('_school_settings', None)  # clear cached settings
+
+                flash('School profile updated.', 'success')
+                return redirect(url_for('auth.school_profile'))
+
+        return render_template('school_profile.html', settings=settings)
+    finally:
+        connection.close()
 
 
 @auth_bp.route('/manage_users', methods=['GET', 'POST'])

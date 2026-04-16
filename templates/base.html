@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}SkoolTrack Pro{% endblock %}</title>
+    <title>{% block title %}{{ school.school_name }}{% endblock %}</title>
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='images/favicon.ico') }}"/>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -226,7 +226,12 @@
             <div class="max-w-7xl mx-auto px-4">
                 <div class="flex justify-between items-center py-3">
                     <div class="flex items-center space-x-3">
-                        <h1 class="text-2xl font-bold">🎒 SkoolTrack Pro</h1>
+                        {% if school.school_logo %}
+                        <img src="{{ url_for('static', filename=school.school_logo) }}" alt="Logo" class="h-9 w-9 rounded-lg object-contain bg-white p-0.5">
+                        {% else %}
+                        <span class="text-2xl">🎒</span>
+                        {% endif %}
+                        <h1 class="text-xl font-bold truncate max-w-[220px]">{{ school.school_name }}</h1>
                         {% if session.get('logged_in') and session.get('is_admin') %}
                             <a href="{{ url_for('auth.admin_settings') }}" class="bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded text-sm font-medium"><i class="fas fa-cog"></i> Admin</a>
                         {% endif %}
@@ -294,7 +299,7 @@
         </main>
 
         <footer class="mt-auto py-8 text-center text-gray-400 text-sm">
-            <p>&copy; 2025 SkoolTrack Pro &bull; Enterprise Cloud</p>
+            <p>&copy; {{ datetime.now().year }} {{ school.school_name }} &bull; Powered by SkoolTrack Pro</p>
         </footer>
     {% endif %}
 

@@ -78,6 +78,8 @@ def create_app(config_class=Config):
                 return url_for("super_admin.update_school_subscription", **values)
             if endpoint == "admin_settings":
                 return url_for("auth.admin_settings", **values)
+            if endpoint == "school_profile":
+                return url_for("auth.school_profile", **values)
             # Students
             if endpoint == "admit_student":
                 return url_for("students.admit_student", **values)
@@ -150,6 +152,52 @@ def create_app(config_class=Config):
                 return url_for(endpoint, **values)
 
         return dict(url_for=compat_url_for, datetime=datetime)
+
+    @app.context_processor
+    def inject_school_branding():
+        """Make school name, logo, and contact info available in all templates."""
+        defaults = {
+            'school_name': 'SkoolTrack Pro',
+            'school_logo': None,
+            'school_address': '',
+            'school_phone': '',
+            'school_email': '',
+            'school_website': '',
+            'school_currency': 'KES',
+            'school_motto': '',
+        }
+        school_id = session.get('school_id')
+        if not school_id:
+            return {'school': type('obj', (object,), defaults)()}
+
+        # Cache in session to avoid DB hit on every request
+        cached = session.get('_school_settings')
+        if cached:
+            return {'school': type('obj', (object,), cached)()}
+
+        try:
+            from core.db import get_db_connection
+            import pymysql
+            conn = get_db_connection()
+            with conn.cursor(pymysql.cursors.DictCursor) as cur:
+                cur.execute(
+                    "SELECT school_name, logo, address, phone, email, website, currency "
+                    "FROM school_settings WHERE school_id = %s", (school_id,))
+                row = cur.fetchone()
+            conn.close()
+            if row:
+                defaults['school_name'] = row['school_name'] or session.get('school_name', 'SkoolTrack Pro')
+                defaults['school_logo'] = row['logo'] or None
+                defaults['school_address'] = row['address'] or ''
+                defaults['school_phone'] = row['phone'] or ''
+                defaults['school_email'] = row['email'] or ''
+                defaults['school_website'] = row['website'] or ''
+                defaults['school_currency'] = row['currency'] or 'KES'
+            session['_school_settings'] = defaults
+        except Exception:
+            pass
+
+        return {'school': type('obj', (object,), defaults)()}
 
     return app
 
