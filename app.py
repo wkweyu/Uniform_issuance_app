@@ -201,15 +201,29 @@ def health_check():
 @tenant_required
 def index():
     connection = None
-    summary = {
-        'total_students': 0,
-        'total_staff': 0,
-        'today_collections': 0,
-    }
+    dashboard = {}
+    term_number = None
+    year = None
+    term_start = None
+    term_end = None
     try:
         connection = get_db_connection()
+        # Fetch current term
+        with connection.cursor(pymysql.cursors.DictCursor) as cursor:
+            cursor.execute(
+                "SELECT term_number, year, start_date, end_date FROM uniform_term_dates "
+                "WHERE CURDATE() BETWEEN start_date AND end_date AND school_id = %s LIMIT 1",
+                (g.school_id,),
+            )
+            term_row = cursor.fetchone()
+            if term_row:
+                term_number = term_row['term_number']
+                year = term_row['year']
+                term_start = str(term_row['start_date'])
+                term_end = str(term_row['end_date'])
+
         service = DashboardService(connection, school_id=g.school_id)
-        summary = service.get_summary()
+        dashboard = service.get_full_dashboard(term_start=term_start, term_end=term_end)
     except pymysql.MySQLError as error:
         app.logger.error("Database connection/query failed on index: %s", error)
         flash("Database is temporarily unavailable. Please verify database credentials/account status.", "error")
@@ -219,10 +233,62 @@ def index():
 
     return render_template(
         'index.html',
-        total_students=summary['total_students'],
-        total_staff=summary['total_staff'],
-        today_collections=summary['today_collections']
+        d=dashboard,
+        term_number=term_number,
+        year=year,
     )
+
+
+# ------------------------------------------------------------------
+# Events CRUD
+# ------------------------------------------------------------------
+@app.route('/events/add', methods=['POST'])
+@login_required
+@admin_required
+@tenant_required
+def add_event():
+    from flask import request, redirect, url_for
+    connection = None
+    try:
+        connection = get_db_connection()
+        service = DashboardService(connection, school_id=g.school_id)
+        service.add_event(
+            title=request.form['title'],
+            event_date=request.form['event_date'],
+            event_type=request.form.get('event_type', 'other'),
+            description=request.form.get('description', ''),
+            end_date=request.form.get('end_date') or None,
+            created_by=session.get('userNo'),
+        )
+        flash('Event added.', 'success')
+    except Exception as e:
+        app.logger.error("Failed to add event: %s", e)
+        flash('Failed to add event.', 'error')
+    finally:
+        if connection:
+            connection.close()
+    return redirect(url_for('index'))
+
+
+@app.route('/events/<int:event_id>/delete', methods=['POST'])
+@login_required
+@admin_required
+@tenant_required
+def delete_event(event_id):
+    from flask import redirect, url_for
+    connection = None
+    try:
+        connection = get_db_connection()
+        service = DashboardService(connection, school_id=g.school_id)
+        service.delete_event(event_id)
+        flash('Event deleted.', 'success')
+    except Exception as e:
+        app.logger.error("Failed to delete event: %s", e)
+        flash('Failed to delete event.', 'error')
+    finally:
+        if connection:
+            connection.close()
+    return redirect(url_for('index'))
 
 
 if __name__ == "__main__":

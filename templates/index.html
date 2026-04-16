@@ -1,222 +1,522 @@
 {% extends 'base.html' %} 
 
 {% block content %}
-<div class="max-w-7xl mx-auto px-4 py-8">
+{% set students = d.get('students', {}) %}
+{% set fin = d.get('financial', {}) %}
+{% set att = d.get('attendance', {}) %}
+{% set fleet = d.get('fleet', {}) %}
+{% set alerts = d.get('alerts', {}) %}
+{% set academic = d.get('academic', {}) %}
+{% set activity = d.get('activity', []) %}
+{% set ops = d.get('operations', {}) %}
+{% set events = d.get('events', []) %}
+{% set finance = d.get('finance', {}) %}
+{% set fee_trend = d.get('fee_trend', []) %}
+
+<div class="max-w-7xl mx-auto px-4 py-6">
     
-    <!-- Hero Section / Greeting -->
-    <div class="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+    <!-- ─── Hero ─── -->
+    <div class="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
         <div>
             <h1 class="text-3xl font-extrabold text-gray-900">
                 Welcome back, <span class="text-blue-600">{{ session.username }}</span>! 👋
             </h1>
             <p class="text-gray-500 mt-1">Here's what's happening in your school today.</p>
         </div>
-        
-        {% if term_number and year %}
-        <div class="flex items-center gap-3 bg-blue-50 border border-blue-100 px-4 py-2 rounded-xl">
-            <span class="flex h-3 w-3 relative">
-                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                <span class="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
-            </span>
-            <span class="text-blue-800 font-semibold">Active: Term {{ term_number }} - {{ year }}</span>
+        <div class="flex items-center gap-3">
+            {% if term_number and year %}
+            <div class="flex items-center gap-2 bg-blue-50 border border-blue-100 px-4 py-2 rounded-xl">
+                <span class="flex h-3 w-3 relative">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                </span>
+                <span class="text-blue-800 font-semibold text-sm">Term {{ term_number }} — {{ year }}</span>
+            </div>
+            {% else %}
+            <div class="bg-red-50 border border-red-100 text-red-700 px-4 py-2 rounded-xl flex items-center gap-2 text-sm">
+                <i class="fas fa-exclamation-triangle"></i> No active term configured
+            </div>
+            {% endif %}
+            <span class="text-gray-400 text-xs hidden md:inline">{{ datetime.now().strftime('%A, %d %B %Y') }}</span>
         </div>
-        {% else %}
-        <div class="bg-red-50 border border-red-100 text-red-700 px-4 py-2 rounded-xl flex items-center gap-2">
-            <i class="fas fa-exclamation-triangle"></i> No active term configured
-        </div>
-        {% endif %}
     </div>
 
-    <!-- Key Statistics Grid -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+    <!-- ─── Row 1: KPI Cards ─── -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
         <!-- Students -->
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 transition hover:shadow-md">
-            <div class="flex items-center gap-4">
-                <div class="p-3 bg-blue-50 text-blue-600 rounded-xl">
-                    <i class="fas fa-user-graduate text-2xl"></i>
-                </div>
+        <div class="bg-white rounded-2xl shadow-sm border p-4 hover:shadow-md transition">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-blue-50 text-blue-600 rounded-xl"><i class="fas fa-user-graduate text-lg"></i></div>
                 <div>
-                    <p class="text-sm font-medium text-gray-500">Total Students</p>
-                    <h3 class="text-2xl font-bold text-gray-900">{{ total_students }}</h3>
+                    <p class="text-xs font-medium text-gray-500">Students</p>
+                    <p class="text-xl font-bold text-gray-900">{{ students.get('total_students', 0) }}</p>
                 </div>
             </div>
         </div>
-
         <!-- Staff -->
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 transition hover:shadow-md">
-            <div class="flex items-center gap-4">
-                <div class="p-3 bg-purple-50 text-purple-600 rounded-xl">
-                    <i class="fas fa-chalkboard-teacher text-2xl"></i>
-                </div>
+        <div class="bg-white rounded-2xl shadow-sm border p-4 hover:shadow-md transition">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-purple-50 text-purple-600 rounded-xl"><i class="fas fa-chalkboard-teacher text-lg"></i></div>
                 <div>
-                    <p class="text-sm font-medium text-gray-500">Total Staff</p>
-                    <h3 class="text-2xl font-bold text-gray-900">{{ total_staff }}</h3>
+                    <p class="text-xs font-medium text-gray-500">Staff</p>
+                    <p class="text-xl font-bold text-gray-900">{{ students.get('total_staff', 0) }}</p>
                 </div>
             </div>
         </div>
-
-        <!-- Collections -->
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 transition hover:shadow-md">
-            <div class="flex items-center gap-4">
-                <div class="p-3 bg-green-50 text-green-600 rounded-xl">
-                    <i class="fas fa-wallet text-2xl"></i>
-                </div>
+        <!-- Fees Today -->
+        <div class="bg-white rounded-2xl shadow-sm border p-4 hover:shadow-md transition">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-green-50 text-green-600 rounded-xl"><i class="fas fa-wallet text-lg"></i></div>
                 <div>
-                    <p class="text-sm font-medium text-gray-500">Uniform Today</p>
-                    <h3 class="text-2xl font-bold text-gray-900">{{ today_collections | currency }}</h3>
+                    <p class="text-xs font-medium text-gray-500">Fees Today</p>
+                    <p class="text-xl font-bold text-gray-900">{{ fin.get('today_collected', 0) | currency }}</p>
                 </div>
             </div>
         </div>
-
-        <!-- Fleet -->
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 transition hover:shadow-md">
-            <div class="flex items-center gap-4">
-                <div class="p-3 bg-orange-50 text-orange-600 rounded-xl">
-                    <i class="fas fa-bus text-2xl"></i>
-                </div>
+        <!-- Outstanding -->
+        <div class="bg-white rounded-2xl shadow-sm border p-4 hover:shadow-md transition">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-red-50 text-red-600 rounded-xl"><i class="fas fa-exclamation-circle text-lg"></i></div>
                 <div>
-                    <p class="text-sm font-medium text-gray-500">Active Buses</p>
-                    <h3 class="text-2xl font-bold text-gray-900">{{ active_buses }}</h3>
+                    <p class="text-xs font-medium text-gray-500">Outstanding</p>
+                    <p class="text-xl font-bold text-gray-900">{{ fin.get('total_outstanding', 0) | currency }}</p>
+                </div>
+            </div>
+        </div>
+        <!-- Attendance -->
+        <div class="bg-white rounded-2xl shadow-sm border p-4 hover:shadow-md transition">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-yellow-50 text-yellow-600 rounded-xl"><i class="fas fa-clipboard-check text-lg"></i></div>
+                <div>
+                    <p class="text-xs font-medium text-gray-500">Attendance</p>
+                    <p class="text-xl font-bold text-gray-900">{{ att.get('attendance_pct', 0) }}%</p>
+                </div>
+            </div>
+        </div>
+        <!-- Buses -->
+        <div class="bg-white rounded-2xl shadow-sm border p-4 hover:shadow-md transition">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-orange-50 text-orange-600 rounded-xl"><i class="fas fa-bus text-lg"></i></div>
+                <div>
+                    <p class="text-xs font-medium text-gray-500">Buses</p>
+                    <p class="text-xl font-bold text-gray-900">{{ fleet.get('active_buses', 0) }}</p>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Operational Overview -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
-        
-        <!-- Left Column: Quick Actions / Modules -->
-        <div class="lg:col-span-2 space-y-8">
-            <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-                <i class="fas fa-th-large text-blue-600"></i> Management Modules
-            </h2>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                
-                <!-- Academic -->
-                <a href="{{ url_for('manage_classes') }}" class="group p-5 bg-white border border-gray-100 rounded-2xl shadow-sm hover:border-blue-300 transition flex items-center gap-4">
-                    <div class="p-4 bg-gray-50 group-hover:bg-blue-50 text-gray-500 group-hover:text-blue-600 rounded-xl transition">
-                        <i class="fas fa-graduation-cap text-xl"></i>
-                    </div>
-                    <div>
-                        <h4 class="font-bold text-gray-900">Academic</h4>
-                        <p class="text-sm text-gray-500">Classes, Streams & Allocations</p>
-                    </div>
-                </a>
+    <!-- ─── Row 2: Fee Trend Chart + Alerts ─── -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <!-- Fee Collection Trend -->
+        <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border p-5">
+            <h3 class="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                <i class="fas fa-chart-line text-blue-500"></i> Fee Collection Trend (30 days)
+            </h3>
+            {% if fee_trend %}
+            <div style="height: 260px;"><canvas id="feeTrendChart"></canvas></div>
+            {% else %}
+            <div class="text-center text-gray-400 py-16"><i class="fas fa-chart-area text-4xl mb-2"></i><p class="text-sm">No fee collection data yet.</p></div>
+            {% endif %}
+        </div>
 
-                <!-- Students -->
-                <a href="{{ url_for('student_search') }}" class="group p-5 bg-white border border-gray-100 rounded-2xl shadow-sm hover:border-indigo-300 transition flex items-center gap-4">
-                    <div class="p-4 bg-gray-50 group-hover:bg-indigo-50 text-gray-500 group-hover:text-indigo-600 rounded-xl transition">
-                        <i class="fas fa-users text-xl"></i>
-                    </div>
-                    <div>
-                        <h4 class="font-bold text-gray-900">Students</h4>
-                        <p class="text-sm text-gray-500">Profiles, Search & Enrollment</p>
-                    </div>
-                </a>
+        <!-- Alerts Panel -->
+        <div class="bg-white rounded-2xl shadow-sm border p-5">
+            <h3 class="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                <i class="fas fa-bell text-red-500"></i> Alerts
+            </h3>
+            <div class="space-y-2 max-h-64 overflow-y-auto pr-1">
+                {% for w in alerts.get('warnings', []) %}
+                <div class="flex items-start gap-2 bg-yellow-50 border border-yellow-100 rounded-lg p-2.5 text-xs text-yellow-800">
+                    <i class="fas fa-exclamation-triangle mt-0.5"></i> <span>{{ w }}</span>
+                </div>
+                {% endfor %}
+                {% for s in alerts.get('arrears_students', []) %}
+                <div class="flex justify-between items-center bg-red-50 border border-red-100 rounded-lg p-2.5 text-xs">
+                    <span class="text-red-800 truncate">{{ s.student_name }} ({{ s.AdmNo }})</span>
+                    <span class="text-red-600 font-mono font-semibold whitespace-nowrap">{{ s.balance | currency }}</span>
+                </div>
+                {% endfor %}
+                {% if not alerts.get('warnings') and not alerts.get('arrears_students') %}
+                <div class="text-center text-gray-400 py-8 text-sm"><i class="fas fa-check-circle text-green-400 text-2xl mb-2"></i><p>All clear — no alerts.</p></div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
 
-                <!-- Uniforms -->
-                <a href="{{ url_for('uniform_dashboard') }}" class="group p-5 bg-white border border-gray-100 rounded-2xl shadow-sm hover:border-emerald-300 transition flex items-center gap-4">
-                    <div class="p-4 bg-gray-50 group-hover:bg-emerald-50 text-gray-500 group-hover:text-emerald-600 rounded-xl transition">
-                        <i class="fas fa-tshirt text-xl"></i>
-                    </div>
-                    <div>
-                        <h4 class="font-bold text-gray-900">Uniforms</h4>
-                        <p class="text-sm text-gray-500">Issuance, Inventory & Pricing</p>
-                    </div>
-                </a>
+    <!-- ─── Row 3: Student Distribution + Financial Overview ─── -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <!-- Student Distribution -->
+        <div class="bg-white rounded-2xl shadow-sm border p-5">
+            <h3 class="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                <i class="fas fa-users text-indigo-500"></i> Students by Class
+            </h3>
+            {% if students.get('by_class') %}
+            <div style="height: 260px;"><canvas id="studentDistChart"></canvas></div>
+            {% else %}
+            <div class="text-center text-gray-400 py-16"><i class="fas fa-chart-bar text-4xl mb-2"></i><p class="text-sm">No class data available.</p></div>
+            {% endif %}
+        </div>
 
-                <!-- Fleet -->
-                <a href="{{ url_for('fleet_dashboard') }}" class="group p-5 bg-white border border-gray-100 rounded-2xl shadow-sm hover:border-amber-300 transition flex items-center gap-4">
-                    <div class="p-4 bg-gray-50 group-hover:bg-amber-50 text-gray-500 group-hover:text-amber-600 rounded-xl transition">
-                        <i class="fas fa-truck-moving text-xl"></i>
-                    </div>
-                    <div>
-                        <h4 class="font-bold text-gray-900">Fleet</h4>
-                        <p class="text-sm text-gray-500">Buses, Fuel & Service tracking</p>
-                    </div>
-                </a>
+        <!-- Financial Overview -->
+        <div class="bg-white rounded-2xl shadow-sm border p-5">
+            <h3 class="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                <i class="fas fa-coins text-green-500"></i> Financial Overview
+            </h3>
+            <div class="grid grid-cols-2 gap-3 mb-4">
+                <div class="bg-green-50 rounded-xl p-3">
+                    <p class="text-xs text-green-600 font-medium">Monthly Income</p>
+                    <p class="text-lg font-bold text-green-800">{{ finance.get('monthly_income', 0) | currency }}</p>
+                </div>
+                <div class="bg-red-50 rounded-xl p-3">
+                    <p class="text-xs text-red-600 font-medium">Monthly Expenses</p>
+                    <p class="text-lg font-bold text-red-800">{{ finance.get('monthly_expenses', 0) | currency }}</p>
+                </div>
+                <div class="bg-blue-50 rounded-xl p-3">
+                    <p class="text-xs text-blue-600 font-medium">Cash on Hand</p>
+                    <p class="text-lg font-bold text-blue-800">{{ finance.get('cash_on_hand', 0) | currency }}</p>
+                </div>
+                <div class="bg-yellow-50 rounded-xl p-3">
+                    <p class="text-xs text-yellow-600 font-medium">Pending Vouchers</p>
+                    <p class="text-lg font-bold text-yellow-800">{{ finance.get('pending_vouchers_count', 0) }}</p>
+                    <p class="text-xs text-yellow-600">{{ finance.get('pending_vouchers_amount', 0) | currency }}</p>
+                </div>
+            </div>
+            <!-- Collection Rate -->
+            <div class="bg-gray-50 rounded-xl p-3">
+                <div class="flex justify-between items-center mb-1">
+                    <span class="text-xs text-gray-600 font-medium">Term Collection Rate</span>
+                    <span class="text-sm font-bold text-gray-800">{{ fin.get('collection_rate', 0) }}%</span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-2.5">
+                    <div class="bg-blue-600 h-2.5 rounded-full transition-all" style="width: {{ [fin.get('collection_rate', 0), 100] | min }}%"></div>
+                </div>
+                <div class="flex justify-between mt-1 text-xs text-gray-500">
+                    <span>Collected: {{ fin.get('term_collected', 0) | currency }}</span>
+                    <span>Outstanding: {{ fin.get('total_outstanding', 0) | currency }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
 
-                <!-- Exams -->
-                <a href="{{ url_for('exams_dashboard') }}" class="group p-5 bg-white border border-gray-100 rounded-2xl shadow-sm hover:border-red-300 transition flex items-center gap-4">
-                    <div class="p-4 bg-gray-50 group-hover:bg-red-50 text-gray-500 group-hover:text-red-600 rounded-xl transition">
-                        <i class="fas fa-file-invoice text-xl"></i>
-                    </div>
-                    <div>
-                        <h4 class="font-bold text-gray-900">Exams</h4>
-                        <p class="text-sm text-gray-500">Results, Grading & Reports</p>
-                    </div>
-                </a>
+    <!-- ─── Row 4: Attendance + Academic + Fleet ─── -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <!-- Attendance Insights -->
+        <div class="bg-white rounded-2xl shadow-sm border p-5">
+            <h3 class="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                <i class="fas fa-clipboard-check text-yellow-500"></i> Attendance Today
+            </h3>
+            {% if att.get('total', 0) > 0 %}
+            <div class="grid grid-cols-3 gap-2 mb-3 text-center">
+                <div class="bg-green-50 rounded-lg p-2">
+                    <p class="text-lg font-bold text-green-700">{{ att.present }}</p>
+                    <p class="text-xs text-green-600">Present</p>
+                </div>
+                <div class="bg-red-50 rounded-lg p-2">
+                    <p class="text-lg font-bold text-red-700">{{ att.absent }}</p>
+                    <p class="text-xs text-red-600">Absent</p>
+                </div>
+                <div class="bg-yellow-50 rounded-lg p-2">
+                    <p class="text-lg font-bold text-yellow-700">{{ att.late }}</p>
+                    <p class="text-xs text-yellow-600">Late</p>
+                </div>
+            </div>
+            {% if att.get('lowest_class') %}
+            <div class="bg-red-50 border border-red-100 rounded-lg p-2 text-xs text-red-700">
+                <i class="fas fa-arrow-down mr-1"></i> Lowest attendance: <strong>{{ att.lowest_class }}</strong>
+            </div>
+            {% endif %}
+            {% else %}
+            <div class="text-center text-gray-400 py-8 text-sm"><i class="fas fa-clipboard text-3xl mb-2"></i><p>No attendance recorded today.</p></div>
+            {% endif %}
+        </div>
 
-                <!-- Finance -->
-                <a href="{{ url_for('fees_dashboard') }}" class="group p-5 bg-white border border-gray-100 rounded-2xl shadow-sm hover:border-cyan-300 transition flex items-center gap-4">
-                    <div class="p-4 bg-gray-50 group-hover:bg-cyan-50 text-gray-500 group-hover:text-cyan-600 rounded-xl transition">
-                        <i class="fas fa-coins text-xl"></i>
+        <!-- Academic Summary -->
+        <div class="bg-white rounded-2xl shadow-sm border p-5">
+            <h3 class="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                <i class="fas fa-graduation-cap text-indigo-500"></i> Academic Summary
+            </h3>
+            {% if academic.get('latest_exam') %}
+            <div class="mb-3">
+                <p class="text-xs text-gray-500">Latest Exam</p>
+                <p class="font-semibold text-gray-800">{{ academic.latest_exam.name }}</p>
+                <p class="text-xs text-gray-500 mt-1">Mean Score: <span class="font-bold text-indigo-600">{{ academic.mean_score }}%</span></p>
+            </div>
+            {% if academic.get('top_classes') %}
+            <div class="mb-2">
+                <p class="text-xs text-green-600 font-medium mb-1"><i class="fas fa-arrow-up"></i> Top Classes</p>
+                {% for c in academic.top_classes %}
+                <div class="flex justify-between text-xs py-0.5">
+                    <span>{{ c.class_name }}</span><span class="font-mono font-semibold">{{ c.avg_mark }}%</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% if academic.get('lowest_classes') %}
+            <div>
+                <p class="text-xs text-red-600 font-medium mb-1"><i class="fas fa-arrow-down"></i> Needs Improvement</p>
+                {% for c in academic.lowest_classes %}
+                <div class="flex justify-between text-xs py-0.5">
+                    <span>{{ c.class_name }}</span><span class="font-mono font-semibold">{{ c.avg_mark }}%</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% else %}
+            <div class="text-center text-gray-400 py-8 text-sm"><i class="fas fa-book text-3xl mb-2"></i><p>No exam data available.</p></div>
+            {% endif %}
+        </div>
+
+        <!-- Fleet Summary -->
+        <div class="bg-white rounded-2xl shadow-sm border p-5">
+            <h3 class="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                <i class="fas fa-bus text-orange-500"></i> Fleet Summary
+            </h3>
+            <div class="space-y-3">
+                <div class="flex justify-between items-center">
+                    <span class="text-sm text-gray-600">Active Buses</span>
+                    <span class="font-bold text-gray-800">{{ fleet.get('active_buses', 0) }}</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-sm text-gray-600">Fuel Today</span>
+                    <span class="font-bold text-gray-800">{{ fleet.get('fuel_today', 0) | currency }}</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-sm text-gray-600">Due for Service</span>
+                    {% set due = fleet.get('due_for_service', 0) %}
+                    <span class="font-bold {{ 'text-red-600' if due > 0 else 'text-green-600' }}">{{ due }}
+                        {% if due > 0 %}<i class="fas fa-exclamation-circle text-xs"></i>{% endif %}
+                    </span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-sm text-gray-600">Vouchers Today</span>
+                    <span class="font-bold text-gray-800">{{ ops.get('vouchers_today', 0) }}</span>
+                </div>
+            </div>
+            {% if fleet.get('active_buses', 0) == 0 %}
+            <div class="text-center text-gray-400 pt-4 text-xs">No buses registered.</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ─── Row 5: Activity Feed + Events Calendar ─── -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <!-- Activity Feed -->
+        <div class="bg-white rounded-2xl shadow-sm border p-5">
+            <h3 class="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                <i class="fas fa-stream text-blue-500"></i> Activity Feed
+            </h3>
+            <div class="space-y-2 max-h-80 overflow-y-auto pr-1">
+                {% for item in activity %}
+                <div class="flex items-start gap-3 p-2 rounded-lg hover:bg-gray-50 transition">
+                    {% if item.type == 'fee_payment' %}
+                    <div class="p-1.5 bg-green-50 text-green-600 rounded-lg"><i class="fas fa-money-bill-wave text-xs"></i></div>
+                    {% elif item.type == 'uniform' %}
+                    <div class="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg"><i class="fas fa-tshirt text-xs"></i></div>
+                    {% else %}
+                    <div class="p-1.5 bg-orange-50 text-orange-600 rounded-lg"><i class="fas fa-gas-pump text-xs"></i></div>
+                    {% endif %}
+                    <div class="flex-1 min-w-0">
+                        <p class="text-xs text-gray-800 truncate">{{ item.description }}</p>
+                        <p class="text-xs text-gray-400">{{ item.timestamp[:16] }}</p>
                     </div>
-                    <div>
-                        <h4 class="font-bold text-gray-900">Finance</h4>
-                        <p class="text-sm text-gray-500">Fee Structures & Collections</p>
-                    </div>
-                </a>
+                    <span class="text-xs font-mono font-semibold text-gray-700 whitespace-nowrap">{{ item.amount | currency }}</span>
+                </div>
+                {% else %}
+                <div class="text-center text-gray-400 py-10 text-sm"><i class="fas fa-history text-3xl mb-2"></i><p>No recent activity.</p></div>
+                {% endfor %}
             </div>
         </div>
 
-        <!-- Right Column: Contextual Summary -->
-        <div class="space-y-6">
-            <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-                <i class="fas fa-chart-line text-blue-600"></i> Today's Summary
-            </h2>
-            
-            <div class="bg-gray-900 text-white rounded-2xl p-6 shadow-xl relative overflow-hidden">
-                <div class="relative z-10">
-                    <h5 class="text-gray-400 text-sm uppercase tracking-wider mb-4">Operations Status</h5>
-                    
-                    <div class="space-y-4">
-                        <div class="flex justify-between items-center">
-                            <span class="text-gray-300">Fuel Vouchers</span>
-                            <span class="bg-white/10 px-3 py-1 rounded-full text-sm font-mono">{{ vouchers_today }} issued</span>
-                        </div>
-                        <div class="flex justify-between items-center">
-                            <span class="text-gray-300">Uniform Receipts</span>
-                            <span class="bg-white/10 px-3 py-1 rounded-full text-sm font-mono">{{ uniform_issued }} this term</span>
-                        </div>
-                        <div class="flex justify-between items-center">
-                            <span class="text-gray-300">Active Classes</span>
-                            <span class="bg-white/10 px-3 py-1 rounded-full text-sm font-mono">{{ total_classes }} classes</span>
-                        </div>
+        <!-- Events Calendar -->
+        <div class="bg-white rounded-2xl shadow-sm border p-5">
+            <h3 class="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                <i class="fas fa-calendar-alt text-purple-500"></i> Upcoming Events
+            </h3>
+            <div class="space-y-2 max-h-52 overflow-y-auto pr-1 mb-4">
+                {% for ev in events %}
+                {% set type_colors = {'academic': 'blue', 'holiday': 'green', 'deadline': 'red', 'meeting': 'yellow', 'other': 'gray'} %}
+                {% set tc = type_colors.get(ev.event_type, 'gray') %}
+                <div class="flex items-center gap-3 p-2 rounded-lg bg-{{ tc }}-50 border border-{{ tc }}-100">
+                    <div class="text-center leading-tight min-w-[40px]">
+                        <p class="text-lg font-bold text-{{ tc }}-700">{{ ev.event_date[8:10] }}</p>
+                        <p class="text-xs text-{{ tc }}-500 uppercase">{{ ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][ev.event_date[5:7]|int - 1] }}</p>
                     </div>
-
-                    <div class="mt-8 pt-6 border-t border-white/10">
-                        <p class="text-xs text-gray-500 italic">Last login: {{ datetime.now().strftime('%d %b, %H:%M') }}</p>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-medium text-gray-800 truncate">{{ ev.title }}</p>
+                        <p class="text-xs text-gray-500">{{ ev.event_type | capitalize }}{% if ev.end_date %} — until {{ ev.end_date }}{% endif %}</p>
                     </div>
+                    {% if session.get('is_admin') %}
+                    <form method="POST" action="{{ url_for('delete_event', event_id=ev.id) }}" class="inline" onsubmit="return confirm('Delete this event?')">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="text-gray-400 hover:text-red-500 text-xs"><i class="fas fa-trash"></i></button>
+                    </form>
+                    {% endif %}
                 </div>
-                
-                <!-- Abstract Design Elements -->
-                <div class="absolute -bottom-10 -right-10 w-40 h-40 bg-blue-600 filter blur-[80px] opacity-20"></div>
-                <div class="absolute -top-10 -left-10 w-32 h-32 bg-indigo-600 filter blur-[60px] opacity-20"></div>
+                {% else %}
+                <div class="text-center text-gray-400 py-8 text-sm"><i class="fas fa-calendar-plus text-3xl mb-2"></i><p>No upcoming events.</p></div>
+                {% endfor %}
             </div>
+            {% if session.get('is_admin') %}
+            <form method="POST" action="{{ url_for('add_event') }}" class="border-t pt-3 space-y-2">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="grid grid-cols-2 gap-2">
+                    <input type="text" name="title" placeholder="Event title" required class="border rounded-lg px-2 py-1.5 text-xs w-full">
+                    <select name="event_type" class="border rounded-lg px-2 py-1.5 text-xs w-full">
+                        <option value="academic">Academic</option>
+                        <option value="holiday">Holiday</option>
+                        <option value="deadline">Deadline</option>
+                        <option value="meeting">Meeting</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <input type="date" name="event_date" required class="border rounded-lg px-2 py-1.5 text-xs w-full">
+                    <input type="date" name="end_date" class="border rounded-lg px-2 py-1.5 text-xs w-full" placeholder="End (optional)">
+                </div>
+                <input type="text" name="description" placeholder="Description (optional)" class="border rounded-lg px-2 py-1.5 text-xs w-full">
+                <button class="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-purple-700 w-full"><i class="fas fa-plus mr-1"></i> Add Event</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
 
-            <!-- Quick Access Links -->
-            <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-                <h4 class="font-bold text-gray-900 mb-4 flex items-center gap-2">
-                    <i class="fas fa-bolt text-yellow-500"></i> Quick Actions
-                </h4>
-                <div class="grid grid-cols-2 gap-3">
-                    <a href="{{ url_for('issue_uniform') }}" class="p-3 bg-gray-50 hover:bg-blue-50 text-gray-700 hover:text-blue-700 rounded-xl text-center transition text-sm font-medium border border-transparent hover:border-blue-100">
-                        Issue Uniform
-                    </a>
-                    <a href="{{ url_for('issue_fuel') }}" class="p-3 bg-gray-50 hover:bg-orange-50 text-gray-700 hover:text-orange-700 rounded-xl text-center transition text-sm font-medium border border-transparent hover:border-orange-100">
-                        Fuel Voucher
-                    </a>
-                    <a href="{{ url_for('create_class') }}" class="p-3 bg-gray-50 hover:bg-green-50 text-gray-700 hover:text-green-700 rounded-xl text-center transition text-sm font-medium border border-transparent hover:border-green-100">
-                        Add Class
-                    </a>
-                    <a href="/admin/create_user" class="p-3 bg-gray-50 hover:bg-purple-50 text-gray-700 hover:text-purple-700 rounded-xl text-center transition text-sm font-medium border border-transparent hover:border-purple-100">
-                        Add User
-                    </a>
+    <!-- ─── Row 6: Recent Payments + Quick Actions ─── -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <!-- Recent Payments -->
+        <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border p-5">
+            <h3 class="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                <i class="fas fa-receipt text-green-500"></i> Recent Fee Payments
+            </h3>
+            {% if fin.get('recent_payments') %}
+            <div class="overflow-x-auto">
+                <table class="w-full text-xs">
+                    <thead><tr class="border-b text-gray-500"><th class="text-left py-2 px-2">Student</th><th class="text-left py-2">Mode</th><th class="text-left py-2">Reference</th><th class="text-right py-2 px-2">Amount</th></tr></thead>
+                    <tbody>
+                        {% for p in fin.recent_payments %}
+                        <tr class="border-b border-gray-50 hover:bg-gray-50">
+                            <td class="py-1.5 px-2">{{ p.student_name }} <span class="text-gray-400">#{{ p.AdmNo }}</span></td>
+                            <td class="py-1.5"><span class="px-1.5 py-0.5 rounded text-xs bg-blue-50 text-blue-700">{{ p.payment_mode }}</span></td>
+                            <td class="py-1.5 font-mono text-gray-500">{{ p.reference_number }}</td>
+                            <td class="py-1.5 px-2 text-right font-mono font-semibold">{{ p.amount | currency }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center text-gray-400 py-8 text-sm">No fee payments recorded yet.</div>
+            {% endif %}
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="bg-white rounded-2xl shadow-sm border p-5">
+            <h3 class="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                <i class="fas fa-bolt text-yellow-500"></i> Quick Actions
+            </h3>
+            <div class="grid grid-cols-2 gap-2">
+                <a href="{{ url_for('fees_dashboard') }}" class="p-3 bg-green-50 hover:bg-green-100 text-green-700 rounded-xl text-center text-xs font-medium transition border border-transparent hover:border-green-200">
+                    <i class="fas fa-money-bill-wave block text-lg mb-1"></i> Collect Fees
+                </a>
+                <a href="{{ url_for('issue_uniform') }}" class="p-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-center text-xs font-medium transition border border-transparent hover:border-indigo-200">
+                    <i class="fas fa-tshirt block text-lg mb-1"></i> Issue Uniform
+                </a>
+                <a href="{{ url_for('issue_fuel') }}" class="p-3 bg-orange-50 hover:bg-orange-100 text-orange-700 rounded-xl text-center text-xs font-medium transition border border-transparent hover:border-orange-200">
+                    <i class="fas fa-gas-pump block text-lg mb-1"></i> Fuel Voucher
+                </a>
+                <a href="{{ url_for('attendance_dashboard') }}" class="p-3 bg-yellow-50 hover:bg-yellow-100 text-yellow-700 rounded-xl text-center text-xs font-medium transition border border-transparent hover:border-yellow-200">
+                    <i class="fas fa-clipboard-check block text-lg mb-1"></i> Attendance
+                </a>
+                <a href="{{ url_for('admit_student') }}" class="p-3 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-center text-xs font-medium transition border border-transparent hover:border-blue-200">
+                    <i class="fas fa-user-plus block text-lg mb-1"></i> New Student
+                </a>
+                <a href="{{ url_for('manage_classes') }}" class="p-3 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-xl text-center text-xs font-medium transition border border-transparent hover:border-purple-200">
+                    <i class="fas fa-graduation-cap block text-lg mb-1"></i> Classes
+                </a>
+            </div>
+            <!-- Operations Status -->
+            <div class="mt-4 bg-gray-900 text-white rounded-xl p-4">
+                <p class="text-xs text-gray-400 uppercase tracking-wider mb-2">Operations</p>
+                <div class="space-y-2 text-sm">
+                    <div class="flex justify-between"><span class="text-gray-300">Fuel Vouchers Today</span><span class="font-mono">{{ ops.get('vouchers_today', 0) }}</span></div>
+                    <div class="flex justify-between"><span class="text-gray-300">Uniform Receipts (Term)</span><span class="font-mono">{{ ops.get('uniform_term', 0) }}</span></div>
+                    <div class="flex justify-between"><span class="text-gray-300">Active Classes</span><span class="font-mono">{{ ops.get('total_classes', 0) }}</span></div>
                 </div>
             </div>
         </div>
     </div>
 
 </div>
+
+<!-- ─── Chart.js ─── -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Fee Collection Trend
+    {% if fee_trend %}
+    const feeCtx = document.getElementById('feeTrendChart');
+    if (feeCtx) {
+        const feeTrendData = {{ fee_trend | tojson }};
+        const gradient = feeCtx.getContext('2d').createLinearGradient(0, 0, 0, 260);
+        gradient.addColorStop(0, 'rgba(59, 130, 246, 0.25)');
+        gradient.addColorStop(1, 'rgba(59, 130, 246, 0.02)');
+        new Chart(feeCtx, {
+            type: 'line',
+            data: {
+                labels: feeTrendData.map(r => r.date.slice(5)),
+                datasets: [{
+                    label: 'Collections',
+                    data: feeTrendData.map(r => r.amount),
+                    borderColor: '#3b82f6',
+                    backgroundColor: gradient,
+                    fill: true,
+                    tension: 0.35,
+                    pointRadius: 2,
+                    pointHoverRadius: 5,
+                    borderWidth: 2,
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+                    y: { beginAtZero: true, ticks: { font: { size: 10 } } }
+                }
+            }
+        });
+    }
+    {% endif %}
+
+    // Student Distribution
+    {% if students.get('by_class') %}
+    const distCtx = document.getElementById('studentDistChart');
+    if (distCtx) {
+        const distData = {{ students.by_class | tojson }};
+        const colors = ['#3b82f6','#6366f1','#8b5cf6','#a855f7','#ec4899','#f43f5e','#ef4444','#f97316','#eab308','#22c55e','#14b8a6','#06b6d4','#0ea5e9'];
+        new Chart(distCtx, {
+            type: 'bar',
+            data: {
+                labels: distData.map(r => r.label),
+                datasets: [{
+                    label: 'Students',
+                    data: distData.map(r => r.value),
+                    backgroundColor: distData.map((_, i) => colors[i % colors.length]),
+                    borderRadius: 6,
+                    barThickness: 20,
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { beginAtZero: true, grid: { display: false }, ticks: { font: { size: 10 } } },
+                    y: { grid: { display: false }, ticks: { font: { size: 10 } } }
+                }
+            }
+        });
+    }
+    {% endif %}
+});
+</script>
 {% endblock %}
