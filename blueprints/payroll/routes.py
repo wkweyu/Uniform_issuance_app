@@ -1,3 +1,78 @@
+# Payroll Payment Voucher routes
+@payroll_bp.route('/runs/<int:run_id>/vouchers')
+@admin_required
+def run_vouchers(run_id):
+    conn, svc = _service()
+    try:
+        run = svc.get_payroll_run(run_id)
+        vouchers = svc.get_payroll_vouchers(run_id)
+        return render_template('payroll/payroll_vouchers.html', run=run, vouchers=vouchers)
+    finally:
+        conn.close()
+
+@payroll_bp.route('/runs/<int:run_id>/generate-vouchers', methods=['POST'])
+@admin_required
+def run_generate_vouchers(run_id):
+    conn, svc = _service()
+    try:
+        count = svc.generate_payroll_vouchers(run_id, created_by=session.get('userNo', 0))
+        flash(f'Generated {count} payroll payment vouchers.', 'success')
+    except PayrollError as e:
+        flash(str(e), 'error')
+    finally:
+        conn.close()
+    return redirect(url_for('payroll.run_vouchers', run_id=run_id))
+
+@payroll_bp.route('/vouchers/<int:voucher_id>/print')
+@admin_required
+def print_payroll_voucher(voucher_id):
+    conn, svc = _service()
+    try:
+        voucher = svc.get_payroll_voucher(voucher_id)
+        return render_template('payroll/print_payroll_voucher.html', voucher=voucher)
+    finally:
+        conn.close()
+
+@payroll_bp.route('/vouchers/<int:voucher_id>/verify', methods=['POST'])
+@admin_required
+def verify_payroll_voucher(voucher_id):
+    conn, svc = _service()
+    try:
+        svc.verify_payroll_voucher(voucher_id, session.get('userNo', 0))
+        flash('Voucher verified.', 'success')
+    except PayrollError as e:
+        flash(str(e), 'error')
+    finally:
+        conn.close()
+    return redirect(request.referrer or url_for('payroll.dashboard'))
+
+@payroll_bp.route('/vouchers/<int:voucher_id>/authorize', methods=['POST'])
+@admin_required
+def authorize_payroll_voucher(voucher_id):
+    conn, svc = _service()
+    try:
+        svc.authorize_payroll_voucher(voucher_id, session.get('userNo', 0))
+        flash('Voucher authorized.', 'success')
+    except PayrollError as e:
+        flash(str(e), 'error')
+    finally:
+        conn.close()
+    return redirect(request.referrer or url_for('payroll.dashboard'))
+@payroll_bp.route('/runs/<int:run_id>/auto-allocate', methods=['POST'])
+@admin_required
+def run_auto_allocate(run_id):
+    conn, svc = _service()
+    try:
+        votehead_id = int(request.form['auto_votehead_id'])
+        fund_id = request.form.get('auto_fund_id')
+        fund_id = int(fund_id) if fund_id and fund_id != 'None' else None
+        count = svc.auto_allocate_voteheads(run_id, votehead_id, fund_id)
+        flash(f'Auto-allocated {count} lines to selected votehead.', 'success' if count else 'info')
+    except (PayrollError, ValueError) as e:
+        flash(str(e), 'error')
+    finally:
+        conn.close()
+    return redirect(url_for('payroll.run_voteheads', run_id=run_id))
 """Payroll blueprint routes — Kenyan-compliant payroll management."""
 
 from flask import (

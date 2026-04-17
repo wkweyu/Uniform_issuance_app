@@ -1,0 +1,73 @@
+{% extends "base_report.html" %}
+{% block content %}
+<div class="max-w-2xl mx-auto p-8 bg-white border rounded-xl shadow">
+    <div class="flex justify-between items-center mb-4">
+        <div>
+            <h2 class="text-xl font-bold text-gray-800">PAYROLL PAYMENT VOUCHER</h2>
+            <div class="text-gray-600 text-sm">Pay Period: {{ voucher.pay_period or voucher.description }}</div>
+        </div>
+        <div class="text-right">
+            <div class="font-mono text-lg text-indigo-700">{{ voucher.voucher_no }}</div>
+            <span class="inline-block px-2 py-1 rounded text-xs font-semibold {{
+                'bg-gray-200 text-gray-700' if voucher.status == 'draft' else
+                'bg-yellow-100 text-yellow-800' if voucher.status == 'verified' else
+                'bg-green-100 text-green-800' if voucher.status == 'authorized' else
+                'bg-blue-100 text-blue-800' if voucher.status == 'paid' else
+                'bg-red-100 text-red-800'
+            }}">{{ voucher.status|upper }}</span>
+        </div>
+    </div>
+    <div class="grid grid-cols-2 gap-4 mb-4">
+        <div>
+            <div class="font-semibold">Votehead:</div>
+            <div>{{ voucher.votehead_code }} — {{ voucher.votehead_name }}</div>
+            <div class="font-semibold mt-2">Fund:</div>
+            <div>{{ voucher.fund_code or '-' }}</div>
+        </div>
+        <div>
+            <div class="font-semibold">Payee:</div>
+            <div>{{ voucher.payee_name }}</div>
+            <div class="font-semibold mt-2">Type:</div>
+            <div>{{ voucher.payee_type|replace('_',' ')|title }}</div>
+        </div>
+    </div>
+    <div class="mb-4">
+        <div class="font-semibold">Description:</div>
+        <div>{{ voucher.description }}</div>
+    </div>
+    <table class="w-full mb-4 border">
+        <thead>
+            <tr class="bg-gray-50">
+                <th class="text-left px-4 py-2">Particulars</th>
+                <th class="text-right px-4 py-2">Amount (KES)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="px-4 py-2">{{ voucher.payee_name }}</td>
+                <td class="px-4 py-2 text-right font-mono">{{ '%.2f'|format(voucher.amount|float) }}</td>
+            </tr>
+        </tbody>
+        <tfoot>
+            <tr class="bg-gray-100">
+                <td class="px-4 py-2 font-bold">Total Amount</td>
+                <td class="px-4 py-2 text-right font-bold font-mono">{{ '%.2f'|format(voucher.amount|float) }}</td>
+            </tr>
+        </tfoot>
+    </table>
+    <div class="flex justify-between mt-8">
+        <div>
+            <div class="font-semibold mb-2">Prepared By</div>
+            <div class="h-8 border-b border-gray-400 w-40"></div>
+        </div>
+        <div>
+            <div class="font-semibold mb-2">Verified By</div>
+            <div class="h-8 border-b border-gray-400 w-40"></div>
+        </div>
+        <div>
+            <div class="font-semibold mb-2">Authorized By</div>
+            <div class="h-8 border-b border-gray-400 w-40"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
