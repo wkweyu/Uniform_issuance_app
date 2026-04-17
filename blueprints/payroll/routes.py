@@ -451,9 +451,84 @@ def settings():
     try:
         rates = svc.get_statutory_rates()
         gl_mappings = svc.get_gl_mappings()
-        return render_template('payroll/settings.html', rates=rates, gl_mappings=gl_mappings)
+        components = svc.get_components(active_only=False)
+        return render_template('payroll/settings.html', rates=rates, gl_mappings=gl_mappings, components=components)
     finally:
         conn.close()
+
+
+# ------------------------------------------------------------------
+# Salary Components CRUD
+# ------------------------------------------------------------------
+
+@payroll_bp.route('/components/add', methods=['POST'])
+@admin_required
+def component_add():
+    conn, svc = _service()
+    try:
+        svc.add_component(
+            code=request.form['code'],
+            name=request.form['name'],
+            comp_type=request.form['type'],
+            calculation_type=request.form.get('calculation_type', 'fixed'),
+            is_taxable='is_taxable' in request.form,
+            sort_order=int(request.form.get('sort_order', 50)),
+        )
+        flash('Component added.', 'success')
+    except (PayrollError, ValueError) as e:
+        flash(str(e), 'error')
+    finally:
+        conn.close()
+    return redirect(url_for('payroll.settings') + '#components')
+
+
+@payroll_bp.route('/components/<int:component_id>/edit', methods=['POST'])
+@admin_required
+def component_edit(component_id):
+    conn, svc = _service()
+    try:
+        svc.update_component(
+            component_id=component_id,
+            name=request.form['name'],
+            comp_type=request.form['type'],
+            calculation_type=request.form.get('calculation_type', 'fixed'),
+            is_taxable='is_taxable' in request.form,
+            sort_order=int(request.form.get('sort_order', 50)),
+        )
+        flash('Component updated.', 'success')
+    except (PayrollError, ValueError) as e:
+        flash(str(e), 'error')
+    finally:
+        conn.close()
+    return redirect(url_for('payroll.settings') + '#components')
+
+
+@payroll_bp.route('/components/<int:component_id>/toggle', methods=['POST'])
+@admin_required
+def component_toggle(component_id):
+    conn, svc = _service()
+    try:
+        new_state = svc.toggle_component(component_id)
+        flash(f'Component {"activated" if new_state else "deactivated"}.', 'success')
+    except (PayrollError, ValueError) as e:
+        flash(str(e), 'error')
+    finally:
+        conn.close()
+    return redirect(url_for('payroll.settings') + '#components')
+
+
+@payroll_bp.route('/components/<int:component_id>/delete', methods=['POST'])
+@admin_required
+def component_delete(component_id):
+    conn, svc = _service()
+    try:
+        svc.delete_component(component_id)
+        flash('Component deleted.', 'success')
+    except (PayrollError, ValueError) as e:
+        flash(str(e), 'error')
+    finally:
+        conn.close()
+    return redirect(url_for('payroll.settings') + '#components')
 
 
 @payroll_bp.route('/settings/rates', methods=['POST'])

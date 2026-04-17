@@ -303,6 +303,90 @@ class PayrollService:
         self.cursor.execute(sql, (self.school_id,))
         return self.cursor.fetchall()
 
+    def get_component(self, component_id: int) -> Dict:
+        self.cursor.execute(
+            "SELECT * FROM payroll_components WHERE id = %s AND school_id = %s",
+            (component_id, self.school_id),
+        )
+        comp = self.cursor.fetchone()
+        if not comp:
+            raise PayrollError("Component not found.")
+        return comp
+
+    def add_component(self, code: str, name: str, comp_type: str,
+                      calculation_type: str = 'fixed', is_taxable: bool = False,
+                      is_statutory: bool = False, sort_order: int = 50) -> int:
+        code = code.strip().upper()
+        name = name.strip()
+        if not code or not name:
+            raise PayrollError("Component code and name are required.")
+        if comp_type not in ('earning', 'deduction', 'statutory'):
+            raise PayrollError("Invalid component type.")
+        if calculation_type not in ('fixed', 'percentage', 'formula', 'manual'):
+            raise PayrollError("Invalid calculation type.")
+        # Check duplicate code
+        self.cursor.execute(
+            "SELECT id FROM payroll_components WHERE school_id = %s AND code = %s",
+            (self.school_id, code),
+        )
+        if self.cursor.fetchone():
+            raise PayrollError(f"A component with code '{code}' already exists.")
+        self.cursor.execute(
+            "INSERT INTO payroll_components "
+            "(school_id, code, name, type, calculation_type, is_taxable, is_statutory, sort_order) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            (self.school_id, code, name, comp_type, calculation_type,
+             int(is_taxable), int(is_statutory), sort_order),
+        )
+        self.connection.commit()
+        return self.cursor.lastrowid
+
+    def update_component(self, component_id: int, name: str, comp_type: str,
+                         calculation_type: str = 'fixed', is_taxable: bool = False,
+                         sort_order: int = 50) -> None:
+        comp = self.get_component(component_id)
+        name = name.strip()
+        if not name:
+            raise PayrollError("Component name is required.")
+        if comp_type not in ('earning', 'deduction', 'statutory'):
+            raise PayrollError("Invalid component type.")
+        if calculation_type not in ('fixed', 'percentage', 'formula', 'manual'):
+            raise PayrollError("Invalid calculation type.")
+        self.cursor.execute(
+            "UPDATE payroll_components SET name = %s, type = %s, calculation_type = %s, "
+            "is_taxable = %s, sort_order = %s WHERE id = %s AND school_id = %s",
+            (name, comp_type, calculation_type, int(is_taxable), sort_order,
+             component_id, self.school_id),
+        )
+        self.connection.commit()
+
+    def toggle_component(self, component_id: int) -> bool:
+        comp = self.get_component(component_id)
+        new_state = 0 if comp['is_active'] else 1
+        self.cursor.execute(
+            "UPDATE payroll_components SET is_active = %s WHERE id = %s AND school_id = %s",
+            (new_state, component_id, self.school_id),
+        )
+        self.connection.commit()
+        return bool(new_state)
+
+    def delete_component(self, component_id: int) -> None:
+        comp = self.get_component(component_id)
+        if comp['is_statutory']:
+            raise PayrollError("Cannot delete a statutory component.")
+        # Check if assigned to any employees
+        self.cursor.execute(
+            "SELECT COUNT(*) AS cnt FROM payroll_employee_components WHERE component_id = %s",
+            (component_id,),
+        )
+        if self.cursor.fetchone()['cnt'] > 0:
+            raise PayrollError("Cannot delete a component that is assigned to employees. Deactivate it instead.")
+        self.cursor.execute(
+            "DELETE FROM payroll_components WHERE id = %s AND school_id = %s",
+            (component_id, self.school_id),
+        )
+        self.connection.commit()
+
     # ------------------------------------------------------------------
     # Employee Management
     # ------------------------------------------------------------------

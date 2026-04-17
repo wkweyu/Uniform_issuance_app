@@ -91,8 +91,211 @@
         </div>
     </div>
 
+    <!-- Salary Components Management -->
+    <div id="components" class="mt-8 bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-semibold text-gray-700"><i class="fas fa-puzzle-piece text-amber-500 mr-2"></i>Salary Components</h2>
+            <button onclick="document.getElementById('addComponentModal').classList.remove('hidden')" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700 transition">
+                <i class="fas fa-plus mr-1"></i> Add Component
+            </button>
+        </div>
+        <p class="text-sm text-gray-500 mb-4">Manage earnings and deduction types. Statutory components cannot be deleted.</p>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b bg-gray-50">
+                        <th class="text-left py-2 px-3">Code</th>
+                        <th class="text-left py-2 px-3">Name</th>
+                        <th class="text-left py-2 px-3">Type</th>
+                        <th class="text-left py-2 px-3">Calc</th>
+                        <th class="text-center py-2 px-3">Taxable</th>
+                        <th class="text-center py-2 px-3">Statutory</th>
+                        <th class="text-center py-2 px-3">Order</th>
+                        <th class="text-center py-2 px-3">Status</th>
+                        <th class="text-center py-2 px-3">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in components %}
+                    <tr class="border-b border-gray-50 hover:bg-gray-50 {{ 'opacity-50' if not c.is_active }}">
+                        <td class="py-2 px-3 font-mono text-xs">{{ c.code }}</td>
+                        <td class="py-2 px-3 font-medium">{{ c.name }}</td>
+                        <td class="py-2 px-3">
+                            <span class="px-2 py-0.5 rounded-full text-xs
+                                {% if c.type == 'earning' %}bg-green-100 text-green-700
+                                {% elif c.type == 'deduction' %}bg-red-100 text-red-700
+                                {% else %}bg-blue-100 text-blue-700{% endif %}">
+                                {{ c.type | title }}
+                            </span>
+                        </td>
+                        <td class="py-2 px-3 text-xs text-gray-500">{{ c.calculation_type | title }}</td>
+                        <td class="py-2 px-3 text-center">{{ '✓' if c.is_taxable else '—' }}</td>
+                        <td class="py-2 px-3 text-center">{{ '✓' if c.is_statutory else '—' }}</td>
+                        <td class="py-2 px-3 text-center">{{ c.sort_order }}</td>
+                        <td class="py-2 px-3 text-center">
+                            <span class="px-2 py-0.5 rounded-full text-xs {{ 'bg-green-100 text-green-700' if c.is_active else 'bg-gray-200 text-gray-500' }}">
+                                {{ 'Active' if c.is_active else 'Inactive' }}
+                            </span>
+                        </td>
+                        <td class="py-2 px-3 text-center whitespace-nowrap">
+                            <button onclick="openEditModal({{ c | tojson }})" class="text-indigo-600 hover:text-indigo-800 text-xs mr-2" title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <form method="POST" action="{{ url_for('payroll.component_toggle', component_id=c.id) }}" class="inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="text-amber-600 hover:text-amber-800 text-xs mr-2" title="{{ 'Deactivate' if c.is_active else 'Activate' }}">
+                                    <i class="fas {{ 'fa-toggle-on' if c.is_active else 'fa-toggle-off' }}"></i>
+                                </button>
+                            </form>
+                            {% if not c.is_statutory %}
+                            <form method="POST" action="{{ url_for('payroll.component_delete', component_id=c.id) }}" class="inline" onsubmit="return confirm('Delete component {{ c.name }}?')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="text-red-500 hover:text-red-700 text-xs" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not components %}
+                    <tr><td colspan="9" class="py-4 text-center text-gray-400">No components configured.</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Add Component Modal -->
+    <div id="addComponentModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+        <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold text-gray-800">Add Salary Component</h3>
+                <button onclick="document.getElementById('addComponentModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+            </div>
+            <form method="POST" action="{{ url_for('payroll.component_add') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Code</label>
+                        <input type="text" name="code" required class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="e.g. OVERTIME">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                        <input type="text" name="name" required class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="e.g. Overtime Pay">
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                            <select name="type" required class="w-full border rounded-lg px-3 py-2 text-sm">
+                                <option value="earning">Earning</option>
+                                <option value="deduction">Deduction</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Calculation</label>
+                            <select name="calculation_type" class="w-full border rounded-lg px-3 py-2 text-sm">
+                                <option value="fixed">Fixed</option>
+                                <option value="percentage">Percentage</option>
+                                <option value="manual">Manual</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Sort Order</label>
+                            <input type="number" name="sort_order" value="50" class="w-full border rounded-lg px-3 py-2 text-sm">
+                        </div>
+                        <div class="flex items-end pb-1">
+                            <label class="flex items-center gap-2 text-sm text-gray-700">
+                                <input type="checkbox" name="is_taxable" class="rounded">
+                                Taxable
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end gap-3">
+                    <button type="button" onclick="document.getElementById('addComponentModal').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+                    <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Add Component</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Component Modal -->
+    <div id="editComponentModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+        <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold text-gray-800">Edit Component</h3>
+                <button onclick="document.getElementById('editComponentModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+            </div>
+            <form method="POST" id="editComponentForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Code</label>
+                        <input type="text" id="edit_code" disabled class="w-full border rounded-lg px-3 py-2 text-sm bg-gray-100">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                        <input type="text" name="name" id="edit_name" required class="w-full border rounded-lg px-3 py-2 text-sm">
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                            <select name="type" id="edit_type" required class="w-full border rounded-lg px-3 py-2 text-sm">
+                                <option value="earning">Earning</option>
+                                <option value="deduction">Deduction</option>
+                                <option value="statutory">Statutory</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Calculation</label>
+                            <select name="calculation_type" id="edit_calculation_type" class="w-full border rounded-lg px-3 py-2 text-sm">
+                                <option value="fixed">Fixed</option>
+                                <option value="percentage">Percentage</option>
+                                <option value="formula">Formula</option>
+                                <option value="manual">Manual</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Sort Order</label>
+                            <input type="number" name="sort_order" id="edit_sort_order" class="w-full border rounded-lg px-3 py-2 text-sm">
+                        </div>
+                        <div class="flex items-end pb-1">
+                            <label class="flex items-center gap-2 text-sm text-gray-700">
+                                <input type="checkbox" name="is_taxable" id="edit_is_taxable" class="rounded">
+                                Taxable
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end gap-3">
+                    <button type="button" onclick="document.getElementById('editComponentModal').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+                    <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div class="mt-6">
         <a href="{{ url_for('payroll.dashboard') }}" class="text-indigo-600 hover:underline text-sm"><i class="fas fa-arrow-left mr-1"></i> Dashboard</a>
     </div>
 </div>
+
+<script>
+function openEditModal(comp) {
+    document.getElementById('edit_code').value = comp.code;
+    document.getElementById('edit_name').value = comp.name;
+    document.getElementById('edit_type').value = comp.type;
+    document.getElementById('edit_calculation_type').value = comp.calculation_type;
+    document.getElementById('edit_sort_order').value = comp.sort_order;
+    document.getElementById('edit_is_taxable').checked = !!comp.is_taxable;
+    document.getElementById('editComponentForm').action = "{{ url_for('payroll.settings') }}".replace('/settings', '/components/') + comp.id + '/edit';
+    document.getElementById('editComponentModal').classList.remove('hidden');
+}
+</script>
 {% endblock %}
