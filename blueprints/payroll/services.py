@@ -1,156 +1,3 @@
-            def get_payroll_vouchers(self, run_id: int) -> list:
-                self.cursor.execute(
-                    "SELECT pv.*, v.code AS votehead_code, v.name AS votehead_name, f.code AS fund_code, f.name AS fund_name "
-                    "FROM payroll_payment_vouchers pv "
-                    "LEFT JOIN payroll_voteheads v ON pv.votehead_id = v.id "
-                    "LEFT JOIN funds f ON pv.fund_id = f.id "
-                    "WHERE pv.run_id = %s AND pv.school_id = %s ORDER BY pv.id",
-                    (run_id, self.school_id)
-                )
-                return self.cursor.fetchall()
-
-            def get_payroll_voucher(self, voucher_id: int) -> dict:
-                self.cursor.execute(
-                    "SELECT pv.*, v.code AS votehead_code, v.name AS votehead_name, f.code AS fund_code, f.name AS fund_name "
-                    "FROM payroll_payment_vouchers pv "
-                    "LEFT JOIN payroll_voteheads v ON pv.votehead_id = v.id "
-                    "LEFT JOIN funds f ON pv.fund_id = f.id "
-                    "WHERE pv.id = %s AND pv.school_id = %s",
-                    (voucher_id, self.school_id)
-                )
-                v = self.cursor.fetchone()
-                if not v:
-                    raise PayrollError("Voucher not found.")
-                return v
-
-            def verify_payroll_voucher(self, voucher_id: int, user_id: int):
-                self.cursor.execute(
-                    "UPDATE payroll_payment_vouchers SET status='verified', verified_by=%s, verified_at=NOW() WHERE id=%s AND school_id=%s AND status='draft'",
-                    (user_id, voucher_id, self.school_id)
-                )
-                if self.cursor.rowcount == 0:
-                    raise PayrollError("Voucher not in draft state or not found.")
-                self.connection.commit()
-
-            def authorize_payroll_voucher(self, voucher_id: int, user_id: int):
-                self.cursor.execute(
-                    "UPDATE payroll_payment_vouchers SET status='authorized', authorized_by=%s, authorized_at=NOW() WHERE id=%s AND school_id=%s AND status='verified'",
-                    (user_id, voucher_id, self.school_id)
-                )
-                if self.cursor.rowcount == 0:
-                    raise PayrollError("Voucher not in verified state or not found.")
-                self.connection.commit()
-        def generate_payroll_vouchers(self, run_id: int, created_by: int = None) -> int:
-            """
-            Generate payroll payment vouchers for a posted run: one per votehead (net salary), one per statutory body (PAYE, NSSF, SHIF, Housing Levy).
-            Returns number of vouchers created.
-            """
-            run = self._assert_run_belongs(run_id)
-            if run['status'] != 'posted':
-                raise PayrollError("Vouchers can only be generated for posted runs.")
-            created_by = created_by or session.get('userNo', 0)
-            school_id = self.school_id
-            pay_period = run['pay_period']
-            # Prevent duplicate generation
-            self.cursor.execute("SELECT COUNT(*) AS cnt FROM payroll_payment_vouchers WHERE run_id = %s AND school_id = %s", (run_id, school_id))
-            if self.cursor.fetchone()['cnt'] > 0:
-                raise PayrollError("Vouchers already generated for this run.")
-
-            # 1. Net salary by votehead
-            self.cursor.execute(
-                "SELECT v.id AS votehead_id, v.code, v.name, f.id AS fund_id, SUM(pva.amount) AS total, COUNT(*) AS cnt "
-                "FROM payroll_votehead_allocations pva "
-                "JOIN payroll_voteheads v ON pva.votehead_id = v.id "
-                "LEFT JOIN funds f ON pva.fund_id = f.id "
-                "JOIN payroll_lines pl ON pva.payroll_line_id = pl.id "
-                "WHERE pl.run_id = %s AND pva.school_id = %s "
-                "GROUP BY v.id, f.id ",
-                (run_id, school_id)
-            )
-            net_salary_allocs = self.cursor.fetchall()
-
-            # 2. Statutory totals (from payroll_lines)
-            self.cursor.execute(
-                "SELECT SUM(paye) AS paye, SUM(shif) AS shif, SUM(nssf_employee) AS nssf, SUM(housing_levy_employee) AS hl FROM payroll_lines WHERE run_id = %s",
-                (run_id,)
-            )
-            stat = self.cursor.fetchone()
-
-            # 3. Generate voucher numbers
-            from datetime import datetime
-            now = datetime.now()
-            yymm = now.strftime('%y%m')
-            def next_voucher_no(seq):
-                return f"PPV-{yymm}-{seq:04d}"
-
-            seq = 1
-            created = 0
-            # Net salary PVs (per votehead/fund)
-            for alloc in net_salary_allocs:
-                voucher_no = next_voucher_no(seq)
-                seq += 1
-                desc = f"Net salary for {pay_period} — {alloc['code']}"
-                self.cursor.execute(
-                    "INSERT INTO payroll_payment_vouchers (school_id, run_id, voucher_no, votehead_id, fund_id, payee_type, payee_name, description, gross_amount, amount, created_by) "
-                    "VALUES (%s, %s, %s, %s, %s, 'net_salary', %s, %s, %s, %s, %s)",
-                    (school_id, run_id, voucher_no, alloc['votehead_id'], alloc['fund_id'], f"Staff Net Salary", desc, alloc['total'], alloc['total'], created_by)
-                )
-                created += 1
-
-            # Statutory PVs (one each)
-            statutory = [
-                ('paye', 'KRA – PAYE', stat['paye']),
-                ('nssf', 'NSSF', stat['nssf']),
-                ('shif', 'SHIF', stat['shif']),
-                ('housing_levy', 'Housing Levy', stat['hl']),
-            ]
-            for payee_type, payee_name, amount in statutory:
-                if amount and float(amount) > 0.01:
-                    voucher_no = next_voucher_no(seq)
-                    seq += 1
-                    desc = f"{payee_name} for {pay_period}"
-                    # Use first salary votehead as reference (or NULL)
-                    vhid = net_salary_allocs[0]['votehead_id'] if net_salary_allocs else None
-                    self.cursor.execute(
-                        "INSERT INTO payroll_payment_vouchers (school_id, run_id, voucher_no, votehead_id, payee_type, payee_name, description, gross_amount, amount, created_by) "
-                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                        (school_id, run_id, voucher_no, vhid, payee_type, payee_name, desc, amount, amount, created_by)
-                    )
-                    created += 1
-
-            self.connection.commit()
-            return created
-    def auto_allocate_voteheads(self, run_id: int, votehead_id: int, fund_id: int = None):
-        """
-        For all payroll lines in the run that do NOT have allocations, allocate the full gross_pay to the given votehead (and fund if provided).
-        """
-        run = self._assert_run_belongs(run_id)
-        if run['status'] not in ('generated', 'approved'):
-            raise PayrollError("Auto-allocation only allowed on generated or approved runs.")
-        # Get all lines and their gross pay
-        self.cursor.execute(
-            "SELECT id, gross_pay FROM payroll_lines WHERE run_id = %s", (run_id,)
-        )
-        lines = {row['id']: Decimal(str(row['gross_pay'])) for row in self.cursor.fetchall()}
-        # Get already allocated lines
-        self.cursor.execute(
-            "SELECT payroll_line_id FROM payroll_votehead_allocations WHERE payroll_line_id IN (%s)" % ",".join(str(lid) for lid in lines.keys())
-        )
-        allocated = {row['payroll_line_id'] for row in self.cursor.fetchall()}
-        # Prepare allocations for unallocated lines
-        allocs = []
-        for lid, gross in lines.items():
-            if lid not in allocated:
-                allocs.append({
-                    'payroll_line_id': lid,
-                    'votehead_id': votehead_id,
-                    'fund_id': fund_id,
-                    'amount': gross,
-                })
-        if not allocs:
-            return 0
-        self.set_votehead_allocations(run_id, allocs)
-        return len(allocs)
 """
 Kenyan-compliant Payroll Service.
 
@@ -249,6 +96,7 @@ def validate_formula_syntax(expression: str) -> bool:
     return True
 
 
+
 class PayrollError(Exception):
     """Domain error raised by PayrollService."""
 
@@ -265,24 +113,139 @@ class PayrollService:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _audit(self, entity_type: str, entity_id: int, action: str,
-               old_values: Any = None, new_values: Any = None):
-        """Append an immutable audit log entry."""
-        try:
-            performed_by = session.get('userNo', 0)
-            ip = request.remote_addr if request else None
-        except RuntimeError:
-            performed_by = 0
-            ip = None
+    def auto_allocate_voteheads(self, run_id: int, votehead_id: int, fund_id: int = None):
+        """
+        For all payroll lines in the run that do NOT have allocations, allocate the full gross_pay to the given votehead (and fund if provided).
+        """
+        run = self._assert_run_belongs(run_id)
+        if run['status'] not in ('generated', 'approved'):
+            raise PayrollError("Auto-allocation only allowed on generated or approved runs.")
+        # Get all lines and their gross pay
         self.cursor.execute(
-            "INSERT INTO payroll_audit_logs "
-            "(school_id, entity_type, entity_id, action, old_values, new_values, performed_by, ip_address) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-            (self.school_id, entity_type, entity_id, action,
-             json.dumps(old_values, default=str) if old_values else None,
-             json.dumps(new_values, default=str) if new_values else None,
-             performed_by, ip),
+            "SELECT id, gross_pay FROM payroll_lines WHERE run_id = %s", (run_id,)
         )
+        lines = {row['id']: Decimal(str(row['gross_pay'])) for row in self.cursor.fetchall()}
+        # Get already allocated lines
+        self.cursor.execute(
+            "SELECT payroll_line_id FROM payroll_votehead_allocations WHERE payroll_line_id IN (%s)" % ",".join(str(lid) for lid in lines.keys())
+        )
+        allocated = {row['payroll_line_id'] for row in self.cursor.fetchall()}
+        # Prepare allocations for unallocated lines
+        allocs = []
+        for lid, gross in lines.items():
+            if lid not in allocated:
+                allocs.append({
+                    'payroll_line_id': lid,
+                    'votehead_id': votehead_id,
+                    'fund_id': fund_id,
+                    'amount': gross,
+                })
+        if not allocs:
+            return 0
+        self.set_votehead_allocations(run_id, allocs)
+        return len(allocs)
+
+    def get_payroll_vouchers(self, run_id: int) -> list:
+        self.cursor.execute(
+            "SELECT pv.*, v.code AS votehead_code, v.name AS votehead_name, f.code AS fund_code, f.name AS fund_name "
+            "FROM payroll_payment_vouchers pv "
+            "LEFT JOIN payroll_voteheads v ON pv.votehead_id = v.id "
+            "LEFT JOIN funds f ON pv.fund_id = f.id "
+            "WHERE pv.run_id = %s AND pv.school_id = %s ORDER BY pv.id",
+            (run_id, self.school_id)
+        )
+        return self.cursor.fetchall()
+
+    def get_payroll_voucher(self, voucher_id: int) -> dict:
+        self.cursor.execute(
+            "SELECT pv.*, v.code AS votehead_code, v.name AS votehead_name, f.code AS fund_code, f.name AS fund_name "
+            "FROM payroll_payment_vouchers pv "
+            "LEFT JOIN payroll_voteheads v ON pv.votehead_id = v.id "
+            "LEFT JOIN funds f ON pv.fund_id = f.id "
+            "WHERE pv.id = %s AND pv.school_id = %s",
+            (voucher_id, self.school_id)
+        )
+        v = self.cursor.fetchone()
+        if not v:
+            raise PayrollError("Voucher not found.")
+        return v
+
+    def verify_payroll_voucher(self, voucher_id: int, user_id: int):
+        self.cursor.execute(
+            "UPDATE payroll_payment_vouchers SET status='verified', verified_by=%s, verified_at=NOW() WHERE id=%s AND school_id=%s AND status='draft'",
+            (user_id, voucher_id, self.school_id)
+        )
+        if self.cursor.rowcount == 0:
+            raise PayrollError("Voucher not in draft state or not found.")
+        self.connection.commit()
+
+    def authorize_payroll_voucher(self, voucher_id: int, user_id: int):
+        self.cursor.execute(
+            "UPDATE payroll_payment_vouchers SET status='authorized', authorized_by=%s, authorized_at=NOW() WHERE id=%s AND school_id=%s AND status='verified'",
+            (user_id, voucher_id, self.school_id)
+        )
+        if self.cursor.rowcount == 0:
+            raise PayrollError("Voucher not in verified state or not found.")
+        self.connection.commit()
+
+    def generate_payroll_vouchers(self, run_id: int, created_by: int = None) -> int:
+        """
+        Generate payroll payment vouchers for a posted run: one per votehead (net salary), one per statutory body (PAYE, NSSF, SHIF, Housing Levy).
+        Returns number of vouchers created.
+        """
+        run = self._assert_run_belongs(run_id)
+        if run['status'] != 'posted':
+            raise PayrollError("Vouchers can only be generated for posted runs.")
+        created_by = created_by or session.get('userNo', 0)
+        school_id = self.school_id
+        pay_period = run['pay_period']
+        # Prevent duplicate generation
+        self.cursor.execute("SELECT COUNT(*) AS cnt FROM payroll_payment_vouchers WHERE run_id = %s AND school_id = %s", (run_id, school_id))
+        if self.cursor.fetchone()['cnt'] > 0:
+            raise PayrollError("Vouchers already generated for this run.")
+
+        # 1. Net salary by votehead
+        self.cursor.execute(
+            "SELECT v.id AS votehead_id, v.code, v.name, f.id AS fund_id, SUM(pva.amount) AS total, COUNT(*) AS cnt "
+            "FROM payroll_votehead_allocations pva "
+            "JOIN payroll_voteheads v ON pva.votehead_id = v.id "
+            "LEFT JOIN funds f ON pva.fund_id = f.id "
+            "JOIN payroll_lines pl ON pva.payroll_line_id = pl.id "
+            "WHERE pl.run_id = %s AND pva.school_id = %s "
+            "GROUP BY v.id, f.id ",
+            (run_id, school_id)
+        )
+        net_salary_allocs = self.cursor.fetchall()
+
+        # 2. Statutory totals (from payroll_lines)
+        self.cursor.execute(
+            "SELECT SUM(paye) AS paye, SUM(shif) AS shif, SUM(nssf_employee) AS nssf, SUM(housing_levy_employee) AS hl FROM payroll_lines WHERE run_id = %s",
+            (run_id,)
+        )
+        stat = self.cursor.fetchone()
+
+        # 3. Generate voucher numbers
+        from datetime import datetime
+        now = datetime.now()
+        yymm = now.strftime('%y%m')
+        def next_voucher_no(seq):
+            return f"PPV-{yymm}-{seq:04d}"
+
+        seq = 1
+        created = 0
+        # Net salary PVs (per votehead/fund)
+        for alloc in net_salary_allocs:
+            voucher_no = next_voucher_no(seq)
+            seq += 1
+            desc = f"Net salary for {pay_period} — {alloc['code']}"
+            self.cursor.execute(
+                "INSERT INTO payroll_payment_vouchers (school_id, run_id, voucher_no, votehead_id, fund_id, payee_type, payee_name, description, gross_amount, amount, created_by) "
+                "VALUES (%s, %s, %s, %s, %s, 'net_salary', %s, %s, %s, %s, %s)",
+                (school_id, run_id, voucher_no, alloc['votehead_id'], alloc['fund_id'], f"Staff Net Salary", desc, alloc['total'], alloc['total'], created_by)
+            )
+            created += 1
+
+        # Statutory PVs (one each)
 
     def _assert_employee_belongs(self, employee_id: int) -> dict:
         self.cursor.execute(
@@ -968,125 +931,18 @@ class PayrollService:
         emp['pending_adjustments'] = self.cursor.fetchall()
         return emp
 
-    def get_staff_not_on_payroll(self) -> List[Dict]:
-        """Return staff records that don't have a payroll profile yet."""
-        self.cursor.execute(
-            "SELECT s.* FROM staff s "
-            "LEFT JOIN payroll_employees pe ON s.staffID = pe.staff_id AND pe.school_id = %s "
-            "WHERE pe.id IS NULL "
-            "ORDER BY s.surname, s.firstname",
-            (self.school_id,),
-        )
-        return self.cursor.fetchall()
 
-    def create_employee(self, staff_id: str, basic_salary: Decimal, salary_source: str = 'school',
-                        govt_salary_pct: Decimal = ZERO, kra_pin: str = None,
-                        nhif_no: str = None, nssf_no: str = None,
-                        bank_name: str = None, bank_branch: str = None, bank_account: str = None,
-                        effective_from: str = None) -> int:
-        if not effective_from:
-            effective_from = date.today().isoformat()
-        created_by = session.get('userNo', 0)
-        try:
-            self.cursor.execute(
-                "INSERT INTO payroll_employees "
-                "(school_id, staff_id, basic_salary, salary_source, govt_salary_pct, "
-                " kra_pin, nhif_no, nssf_no, bank_name, bank_branch, bank_account, "
-                " effective_from, created_by) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                (self.school_id, staff_id, basic_salary, salary_source, govt_salary_pct,
-                 kra_pin, nhif_no, nssf_no, bank_name, bank_branch, bank_account,
-                 effective_from, created_by),
-            )
-            emp_id = self.cursor.lastrowid
-            self._audit('payroll_employee', emp_id, 'created',
-                        new_values={'staff_id': staff_id, 'basic_salary': str(basic_salary)})
-            self.connection.commit()
-            return emp_id
-        except pymysql.IntegrityError:
-            self.connection.rollback()
-            raise PayrollError(f"Staff {staff_id} already has a payroll profile.")
+    # 3. Generate voucher numbers
+    from datetime import datetime
+    now = datetime.now()
+    yymm = now.strftime('%y%m')
+    def next_voucher_no(seq):
+        return f"PPV-{yymm}-{seq:04d}"
 
-    def update_employee(self, employee_id: int, **fields):
-        emp = self._assert_employee_belongs(employee_id)
-        trackable = ('basic_salary', 'salary_source', 'govt_salary_pct', 'kra_pin',
-                     'nhif_no', 'nssf_no', 'bank_name', 'bank_branch', 'bank_account',
-                     'is_active', 'effective_from')
-        sets = []
-        params = []
-        changed_by = session.get('userNo', 0)
-        for field in trackable:
-            if field in fields and fields[field] is not None:
-                old_val = str(emp.get(field, ''))
-                new_val = str(fields[field])
-                if old_val != new_val:
-                    sets.append(f"{field} = %s")
-                    params.append(fields[field])
-                    # Record history for salary/source changes
-                    if field in ('basic_salary', 'salary_source', 'govt_salary_pct'):
-                        self.cursor.execute(
-                            "INSERT INTO payroll_employee_history "
-                            "(employee_id, field_changed, old_value, new_value, effective_from, changed_by) "
-                            "VALUES (%s, %s, %s, %s, %s, %s)",
-                            (employee_id, field, old_val, new_val,
-                             fields.get('effective_from', date.today().isoformat()), changed_by),
-                        )
-        if not sets:
-            return
-        params.append(employee_id)
-        self.cursor.execute(
-            f"UPDATE payroll_employees SET {', '.join(sets)} WHERE id = %s", params
-        )
-        self._audit('payroll_employee', employee_id, 'edited',
-                     old_values={k: str(emp.get(k)) for k in fields if k in trackable},
-                     new_values={k: str(v) for k, v in fields.items() if k in trackable})
-        self.connection.commit()
+    seq = 1
+    created = 0
+    # Net salary PVs (per votehead/fund)
 
-    def set_employee_components(self, employee_id: int, components: List[Dict]):
-        """
-        Bulk set components for an employee.
-        components: [{'component_id': int, 'amount': Decimal, 'is_percent': bool, 'mode': str}, ...]
-        """
-        self._assert_employee_belongs(employee_id)
-        self.cursor.execute(
-            "DELETE FROM payroll_employee_components WHERE employee_id = %s",
-            (employee_id,),
-        )
-        for c in components:
-            self.cursor.execute(
-                "INSERT INTO payroll_employee_components "
-                "(employee_id, component_id, amount, is_percent, mode, is_active) "
-                "VALUES (%s, %s, %s, %s, %s, 1)",
-                (employee_id, c['component_id'], c.get('amount', 0),
-                 1 if c.get('is_percent') else 0, c.get('mode', 'auto')),
-            )
-        self._audit('payroll_employee', employee_id, 'components_updated',
-                     new_values={'count': len(components)})
-        self.connection.commit()
-
-    # ------------------------------------------------------------------
-    # Adjustments
-    # ------------------------------------------------------------------
-
-    def get_adjustments(self, employee_id: int = None, run_id: int = None,
-                        pending_only: bool = False) -> List[Dict]:
-        sql = ("SELECT pa.*, pe.staff_id, s.surname, s.firstname "
-               "FROM payroll_adjustments pa "
-               "JOIN payroll_employees pe ON pa.employee_id = pe.id "
-               "LEFT JOIN staff s ON pe.staff_id = s.staffID "
-               "WHERE pa.school_id = %s")
-        params: list = [self.school_id]
-        if employee_id:
-            sql += " AND pa.employee_id = %s"
-            params.append(employee_id)
-        if run_id:
-            sql += " AND pa.run_id = %s"
-            params.append(run_id)
-        if pending_only:
-            sql += " AND pa.applied = 0"
-        sql += " ORDER BY pa.created_at DESC"
-        self.cursor.execute(sql, params)
-        return self.cursor.fetchall()
 
     def create_adjustment(self, employee_id: int, adj_type: str, name: str,
                           amount: Decimal, is_taxable: bool = False,

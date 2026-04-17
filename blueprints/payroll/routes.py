@@ -1,3 +1,18 @@
+
+from flask import (
+    Blueprint, render_template, request, redirect,
+    url_for, flash, session, jsonify,
+)
+from core.permissions import admin_required, login_required
+from core.db import get_db_connection
+from blueprints.payroll.services import PayrollService, PayrollError
+from decimal import Decimal, InvalidOperation
+from datetime import datetime
+
+payroll_bp = Blueprint('payroll', __name__, url_prefix='/payroll')
+
+from flask import Blueprint
+payroll_bp = Blueprint('payroll', __name__, url_prefix='/payroll')
 # Payroll Payment Voucher routes
 @payroll_bp.route('/runs/<int:run_id>/vouchers')
 @admin_required
