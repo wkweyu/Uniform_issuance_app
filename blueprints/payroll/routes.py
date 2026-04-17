@@ -452,7 +452,9 @@ def settings():
         rates = svc.get_statutory_rates()
         gl_mappings = svc.get_gl_mappings()
         components = svc.get_components(active_only=False)
-        return render_template('payroll/settings.html', rates=rates, gl_mappings=gl_mappings, components=components)
+        statutory_formulas = svc.get_statutory_formulas()
+        return render_template('payroll/settings.html', rates=rates, gl_mappings=gl_mappings,
+                               components=components, statutory_formulas=statutory_formulas)
     finally:
         conn.close()
 
@@ -578,6 +580,32 @@ def settings_gl_mapping():
     finally:
         conn.close()
     return redirect(url_for('payroll.settings'))
+
+
+@payroll_bp.route('/settings/statutory-formula/<int:formula_id>/edit', methods=['POST'])
+@admin_required
+def settings_statutory_formula_edit(formula_id):
+    conn, svc = _service()
+    try:
+        svc.update_statutory_formula(
+            formula_id=formula_id,
+            label=request.form['label'],
+            computation=request.form['computation'],
+            flat_rate_expr=request.form.get('flat_rate_expr', '').strip() or None,
+            input_variable=request.form.get('input_variable', 'gross'),
+            employer_match='employer_match' in request.form,
+            employer_expr=request.form.get('employer_expr', '').strip() or None,
+            pre_tax_deductions=request.form.get('pre_tax_deductions', '').strip() or None,
+            pension_cap=request.form.get('pension_cap') or None,
+            mortgage_cap=request.form.get('mortgage_cap') or None,
+            personal_relief=request.form.get('personal_relief') or None,
+        )
+        flash('Statutory formula updated.', 'success')
+    except (PayrollError, ValueError) as e:
+        flash(str(e), 'error')
+    finally:
+        conn.close()
+    return redirect(url_for('payroll.settings') + '#statutory-formulas')
 
 
 # ==================================================================

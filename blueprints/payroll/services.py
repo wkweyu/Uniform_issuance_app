@@ -32,8 +32,11 @@ logger = logging.getLogger(__name__)
 
 # -----------  Safe formula evaluator  -----------
 _ALLOWED_VARS = frozenset({
-    'basic_salary', 'gross', 'net',
-    'paye', 'shif', 'nssf', 'housing_levy',
+    'basic_salary', 'gross', 'net', 'taxable',
+    'paye', 'shif', 'nssf', 'nssf_ee', 'nssf_er',
+    'housing_levy', 'housing_levy_ee', 'housing_levy_er',
+    'shif_rate', 'housing_levy_rate', 'housing_levy_employer_rate',
+    'pension', 'mortgage',
 })
 _ALLOWED_OPS = {
     ast.Add: operator.add,
@@ -163,6 +166,311 @@ class PayrollService:
                 (self.school_id,),
             )
             self.connection.commit()
+
+    def _ensure_statutory_formulas(self):
+        """Seed default statutory formula configuration for this school."""
+        self.cursor.execute(
+            "SELECT COUNT(*) AS cnt FROM payroll_statutory_formulas WHERE school_id = %s",
+            (self.school_id,),
+        )
+        if self.cursor.fetchone()['cnt'] > 0:
+            return
+
+        defaults = [
+            # SHIF: flat rate on gross (default 2.75%)
+            ('SHIF', 'SHIF (Social Health Insurance Fund)', 'flat_rate',
+             'gross * shif_rate / 100', 'gross', 0, None,
+             None, None, None, None),
+            # NSSF: tiered bands from statutory_rates table
+            ('NSSF', 'NSSF (National Social Security Fund)', 'tiered',
+             None, 'gross', 1, None,
+             None, None, None, None),
+            # Housing Levy: flat rate on gross (default 1.5%)
+            ('HOUSING_LEVY', 'Affordable Housing Levy', 'flat_rate',
+             'gross * housing_levy_rate / 100', 'gross', 1, 'gross * housing_levy_employer_rate / 100',
+             None, None, None, None),
+            # Taxable Income: formula
+            ('TAXABLE_INCOME', 'Taxable Income Computation', 'formula',
+             'gross - shif - nssf_ee - housing_levy_ee - pension - mortgage',
+             'gross', 0, None,
+             '["shif","nssf_ee","housing_levy_ee","pension","mortgage"]',
+             Decimal('30000.00'), Decimal('30000.00'), Decimal('2400.00')),
+            # PAYE: progressive bands from statutory_rates table
+            ('PAYE', 'PAYE (Pay As You Earn)', 'progressive_bands',
+             None, 'taxable', 0, None,
+             None, None, None, Decimal('2400.00')),
+        ]
+        for (code, label, computation, expr, input_var, emp_match, emp_expr,
+             pre_tax, pension_cap, mortgage_cap, relief) in defaults:
+            self.cursor.execute(
+                "INSERT INTO payroll_statutory_formulas "
+                "(school_id, deduction_code, label, computation, flat_rate_expr, input_variable, "
+                " employer_match, employer_expr, pre_tax_deductions, pension_cap, mortgage_cap, personal_relief) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                (self.school_id, code, label, computation, expr, input_var,
+                 emp_match, emp_expr, pre_tax, pension_cap, mortgage_cap, relief),
+            )
+        self.connection.commit()
+
+    def get_statutory_formulas(self) -> List[Dict]:
+        """Load all statutory formula configs for this school."""
+        self._ensure_statutory_formulas()
+        self.cursor.execute(
+            "SELECT * FROM payroll_statutory_formulas WHERE school_id = %s ORDER BY id",
+            (self.school_id,),
+        )
+        return self.cursor.fetchall()
+
+    def get_statutory_formula(self, formula_id: int) -> Dict:
+        self.cursor.execute(
+            "SELECT * FROM payroll_statutory_formulas WHERE id = %s AND school_id = %s",
+            (formula_id, self.school_id),
+        )
+        row = self.cursor.fetchone()
+        if not row:
+            raise PayrollError("Statutory formula not found.")
+        return row
+
+    def update_statutory_formula(self, formula_id: int, label: str, computation: str,
+                                 flat_rate_expr: str = None, input_variable: str = 'gross',
+                                 employer_match: bool = False, employer_expr: str = None,
+                                 pre_tax_deductions: str = None,
+                                 pension_cap=None, mortgage_cap=None, personal_relief=None) -> None:
+        """Update a statutory formula configuration."""
+        self.get_statutory_formula(formula_id)  # verify ownership
+        if computation not in ('progressive_bands', 'flat_rate', 'tiered', 'formula'):
+            raise PayrollError("Invalid computation type.")
+        if computation in ('flat_rate', 'formula') and flat_rate_expr:
+            if not validate_formula_syntax(flat_rate_expr):
+                raise PayrollError(
+                    "Invalid formula expression. Use only allowed variables and arithmetic operators.")
+        if employer_expr and not validate_formula_syntax(employer_expr):
+            raise PayrollError("Invalid employer formula expression.")
+        self.cursor.execute(
+            "UPDATE payroll_statutory_formulas SET label=%s, computation=%s, flat_rate_expr=%s, "
+            "input_variable=%s, employer_match=%s, employer_expr=%s, pre_tax_deductions=%s, "
+            "pension_cap=%s, mortgage_cap=%s, personal_relief=%s WHERE id=%s AND school_id=%s",
+            (label, computation, flat_rate_expr, input_variable, int(employer_match),
+             employer_expr, pre_tax_deductions,
+             pension_cap, mortgage_cap, personal_relief,
+             formula_id, self.school_id),
+        )
+        self.connection.commit()
+
+    def _compute_statutory_deductions(self, gross: Decimal, basic_salary: Decimal,
+                                       rates: dict, stat_modes: dict,
+                                       pension: Decimal = ZERO,
+                                       mortgage: Decimal = ZERO) -> dict:
+        """
+        Configurable statutory deduction computation.
+
+        Returns dict with: shif, nssf_ee, nssf_er, housing_levy_ee, housing_levy_er,
+                          taxable, paye, and stat_breakdown list.
+        """
+        self._ensure_statutory_formulas()
+        self.cursor.execute(
+            "SELECT * FROM payroll_statutory_formulas WHERE school_id = %s AND is_active = 1",
+            (self.school_id,),
+        )
+        formulas = {r['deduction_code']: r for r in self.cursor.fetchall()}
+
+        result = {}
+
+        # --- Order of computation: SHIF → NSSF → Housing Levy → Taxable Income → PAYE ---
+
+        # 1. SHIF
+        if stat_modes.get('SHIF', {}).get('mode') == 'manual':
+            result['shif'] = stat_modes['SHIF']['amount']
+        else:
+            result['shif'] = self._calc_one_statutory(
+                'SHIF', formulas.get('SHIF'), gross, basic_salary, rates, result)
+            if stat_modes.get('SHIF', {}).get('mode') == 'override' and stat_modes['SHIF']['amount'] > ZERO:
+                result['shif'] = stat_modes['SHIF']['amount']
+
+        # 2. NSSF
+        if stat_modes.get('NSSF', {}).get('mode') == 'manual':
+            result['nssf_ee'] = stat_modes['NSSF']['amount']
+            result['nssf_er'] = result['nssf_ee']
+        else:
+            nssf = self._calc_one_statutory(
+                'NSSF', formulas.get('NSSF'), gross, basic_salary, rates, result)
+            if isinstance(nssf, tuple):
+                result['nssf_ee'], result['nssf_er'] = nssf
+            else:
+                result['nssf_ee'] = nssf
+                result['nssf_er'] = nssf
+            if stat_modes.get('NSSF', {}).get('mode') == 'override' and stat_modes['NSSF']['amount'] > ZERO:
+                result['nssf_ee'] = stat_modes['NSSF']['amount']
+                result['nssf_er'] = result['nssf_ee']
+
+        # 3. Housing Levy
+        if stat_modes.get('HOUSING_LEVY', {}).get('mode') == 'manual':
+            result['housing_levy_ee'] = stat_modes['HOUSING_LEVY']['amount']
+            result['housing_levy_er'] = result['housing_levy_ee']
+        else:
+            hl = self._calc_one_statutory(
+                'HOUSING_LEVY', formulas.get('HOUSING_LEVY'), gross, basic_salary, rates, result)
+            if isinstance(hl, tuple):
+                result['housing_levy_ee'], result['housing_levy_er'] = hl
+            else:
+                result['housing_levy_ee'] = hl
+                result['housing_levy_er'] = hl
+            if stat_modes.get('HOUSING_LEVY', {}).get('mode') == 'override' and stat_modes['HOUSING_LEVY']['amount'] > ZERO:
+                result['housing_levy_ee'] = stat_modes['HOUSING_LEVY']['amount']
+                result['housing_levy_er'] = result['housing_levy_ee']
+
+        # 4. Taxable Income
+        ti_formula = formulas.get('TAXABLE_INCOME')
+        pension_cap = Decimal(str(ti_formula['pension_cap'])) if ti_formula and ti_formula['pension_cap'] else Decimal('30000')
+        mortgage_cap = Decimal(str(ti_formula['mortgage_cap'])) if ti_formula and ti_formula['mortgage_cap'] else Decimal('30000')
+        capped_pension = min(pension, pension_cap)
+        capped_mortgage = min(mortgage, mortgage_cap)
+
+        if ti_formula and ti_formula['computation'] == 'formula' and ti_formula.get('flat_rate_expr'):
+            variables = self._build_formula_vars(gross, basic_salary, rates, result)
+            variables['pension'] = capped_pension
+            variables['mortgage'] = capped_mortgage
+            result['taxable'] = evaluate_formula(ti_formula['flat_rate_expr'], variables)
+            result['taxable'] = max(result['taxable'], ZERO)
+        else:
+            result['taxable'] = compute_taxable_income(
+                gross, result['shif'], result['nssf_ee'],
+                result['housing_levy_ee'], capped_pension, capped_mortgage)
+
+        # 5. PAYE
+        if stat_modes.get('PAYE', {}).get('mode') == 'manual':
+            result['paye'] = stat_modes['PAYE']['amount']
+        else:
+            paye_formula = formulas.get('PAYE')
+            relief = Decimal(str(paye_formula['personal_relief'])) if paye_formula and paye_formula['personal_relief'] else Decimal('2400')
+
+            if paye_formula and paye_formula['computation'] == 'formula' and paye_formula.get('flat_rate_expr'):
+                variables = self._build_formula_vars(gross, basic_salary, rates, result)
+                result['paye'] = max(evaluate_formula(paye_formula['flat_rate_expr'], variables) - relief, ZERO)
+            elif paye_formula and paye_formula['computation'] == 'flat_rate' and paye_formula.get('flat_rate_expr'):
+                variables = self._build_formula_vars(gross, basic_salary, rates, result)
+                result['paye'] = max(evaluate_formula(paye_formula['flat_rate_expr'], variables) - relief, ZERO)
+            else:
+                # Default: progressive bands
+                result['paye'] = compute_paye(result['taxable'], rates['paye'], relief)
+
+            if stat_modes.get('PAYE', {}).get('mode') == 'override' and stat_modes['PAYE']['amount'] > ZERO:
+                result['paye'] = stat_modes['PAYE']['amount']
+
+        return result
+
+    def _calc_one_statutory(self, code: str, formula_cfg, gross: Decimal,
+                            basic_salary: Decimal, rates: dict, result_so_far: dict) -> any:
+        """Compute a single statutory deduction based on its formula config."""
+        if not formula_cfg:
+            # Fallback to hardcoded defaults
+            return self._calc_statutory_default(code, gross, rates)
+
+        computation = formula_cfg['computation']
+        variables = self._build_formula_vars(gross, basic_salary, rates, result_so_far)
+
+        # Employee amount
+        if computation == 'flat_rate' and formula_cfg.get('flat_rate_expr'):
+            ee_amount = evaluate_formula(formula_cfg['flat_rate_expr'], variables)
+        elif computation == 'formula' and formula_cfg.get('flat_rate_expr'):
+            ee_amount = evaluate_formula(formula_cfg['flat_rate_expr'], variables)
+        elif computation == 'progressive_bands':
+            rate_key = code.lower()
+            bands = rates.get(rate_key, [])
+            ee_amount = self._apply_progressive_bands(variables.get('taxable', gross), bands)
+        elif computation == 'tiered':
+            ee_key = code.lower() + '_employee'
+            ee_amount = self._apply_tiered(gross, rates.get(ee_key, []))
+        else:
+            ee_amount = self._calc_statutory_default(code, gross, rates)
+            if isinstance(ee_amount, tuple):
+                return ee_amount
+            return ee_amount
+
+        # Employer amount
+        if formula_cfg['employer_match']:
+            if formula_cfg.get('employer_expr'):
+                er_amount = evaluate_formula(formula_cfg['employer_expr'], variables)
+            elif computation == 'tiered':
+                er_key = code.lower() + '_employer'
+                er_amount = self._apply_tiered(gross, rates.get(er_key, []))
+            else:
+                er_amount = ee_amount
+            return (ee_amount, er_amount)
+
+        return ee_amount
+
+    def _build_formula_vars(self, gross: Decimal, basic_salary: Decimal,
+                            rates: dict, result_so_far: dict) -> dict:
+        """Build variable dict for formula evaluation from current computation state."""
+        variables = {
+            'basic_salary': basic_salary,
+            'gross': gross,
+            'shif': result_so_far.get('shif', ZERO),
+            'nssf': result_so_far.get('nssf_ee', ZERO),
+            'nssf_ee': result_so_far.get('nssf_ee', ZERO),
+            'nssf_er': result_so_far.get('nssf_er', ZERO),
+            'housing_levy': result_so_far.get('housing_levy_ee', ZERO),
+            'housing_levy_ee': result_so_far.get('housing_levy_ee', ZERO),
+            'housing_levy_er': result_so_far.get('housing_levy_er', ZERO),
+            'paye': result_so_far.get('paye', ZERO),
+            'taxable': result_so_far.get('taxable', ZERO),
+            'net': result_so_far.get('net', ZERO),
+            # Rate shortcuts — pull first rate from DB bands for flat-rate formulas
+            'shif_rate': Decimal(str(rates['shif'][0]['rate'])) if rates.get('shif') else Decimal('2.75'),
+            'housing_levy_rate': Decimal(str(rates['housing_levy_employee'][0]['rate'])) if rates.get('housing_levy_employee') else Decimal('1.5'),
+            'housing_levy_employer_rate': Decimal(str(rates['housing_levy_employer'][0]['rate'])) if rates.get('housing_levy_employer') else Decimal('1.5'),
+        }
+        return variables
+
+    @staticmethod
+    def _apply_progressive_bands(taxable: Decimal, bands: list) -> Decimal:
+        """Apply progressive tax bands to taxable income."""
+        if taxable <= ZERO:
+            return ZERO
+        tax = ZERO
+        for band in bands:
+            band_from = Decimal(str(band['band_from']))
+            band_to = Decimal(str(band['band_to']))
+            rate = Decimal(str(band['rate'])) / Decimal('100')
+            if taxable <= band_from:
+                break
+            taxable_in_band = min(taxable, band_to) - band_from
+            if taxable_in_band > ZERO:
+                tax += (taxable_in_band * rate).quantize(Decimal('0.01'))
+        return tax
+
+    @staticmethod
+    def _apply_tiered(gross: Decimal, tiers: list) -> Decimal:
+        """Apply tiered rate calculation (e.g. NSSF tiers)."""
+        if gross <= ZERO:
+            return ZERO
+        total = ZERO
+        for tier in tiers:
+            band_from = Decimal(str(tier['band_from']))
+            band_to = Decimal(str(tier['band_to']))
+            rate = Decimal(str(tier['rate'])) / Decimal('100')
+            if gross <= band_from:
+                break
+            applicable = min(gross, band_to) - band_from
+            if applicable > ZERO:
+                total += (applicable * rate).quantize(Decimal('0.01'))
+        return total
+
+    @staticmethod
+    def _calc_statutory_default(code: str, gross: Decimal, rates: dict):
+        """Fallback computation matching the original hardcoded logic."""
+        if code == 'SHIF':
+            rate = Decimal(str(rates['shif'][0]['rate'])) if rates.get('shif') else Decimal('2.75')
+            return compute_shif(gross, rate)
+        elif code == 'NSSF':
+            return compute_nssf_separate(
+                gross, rates.get('nssf_employee', []), rates.get('nssf_employer', []))
+        elif code == 'HOUSING_LEVY':
+            ee_rate = Decimal(str(rates['housing_levy_employee'][0]['rate'])) if rates.get('housing_levy_employee') else Decimal('1.5')
+            er_rate = Decimal(str(rates['housing_levy_employer'][0]['rate'])) if rates.get('housing_levy_employer') else Decimal('1.5')
+            return compute_housing_levy(gross, ee_rate, er_rate)
+        return ZERO
 
     def _ensure_school_components(self):
         """Seed default payroll components for this school if none exist."""
@@ -809,7 +1117,7 @@ class PayrollService:
                         'amount': str(amt), 'is_taxable': bool(adj['is_taxable']),
                     })
 
-            # --- Statutory deductions ---
+            # --- Statutory deductions (configurable engine) ---
             # Check for manual/override modes on statutory components
             stat_modes = {}
             for c in components:
@@ -819,48 +1127,14 @@ class PayrollService:
                         'amount': Decimal(str(c['amount'])),
                     }
 
-            # SHIF
-            if stat_modes.get('SHIF', {}).get('mode') == 'manual':
-                shif = stat_modes['SHIF']['amount']
-            else:
-                shif_rate = rates['shif'][0]['rate'] if rates['shif'] else Decimal('2.75')
-                shif = compute_shif(gross, shif_rate)
-                if stat_modes.get('SHIF', {}).get('mode') == 'override' and stat_modes['SHIF']['amount'] > ZERO:
-                    shif = stat_modes['SHIF']['amount']
-
-            # NSSF
-            if stat_modes.get('NSSF', {}).get('mode') == 'manual':
-                nssf_ee = stat_modes['NSSF']['amount']
-                nssf_er = nssf_ee  # employer matches
-            else:
-                nssf_ee, nssf_er = compute_nssf_separate(
-                    gross, rates['nssf_employee'], rates['nssf_employer'])
-                if stat_modes.get('NSSF', {}).get('mode') == 'override' and stat_modes['NSSF']['amount'] > ZERO:
-                    nssf_ee = stat_modes['NSSF']['amount']
-                    nssf_er = nssf_ee
-
-            # Housing Levy
-            if stat_modes.get('HOUSING_LEVY', {}).get('mode') == 'manual':
-                hl_ee = stat_modes['HOUSING_LEVY']['amount']
-                hl_er = hl_ee
-            else:
-                hl_ee_rate = rates['housing_levy_employee'][0]['rate'] if rates['housing_levy_employee'] else Decimal('1.5')
-                hl_er_rate = rates['housing_levy_employer'][0]['rate'] if rates['housing_levy_employer'] else Decimal('1.5')
-                hl_ee, hl_er = compute_housing_levy(gross, hl_ee_rate, hl_er_rate)
-                if stat_modes.get('HOUSING_LEVY', {}).get('mode') == 'override' and stat_modes['HOUSING_LEVY']['amount'] > ZERO:
-                    hl_ee = stat_modes['HOUSING_LEVY']['amount']
-                    hl_er = hl_ee
-
-            # Taxable income
-            taxable = compute_taxable_income(gross, shif, nssf_ee, hl_ee)
-
-            # PAYE
-            if stat_modes.get('PAYE', {}).get('mode') == 'manual':
-                paye = stat_modes['PAYE']['amount']
-            else:
-                paye = compute_paye(taxable, rates['paye'], rates['personal_relief'])
-                if stat_modes.get('PAYE', {}).get('mode') == 'override' and stat_modes['PAYE']['amount'] > ZERO:
-                    paye = stat_modes['PAYE']['amount']
+            stat = self._compute_statutory_deductions(gross, basic_salary, rates, stat_modes)
+            shif = stat['shif']
+            nssf_ee = stat['nssf_ee']
+            nssf_er = stat['nssf_er']
+            hl_ee = stat['housing_levy_ee']
+            hl_er = stat['housing_levy_er']
+            taxable = stat['taxable']
+            paye = stat['paye']
 
             breakdown['statutory'] = [
                 {'code': 'PAYE', 'amount': str(paye), 'mode': stat_modes.get('PAYE', {}).get('mode', 'auto')},

@@ -91,6 +91,151 @@
         </div>
     </div>
 
+    <!-- Statutory Computation Formulas -->
+    <div id="statutory-formulas" class="mt-8 bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <h2 class="text-lg font-semibold text-gray-700 mb-2"><i class="fas fa-calculator text-rose-500 mr-2"></i>Statutory Computation Formulas</h2>
+        <p class="text-sm text-gray-500 mb-4">Configure how each statutory deduction is computed. When the government changes rates or formulas, update them here — no code changes needed.</p>
+
+        {% for sf in statutory_formulas %}
+        <div class="border border-gray-200 rounded-lg p-4 mb-4">
+            <div class="flex items-center justify-between mb-3">
+                <div>
+                    <h3 class="font-semibold text-gray-800">{{ sf.deduction_code }}</h3>
+                    <p class="text-xs text-gray-500">{{ sf.label }}</p>
+                </div>
+                <button onclick="openStatFormulaEdit({{ loop.index0 }})" class="text-indigo-600 hover:text-indigo-800 text-sm">
+                    <i class="fas fa-edit mr-1"></i> Edit
+                </button>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                <div>
+                    <span class="text-gray-400">Computation</span>
+                    <p class="font-medium text-gray-700">{{ sf.computation | replace('_', ' ') | title }}</p>
+                </div>
+                <div>
+                    <span class="text-gray-400">Input Variable</span>
+                    <p class="font-medium text-gray-700">{{ sf.input_variable }}</p>
+                </div>
+                {% if sf.flat_rate_expr %}
+                <div class="col-span-2">
+                    <span class="text-gray-400">Formula Expression</span>
+                    <p class="font-mono text-gray-700 bg-gray-50 px-2 py-1 rounded">{{ sf.flat_rate_expr }}</p>
+                </div>
+                {% endif %}
+                {% if sf.employer_match %}
+                <div>
+                    <span class="text-gray-400">Employer</span>
+                    <p class="font-medium text-gray-700">{{ sf.employer_expr or 'Matches employee' }}</p>
+                </div>
+                {% endif %}
+                {% if sf.personal_relief %}
+                <div>
+                    <span class="text-gray-400">Personal Relief</span>
+                    <p class="font-medium text-gray-700">{{ sf.personal_relief | currency }}</p>
+                </div>
+                {% endif %}
+                {% if sf.pension_cap %}
+                <div>
+                    <span class="text-gray-400">Pension Cap</span>
+                    <p class="font-medium text-gray-700">{{ sf.pension_cap | currency }}</p>
+                </div>
+                {% endif %}
+                {% if sf.mortgage_cap %}
+                <div>
+                    <span class="text-gray-400">Mortgage Cap</span>
+                    <p class="font-medium text-gray-700">{{ sf.mortgage_cap | currency }}</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+        {% if not statutory_formulas %}
+        <p class="text-gray-400 text-sm">Statutory formulas will be seeded on first access.</p>
+        {% endif %}
+    </div>
+
+    <!-- Edit Statutory Formula Modal -->
+    <div id="statFormulaModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+        <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold text-gray-800">Edit Statutory Formula</h3>
+                <button onclick="document.getElementById('statFormulaModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+            </div>
+            <form method="POST" id="statFormulaForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Deduction Code</label>
+                        <input type="text" id="sf_code" disabled class="w-full border rounded-lg px-3 py-2 text-sm bg-gray-100">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Label</label>
+                        <input type="text" name="label" id="sf_label" required class="w-full border rounded-lg px-3 py-2 text-sm">
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Computation Type</label>
+                            <select name="computation" id="sf_computation" onchange="toggleStatFields()" class="w-full border rounded-lg px-3 py-2 text-sm">
+                                <option value="progressive_bands">Progressive Bands (uses rate table)</option>
+                                <option value="flat_rate">Flat Rate (formula)</option>
+                                <option value="tiered">Tiered (uses rate table)</option>
+                                <option value="formula">Custom Formula</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Input Variable</label>
+                            <select name="input_variable" id="sf_input" class="w-full border rounded-lg px-3 py-2 text-sm">
+                                <option value="gross">Gross Pay</option>
+                                <option value="basic_salary">Basic Salary</option>
+                                <option value="taxable">Taxable Income</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="sf_expr_row">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Formula Expression</label>
+                        <input type="text" name="flat_rate_expr" id="sf_expr" class="w-full border rounded-lg px-3 py-2 text-sm font-mono" placeholder="e.g. gross * shif_rate / 100">
+                        <p class="text-xs text-gray-400 mt-1">Variables: basic_salary, gross, taxable, shif, nssf_ee, housing_levy_ee, shif_rate, housing_levy_rate, pension, mortgage. Ops: + - * /</p>
+                    </div>
+                    <div class="border-t pt-4">
+                        <label class="flex items-center gap-2 text-sm text-gray-700 mb-3">
+                            <input type="checkbox" name="employer_match" id="sf_emp_match" onchange="toggleStatFields()" class="rounded">
+                            Employer also pays (employer match)
+                        </label>
+                        <div id="sf_emp_row" class="hidden">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Employer Formula (leave blank to match employee)</label>
+                            <input type="text" name="employer_expr" id="sf_emp_expr" class="w-full border rounded-lg px-3 py-2 text-sm font-mono" placeholder="e.g. gross * housing_levy_employer_rate / 100">
+                        </div>
+                    </div>
+                    <div id="sf_paye_fields" class="border-t pt-4 space-y-3">
+                        <div class="grid grid-cols-3 gap-3">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Personal Relief</label>
+                                <input type="number" step="0.01" name="personal_relief" id="sf_relief" class="w-full border rounded-lg px-3 py-2 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Pension Cap</label>
+                                <input type="number" step="0.01" name="pension_cap" id="sf_pension_cap" class="w-full border rounded-lg px-3 py-2 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Mortgage Cap</label>
+                                <input type="number" step="0.01" name="mortgage_cap" id="sf_mortgage_cap" class="w-full border rounded-lg px-3 py-2 text-sm">
+                            </div>
+                        </div>
+                    </div>
+                    <div id="sf_pretax_row" class="hidden">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Pre-Tax Deductions (JSON)</label>
+                        <input type="text" name="pre_tax_deductions" id="sf_pretax" class="w-full border rounded-lg px-3 py-2 text-sm font-mono" placeholder='["shif","nssf_ee","housing_levy_ee","pension","mortgage"]'>
+                        <p class="text-xs text-gray-400 mt-1">JSON array of deduction variable names subtracted before PAYE.</p>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end gap-3">
+                    <button type="button" onclick="document.getElementById('statFormulaModal').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+                    <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Salary Components Management -->
     <div id="components" class="mt-8 bg-white p-6 rounded-xl shadow-sm border border-gray-100">
         <div class="flex items-center justify-between mb-4">
@@ -302,6 +447,58 @@
 <script>
 // Store component data safely in JS (avoids tojson-in-attribute escaping issues)
 var _components = {{ components | tojson }};
+var _stat_formulas = {{ statutory_formulas | tojson }};
+
+function openStatFormulaEdit(idx) {
+    var sf = _stat_formulas[idx];
+    document.getElementById('sf_code').value = sf.deduction_code || '';
+    document.getElementById('sf_label').value = sf.label || '';
+    document.getElementById('sf_computation').value = sf.computation || 'flat_rate';
+    document.getElementById('sf_input').value = sf.input_variable || 'gross';
+    document.getElementById('sf_expr').value = sf.flat_rate_expr || '';
+    document.getElementById('sf_emp_match').checked = !!sf.employer_match;
+    document.getElementById('sf_emp_expr').value = sf.employer_expr || '';
+    document.getElementById('sf_relief').value = sf.personal_relief || '';
+    document.getElementById('sf_pension_cap').value = sf.pension_cap || '';
+    document.getElementById('sf_mortgage_cap').value = sf.mortgage_cap || '';
+    document.getElementById('sf_pretax').value = sf.pre_tax_deductions || '';
+    document.getElementById('statFormulaForm').action = "{{ url_for('payroll.settings_statutory_formula_edit', formula_id=0) }}".replace('/0/', '/' + sf.id + '/');
+    toggleStatFields();
+    document.getElementById('statFormulaModal').classList.remove('hidden');
+}
+
+function toggleStatFields() {
+    var comp = document.getElementById('sf_computation').value;
+    var code = document.getElementById('sf_code').value;
+    var exprRow = document.getElementById('sf_expr_row');
+    var empRow = document.getElementById('sf_emp_row');
+    var payeFields = document.getElementById('sf_paye_fields');
+    var pretaxRow = document.getElementById('sf_pretax_row');
+    // Show formula expression for flat_rate and formula types
+    if (comp === 'flat_rate' || comp === 'formula') {
+        exprRow.classList.remove('hidden');
+    } else {
+        exprRow.classList.add('hidden');
+    }
+    // Show employer expression when employer match checked
+    if (document.getElementById('sf_emp_match').checked) {
+        empRow.classList.remove('hidden');
+    } else {
+        empRow.classList.add('hidden');
+    }
+    // Show PAYE-specific fields (relief, caps) for PAYE code
+    if (code === 'PAYE') {
+        payeFields.classList.remove('hidden');
+    } else {
+        payeFields.classList.add('hidden');
+    }
+    // Show pre-tax deductions for TAXABLE_INCOME code
+    if (code === 'TAXABLE_INCOME') {
+        pretaxRow.classList.remove('hidden');
+    } else {
+        pretaxRow.classList.add('hidden');
+    }
+}
 
 function openEditModal(idx) {
     var comp = _components[idx];
