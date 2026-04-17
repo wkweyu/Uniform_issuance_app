@@ -8,6 +8,9 @@ adjustments, and reporting.  All data is scoped by school_id.
 
 import json
 import logging
+import ast
+import operator
+import re
 import pymysql
 from datetime import datetime, date
 from decimal import Decimal, InvalidOperation
@@ -26,6 +29,68 @@ from core.tax import (
 
 ZERO = Decimal('0.00')
 logger = logging.getLogger(__name__)
+
+# -----------  Safe formula evaluator  -----------
+_ALLOWED_VARS = frozenset({
+    'basic_salary', 'gross', 'net',
+    'paye', 'shif', 'nssf', 'housing_levy',
+})
+_ALLOWED_OPS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.USub: operator.neg,
+}
+
+def _safe_eval_node(node, variables: dict):
+    """Recursively evaluate an AST node with only arithmetic ops and named vars."""
+    if isinstance(node, ast.Expression):
+        return _safe_eval_node(node.body, variables)
+    if isinstance(node, ast.BinOp):
+        op = _ALLOWED_OPS.get(type(node.op))
+        if op is None:
+            raise ValueError(f"Unsupported operator: {type(node.op).__name__}")
+        return op(_safe_eval_node(node.left, variables),
+                   _safe_eval_node(node.right, variables))
+    if isinstance(node, ast.UnaryOp):
+        op = _ALLOWED_OPS.get(type(node.op))
+        if op is None:
+            raise ValueError(f"Unsupported operator: {type(node.op).__name__}")
+        return op(_safe_eval_node(node.operand, variables))
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        return Decimal(str(node.value))
+    if isinstance(node, ast.Name):
+        if node.id not in variables:
+            raise ValueError(f"Unknown variable: {node.id}")
+        return Decimal(str(variables[node.id]))
+    raise ValueError(f"Unsupported expression element: {ast.dump(node)}")
+
+
+def evaluate_formula(expression: str, variables: dict) -> Decimal:
+    """Safely evaluate a formula string using only arithmetic and allowed variables."""
+    try:
+        tree = ast.parse(expression.strip(), mode='eval')
+        result = _safe_eval_node(tree, variables)
+        return Decimal(str(result)).quantize(Decimal('0.01'))
+    except (SyntaxError, ValueError, ZeroDivisionError) as e:
+        raise PayrollError(f"Formula error: {e}")
+
+
+def validate_formula_syntax(expression: str) -> bool:
+    """Check that a formula string is syntactically valid and uses only allowed tokens."""
+    if not expression or not expression.strip():
+        return True
+    try:
+        tree = ast.parse(expression.strip(), mode='eval')
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id not in _ALLOWED_VARS:
+            return False
+        if isinstance(node, (ast.Call, ast.Attribute, ast.Subscript)):
+            return False
+    return True
 
 
 class PayrollError(Exception):
@@ -315,7 +380,8 @@ class PayrollService:
 
     def add_component(self, code: str, name: str, comp_type: str,
                       calculation_type: str = 'fixed', is_taxable: bool = False,
-                      is_statutory: bool = False, sort_order: int = 50) -> int:
+                      is_statutory: bool = False, sort_order: int = 50,
+                      formula_expression: str = None) -> int:
         code = code.strip().upper()
         name = name.strip()
         if not code or not name:
@@ -324,6 +390,13 @@ class PayrollService:
             raise PayrollError("Invalid component type.")
         if calculation_type not in ('fixed', 'percentage', 'formula', 'manual'):
             raise PayrollError("Invalid calculation type.")
+        if calculation_type == 'formula':
+            if not formula_expression or not formula_expression.strip():
+                raise PayrollError("A formula expression is required when calculation type is 'formula'.")
+            if not validate_formula_syntax(formula_expression):
+                raise PayrollError(
+                    "Invalid formula. Use only: basic_salary, gross, net, paye, shif, nssf, "
+                    "housing_levy and arithmetic operators (+, -, *, /).")
         # Check duplicate code
         self.cursor.execute(
             "SELECT id FROM payroll_components WHERE school_id = %s AND code = %s",
@@ -333,9 +406,10 @@ class PayrollService:
             raise PayrollError(f"A component with code '{code}' already exists.")
         self.cursor.execute(
             "INSERT INTO payroll_components "
-            "(school_id, code, name, type, calculation_type, is_taxable, is_statutory, sort_order) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            "(school_id, code, name, type, calculation_type, formula_expression, is_taxable, is_statutory, sort_order) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (self.school_id, code, name, comp_type, calculation_type,
+             formula_expression.strip() if formula_expression else None,
              int(is_taxable), int(is_statutory), sort_order),
         )
         self.connection.commit()
@@ -343,7 +417,7 @@ class PayrollService:
 
     def update_component(self, component_id: int, name: str, comp_type: str,
                          calculation_type: str = 'fixed', is_taxable: bool = False,
-                         sort_order: int = 50) -> None:
+                         sort_order: int = 50, formula_expression: str = None) -> None:
         comp = self.get_component(component_id)
         name = name.strip()
         if not name:
@@ -352,10 +426,20 @@ class PayrollService:
             raise PayrollError("Invalid component type.")
         if calculation_type not in ('fixed', 'percentage', 'formula', 'manual'):
             raise PayrollError("Invalid calculation type.")
+        if calculation_type == 'formula':
+            if not formula_expression or not formula_expression.strip():
+                raise PayrollError("A formula expression is required when calculation type is 'formula'.")
+            if not validate_formula_syntax(formula_expression):
+                raise PayrollError(
+                    "Invalid formula. Use only: basic_salary, gross, net, paye, shif, nssf, "
+                    "housing_levy and arithmetic operators (+, -, *, /).")
         self.cursor.execute(
             "UPDATE payroll_components SET name = %s, type = %s, calculation_type = %s, "
-            "is_taxable = %s, sort_order = %s WHERE id = %s AND school_id = %s",
-            (name, comp_type, calculation_type, int(is_taxable), sort_order,
+            "formula_expression = %s, is_taxable = %s, sort_order = %s "
+            "WHERE id = %s AND school_id = %s",
+            (name, comp_type, calculation_type,
+             formula_expression.strip() if formula_expression else None,
+             int(is_taxable), sort_order,
              component_id, self.school_id),
         )
         self.connection.commit()
@@ -653,7 +737,8 @@ class PayrollService:
         emp_ids = [e['id'] for e in employees]
         placeholders = ','.join(['%s'] * len(emp_ids))
         self.cursor.execute(
-            f"SELECT pec.*, pc.code, pc.type, pc.calculation_type, pc.is_taxable, pc.is_statutory "
+            f"SELECT pec.*, pc.code, pc.type, pc.calculation_type, pc.is_taxable, pc.is_statutory, "
+            f"pc.formula_expression "
             f"FROM payroll_employee_components pec "
             f"JOIN payroll_components pc ON pec.component_id = pc.id "
             f"WHERE pec.employee_id IN ({placeholders}) AND pec.is_active = 1 "
@@ -701,6 +786,9 @@ class PayrollService:
                 if c['type'] == 'earning':
                     if c['code'] == 'BASIC':
                         amt = basic_salary
+                    elif c['calculation_type'] == 'formula' and c.get('formula_expression'):
+                        formula_vars = {'basic_salary': basic_salary, 'gross': gross}
+                        amt = evaluate_formula(c['formula_expression'], formula_vars)
                     elif c['is_percent']:
                         amt = Decimal(str(c['amount'])) * basic_salary / Decimal('100')
                     else:
@@ -787,7 +875,15 @@ class PayrollService:
             vol_deductions = ZERO
             for c in components:
                 if c['type'] == 'deduction' and not c['is_statutory']:
-                    amt = Decimal(str(c['amount']))
+                    if c['calculation_type'] == 'formula' and c.get('formula_expression'):
+                        formula_vars = {
+                            'basic_salary': basic_salary, 'gross': gross,
+                            'paye': paye, 'shif': shif, 'nssf': nssf_ee,
+                            'housing_levy': hl_ee,
+                        }
+                        amt = evaluate_formula(c['formula_expression'], formula_vars)
+                    else:
+                        amt = Decimal(str(c['amount']))
                     if amt > ZERO:
                         vol_deductions += amt
                         breakdown['deductions'].append({

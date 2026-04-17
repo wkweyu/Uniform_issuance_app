@@ -473,6 +473,7 @@ def component_add():
             calculation_type=request.form.get('calculation_type', 'fixed'),
             is_taxable='is_taxable' in request.form,
             sort_order=int(request.form.get('sort_order', 50)),
+            formula_expression=request.form.get('formula_expression', '').strip() or None,
         )
         flash('Component added.', 'success')
     except (PayrollError, ValueError) as e:
@@ -494,6 +495,7 @@ def component_edit(component_id):
             calculation_type=request.form.get('calculation_type', 'fixed'),
             is_taxable='is_taxable' in request.form,
             sort_order=int(request.form.get('sort_order', 50)),
+            formula_expression=request.form.get('formula_expression', '').strip() or None,
         )
         flash('Component updated.', 'success')
     except (PayrollError, ValueError) as e:
