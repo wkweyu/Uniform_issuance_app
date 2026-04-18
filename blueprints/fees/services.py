@@ -30,6 +30,13 @@ class FeesError(Exception):
     pass
 
 class FeesService:
+        def get_current_term_id(self):
+            self.cursor.execute(
+                "SELECT id FROM uniform_term_dates WHERE CURDATE() BETWEEN start_date AND end_date AND school_id = %s LIMIT 1",
+                (self.school_id,)
+            )
+            term_res = self.cursor.fetchone()
+            return term_res['id'] if term_res else None
     def __init__(self, connection: pymysql.Connection, school_id: Optional[int] = None):
         self.connection = connection
         self.cursor = connection.cursor(pymysql.cursors.DictCursor)

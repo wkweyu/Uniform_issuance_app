@@ -12,6 +12,9 @@ def login():
         return redirect(url_for('index'))
 
     next_url = request.args.get('next')
+    # Only allow relative paths for next_url
+    if next_url and not next_url.startswith('/'):
+        next_url = None
 
     if request.method == 'POST':
         service = AuthService()
