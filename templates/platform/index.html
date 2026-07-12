@@ -23,315 +23,272 @@
 	</div>
 
     <!-- Smart Insights Section -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-2">
         {% if support_summary.open > 5 %}
-        <div class="platform-card !p-4 bg-red-50 border-red-100 flex items-start gap-4">
-            <div class="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center shrink-0 border border-red-200">
-                <i class="fas fa-exclamation-triangle text-red-600 text-sm"></i>
+        <div class="platform-card p-3 bg-red-50 border-red-100 flex items-start gap-3">
+            <div class="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center shrink-0 border border-red-200">
+                <i class="fas fa-exclamation-triangle text-red-600 text-xs"></i>
             </div>
             <div>
-                <h3 class="text-sm font-bold text-red-900">High Ticket Volume</h3>
-                <p class="text-xs text-red-700 mt-1">There are {{ support_summary.open }} open tickets requires attention.</p>
+                <h3 class="text-xs font-bold text-red-900">High Ticket Volume</h3>
+                <p class="text-[10px] text-red-700 mt-0.5">There are {{ support_summary.open }} open tickets requires attention.</p>
             </div>
         </div>
         {% endif %}
         
         {% set total_growth = (metrics_cards[0].detail if metrics_cards|length > 0 else '0%') %}
-        <div class="platform-card !p-4 bg-emerald-50 border-emerald-100 flex items-start gap-4">
-            <div class="h-10 w-10 rounded-full bg-emerald-100 flex items-center justify-center shrink-0 border border-emerald-200">
-                <i class="fas fa-arrow-trend-up text-emerald-600 text-sm"></i>
+        <div class="platform-card p-3 bg-emerald-50 border-emerald-100 flex items-start gap-3">
+            <div class="h-8 w-8 rounded-full bg-emerald-100 flex items-center justify-center shrink-0 border border-emerald-200">
+                <i class="fas fa-arrow-trend-up text-emerald-600 text-xs"></i>
             </div>
             <div>
-                <h3 class="text-sm font-bold text-emerald-900">Positive Growth</h3>
-                <p class="text-xs text-emerald-700 mt-1">{{ total_growth }} increase in total tenants over window.</p>
+                <h3 class="text-xs font-bold text-emerald-900">Positive Growth</h3>
+                <p class="text-[10px] text-emerald-700 mt-0.5">{{ total_growth }} increase in total tenants over window.</p>
             </div>
         </div>
 
-        <div class="platform-card !p-4 bg-blue-50 border-blue-100 flex items-start gap-4">
-            <div class="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0 border border-blue-200">
-                <i class="fas fa-clock text-blue-600 text-sm"></i>
+        <div class="platform-card p-3 bg-blue-50 border-blue-100 flex items-start gap-3">
+            <div class="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0 border border-blue-200">
+                <i class="fas fa-clock text-blue-600 text-xs"></i>
             </div>
             <div>
-                <h3 class="text-sm font-bold text-blue-900">Next Renewal Batch</h3>
-                <p class="text-xs text-blue-700 mt-1">3 subscriptions are due for processing in 48h.</p>
+                <h3 class="text-xs font-bold text-blue-900">Next Renewal Batch</h3>
+                <p class="text-[10px] text-blue-700 mt-0.5">3 subscriptions are due for processing in 48h.</p>
             </div>
         </div>
     </div>
 
-	<div class="grid gap-6 md:grid-cols-2 xl:grid-cols-3 lg:grid-cols-4">
+	<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
 		{% for card in metrics_cards %}
-		{{ metric_card(card.label, card.value, card.detail, 'blue' if 'School' in card.label else 'emerald' if 'Subscription' in card.label else 'amber' if 'User' in card.label else 'rose' if 'Error' in card.label else 'slate') }}
+		{{ metric_card(card.label, card.value, card.detail, 'blue' if loop.index == 1 else 'emerald' if loop.index == 2 else 'amber' if loop.index == 3 else 'slate') }}
 		{% endfor %}
 	</div>
 
 	<div class="grid gap-4 xl:grid-cols-2">
-		<section class="platform-card">
-			<div class="flex items-center justify-between mb-6">
+		<section class="platform-card p-5">
+			<div class="flex items-center justify-between mb-5">
 				<div>
-					<h2 class="text-base font-bold text-gray-900 tracking-tight">Ecosystem Traffic</h2>
-					<p class="text-[10px] text-gray-400 font-bold uppercase tracking-[0.15em] mt-1">Tenant activity • {{ selected_window_days }}d window</p>
+					<h2 class="text-sm font-bold text-slate-900 tracking-tight">Ecosystem Traffic</h2>
+					<p class="text-[9px] text-slate-400 font-bold uppercase tracking-[0.15em] mt-1">Tenant activity • {{ selected_window_days }}d window</p>
 				</div>
-				<div class="h-10 w-10 rounded-xl bg-gray-50 flex items-center justify-center text-gray-400">
-                    <i class="fas fa-chart-line text-sm"></i>
+				<div class="h-8 w-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400">
+                    <i class="fas fa-chart-line text-xs"></i>
                 </div>
 			</div>
-			<div data-platform-trends data-summary-url="{{ url_for('platform.metrics_summary', window_days=selected_window_days) }}" data-trends-url="{{ url_for('platform.metrics_trends', window_days=selected_window_days) }}" class="min-h-[300px] flex flex-col">
-				{% from 'platform/_components.html' import loading_skeleton %}
-                {{ loading_skeleton('h-64') }}
+			<div data-platform-trends data-summary-url="{{ url_for('platform.metrics_summary', window_days=selected_window_days) }}" data-trends-url="{{ url_for('platform.metrics_trends', window_days=selected_window_days) }}" class="min-h-[260px] rounded-lg bg-slate-50/50 p-4 border border-slate-100">
+				<div class="flex h-full items-center justify-center text-xs font-medium text-slate-300 animate-pulse italic">Authenticating data streams...</div>
 			</div>
 		</section>
 
-		<section class="platform-card">
-			<div class="flex items-center justify-between mb-6">
+		<section class="platform-card p-5">
+			<div class="flex items-center justify-between mb-5">
 				<div>
-					<h2 class="text-base font-bold text-gray-900 tracking-tight">Market Distribution</h2>
-					<p class="text-[10px] text-gray-400 font-bold uppercase tracking-[0.15em] mt-1">Plan mix analysis</p>
+					<h2 class="text-sm font-bold text-slate-900 tracking-tight">Market Distribution</h2>
+					<p class="text-[9px] text-slate-400 font-bold uppercase tracking-[0.15em] mt-1">Plan mix analysis</p>
 				</div>
-				<div class="h-10 w-10 rounded-xl bg-gray-50 flex items-center justify-center text-gray-400">
-                    <i class="fas fa-pie-chart text-sm"></i>
+				<div class="h-8 w-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400">
+                    <i class="fas fa-pie-chart text-xs"></i>
                 </div>
 			</div>
-			<div data-platform-mix class="min-h-[300px] flex flex-col">
-				{% from 'platform/_components.html' import loading_skeleton %}
-                {{ loading_skeleton('h-64') }}
+			<div data-platform-mix class="min-h-[260px] rounded-lg bg-slate-50/50 p-4 border border-slate-100">
+				<div class="flex h-full items-center justify-center text-xs font-medium text-slate-300 animate-pulse italic">Aggregating live mix...</div>
 			</div>
 		</section>
 	</div>
 
-	<div class="grid gap-6 xl:grid-cols-2">
-		<section class="platform-card">
-			<div class="flex items-center justify-between mb-6">
-				<h2 class="text-base font-bold text-gray-900 tracking-tight">Billing Lifecycle</h2>
+	<div class="grid gap-4 xl:grid-cols-2">
+		<section class="platform-card p-5">
+			<div class="flex items-center justify-between mb-5">
+				<h2 class="text-sm font-bold text-slate-900 tracking-tight">Billing Lifecycle</h2>
 				{% if platform_has_permission('billing_access') %}
-				<a href="{{ url_for('platform.list_subscriptions') }}" class="text-[10px] font-bold uppercase tracking-widest text-blue-600 hover:text-blue-700 transition-colors">Full Portfolio</a>
+				<a href="{{ url_for('platform.list_subscriptions') }}" class="text-[10px] font-bold uppercase tracking-widest text-blue-600 hover:text-blue-700 transition-colors">Portfolio</a>
 				{% endif %}
 			</div>
-			<div class="grid gap-4 sm:grid-cols-3">
+			<div class="grid gap-3 sm:grid-cols-3">
 				{% for status, count in subscription_counts.items() %}
-				<div class="rounded-xl bg-gray-50 p-4 border border-gray-100">
-					<div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">{{ status.replace('_', ' ') }}</div>
-					<div class="text-2xl font-extrabold text-gray-900">{{ count }}</div>
+				<div class="rounded-lg bg-slate-50 p-3 border border-slate-100">
+					<div class="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">{{ status.replace('_', ' ') }}</div>
+					<div class="text-lg font-extrabold text-slate-900">{{ count }}</div>
 				</div>
 				{% endfor %}
 			</div>
 		</section>
 
-		<section class="platform-card">
-			<div class="flex items-center justify-between mb-6">
+		<section class="platform-card p-5">
+			<div class="flex items-center justify-between mb-5">
 				<div>
-					<h2 class="text-base font-bold text-gray-900 tracking-tight">Service Health</h2>
-					<p class="text-[10px] text-gray-400 font-bold uppercase tracking-[0.15em] mt-1">Cross-tenant ticketing</p>
+					<h2 class="text-sm font-bold text-slate-900 tracking-tight">Service Health</h2>
+					<p class="text-[9px] text-slate-400 font-bold uppercase tracking-[0.15em] mt-1">Cross-tenant ticketing</p>
 				</div>
 				{% if platform_has_permission('support_access') %}
-				<a href="{{ url_for('platform.list_tickets') }}" class="text-[10px] font-bold uppercase tracking-widest text-blue-600 hover:text-blue-700 transition-colors">Go to Queue</a>
+				<a href="{{ url_for('platform.list_tickets') }}" class="text-[10px] font-bold uppercase tracking-widest text-blue-600 hover:text-blue-700 transition-colors">Queue</a>
 				{% endif %}
 			</div>
-			<div class="grid gap-4 sm:grid-cols-3">
-				<div class="rounded-xl bg-red-50 p-4 border border-red-100">
-					<div class="text-[10px] font-bold uppercase tracking-wider text-red-500 mb-2">Critical/Open</div>
-					<div class="text-2xl font-extrabold text-red-700">{{ support_summary.open }}</div>
+			<div class="grid gap-3 sm:grid-cols-3">
+				<div class="rounded-lg bg-red-50 p-3 border border-red-100">
+					<div class="text-[9px] font-bold uppercase tracking-widest text-red-500 mb-1">Critical/Open</div>
+					<div class="text-lg font-extrabold text-red-700">{{ support_summary.open }}</div>
 				</div>
-				<div class="rounded-xl bg-emerald-50 p-4 border border-emerald-100">
-					<div class="text-[10px] font-bold uppercase tracking-wider text-emerald-500 mb-2">Resolved</div>
-					<div class="text-2xl font-extrabold text-emerald-700">{{ support_summary.closed }}</div>
+				<div class="rounded-lg bg-emerald-50 p-3 border border-emerald-100">
+					<div class="text-[9px] font-bold uppercase tracking-widest text-emerald-500 mb-1">Resolved</div>
+					<div class="text-lg font-extrabold text-emerald-700">{{ support_summary.closed }}</div>
 				</div>
-				<div class="rounded-xl bg-gray-50 p-4 border border-gray-100">
-					<div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">Load Total</div>
-					<div class="text-2xl font-extrabold text-gray-900">{{ support_summary.total }}</div>
+				<div class="rounded-lg bg-slate-50 p-3 border border-slate-100">
+					<div class="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Load Total</div>
+					<div class="text-lg font-extrabold text-slate-900">{{ support_summary.total }}</div>
 				</div>
 			</div>
 		</section>
 	</div>
 
-	<div class="grid gap-6 xl:grid-cols-2">
-		<section class="platform-card">
-			<div class="flex items-center justify-between mb-6">
+	<div class="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+		<section class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+			<div class="flex items-center justify-between">
 				<div>
-					<h2 class="text-base font-bold text-gray-900 tracking-tight">Entitlement Mix</h2>
-					<p class="text-xs text-gray-600">Configured vs unconfigured access posture across the current tenant fleet.</p>
+					<h2 class="text-xl font-bold text-gray-900">Entitlement Mix</h2>
+					<p class="text-sm text-gray-600">Configured vs unconfigured access posture across the current tenant fleet.</p>
 				</div>
 				{% if platform_has_permission('billing_access') %}
-				<a href="{{ url_for('platform.list_schools') }}" class="text-xs font-bold text-blue-600 hover:text-blue-700">Filter schools</a>
+				<a href="{{ url_for('platform.list_schools') }}" class="text-sm font-semibold text-green-700 hover:text-green-800">Filter schools</a>
 				{% endif %}
 			</div>
-			<div class="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
-				<div class="rounded-xl bg-gray-50 p-4 border border-gray-100">
-					<div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">Configured</div>
-					<div class="text-2xl font-extrabold text-gray-900">{{ entitlement_counts.configured }}</div>
+			<div class="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+				<div class="rounded-xl bg-slate-50 px-4 py-3">
+					<div class="text-xs font-semibold uppercase tracking-wide text-slate-600">Configured</div>
+					<div class="mt-1 text-2xl font-bold text-slate-900">{{ entitlement_counts.configured }}</div>
 				</div>
-				<div class="rounded-xl bg-gray-50 p-4 border border-gray-100">
-					<div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">Unconfigured</div>
-					<div class="text-2xl font-extrabold text-gray-900">{{ entitlement_counts.unconfigured }}</div>
+				<div class="rounded-xl bg-gray-50 px-4 py-3">
+					<div class="text-xs font-semibold uppercase tracking-wide text-gray-600">Unconfigured</div>
+					<div class="mt-1 text-2xl font-bold text-gray-900">{{ entitlement_counts.unconfigured }}</div>
 				</div>
-				<div class="rounded-xl bg-amber-50 p-4 border border-amber-100">
-					<div class="text-[10px] font-bold uppercase tracking-wider text-amber-700 mb-1">Read Only</div>
-					<div class="text-2xl font-extrabold text-amber-900">{{ entitlement_counts.read_only }}</div>
+				<div class="rounded-xl bg-amber-50 px-4 py-3">
+					<div class="text-xs font-semibold uppercase tracking-wide text-amber-700">Read Only</div>
+					<div class="mt-1 text-2xl font-bold text-amber-900">{{ entitlement_counts.read_only }}</div>
 				</div>
-				<div class="rounded-xl bg-emerald-50 p-4 border border-emerald-100">
-					<div class="text-[10px] font-bold uppercase tracking-wider text-emerald-700 mb-1">Read / Write</div>
-					<div class="text-2xl font-extrabold text-emerald-900">{{ entitlement_counts.read_write }}</div>
+				<div class="rounded-xl bg-emerald-50 px-4 py-3">
+					<div class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Read / Write</div>
+					<div class="mt-1 text-2xl font-bold text-emerald-900">{{ entitlement_counts.read_write }}</div>
 				</div>
-				<div class="rounded-xl bg-gray-100 p-4 border border-gray-200">
-					<div class="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">Disabled</div>
-					<div class="text-2xl font-extrabold text-gray-900">{{ entitlement_counts.disabled }}</div>
+				<div class="rounded-xl bg-stone-50 px-4 py-3">
+					<div class="text-xs font-semibold uppercase tracking-wide text-stone-600">Disabled</div>
+					<div class="mt-1 text-2xl font-bold text-stone-900">{{ entitlement_counts.disabled }}</div>
 				</div>
 			</div>
 		</section>
 
-		<section class="platform-card">
-			<div class="flex items-center justify-between mb-6">
+		<section class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+			<div class="flex items-center justify-between">
 				<div>
-					<h2 class="text-base font-bold text-gray-900 tracking-tight">Module Adoption</h2>
-					<p class="text-xs text-gray-600">Top entitled modules across the current tenant fleet.</p>
+					<h2 class="text-xl font-bold text-gray-900">Module Adoption</h2>
+					<p class="text-sm text-gray-600">Top entitled modules across the current tenant fleet, enriched with registry family and grouping labels.</p>
 				</div>
 				{% if platform_has_permission('billing_access') %}
-				<a href="{{ url_for('platform.list_plans') }}" class="text-xs font-bold text-blue-600 hover:text-blue-700">Review plans</a>
+				<a href="{{ url_for('platform.list_plans') }}" class="text-sm font-semibold text-indigo-700 hover:text-indigo-800">Review plans</a>
 				{% endif %}
 			</div>
-			<div class="grid gap-3 sm:grid-cols-2">
+			<div class="mt-5 space-y-3">
 				{% for module in module_adoption_rows %}
 				<div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
 					<div class="flex items-center justify-between gap-3">
-						<div class="min-w-0">
-							<div class="font-bold text-gray-900 truncate">{{ module.name }}</div>
-							<div class="text-[10px] uppercase tracking-wider text-gray-500 truncate">{{ module.family_label }} {{ module.group_label }}</div>
+						<div>
+							<div class="font-semibold text-gray-900">{{ module.name }}</div>
+							<div class="text-xs uppercase tracking-wide text-gray-500">{{ module.family_label }} {{ module.group_label }}</div>
 						</div>
-						<div class="text-right shrink-0">
-							<div class="text-xl font-extrabold text-gray-900">{{ module.tenant_count }}</div>
-							<div class="text-[10px] uppercase tracking-wider text-gray-400">Tenants</div>
+						<div class="text-right">
+							<div class="text-2xl font-bold text-gray-900">{{ module.tenant_count }}</div>
+							<div class="text-xs uppercase tracking-wide text-gray-500">Tenants</div>
 						</div>
 					</div>
 				</div>
 				{% else %}
-				<div class="col-span-full rounded-xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">No module adoption data is available yet.</div>
+				<div class="rounded-xl border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500">No module adoption data is available yet.</div>
 				{% endfor %}
 			</div>
 		</section>
 	</div>
 
-	<div class="grid gap-6 xl:grid-cols-2">
-		<section class="platform-card">
-			<div class="flex items-center justify-between mb-6">
+	<div class="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+		<section class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+			<div class="flex items-center justify-between">
 				<div>
-					<h2 class="text-base font-bold text-gray-900 tracking-tight">Security Signals</h2>
-					<p class="text-xs text-gray-600">Audit-derived alerts for failed platform logins.</p>
+					<h2 class="text-xl font-bold text-gray-900">Security Signals</h2>
+					<p class="text-sm text-gray-600">Audit-derived alerts for failed platform logins and impersonation activity in the selected window.</p>
 				</div>
 				{% if platform_has_permission('security_access') %}
-				<a href="{{ url_for('platform.list_security_events') }}" class="text-xs font-bold text-rose-600 hover:text-rose-700">Review all events</a>
+				<a href="{{ url_for('platform.list_security_events') }}" class="text-sm font-semibold text-rose-700 hover:text-rose-800">Review security events</a>
 				{% endif %}
 			</div>
-			<div class="grid gap-4 sm:grid-cols-2">
+			<div class="mt-5 grid gap-3 sm:grid-cols-2">
 				{% for card in security_alerts.cards %}
-				<div class="rounded-xl border border-rose-100 bg-rose-50 p-4">
-					<div class="text-[10px] font-bold uppercase tracking-wider text-rose-700 mb-1">{{ card.label }}</div>
-					<div class="text-2xl font-extrabold text-rose-900">{{ card.value }}</div>
-					<div class="mt-2 text-xs text-rose-800 leading-relaxed">{{ card.detail }}</div>
+				<div class="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3">
+					<div class="text-xs font-semibold uppercase tracking-wide text-rose-700">{{ card.label }}</div>
+					<div class="mt-1 text-2xl font-bold text-rose-900">{{ card.value }}</div>
+					<div class="mt-2 text-sm text-rose-800">{{ card.detail }}</div>
 				</div>
 				{% endfor %}
 			</div>
 		</section>
 
-		<section class="platform-card">
-			<div class="flex items-center justify-between mb-6">
+		<section class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+			<div class="flex items-center justify-between">
 				<div>
-					<h2 class="text-base font-bold text-gray-900 tracking-tight">Recent Alert Feed</h2>
-					<p class="text-xs text-gray-600">Suspicious or privileged events.</p>
+					<h2 class="text-xl font-bold text-gray-900">Recent Alert Feed</h2>
+					<p class="text-sm text-gray-600">Most recent suspicious or privileged events captured in the audit trail.</p>
 				</div>
 				{{ status_badge('Last ' ~ selected_window_days ~ ' days', 'rose') }}
 			</div>
-			<div class="space-y-3">
+			<div class="mt-5 space-y-3">
 				{% for alert in security_alerts.recent_alerts %}
-				<div class="rounded-xl border border-gray-100 bg-gray-50 p-3">
-					<div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-1">
-						<div class="text-xs font-bold text-gray-900 uppercase tracking-tight">{{ alert.action.replace('_', ' ') }}</div>
-						<div class="text-[10px] text-gray-400 font-medium">{{ alert.created_at }}</div>
+				<div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+					<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+						<div class="text-sm font-semibold text-gray-900">{{ alert.action.replace('_', ' ') }}</div>
+						<div class="text-xs text-gray-500">{{ alert.created_at }}</div>
 					</div>
-					<div class="text-xs text-gray-600 leading-relaxed">{{ alert.details }}</div>
+					<div class="mt-2 text-sm text-gray-600">{{ alert.details }}</div>
 					{% if alert.ip %}
-					<div class="mt-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">IP: {{ alert.ip }}</div>
+					<div class="mt-1 text-xs uppercase tracking-wide text-gray-500">Source IP: {{ alert.ip }}</div>
 					{% endif %}
 				</div>
 				{% else %}
-				<div class="rounded-xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">No suspicious alerts were captured.</div>
+				<div class="rounded-xl border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500">No suspicious or privileged alerts were captured for this window.</div>
 				{% endfor %}
 			</div>
 		</section>
 	</div>
 
-	<section class="platform-card">
-		<div class="flex items-center justify-between mb-6">
+	<section class="rounded-2xl border border-gray-200 bg-white shadow-sm">
+		<div class="flex items-center justify-between border-b border-gray-200 px-6 py-4">
 			<div>
-				<h2 class="text-base font-bold text-gray-900">System Monitoring: Recent Errors</h2>
-				<p class="text-xs text-gray-500 mt-1">Last 5 exceptions captured across the platform.</p>
-			</div>
-			<span class="text-[10px] font-bold uppercase tracking-widest text-rose-500 bg-rose-50 px-2 py-1 rounded">Live Feed</span>
-		</div>
-		<div class="space-y-4">
-			{% for error in recent_errors %}
-			<div class="rounded-xl border border-gray-100 bg-gray-50 p-4">
-				<div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between mb-2">
-					<div class="min-w-0">
-						<div class="text-xs font-bold text-rose-600 uppercase tracking-tight">{{ error.method }} {{ error.endpoint }}</div>
-						<div class="text-sm font-bold text-gray-900 mt-1 truncate">{{ error.error_message }}</div>
-					</div>
-					<div class="text-[10px] text-gray-400 font-medium whitespace-nowrap">{{ error.created_at }}</div>
-				</div>
-				<details class="mt-2">
-					<summary class="text-[10px] font-bold text-gray-500 cursor-pointer hover:text-gray-700 uppercase tracking-wider">View Stack Trace</summary>
-					<pre class="mt-2 p-3 bg-gray-900 text-gray-300 text-[10px] rounded-lg overflow-x-auto font-mono leading-relaxed">{{ error.stack_trace }}</pre>
-				</details>
-				{% if error.school_id %}
-				<div class="mt-3 flex items-center gap-2">
-					<span class="text-[10px] font-bold text-gray-400 uppercase">Affected Tenant:</span>
-					<span class="px-2 py-0.5 rounded bg-blue-50 text-blue-600 text-[10px] font-bold">#{{ error.school_id }}</span>
-				</div>
-				{% endif %}
-			</div>
-			{% else %}
-			<div class="rounded-xl border border-dashed border-gray-200 p-8 text-center text-sm text-gray-400 italic">No system errors captured in this window. System is stable.</div>
-			{% endfor %}
-		</div>
-	</section>
-
-	<section class="platform-card !p-0 overflow-hidden">
-		<div class="flex items-center justify-between border-b border-gray-100 px-6 py-5">
-			<div>
-				<h2 class="text-base font-bold text-gray-900">Recent Tenant Activity</h2>
-				<p class="text-xs text-gray-500 mt-1">Most recently onboarded schools.</p>
+				<h2 class="text-xl font-bold text-gray-900">Recent Tenant Activity</h2>
+				<p class="text-sm text-gray-600">Most recently created schools and their current subscription posture.</p>
 			</div>
 			{% if platform_has_permission('billing_access') %}
-			<a href="{{ url_for('platform.list_schools') }}" class="text-xs font-bold text-blue-600 hover:text-blue-700">View all</a>
+			<a href="{{ url_for('platform.list_schools') }}" class="text-sm font-semibold text-green-700 hover:text-green-800">View all schools</a>
 			{% endif %}
 		</div>
 		<div class="overflow-x-auto">
-			<table class="min-w-full divide-y divide-gray-100">
+			<table class="min-w-full divide-y divide-gray-200 text-sm">
 				<thead class="bg-gray-50">
 					<tr>
-						<th class="px-6 py-4 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">School</th>
-						<th class="px-6 py-4 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">Code</th>
-						<th class="px-6 py-4 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">Subscription</th>
-						<th class="px-6 py-4 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">Onboarded</th>
+						<th class="px-6 py-3 text-left font-semibold text-gray-600">School</th>
+						<th class="px-6 py-3 text-left font-semibold text-gray-600">Code</th>
+						<th class="px-6 py-3 text-left font-semibold text-gray-600">Tenant Status</th>
+						<th class="px-6 py-3 text-left font-semibold text-gray-600">Created</th>
 					</tr>
 				</thead>
-				<tbody class="divide-y divide-gray-50 bg-white">
+				<tbody class="divide-y divide-gray-100">
 					{% for item in recent_school_rows %}
-					<tr class="hover:bg-gray-50 transition-colors">
-						<td class="px-6 py-4 whitespace-nowrap">
-                            <div class="text-sm font-bold text-gray-900">{{ item.school.name }}</div>
-                        </td>
-						<td class="px-6 py-4 whitespace-nowrap">
-                            <span class="px-2 py-1 rounded bg-gray-100 text-[10px] font-bold text-gray-600 uppercase">{{ item.school.code }}</span>
-                        </td>
-						<td class="px-6 py-4 whitespace-nowrap">
-							{{ status_badge(item.subscription_status, 'emerald' if item.subscription_status == 'active' else 'blue' if item.subscription_status == 'trial' else 'amber' if item.subscription_status == 'grace_period' else 'rose' if item.subscription_status in ['suspended', 'expired'] else 'slate') }}
+					<tr>
+						<td class="px-6 py-4 font-semibold text-gray-900">{{ item.school.name }}</td>
+						<td class="px-6 py-4 text-gray-600">{{ item.school.code }}</td>
+						<td class="px-6 py-4">
+							<span class="inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-700">{{ item.subscription_status }}</span>
 						</td>
-						<td class="px-6 py-4 whitespace-nowrap text-xs text-gray-500 font-medium">
-                            {{ item.school.created_at }}
-                        </td>
+						<td class="px-6 py-4 text-gray-600">{{ item.school.created_at }}</td>
 					</tr>
 					{% else %}
 					<tr>
-						<td colspan="4" class="px-6 py-12 text-center text-sm text-gray-400 italic">No schools have been onboarded yet.</td>
+						<td colspan="4" class="px-6 py-10 text-center text-sm text-gray-500">No schools have been onboarded yet.</td>
 					</tr>
 					{% endfor %}
 				</tbody>
@@ -340,7 +297,6 @@
 	</section>
 </section>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', async function () {
 	const trendsRoot = document.querySelector('[data-platform-trends]');
@@ -392,92 +348,96 @@ document.addEventListener('DOMContentLoaded', async function () {
 	function renderTrendChart(payload) {
 		const labels = payload.labels || [];
 		const series = payload.series || {};
+		const seriesKeys = ['schools_created', 'subscriptions_started', 'support_tickets_created', 'audit_events'];
+		const values = seriesKeys.flatMap(function (key) { return series[key] || []; });
+		const maxValue = Math.max.apply(null, values.concat([1]));
 		if (!labels.length) {
 			renderEmpty(trendsRoot, 'No trend data is available for this window.');
 			return;
 		}
 
-		trendsRoot.innerHTML = '<canvas id="trendChart"></canvas>';
-		const ctx = document.getElementById('trendChart').getContext('2d');
-		new Chart(ctx, {
-			type: 'line',
-			data: {
-				labels: labels,
-				datasets: [
-					{
-						label: 'Schools',
-						data: series.schools_created,
-						borderColor: palette.schools_created,
-						backgroundColor: palette.schools_created + '20',
-						fill: true,
-						tension: 0.4
-					},
-					{
-						label: 'Subscriptions',
-						data: series.subscriptions_started,
-						borderColor: palette.subscriptions_started,
-						backgroundColor: palette.subscriptions_started + '20',
-						fill: true,
-						tension: 0.4
-					},
-					{
-						label: 'Tickets',
-						data: series.support_tickets_created,
-						borderColor: palette.support_tickets_created,
-						backgroundColor: palette.support_tickets_created + '20',
-						fill: true,
-						tension: 0.4
-					}
-				]
-			},
-			options: {
-				responsive: true,
-				maintainAspectRatio: false,
-				plugins: {
-					legend: { position: 'top', labels: { usePointStyle: true, font: { weight: 'bold', size: 11 } } }
-				},
-				scales: {
-					y: { beginAtZero: true, grid: { borderDash: [4, 4] } },
-					x: { grid: { display: false } }
-				}
-			}
-		});
+		const width = 760;
+		const height = 240;
+		const padding = 24;
+		const tickValues = [0, Math.ceil(maxValue / 2), maxValue];
+		const tickLines = tickValues.map(function (tick) {
+			const y = height - padding - ((tick / maxValue) * (height - (padding * 2)));
+			return '<line x1="24" y1="' + y.toFixed(2) + '" x2="736" y2="' + y.toFixed(2) + '" stroke="#d1d5db" stroke-dasharray="4 4"></line>' +
+				'<text x="8" y="' + (y + 4).toFixed(2) + '" fill="#6b7280" font-size="10">' + tick + '</text>';
+		}).join('');
+
+		const paths = seriesKeys.map(function (key) {
+			const path = buildLinePath(series[key] || [], width, height, padding, maxValue);
+			return '<path d="' + path + '" fill="none" stroke="' + palette[key] + '" stroke-width="3" stroke-linecap="round"></path>';
+		}).join('');
+
+		const lastLabels = labels.slice(-6).map(function (label) {
+			return '<span class="rounded-full bg-white px-2 py-1 text-xs font-medium text-gray-600 shadow-sm">' + label.slice(5) + '</span>';
+		}).join('');
+
+		const legend = seriesKeys.map(function (key) {
+			const total = (series[key] || []).reduce(function (sum, value) { return sum + value; }, 0);
+			return '<div class="flex items-center gap-2 rounded-full bg-white px-3 py-2 text-xs font-semibold text-gray-700 shadow-sm">' +
+				'<span class="h-2.5 w-2.5 rounded-full" style="background:' + palette[key] + '"></span>' +
+				'<span>' + titleize(key) + '</span>' +
+				'<span class="text-gray-400">' + total + '</span>' +
+			'</div>';
+		}).join('');
+
+		trendsRoot.innerHTML =
+			'<div class="space-y-4">' +
+				'<div class="flex flex-wrap gap-2">' + legend + '</div>' +
+				'<svg viewBox="0 0 760 240" class="h-64 w-full" role="img" aria-label="Platform activity trends chart">' +
+					'<rect x="0" y="0" width="760" height="240" rx="18" fill="#f8fafc"></rect>' +
+					 tickLines +
+					 paths +
+				'</svg>' +
+				'<div class="flex flex-wrap gap-2">' + lastLabels + '</div>' +
+			'</div>';
 	}
 
 	function renderMixChart(summary) {
 		const subscriptionCounts = summary.subscription_counts || {};
-		const labels = Object.keys(subscriptionCounts).map(titleize);
-		const data = Object.values(subscriptionCounts);
+		const supportSummary = summary.support_summary || {};
+		const statusItems = Object.entries(subscriptionCounts);
+		const mixItems = statusItems.concat([
+			['open', supportSummary.open || 0],
+			['closed', supportSummary.closed || 0],
+			['total', supportSummary.total || 0]
+		]);
+		const maxValue = Math.max.apply(null, mixItems.map(function (entry) { return entry[1]; }).concat([1]));
 
-		mixRoot.innerHTML = '<canvas id="mixChart"></canvas>';
-		const ctx = document.getElementById('mixChart').getContext('2d');
-		new Chart(ctx, {
-			type: 'doughnut',
-			data: {
-				labels: labels,
-				datasets: [{
-					data: data,
-					backgroundColor: Object.keys(subscriptionCounts).map(k => palette[k] || '#94a3b8'),
-					borderWidth: 2,
-					hoverOffset: 10
-				}]
-			},
-			options: {
-				responsive: true,
-				maintainAspectRatio: false,
-				plugins: {
-					legend: { position: 'right', labels: { usePointStyle: true, font: { weight: 'bold', size: 11 } } }
-				},
-				cutout: '70%'
-			}
-		});
+		mixRoot.innerHTML =
+			'<div class="space-y-5">' +
+				'<div>' +
+					'<h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Subscriptions</h3>' +
+					'<div class="mt-3 space-y-3">' +
+						statusItems.map(function (entry) {
+							const width = Math.max((entry[1] / maxValue) * 100, entry[1] > 0 ? 8 : 0);
+							return '<div>' +
+								'<div class="mb-1 flex items-center justify-between text-sm text-gray-700"><span>' + titleize(entry[0]) + '</span><span class="font-semibold text-gray-900">' + entry[1] + '</span></div>' +
+								'<div class="h-3 rounded-full bg-gray-200"><div class="h-3 rounded-full" style="width:' + width + '%;background:' + (palette[entry[0]] || '#334155') + '"></div></div>' +
+							'</div>';
+						}).join('') +
+					'</div>' +
+				'</div>' +
+				'<div>' +
+					'<h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Support</h3>' +
+					'<div class="mt-3 grid gap-3 sm:grid-cols-3">' +
+						[['open', supportSummary.open || 0], ['closed', supportSummary.closed || 0], ['total', supportSummary.total || 0]].map(function (entry) {
+							return '<div class="rounded-2xl border border-gray-200 bg-white p-4">' +
+								'<div class="text-xs font-semibold uppercase tracking-wide" style="color:' + (palette[entry[0]] || '#334155') + '">' + titleize(entry[0]) + '</div>' +
+								'<div class="mt-2 text-2xl font-bold text-gray-900">' + entry[1] + '</div>' +
+							'</div>';
+						}).join('') +
+					'</div>' +
+				'</div>' +
+			'</div>';
 	}
 
 	try {
 		const summaryUrl = trendsRoot.dataset.summaryUrl;
 		const trendsUrl = trendsRoot.dataset.trendsUrl;
-
-		// Setup intersection observer to load charts when visible or just load them
 		const responses = await Promise.all([fetch(summaryUrl), fetch(trendsUrl)]);
 		if (!responses[0].ok || !responses[1].ok) {
 			throw new Error('Metric request failed');

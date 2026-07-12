@@ -91,18 +91,6 @@ def _normalize_email(value):
     return (value or '').strip().lower()
 
 
-def _validate_password_policy(password):
-    if not password:
-        return True, None
-    if len(password) < 8:
-        return False, "Password must be at least 8 characters long."
-    if not any(c.isupper() for c in password):
-        return False, "Password must contain at least one uppercase letter."
-    if not any(c.isdigit() for c in password):
-        return False, "Password must contain at least one number."
-    return True, None
-
-
 def _parse_user_scope_form(schools):
     valid_school_ids = {school.id for school in schools}
     assigned_school_value = request.form.get('assigned_school') or None
@@ -243,12 +231,6 @@ def create_user():
         except ValueError as exc:
             flash_message(str(exc), 'warning')
             return _render_user_form(schools=schools)
-
-        is_valid_pw, pw_error = _validate_password_policy(password)
-        if not is_valid_pw:
-            flash_message(pw_error, 'warning')
-            return _render_user_form(schools=schools)
-
         pw_hash = generate_password_hash(password)
         user = PlatformUser(
             email=email,
@@ -311,19 +293,10 @@ def edit_user(user_id):
             flash_message(str(exc), 'warning')
             return _render_user_form(template_user=user, schools=schools)
 
-        if password:
-            is_valid_pw, pw_error = _validate_password_policy(password)
-            if not is_valid_pw:
-                flash_message(pw_error, 'warning')
-                return _render_user_form(template_user=user, schools=schools)
-
-        mfa_enabled = request.form.get('mfa_enabled') == 'on'
-
         previous_state = {
             'email': user.email,
             'role': user.role,
             'is_active': user.is_active,
-            'mfa_enabled': user.mfa_enabled,
             'assigned_school_id': user.assigned_school_id,
             'portfolio_scope': user.portfolio_scope or {},
         }
@@ -331,7 +304,6 @@ def edit_user(user_id):
         user.email = email
         user.role = role
         user.is_active = is_active
-        user.mfa_enabled = mfa_enabled
         user.assigned_school_id = assigned_school_id
         user.portfolio_scope = portfolio_scope
         if password:

@@ -35,15 +35,9 @@
         </div>
       </div>
       {% if is_edit_mode %}
-      <div class="mt-4 flex flex-col gap-2">
-        <div class="flex items-center gap-2">
-          <input id="is-active" name="is_active" type="checkbox" {% if editing_user.is_active %}checked{% endif %} class="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
-          <label for="is-active" class="text-xs font-medium text-slate-600">Account is active</label>
-        </div>
-        <div class="flex items-center gap-2">
-          <input id="mfa-enabled" name="mfa_enabled" type="checkbox" {% if editing_user.mfa_enabled %}checked{% endif %} class="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
-          <label for="mfa-enabled" class="text-xs font-medium text-slate-600">MFA Enabled (Placeholder)</label>
-        </div>
+      <div class="mt-4 flex items-center gap-2">
+        <input id="is-active" name="is_active" type="checkbox" {% if editing_user.is_active %}checked{% endif %} class="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+        <label for="is-active" class="text-xs font-medium text-slate-600">Account is active</label>
       </div>
       {% endif %}
     </div>

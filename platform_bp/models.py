@@ -226,19 +226,3 @@ class SecurityNotificationDelivery(db.Model):
     throttle_key = db.Column(db.String(255), nullable=False, index=True)
     attempted_at = db.Column(db.DateTime, default=utc_now, index=True)
     delivered_at = db.Column(db.DateTime, nullable=True)
-
-
-class ErrorLog(db.Model):
-    __tablename__ = 'error_logs'
-    id = db.Column(db.Integer, primary_key=True)
-    school_id = db.Column(db.Integer, nullable=True, index=True)
-    user_id = db.Column(db.Integer, nullable=True)
-    platform_user_id = db.Column(db.Integer, nullable=True)
-    endpoint = db.Column(db.String(255), nullable=True)
-    method = db.Column(db.String(10), nullable=True)
-    error_message = db.Column(db.Text, nullable=False)
-    stack_trace = db.Column(db.Text, nullable=True)
-    request_data = db.Column(db.JSON, nullable=True)
-    ip_address = db.Column(db.String(64), nullable=True)
-    user_agent = db.Column(db.String(255), nullable=True)
-    created_at = db.Column(db.DateTime, default=utc_now, index=True)
