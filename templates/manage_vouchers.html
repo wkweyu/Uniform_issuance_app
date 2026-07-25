@@ -118,7 +118,7 @@
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <form action="{{ url_for('manage_vouchers') }}" method="POST" class="p-6 space-y-4">
+            <form action="{{ url_for('finance.manage_vouchers') }}" method="POST" class="p-6 space-y-4">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 
                 <div class="grid grid-cols-2 gap-4">
