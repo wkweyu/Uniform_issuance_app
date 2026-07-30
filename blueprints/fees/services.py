@@ -34,6 +34,14 @@ class FeesService:
         self.connection = connection
         self.cursor = connection.cursor(pymysql.cursors.DictCursor)
         self.school_id = school_id or require_current_school_id()
+        self._table_columns_cache: Dict[str, set] = {}
+
+    def _table_has_column(self, table_name: str, column_name: str) -> bool:
+        """Return True when a table contains a given column (cached per instance)."""
+        if table_name not in self._table_columns_cache:
+            self.cursor.execute(f"SHOW COLUMNS FROM {table_name}")
+            self._table_columns_cache[table_name] = {row['Field'] for row in self.cursor.fetchall()}
+        return column_name in self._table_columns_cache[table_name]
 
     def get_current_term_id(self):
         self.cursor.execute(
@@ -140,16 +148,43 @@ class FeesService:
         return self.cursor.fetchall()
 
     def get_dashboard_totals(self, today) -> Dict:
-        self.cursor.execute(
-            "SELECT SUM(amount) as total FROM fee_payments WHERE payment_date = %s AND status = 'COMPLETED' AND school_id = %s",
-            (today, self.school_id),
-        )
+        fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
+
+        if fee_payments_has_school_id:
+            self.cursor.execute(
+                "SELECT SUM(amount) as total FROM fee_payments WHERE payment_date = %s AND status = 'COMPLETED' AND school_id = %s",
+                (today, self.school_id),
+            )
+        else:
+            self.cursor.execute(
+                """
+                SELECT SUM(fp.amount) as total
+                FROM fee_payments fp
+                JOIN fee_ledger fl ON fp.ledger_id = fl.id
+                WHERE fp.payment_date = %s AND fp.status = 'COMPLETED' AND fl.school_id = %s
+                """,
+                (today, self.school_id),
+            )
         today_total = self.cursor.fetchone()['total'] or 0
 
-        self.cursor.execute(
-            "SELECT SUM(amount) as total FROM fee_payments WHERE MONTH(payment_date) = MONTH(%s) AND YEAR(payment_date) = YEAR(%s) AND status = 'COMPLETED' AND school_id = %s",
-            (today, today, self.school_id),
-        )
+        if fee_payments_has_school_id:
+            self.cursor.execute(
+                "SELECT SUM(amount) as total FROM fee_payments WHERE MONTH(payment_date) = MONTH(%s) AND YEAR(payment_date) = YEAR(%s) AND status = 'COMPLETED' AND school_id = %s",
+                (today, today, self.school_id),
+            )
+        else:
+            self.cursor.execute(
+                """
+                SELECT SUM(fp.amount) as total
+                FROM fee_payments fp
+                JOIN fee_ledger fl ON fp.ledger_id = fl.id
+                WHERE MONTH(fp.payment_date) = MONTH(%s)
+                  AND YEAR(fp.payment_date) = YEAR(%s)
+                  AND fp.status = 'COMPLETED'
+                  AND fl.school_id = %s
+                """,
+                (today, today, self.school_id),
+            )
         monthly_total = self.cursor.fetchone()['total'] or 0
 
         self.cursor.execute(
@@ -657,6 +692,9 @@ class FeesService:
             self._assert_student_belongs_to_school(admno)
             self._assert_academic_year_belongs_to_school(year_id)
             self._assert_term_belongs_to_school(term_id, year_id)
+            fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
+            allocations_has_school_id = self._table_has_column('fee_payment_allocations', 'school_id')
+            receipts_has_school_id = self._table_has_column('fee_receipts', 'school_id')
             self.connection.begin()
             
             amount = Decimal(str(amount))
@@ -672,10 +710,16 @@ class FeesService:
             ledger_id = self.cursor.lastrowid
             
             # 2. Payment Detail
-            self.cursor.execute("""
-                INSERT INTO fee_payments (ledger_id, admno, payment_mode, reference_number, bank_name, payment_date, amount, received_by, school_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (ledger_id, admno, mode, reference, bank, date, amount, user_id, self.school_id))
+            if fee_payments_has_school_id:
+                self.cursor.execute("""
+                    INSERT INTO fee_payments (ledger_id, admno, payment_mode, reference_number, bank_name, payment_date, amount, received_by, school_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (ledger_id, admno, mode, reference, bank, date, amount, user_id, self.school_id))
+            else:
+                self.cursor.execute("""
+                    INSERT INTO fee_payments (ledger_id, admno, payment_mode, reference_number, bank_name, payment_date, amount, received_by)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (ledger_id, admno, mode, reference, bank, date, amount, user_id))
             payment_id = self.cursor.lastrowid
             
             # 3. Votehead Distribution (Double-Entry Allocation)
@@ -696,10 +740,16 @@ class FeesService:
                 
                 pay_amount = min(remaining_payment, Decimal(str(liab['outstanding'])))
                 if pay_amount > 0:
-                    self.cursor.execute("""
-                        INSERT INTO fee_payment_allocations (payment_id, votehead_id, amount, school_id)
-                        VALUES (%s, %s, %s, %s)
-                    """, (payment_id, liab['votehead_id'], pay_amount, self.school_id))
+                    if allocations_has_school_id:
+                        self.cursor.execute("""
+                            INSERT INTO fee_payment_allocations (payment_id, votehead_id, amount, school_id)
+                            VALUES (%s, %s, %s, %s)
+                        """, (payment_id, liab['votehead_id'], pay_amount, self.school_id))
+                    else:
+                        self.cursor.execute("""
+                            INSERT INTO fee_payment_allocations (payment_id, votehead_id, amount)
+                            VALUES (%s, %s, %s)
+                        """, (payment_id, liab['votehead_id'], pay_amount))
                     remaining_payment -= pay_amount
 
             # If still remaining (Advance Payment / Arrears clearing without specific votehead)
@@ -708,17 +758,29 @@ class FeesService:
                 self.cursor.execute("SELECT id FROM fee_voteheads WHERE name = 'Tuition' AND school_id = %s LIMIT 1", (self.school_id,))
                 tuition = self.cursor.fetchone()
                 vid = tuition['id'] if tuition else 1 # Fallback to first votehead
-                self.cursor.execute("""
-                    INSERT INTO fee_payment_allocations (payment_id, votehead_id, amount, school_id)
-                    VALUES (%s, %s, %s, %s)
-                """, (payment_id, vid, remaining_payment, self.school_id))
+                if allocations_has_school_id:
+                    self.cursor.execute("""
+                        INSERT INTO fee_payment_allocations (payment_id, votehead_id, amount, school_id)
+                        VALUES (%s, %s, %s, %s)
+                    """, (payment_id, vid, remaining_payment, self.school_id))
+                else:
+                    self.cursor.execute("""
+                        INSERT INTO fee_payment_allocations (payment_id, votehead_id, amount)
+                        VALUES (%s, %s, %s)
+                    """, (payment_id, vid, remaining_payment))
 
             # 4. Generate Receipt Number
             receipt_no = f"RCP-{datetime.now().year}-{str(payment_id).zfill(5)}"
-            self.cursor.execute("""
-                INSERT INTO fee_receipts (payment_id, receipt_no, issued_by, school_id)
-                VALUES (%s, %s, %s, %s)
-            """, (payment_id, receipt_no, user_id, self.school_id))
+            if receipts_has_school_id:
+                self.cursor.execute("""
+                    INSERT INTO fee_receipts (payment_id, receipt_no, issued_by, school_id)
+                    VALUES (%s, %s, %s, %s)
+                """, (payment_id, receipt_no, user_id, self.school_id))
+            else:
+                self.cursor.execute("""
+                    INSERT INTO fee_receipts (payment_id, receipt_no, issued_by)
+                    VALUES (%s, %s, %s)
+                """, (payment_id, receipt_no, user_id))
             
             self.connection.commit()
             return {
@@ -738,10 +800,19 @@ class FeesService:
         try:
             self._assert_student_belongs_to_school(from_admno)
             self._assert_student_belongs_to_school(to_admno)
+            fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
             self.connection.begin()
             
             # 1. Fetch payment
-            self.cursor.execute("SELECT * FROM fee_payments WHERE reference_number = %s AND admno = %s AND school_id = %s", (reference_no, from_admno, self.school_id))
+            if fee_payments_has_school_id:
+                self.cursor.execute("SELECT * FROM fee_payments WHERE reference_number = %s AND admno = %s AND school_id = %s", (reference_no, from_admno, self.school_id))
+            else:
+                self.cursor.execute("""
+                    SELECT fp.*
+                    FROM fee_payments fp
+                    JOIN fee_ledger fl ON fp.ledger_id = fl.id
+                    WHERE fp.reference_number = %s AND fp.admno = %s AND fl.school_id = %s
+                """, (reference_no, from_admno, self.school_id))
             payment = self.cursor.fetchone()
             if not payment:
                 raise FeesError("Payment record not found.")
@@ -753,7 +824,10 @@ class FeesService:
             """, (from_admno, to_admno, reference_no, payment['amount'], reason, user_id, self.school_id))
             
             # 3. Update main records
-            self.cursor.execute("UPDATE fee_payments SET admno = %s WHERE id = %s AND school_id = %s", (to_admno, payment['id'], self.school_id))
+            if fee_payments_has_school_id:
+                self.cursor.execute("UPDATE fee_payments SET admno = %s WHERE id = %s AND school_id = %s", (to_admno, payment['id'], self.school_id))
+            else:
+                self.cursor.execute("UPDATE fee_payments SET admno = %s WHERE id = %s", (to_admno, payment['id']))
             self.cursor.execute("UPDATE fee_ledger SET admno = %s WHERE id = %s AND school_id = %s", (to_admno, payment['ledger_id'], self.school_id))
             
             # Logic for updating running balance (Complexity high, better to trigger a full balance recalculation)
@@ -804,34 +878,69 @@ class FeesService:
 
     def get_recent_payments(self, admno: int, limit: int = 5) -> List[Dict]:
         """Fetch most recent payments for a student."""
-        self.cursor.execute(
-            """
-            SELECT fp.*, fr.receipt_no
-            FROM fee_payments fp
-            LEFT JOIN fee_receipts fr ON fp.id = fr.payment_id AND fp.school_id = fr.school_id
-            WHERE fp.admno = %s AND fp.school_id = %s
-            ORDER BY fp.payment_date DESC, fp.id DESC
-            LIMIT %s
-            """,
-            (admno, self.school_id, limit)
-        )
+        fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
+        receipts_has_school_id = self._table_has_column('fee_receipts', 'school_id')
+
+        if fee_payments_has_school_id and receipts_has_school_id:
+            self.cursor.execute(
+                """
+                SELECT fp.*, fr.receipt_no
+                FROM fee_payments fp
+                LEFT JOIN fee_receipts fr ON fp.id = fr.payment_id AND fp.school_id = fr.school_id
+                WHERE fp.admno = %s AND fp.school_id = %s
+                ORDER BY fp.payment_date DESC, fp.id DESC
+                LIMIT %s
+                """,
+                (admno, self.school_id, limit)
+            )
+        else:
+            self.cursor.execute(
+                """
+                SELECT fp.*, fr.receipt_no
+                FROM fee_payments fp
+                LEFT JOIN fee_receipts fr ON fp.id = fr.payment_id
+                JOIN fee_ledger fl ON fp.ledger_id = fl.id
+                WHERE fp.admno = %s AND fl.school_id = %s
+                ORDER BY fp.payment_date DESC, fp.id DESC
+                LIMIT %s
+                """,
+                (admno, self.school_id, limit)
+            )
         return self.cursor.fetchall()
 
     def get_receipts_register(self, start_date: Optional[str] = None, end_date: Optional[str] = None, admno: Optional[int] = None, mode: Optional[str] = None) -> List[Dict]:
         """Fetch list of receipts with filtering."""
-        query = """
-            SELECT fp.*, fr.receipt_no, si.FName, si.SName, ay.year as year_name, utd.term_number,
-                   u.username as received_by_name
-            FROM fee_payments fp
-            JOIN fee_receipts fr ON fp.id = fr.payment_id AND fp.school_id = fr.school_id
-            JOIN studentinfo si ON fp.admno = si.AdmNo AND fp.school_id = si.school_id
-            JOIN fee_ledger fl ON fp.ledger_id = fl.id AND fp.school_id = fl.school_id
-            JOIN academic_years ay ON fl.academic_year_id = ay.id AND fl.school_id = ay.school_id
-            JOIN uniform_term_dates utd ON fl.term_id = utd.id AND fl.school_id = utd.school_id
-            LEFT JOIN users u ON fp.received_by = u.userNo AND fp.school_id = u.school_id
-            WHERE fp.school_id = %s
-        """
-        params = [self.school_id]
+        fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
+        receipts_has_school_id = self._table_has_column('fee_receipts', 'school_id')
+
+        if fee_payments_has_school_id and receipts_has_school_id:
+            query = """
+                SELECT fp.*, fr.receipt_no, si.FName, si.SName, ay.year as year_name, utd.term_number,
+                       u.username as received_by_name
+                FROM fee_payments fp
+                JOIN fee_receipts fr ON fp.id = fr.payment_id AND fp.school_id = fr.school_id
+                JOIN studentinfo si ON fp.admno = si.AdmNo AND fp.school_id = si.school_id
+                JOIN fee_ledger fl ON fp.ledger_id = fl.id AND fp.school_id = fl.school_id
+                JOIN academic_years ay ON fl.academic_year_id = ay.id AND fl.school_id = ay.school_id
+                JOIN uniform_term_dates utd ON fl.term_id = utd.id AND fl.school_id = utd.school_id
+                LEFT JOIN users u ON fp.received_by = u.userNo AND fp.school_id = u.school_id
+                WHERE fp.school_id = %s
+            """
+            params = [self.school_id]
+        else:
+            query = """
+                SELECT fp.*, fr.receipt_no, si.FName, si.SName, ay.year as year_name, utd.term_number,
+                       u.username as received_by_name
+                FROM fee_payments fp
+                JOIN fee_receipts fr ON fp.id = fr.payment_id
+                JOIN fee_ledger fl ON fp.ledger_id = fl.id AND fl.school_id = %s
+                JOIN studentinfo si ON fp.admno = si.AdmNo AND si.school_id = fl.school_id
+                JOIN academic_years ay ON fl.academic_year_id = ay.id AND ay.school_id = fl.school_id
+                JOIN uniform_term_dates utd ON fl.term_id = utd.id AND utd.school_id = fl.school_id
+                LEFT JOIN users u ON fp.received_by = u.userNo AND u.school_id = si.school_id
+                WHERE fl.school_id = %s
+            """
+            params = [self.school_id, self.school_id]
         if start_date:
             query += " AND fp.payment_date >= %s"
             params.append(start_date)
@@ -851,31 +960,60 @@ class FeesService:
 
     def get_receipt_details(self, payment_id: int) -> Optional[Dict]:
         """Fetch full details of a receipt including allocations."""
-        self.cursor.execute("""
-            SELECT fp.*, fr.receipt_no, fr.issued_at, si.FName, si.SName, 
-                   ay.year as year_name, utd.term_number, c.display_name as class_name,
-                   u.username as issued_by_name, fl.academic_year_id, fl.term_id
-            FROM fee_payments fp
-            JOIN fee_receipts fr ON fp.id = fr.payment_id AND fp.school_id = fr.school_id
-            JOIN studentinfo si ON fp.admno = si.AdmNo AND fp.school_id = si.school_id
-            JOIN fee_ledger fl ON fp.ledger_id = fl.id AND fp.school_id = fl.school_id
-            JOIN academic_years ay ON fl.academic_year_id = ay.id AND fl.school_id = ay.school_id
-            JOIN uniform_term_dates utd ON fl.term_id = utd.id AND fl.school_id = utd.school_id
-            LEFT JOIN class_allocation ca ON si.AdmNo = ca.student_id AND ca.is_current = TRUE AND si.school_id = ca.school_id
-            LEFT JOIN classes c ON ca.class_id = c.classID AND ca.school_id = c.school_id
-            LEFT JOIN users u ON fp.received_by = u.userNo AND fp.school_id = u.school_id
-            WHERE fp.id = %s AND fp.school_id = %s
-        """, (payment_id, self.school_id))
+        fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
+        receipts_has_school_id = self._table_has_column('fee_receipts', 'school_id')
+        allocations_has_school_id = self._table_has_column('fee_payment_allocations', 'school_id')
+
+        if fee_payments_has_school_id and receipts_has_school_id:
+            self.cursor.execute("""
+                SELECT fp.*, fr.receipt_no, fr.issued_at, si.FName, si.SName, 
+                       ay.year as year_name, utd.term_number, c.display_name as class_name,
+                       u.username as issued_by_name, fl.academic_year_id, fl.term_id
+                FROM fee_payments fp
+                JOIN fee_receipts fr ON fp.id = fr.payment_id AND fp.school_id = fr.school_id
+                JOIN studentinfo si ON fp.admno = si.AdmNo AND fp.school_id = si.school_id
+                JOIN fee_ledger fl ON fp.ledger_id = fl.id AND fp.school_id = fl.school_id
+                JOIN academic_years ay ON fl.academic_year_id = ay.id AND fl.school_id = ay.school_id
+                JOIN uniform_term_dates utd ON fl.term_id = utd.id AND fl.school_id = utd.school_id
+                LEFT JOIN class_allocation ca ON si.AdmNo = ca.student_id AND ca.is_current = TRUE AND si.school_id = ca.school_id
+                LEFT JOIN classes c ON ca.class_id = c.classID AND ca.school_id = c.school_id
+                LEFT JOIN users u ON fp.received_by = u.userNo AND fp.school_id = u.school_id
+                WHERE fp.id = %s AND fp.school_id = %s
+            """, (payment_id, self.school_id))
+        else:
+            self.cursor.execute("""
+                SELECT fp.*, fr.receipt_no, fr.issued_at, si.FName, si.SName,
+                       ay.year as year_name, utd.term_number, c.display_name as class_name,
+                       u.username as issued_by_name, fl.academic_year_id, fl.term_id
+                FROM fee_payments fp
+                JOIN fee_receipts fr ON fp.id = fr.payment_id
+                JOIN fee_ledger fl ON fp.ledger_id = fl.id AND fl.school_id = %s
+                JOIN studentinfo si ON fp.admno = si.AdmNo AND si.school_id = fl.school_id
+                JOIN academic_years ay ON fl.academic_year_id = ay.id AND ay.school_id = fl.school_id
+                JOIN uniform_term_dates utd ON fl.term_id = utd.id AND utd.school_id = fl.school_id
+                LEFT JOIN class_allocation ca ON si.AdmNo = ca.student_id AND ca.is_current = TRUE AND si.school_id = ca.school_id
+                LEFT JOIN classes c ON ca.class_id = c.classID AND ca.school_id = c.school_id
+                LEFT JOIN users u ON fp.received_by = u.userNo AND u.school_id = si.school_id
+                WHERE fp.id = %s
+            """, (self.school_id, payment_id))
         receipt = self.cursor.fetchone()
         
         if receipt:
             # Get allocations
-            self.cursor.execute("""
-                SELECT fpa.*, fv.name as votehead_name
-                FROM fee_payment_allocations fpa
-                JOIN fee_voteheads fv ON fpa.votehead_id = fv.id AND fpa.school_id = fv.school_id
-                WHERE fpa.payment_id = %s AND fpa.school_id = %s
-            """, (payment_id, self.school_id))
+            if allocations_has_school_id:
+                self.cursor.execute("""
+                    SELECT fpa.*, fv.name as votehead_name
+                    FROM fee_payment_allocations fpa
+                    JOIN fee_voteheads fv ON fpa.votehead_id = fv.id AND fpa.school_id = fv.school_id
+                    WHERE fpa.payment_id = %s AND fpa.school_id = %s
+                """, (payment_id, self.school_id))
+            else:
+                self.cursor.execute("""
+                    SELECT fpa.*, fv.name as votehead_name
+                    FROM fee_payment_allocations fpa
+                    JOIN fee_voteheads fv ON fpa.votehead_id = fv.id
+                    WHERE fpa.payment_id = %s AND fv.school_id = %s
+                """, (payment_id, self.school_id))
             receipt['allocations'] = self.cursor.fetchall()
             
         return receipt
@@ -883,10 +1021,19 @@ class FeesService:
     def update_payment_details(self, payment_id: int, mode: str, reference: str, bank: str, date: str, user_id: int) -> bool:
         """Update non-amount fields of a payment."""
         try:
+            fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
             self.connection.begin()
             
             # Check if payment exists and isn't voided
-            self.cursor.execute("SELECT ledger_id, status FROM fee_payments WHERE id = %s AND school_id = %s", (payment_id, self.school_id))
+            if fee_payments_has_school_id:
+                self.cursor.execute("SELECT ledger_id, status FROM fee_payments WHERE id = %s AND school_id = %s", (payment_id, self.school_id))
+            else:
+                self.cursor.execute("""
+                    SELECT fp.ledger_id, fp.status
+                    FROM fee_payments fp
+                    JOIN fee_ledger fl ON fp.ledger_id = fl.id
+                    WHERE fp.id = %s AND fl.school_id = %s
+                """, (payment_id, self.school_id))
             payment = self.cursor.fetchone()
             if not payment:
                 raise FeesError("Payment record not found.")
@@ -894,11 +1041,18 @@ class FeesService:
                 raise FeesError("Cannot edit a voided/reversed receipt.")
 
             # Update fee_payments
-            self.cursor.execute("""
-                UPDATE fee_payments 
-                SET payment_mode = %s, reference_number = %s, bank_name = %s, payment_date = %s
-                WHERE id = %s AND school_id = %s
-            """, (mode, reference, bank, date, payment_id, self.school_id))
+            if fee_payments_has_school_id:
+                self.cursor.execute("""
+                    UPDATE fee_payments 
+                    SET payment_mode = %s, reference_number = %s, bank_name = %s, payment_date = %s
+                    WHERE id = %s AND school_id = %s
+                """, (mode, reference, bank, date, payment_id, self.school_id))
+            else:
+                self.cursor.execute("""
+                    UPDATE fee_payments 
+                    SET payment_mode = %s, reference_number = %s, bank_name = %s, payment_date = %s
+                    WHERE id = %s
+                """, (mode, reference, bank, date, payment_id))
             
             # Update fee_ledger description and reference
             self.cursor.execute("""
@@ -917,10 +1071,19 @@ class FeesService:
     def void_receipt(self, payment_id: int, user_id: int, reason: str) -> bool:
         """Void a receipt by reversing its effects on student's ledger."""
         try:
+            fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
             self.connection.begin()
             
             # 1. Fetch original payment
-            self.cursor.execute("SELECT * FROM fee_payments WHERE id = %s AND school_id = %s", (payment_id, self.school_id))
+            if fee_payments_has_school_id:
+                self.cursor.execute("SELECT * FROM fee_payments WHERE id = %s AND school_id = %s", (payment_id, self.school_id))
+            else:
+                self.cursor.execute("""
+                    SELECT fp.*
+                    FROM fee_payments fp
+                    JOIN fee_ledger fl ON fp.ledger_id = fl.id
+                    WHERE fp.id = %s AND fl.school_id = %s
+                """, (payment_id, self.school_id))
             payment = self.cursor.fetchone()
             if not payment:
                 raise FeesError("Payment record not found.")
@@ -946,7 +1109,10 @@ class FeesService:
                  f"VOID RECEIPT: {reason} (Ref: {payment['reference_number']})", void_ref, user_id, self.school_id))
             
             # 4. Update payment status
-            self.cursor.execute("UPDATE fee_payments SET status = 'CANCELLED' WHERE id = %s AND school_id = %s", (payment_id, self.school_id))
+            if fee_payments_has_school_id:
+                self.cursor.execute("UPDATE fee_payments SET status = 'CANCELLED' WHERE id = %s AND school_id = %s", (payment_id, self.school_id))
+            else:
+                self.cursor.execute("UPDATE fee_payments SET status = 'CANCELLED' WHERE id = %s", (payment_id,))
             
             # 5. Delete allocations
             # self.cursor.execute("DELETE FROM fee_payment_allocations WHERE payment_id = %s", (payment_id,))
@@ -965,15 +1131,30 @@ class FeesService:
 
     def get_collection_summary(self, start_date: str, end_date: str) -> Dict:
         """Daily/Weekly/Monthly collection summary."""
-        self.cursor.execute("""
-            SELECT 
-                payment_mode, 
-                SUM(amount) as total_amount,
-                COUNT(*) as count
-            FROM fee_payments
-            WHERE payment_date BETWEEN %s AND %s AND status = 'COMPLETED' AND school_id = %s
-            GROUP BY payment_mode
-        """, (start_date, end_date, self.school_id))
+        fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
+        if fee_payments_has_school_id:
+            self.cursor.execute("""
+                SELECT 
+                    payment_mode, 
+                    SUM(amount) as total_amount,
+                    COUNT(*) as count
+                FROM fee_payments
+                WHERE payment_date BETWEEN %s AND %s AND status = 'COMPLETED' AND school_id = %s
+                GROUP BY payment_mode
+            """, (start_date, end_date, self.school_id))
+        else:
+            self.cursor.execute("""
+                SELECT 
+                    fp.payment_mode,
+                    SUM(fp.amount) as total_amount,
+                    COUNT(*) as count
+                FROM fee_payments fp
+                JOIN fee_ledger fl ON fp.ledger_id = fl.id
+                WHERE fp.payment_date BETWEEN %s AND %s
+                  AND fp.status = 'COMPLETED'
+                  AND fl.school_id = %s
+                GROUP BY fp.payment_mode
+            """, (start_date, end_date, self.school_id))
         return self.cursor.fetchall()
 
     def get_arrears_report(self, class_id: Optional[int] = None) -> List[Dict]:
