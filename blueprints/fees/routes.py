@@ -527,22 +527,62 @@ def collect_fees():
     class_service = ClassManagementService(connection, school_id=service.school_id)
 
     if request.method == 'POST':
+        # Check if caller wants AJAX response
+        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.is_json
         try:
+            if request.is_json:
+                data = request.get_json() or {}
+                admno_val = data.get('admno')
+                amount_val = data.get('amount')
+                mode_val = data.get('mode')
+                reference_val = data.get('reference')
+                bank_val = data.get('bank')
+                date_val = data.get('date')
+                year_id_val = data.get('year_id')
+                term_id_val = data.get('term_id')
+                allocation_mode = data.get('allocation_mode', 'AUTOMATIC')
+            else:
+                admno_val = request.form.get('admno')
+                amount_val = request.form.get('amount')
+                mode_val = request.form.get('mode')
+                reference_val = request.form.get('reference')
+                bank_val = request.form.get('bank')
+                date_val = request.form.get('date')
+                year_id_val = request.form.get('year_id')
+                term_id_val = request.form.get('term_id')
+                allocation_mode = request.form.get('allocation_mode', 'AUTOMATIC')
+
             result = service.record_payment(
-                admno=_required_int(request.form.get('admno'), 'admno'),
-                amount=_parse_decimal(request.form.get('amount'), 'amount'),
-                mode=request.form.get('mode'),
-                reference=request.form.get('reference', '').strip(),
-                bank=request.form.get('bank', '').strip(),
-                date=request.form.get('date'),
-                year_id=_required_int(request.form.get('year_id'), 'year_id'),
-                term_id=_required_int(request.form.get('term_id'), 'term_id'),
+                admno=_required_int(admno_val, 'admno'),
+                amount=_parse_decimal(amount_val, 'amount'),
+                mode=mode_val,
+                reference=reference_val.strip() if reference_val else '',
+                bank=bank_val.strip() if bank_val else '',
+                date=date_val,
+                year_id=_required_int(year_id_val, 'year_id'),
+                term_id=_required_int(term_id_val, 'term_id'),
                 user_id=session['userNo']
             )
+
+            if is_ajax:
+                return jsonify({
+                    'success': True,
+                    'message': f"Payment received. Receipt No: {result['receipt_no']}",
+                    'receipt_no': result['receipt_no'],
+                    'payment_id': result['payment_id'],
+                    'balance': float(result['balance']) if result['balance'] is not None else 0.0
+                })
+
             flash(f"Payment received. Receipt No: {result['receipt_no']}", "success")
             return redirect(url_for('fees.print_fee_receipt', payment_id=result['payment_id']))
-        except (ValueError, FeesError) as e: flash(str(e), "error")
-        except Exception as e: flash(str(e), "error")
+        except (ValueError, FeesError) as e:
+            if is_ajax:
+                return jsonify({'success': False, 'message': str(e)}), 400
+            flash(str(e), "error")
+        except Exception as e:
+            if is_ajax:
+                return jsonify({'success': False, 'message': str(e)}), 500
+            flash(str(e), "error")
 
     years = class_service.get_all_academic_years()
     terms = service.get_recent_terms()
@@ -643,6 +683,81 @@ def api_statement():
     except ValueError as e:
         return jsonify({'success': False, 'message': str(e)}), 400
     finally: connection.close()
+
+@fees_bp.route('/api/fees/student-context')
+@login_required
+def api_fees_student_context():
+    admno_param = request.args.get('admno')
+    if not admno_param:
+        return jsonify({'success': False, 'message': 'admno is required'}), 400
+    try:
+        admno = int(admno_param)
+    except ValueError:
+        return jsonify({'success': False, 'message': 'Invalid admno format'}), 400
+
+    connection = get_db_connection()
+    fees_service = FeesService(connection)
+    from blueprints.students.services import StudentService
+    student_service = StudentService(connection, school_id=fees_service.school_id)
+    class_service = ClassManagementService(connection, school_id=fees_service.school_id)
+
+    try:
+        student = student_service.get_student_by_admno(admno)
+        if not student:
+            return jsonify({'success': False, 'message': 'Student not found'}), 404
+
+        class_info = student_service.get_student_class_info(admno)
+        balance = fees_service.get_student_balance(admno)
+        recent_receipts = fees_service.get_recent_payments(admno, limit=5)
+        
+        # Get active term / structure totals
+        term_id = fees_service.get_current_term_id()
+        structure_items = []
+        if term_id:
+            structure_items = fees_service.get_student_fee_structure(admno, term_id)
+
+        # Standardize student name & contact info
+        student_context = {
+            'success': True,
+            'admno': student.get('AdmNo'),
+            'first_name': student.get('FName', ''),
+            'middle_name': student.get('MName', ''),
+            'success_name': student.get('SName', ''),
+            'full_name': f"{student.get('FName', '')} {student.get('MName', '') or ''} {student.get('SName', '')}".replace('  ', ' ').strip(),
+            'gender': student.get('Sex', 'N/A'),
+            'category': student.get('category', 'Day'),
+            'blocked': student.get('blocked', 'NO'),
+            'parent_name': student.get('parent_name', 'N/A'),
+            'parent_phone': student.get('parent_phone', 'N/A'),
+            'parent_email': student.get('parent_email', 'N/A'),
+            'home_address': student.get('home_address', 'N/A'),
+            'residency': student.get('residency', 'N/A'),
+            'class_name': class_info.get('class_name') if class_info else 'Not Assigned',
+            'class_group': class_info.get('class_group') if class_info else 'N/A',
+            'outstanding_balance': float(balance) if balance is not None else 0.0,
+            'recent_receipts': recent_receipts,
+            'structure_items': [
+                {
+                    'votehead_id': item['votehead_id'],
+                    'votehead_name': item['votehead_name'],
+                    'amount': float(item['amount']),
+                    'priority': item['priority']
+                } for item in structure_items
+            ],
+            'term_id': term_id
+        }
+
+        # Resolve some dummy values mock allocation preview
+        # Prepopulate live allocation previews
+        allocated = []
+        remaining = float(balance) if balance is not None else 0.0
+        student_context['projected_balance'] = remaining
+        
+        return jsonify(student_context)
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        connection.close()
 
 @fees_bp.route('/admin/fees/receipt/<int:payment_id>')
 @login_required

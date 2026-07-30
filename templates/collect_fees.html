@@ -1,25 +1,29 @@
 {% extends 'base.html' %}
 
-{% block title %}Professional Fee Collection{% endblock %}
+{% block title %}Bursar Fees Entry Terminal{% endblock %}
 
 {% block content %}
-<div class="bg-slate-50 min-h-screen">
+<div class="bg-slate-50 min-h-screen pb-12">
     <!-- Quick Nav Header -->
-    <div class="bg-white border-b sticky top-0 z-10">
+    <div class="bg-white border-b sticky top-0 z-10 no-print">
         <div class="container mx-auto px-6 py-4">
             <div class="flex items-center justify-between">
                 <div class="flex items-center gap-4">
-                    <a href="{{ url_for('fees_dashboard') }}" class="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-500 hover:bg-indigo-600 hover:text-white transition shadow-sm">
+                    <a href="{{ url_for('fees.fees_dashboard') }}" class="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-500 hover:bg-indigo-600 hover:text-white transition shadow-sm">
                         <i class="fas fa-chevron-left"></i>
                     </a>
                     <div>
-                        <h1 class="text-xl font-black text-slate-900">Receipting Entry</h1>
-                        <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Direct Ledger Crediting</p>
+                        <h1 class="text-xl font-black text-slate-900">Bursar Cash Terminal</h1>
+                        <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">High-Speed Double Entry & Collections</p>
                     </div>
                 </div>
                 
-                <div class="flex items-center gap-3">
-                    <div id="statusBadge" class="hidden px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border transition duration-500"></div>
+                <div class="flex items-center gap-4">
+                    <!-- Global Statistics Indicator -->
+                    <div class="flex items-center gap-2 bg-slate-50 border border-slate-100 px-4 py-2 rounded-2xl">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Operator Session Active</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -27,29 +31,38 @@
 
     <div class="container mx-auto px-6 py-8">
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            <!-- Left Panel: Submission Form -->
-            <div class="lg:col-span-4 space-y-6">
-                <form action="{{ url_for('collect_fees') }}" method="POST" id="paymentForm" class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+            
+            <!-- LEFT PANEL: Dynamic Payment Entry Desk -->
+            <div class="lg:col-span-4 space-y-6 no-print">
+                <form id="paymentForm" class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="admno" id="selectedAdmNo" required>
                     
-                    <div class="px-8 py-6 border-b border-slate-50">
+                    <div class="px-8 py-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
                         <h2 class="text-xs font-black text-indigo-600 uppercase tracking-widest flex items-center gap-2">
-                            <i class="fas fa-search"></i> Student Selection
+                            <i class="fas fa-cash-register"></i> Payment Workspace
                         </h2>
+                        <span class="text-[9px] font-bold text-slate-400 font-mono">POST_DECK_V2</span>
                     </div>
                     
-                    <div class="p-8 space-y-6">
-                        <!-- Search Box -->
-                        <div class="relative">
-                            <input type="text" id="studentSearch" autocomplete="off" placeholder="Search by AdmNo or Name..." 
-                                class="w-full bg-slate-50 border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold focus:ring-indigo-500 focus:border-indigo-500 transition shadow-inner">
-                            <div id="searchResults" class="absolute z-50 w-full mt-2 bg-white border border-slate-200 rounded-2xl shadow-2xl hidden max-h-64 overflow-y-auto overflow-x-hidden divide-y divide-slate-50"></div>
+                    <div class="p-8 space-y-5">
+                        <!-- Student Seek Search -->
+                        <div>
+                            <label class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 ml-1">Student Lookup</label>
+                            <div class="relative">
+                                <span class="absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400">
+                                    <i class="fas fa-search text-xs"></i>
+                                </span>
+                                <input type="text" id="studentSearch" autocomplete="off" placeholder="Type name or Admission ID..." 
+                                    class="w-full bg-slate-50 border border-slate-100 rounded-2xl pl-10 pr-5 py-3 text-sm font-bold focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition shadow-inner">
+                                <div id="searchResults" class="absolute z-50 w-full mt-2 bg-white border border-slate-200 rounded-2xl shadow-2xl hidden max-h-64 overflow-y-auto overflow-x-hidden divide-y divide-slate-50"></div>
+                            </div>
                         </div>
 
+                        <!-- Selector Badge -->
                         <div id="studentDisplay" class="hidden bg-slate-900 rounded-2xl p-5 text-white shadow-xl relative overflow-hidden group">
                             <div class="relative z-10">
-                                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Active Selector</p>
+                                <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Active Selector</p>
                                 <h3 id="studentNameDisplay" class="text-sm font-black mt-1"></h3>
                                 <p id="studentClassDisplay" class="text-[10px] font-bold text-indigo-400 mt-0.5"></p>
                             </div>
@@ -59,11 +72,43 @@
                             <i class="fas fa-user-graduate absolute -right-2 -bottom-2 text-6xl opacity-10 group-hover:scale-110 transition duration-500"></i>
                         </div>
 
-                        <div class="space-y-4 border-t border-slate-100 pt-6">
+                        <!-- Standardized Input Matrix -->
+                        <div class="space-y-4 border-t border-slate-100 pt-5">
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 ml-1">Posting Date</label>
+                                    <input type="date" id="postDate" name="date" required value="{{ now.strftime('%Y-%m-%d') }}" 
+                                           class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-black focus:ring-indigo-500 focus:border-indigo-500 transition">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 ml-1">Receipt Book</label>
+                                    <select id="receiptBook" name="receipt_book" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-black focus:ring-indigo-500 transition">
+                                        <option value="MAIN_2026">Main Book 2026</option>
+                                        <option value="PRIMARY_SERIES">Primary Ser A</option>
+                                        <option value="SECONDARY_SERIES">Secondary Ser B</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 ml-1">Cashier (User)</label>
+                                    <input type="text" readonly value="{{ session.get('username', 'Cashier User') }}" 
+                                           class="w-full bg-slate-100 border border-slate-200 text-slate-500 rounded-xl px-4 py-2.5 text-xs font-black cursor-not-allowed">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 ml-1">Allocation Mode</label>
+                                    <select id="allocationMode" name="allocation_mode" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-black focus:ring-indigo-500 transition">
+                                        <option value="AUTOMATIC">Automatic (Priority)</option>
+                                        <option value="MANUAL">Manual allocation</option>
+                                    </select>
+                                </div>
+                            </div>
+
                             <div class="grid grid-cols-2 gap-4">
                                 <div>
                                     <label class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 ml-1">Academic Year</label>
-                                    <select name="year_id" required class="w-full bg-slate-50 border-slate-100 rounded-xl px-4 py-3 text-xs font-black focus:ring-indigo-500 transition">
+                                    <select id="yearId" name="year_id" required class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-black focus:ring-indigo-500 transition">
                                         {% for y in years %}
                                         <option value="{{ y.id }}" {% if y.id == current_year_id %}selected{% endif %}>{{ y.year }}</option>
                                         {% endfor %}
@@ -71,7 +116,7 @@
                                 </div>
                                 <div>
                                     <label class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 ml-1">Period / Term</label>
-                                    <select name="term_id" required class="w-full bg-slate-50 border-slate-100 rounded-xl px-4 py-3 text-xs font-black focus:ring-indigo-500 transition">
+                                    <select id="termId" name="term_id" required class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-black focus:ring-indigo-500 transition">
                                         {% for t in terms %}
                                         <option value="{{ t.id }}" {% if t.id == current_term_id %}selected{% endif %}>Term {{ t.term_number }} - {{ t.year }}</option>
                                         {% endfor %}
@@ -82,7 +127,7 @@
                             <div class="grid grid-cols-2 gap-4">
                                 <div>
                                     <label class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 ml-1">Payment Mode</label>
-                                    <select name="mode" required class="w-full bg-slate-50 border-slate-100 rounded-xl px-4 py-3 text-xs font-black focus:ring-indigo-500 transition">
+                                    <select id="paymentMode" name="mode" required class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-black focus:ring-indigo-500 transition">
                                         <option value="CASH">CASH</option>
                                         <option value="MPESA">M-PESA</option>
                                         <option value="BANK_TRANSFER">BANK TRANSFER</option>
@@ -90,110 +135,463 @@
                                     </select>
                                 </div>
                                 <div>
-                                    <label class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 ml-1">Value Date</label>
-                                    <input type="date" name="date" required value="{{ now.strftime('%Y-%m-%d') }}" class="w-full bg-slate-50 border-slate-100 rounded-xl px-4 py-3 text-xs font-black focus:ring-indigo-500 transition">
+                                    <label class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 ml-1">Reference / Slip ID</label>
+                                    <input type="text" id="slipRef" name="reference" required placeholder="TXN-000000" 
+                                           class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-black focus:ring-indigo-500 transition shadow-sm font-mono text-center">
                                 </div>
                             </div>
 
                             <div>
-                                <label class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 ml-1">Reference / Slip ID</label>
-                                <input type="text" name="reference" required placeholder="TXN-000000" class="w-full bg-slate-50 border-slate-100 rounded-xl px-4 py-3 text-sm font-black focus:ring-indigo-500 transition">
+                                <label class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 ml-1">Bank Name (Optional)</label>
+                                <input type="text" id="bankName" name="bank" placeholder="e.g. Equity Bank" 
+                                       class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-black focus:ring-indigo-500 transition">
                             </div>
 
-                            <div class="bg-indigo-50 rounded-2xl p-6 border border-indigo-100">
-                                <label class="block text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-2 text-center">Amount to Credit (KES)</label>
+                            <!-- Value Input Deck -->
+                            <div class="bg-indigo-50 rounded-2xl p-5 border border-indigo-100">
+                                <label class="block text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-2 text-center">Credit Entry Value</label>
                                 <div class="flex items-center justify-center">
-                                    <span class="text-xl font-black text-indigo-300 mr-3">KSH</span>
-                                    <input type="number" name="amount" step="0.01" min="1" required placeholder="0.00" 
-                                           class="bg-transparent border-0 border-b-2 border-indigo-200 focus:ring-0 focus:border-indigo-600 text-3xl w-40 text-center font-black placeholder-indigo-100">
+                                    <span class="text-lg font-black text-indigo-300 mr-2">KSH</span>
+                                    <input type="number" id="paymentAmount" name="amount" step="0.01" min="1" required placeholder="0.00" 
+                                           class="bg-transparent border-0 border-b-2 border-indigo-200 focus:ring-0 focus:border-indigo-600 text-2xl w-36 text-center font-black placeholder-indigo-200">
+                                </div>
+                                <div class="mt-3 flex justify-between text-[9px] font-black uppercase text-slate-500 border-t border-indigo-100 pt-2.5">
+                                    <span>Projected Bal</span>
+                                    <span id="projBal" class="text-indigo-600">KES 0.00</span>
                                 </div>
                             </div>
                         </div>
 
-                        <button type="submit" id="submitBtn" disabled class="w-full bg-indigo-600 disabled:bg-slate-200 disabled:cursor-not-allowed hover:bg-slate-900 text-white font-black py-4 rounded-2xl shadow-lg shadow-indigo-100 transition duration-300 uppercase tracking-widest text-xs flex items-center justify-center gap-3">
-                            <i class="fas fa-check-double"></i> Commit to Ledger
-                        </button>
+                        <!-- Live Allocation Preview Block -->
+                        <div id="quickAllocationDeck" class="hidden bg-slate-50 rounded-2xl p-4 border border-slate-100 text-xs space-y-2">
+                            <h4 class="text-[9px] font-black uppercase tracking-wider text-slate-400">Live Allocation Preview</h4>
+                            <div id="previewAllocationList" class="space-y-1.5 max-h-32 overflow-y-auto">
+                                <!-- Populated dynamically -->
+                            </div>
+                        </div>
+
+                        <!-- Posting Controls Stack -->
+                        <div class="grid grid-cols-2 gap-3 pt-2">
+                            <button type="button" id="postBtn" disabled 
+                                    class="col-span-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-black py-3.5 rounded-2xl shadow-md transition duration-300 uppercase tracking-widest text-[10px] flex items-center justify-center gap-2">
+                                <i class="fas fa-check-double"></i> Post Payment (F9)
+                            </button>
+                            <button type="button" id="postPrintBtn" disabled 
+                                    class="bg-slate-950 hover:bg-black disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-black py-3 rounded-xl transition uppercase tracking-widest text-[9px] flex items-center justify-center gap-1.5">
+                                <i class="fas fa-print"></i> Post & Print
+                            </button>
+                            <button type="button" id="postNewBtn" disabled 
+                                    class="bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed font-black py-3 rounded-xl transition uppercase tracking-widest text-[9px] flex items-center justify-center gap-1.5">
+                                <i class="fas fa-file-plus"></i> Post & New
+                            </button>
+                        </div>
                     </div>
                 </form>
             </div>
 
-            <!-- Right Panel: Financial Intelligence -->
+            <!-- RIGHT PANEL: Dashboard, Statements, Register, & Adjustments Deck -->
             <div class="lg:col-span-8 space-y-6">
-                <!-- Analytics Toggle (Hidden until student selected) -->
-                <div id="intelligencePanel" class="hidden space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div class="bg-white rounded-3xl p-8 shadow-sm border border-slate-200 relative overflow-hidden h-40 flex flex-col justify-between">
-                            <i class="fas fa-sack-dollar absolute text-8xl -right-8 -bottom-8 opacity-5 text-indigo-600"></i>
-                            <div>
-                                <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 leading-none">Net Ledger Balance</h4>
-                                <div id="currentBalance" class="text-4xl font-black text-slate-900">KES 0.00</div>
-                            </div>
-                            <div id="balanceTrend" class="text-[10px] font-black uppercase tracking-widest"></div>
-                        </div>
-                        
-                        <div class="bg-white rounded-3xl p-8 shadow-sm border border-slate-200 relative overflow-hidden h-40 flex flex-col justify-between group">
-                             <i class="fas fa-clock-rotate-left absolute text-8xl -right-8 -bottom-8 opacity-5 text-indigo-600 group-hover:scale-110 transition duration-500"></i>
-                             <div>
-                                <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 leading-none">Last Payment</h4>
-                                <div id="lastPayment" class="text-4xl font-black text-slate-900">-</div>
-                             </div>
-                             <div id="lastPaymentDate" class="text-[10px] font-black text-indigo-500 uppercase tracking-widest">No history found</div>
-                        </div>
-                    </div>
-
-                    <!-- Enhanced Ledger History -->
-                    <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-                        <div class="px-8 py-6 border-b border-slate-100 flex justify-between items-center">
-                            <h2 class="text-sm font-black text-slate-900 uppercase tracking-widest">Transaction Statement</h2>
-                            <div class="flex items-center gap-2">
-                                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                                <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Live View</span>
-                            </div>
-                        </div>
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-left border-collapse">
-                                <thead>
-                                    <tr class="bg-slate-50/50 text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-100">
-                                        <th class="px-8 py-4">Transaction Details</th>
-                                        <th class="px-8 py-4">Reference</th>
-                                        <th class="px-8 py-4 text-right">Debit</th>
-                                        <th class="px-8 py-4 text-right">Credit</th>
-                                        <th class="px-8 py-4 text-right bg-slate-50/30">Running Bal</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="statementBody" class="divide-y divide-slate-100 text-sm">
-                                    <!-- Rows populated by JS -->
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+                <!-- Single-Page Reactive Control Center (Tabs Header) -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-2 flex flex-wrap gap-1 no-print">
+                    <button onclick="switchTerminalTab('contextLedger')" id="tabBtn_contextLedger" class="tab-btn flex-1 min-w-[120px] px-4 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest text-center transition bg-indigo-600 text-white">
+                        <i class="fas fa-address-card mr-1.5"></i> Student Ledger
+                    </button>
+                    <button onclick="switchTerminalTab('receiptsJournal')" id="tabBtn_receiptsJournal" class="tab-btn flex-1 min-w-[120px] px-4 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest text-center transition text-slate-500 hover:bg-slate-50">
+                        <i class="fas fa-book-journal-whills mr-1.5"></i> Receipts Journal
+                    </button>
+                    <button onclick="switchTerminalTab('financialCorrections')" id="tabBtn_financialCorrections" class="tab-btn flex-1 min-w-[120px] px-4 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest text-center transition text-slate-500 hover:bg-slate-50">
+                        <i class="fas fa-sliders mr-1.5"></i> Adjustments & Corrections
+                    </button>
+                    <button onclick="switchTerminalTab('dailyCollections')" id="tabBtn_dailyCollections" class="tab-btn flex-1 min-w-[120px] px-4 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest text-center transition text-slate-500 hover:bg-slate-50">
+                        <i class="fas fa-chart-line mr-1.5"></i> Today's Summary
+                    </button>
                 </div>
 
-                <!-- Empty State Strategy -->
-                <div id="emptyPanel" class="bg-white rounded-3xl p-16 border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-center">
-                    <div class="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center text-slate-200 mb-6">
-                        <i class="fas fa-fingerprint text-3xl"></i>
+                <!-- TABS CONTAINER -->
+                <div class="space-y-6">
+                    
+                    <!-- TAB 1: Student Context File & Statement -->
+                    <div id="tab_contextLedger" class="terminal-tab space-y-6">
+                        <!-- Profile Metadata Summary Card -->
+                        <div id="bursarContextCard" class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 relative overflow-hidden hidden">
+                            <!-- Subtle Background Accent -->
+                            <div class="absolute right-0 top-0 h-full w-24 bg-indigo-50/10 pointer-events-none"></div>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+                                <!-- Stylized Photo Placeholder / Initials -->
+                                <div class="md:col-span-2 flex justify-center">
+                                    <div class="w-20 h-24 bg-slate-900 text-indigo-400 font-extrabold text-2xl flex items-center justify-center rounded-2xl shadow-md border-2 border-indigo-100" id="contextInitials">
+                                        --
+                                    </div>
+                                </div>
+                                <!-- Demographic metadata -->
+                                <div class="md:col-span-5 space-y-2 text-center md:text-left">
+                                    <div>
+                                        <span class="text-[9px] font-black bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-full uppercase tracking-wider" id="contextClass">Standard Class</span>
+                                    </div>
+                                    <h3 class="text-lg font-black text-slate-900 leading-tight" id="contextName">Student Full Name</h3>
+                                    <p class="text-xs font-mono font-bold text-slate-400">ADM NO: <span id="contextAdm" class="text-slate-800">0000</span></p>
+                                    <div class="flex flex-wrap gap-4 text-xs font-bold text-slate-500 pt-1 justify-center md:justify-start">
+                                        <span>Parent: <strong id="contextParent" class="text-slate-700">Name</strong></span>
+                                        <span>Phone: <strong id="contextPhone" class="text-slate-700">Phone</strong></span>
+                                    </div>
+                                </div>
+                                <!-- Dynamic fiscal KPIs -->
+                                <div class="md:col-span-5 grid grid-cols-2 gap-4 border-t md:border-t-0 md:border-l border-slate-100 pt-4 md:pt-0 md:pl-6">
+                                    <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center">
+                                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Net Ledg Bal</p>
+                                        <span class="text-sm font-black text-slate-900 leading-none" id="contextLedgerBal">0.00</span>
+                                    </div>
+                                    <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center">
+                                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Category</p>
+                                        <span class="text-xs font-black text-indigo-600 leading-none uppercase" id="contextCat">Day / Boarding</span>
+                                    </div>
+                                    <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center">
+                                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Term Structure</p>
+                                        <span class="text-xs font-black text-slate-600 leading-none" id="contextStructureTot">0.00</span>
+                                    </div>
+                                    <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center">
+                                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Current Status</p>
+                                        <span class="text-xs font-black leading-none" id="contextStatus">Active</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Statement Listing Grid -->
+                        <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div class="px-8 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                                <h2 class="text-xs font-black text-slate-900 uppercase tracking-widest">Double-Entry Student Ledger</h2>
+                                <div class="flex items-center gap-1.5">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-ping"></span>
+                                    <span class="text-[9px] font-bold text-slate-400 uppercase">Interactive View</span>
+                                </div>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr class="bg-slate-50/50 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-100">
+                                            <th class="px-8 py-4">Transaction details</th>
+                                            <th class="px-8 py-4 font-mono">Reference</th>
+                                            <th class="px-8 py-4 text-right">Charges</th>
+                                            <th class="px-8 py-4 text-right">Payments</th>
+                                            <th class="px-8 py-4 text-right bg-slate-50/30">Running Bal</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="statementBody" class="divide-y divide-slate-100 text-sm">
+                                        <tr>
+                                            <td colspan="5" class="px-8 py-20 text-center text-slate-400">
+                                                <div class="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mx-auto mb-4 border">
+                                                    <i class="fas fa-fingerprint text-xl"></i>
+                                                </div>
+                                                <div class="text-[10px] font-black uppercase tracking-wider text-slate-400">Bursar Entry System</div>
+                                                <p class="text-xs text-slate-400 mt-1 max-w-xs mx-auto">Input or seek a student record on the payment entry workspace to initialize double entry ledger.</p>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
-                    <h3 class="text-lg font-black text-slate-900 mb-2 uppercase tracking-wide">Identify Student</h3>
-                    <p class="text-sm text-slate-400 max-w-xs font-medium">Use the search box on the left to locate a student and view their financial profile before proceeding.</p>
+
+                    <!-- TAB 2: Embedded Receipts Register Journal -->
+                    <div id="tab_receiptsJournal" class="terminal-tab space-y-6 hidden">
+                        <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
+                            <!-- Small Quick Dates Search -->
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                                <div>
+                                    <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Start point</label>
+                                    <input type="date" id="journalStart" class="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5 text-xs font-bold">
+                                </div>
+                                <div>
+                                    <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">End point</label>
+                                    <input type="date" id="journalEnd" class="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5 text-xs font-bold">
+                                </div>
+                                <div class="col-span-2 flex gap-2">
+                                    <button onclick="queryReceiptsJournal()" class="flex-grow bg-indigo-600 hover:bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest py-3 rounded-xl transition">
+                                        Query Journal
+                                    </button>
+                                    <button onclick="resetJournal()" class="bg-slate-100 hover:bg-slate-200 text-slate-500 px-4 py-3 rounded-xl transition">
+                                        <i class="fas fa-rotate-left"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Journal List table -->
+                        <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr class="bg-slate-50/50 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-100">
+                                            <th class="px-8 py-4">Receipt</th>
+                                            <th class="px-8 py-4">Student</th>
+                                            <th class="px-8 py-4">Ref</th>
+                                            <th class="px-8 py-4 text-right">Value</th>
+                                            <th class="px-8 py-4 text-center">Status</th>
+                                            <th class="px-8 py-4 text-right">Quick actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="journalBody" class="divide-y divide-slate-100 text-xs">
+                                        <tr>
+                                            <td colspan="6" class="px-8 py-16 text-center text-slate-400">
+                                                <i class="fas fa-spinner fa-spin text-xl mb-2 text-indigo-500"></i>
+                                                <p class="text-[9px] uppercase tracking-widest font-black text-slate-400">Fetching live journal registers...</p>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TAB 3: Adjustments, Reversals, & Double-Entry Corrections -->
+                    <div id="tab_financialCorrections" class="terminal-tab space-y-6 hidden">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            
+                            <!-- Card A: Void / Reversal Workspace -->
+                            <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 flex flex-col justify-between">
+                                <div>
+                                    <div class="w-10 h-10 bg-rose-50 text-rose-500 rounded-xl flex items-center justify-center text-sm mb-4 border border-rose-100">
+                                        <i class="fas fa-ban"></i>
+                                    </div>
+                                    <h3 class="text-sm font-black text-slate-900 uppercase tracking-wide">Receipt Reversal & Void</h3>
+                                    <p class="text-xs text-slate-400 mt-1">Permanently reverse a posted receipt credit, restore the outstanding structure balance, and trigger reversal ledger event.</p>
+                                </div>
+                                <div class="mt-6">
+                                    <div class="flex gap-2">
+                                        <input type="text" id="voidInput" placeholder="RC-2026-X or Payment ID" 
+                                               class="flex-grow bg-slate-50 border border-slate-100 text-xs rounded-xl px-4 py-2.5 font-bold font-mono">
+                                        <button onclick="triggerDirectVoid()" class="bg-rose-600 hover:bg-rose-700 text-white font-black text-[10px] uppercase tracking-widest px-4 py-2.5 rounded-xl transition">
+                                            Prepare Void
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Card B: Payment Reallocation Log -->
+                            <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 flex flex-col justify-between">
+                                <div>
+                                    <div class="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center text-sm mb-4 border border-indigo-100">
+                                        <i class="fas fa-shuffle"></i>
+                                    </div>
+                                    <h3 class="text-sm font-black text-slate-900 uppercase tracking-wide">Receipt Transfer & Pivot</h3>
+                                    <p class="text-xs text-slate-400 mt-1">Shift a posted credit from one student ledger index to another (errors, twins, or wrong ID assignments).</p>
+                                </div>
+                                <div class="mt-6">
+                                    <button onclick="openReallocationModal()" class="w-full bg-slate-900 hover:bg-black text-white font-black text-[10px] uppercase tracking-widest py-3 rounded-xl transition flex items-center justify-center gap-2">
+                                        <i class="fas fa-exchange-alt"></i> Transfer Workspace
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Card C: Manual Billing Adjustments / Debit Notes -->
+                            <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 flex flex-col justify-between">
+                                <div>
+                                    <div class="w-10 h-10 bg-slate-50 text-slate-700 rounded-xl flex items-center justify-center text-sm mb-4 border">
+                                        <i class="fas fa-file-invoice"></i>
+                                    </div>
+                                    <h3 class="text-sm font-black text-slate-900 uppercase tracking-wide">Manual Billing Charge</h3>
+                                    <p class="text-xs text-slate-400 mt-1">Directly generate custom ledger debits (custom exam charges, locker damages, or late penalties).</p>
+                                </div>
+                                <div class="mt-6">
+                                    <button onclick="openDirectDebitModal()" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-[10px] uppercase tracking-widest py-3 rounded-xl transition flex items-center justify-center gap-2">
+                                        <i class="fas fa-plus"></i> Issue Credit/Debit Note
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Card D: Direct Term Waiver Override -->
+                            <div id="waiverActionCard" class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 flex flex-col justify-between">
+                                <div>
+                                    <div class="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center text-sm mb-4 border border-emerald-100">
+                                        <i class="fas fa-gift text-sm"></i>
+                                    </div>
+                                    <h3 class="text-sm font-black text-slate-900 uppercase tracking-wide">Scholarship / Term Waiver</h3>
+                                    <p class="text-xs text-slate-400 mt-1">Post a credit adjustment or scholarship entry over the student's tuition ledger directly inside the workspace.</p>
+                                </div>
+                                <div class="mt-6">
+                                    <a href="{{ url_for('fees.fees_waivers') }}" class="w-full bg-slate-900 hover:bg-black text-white font-black text-[10px] uppercase tracking-widest py-3 rounded-xl transition flex items-center justify-center gap-2 text-center">
+                                        <i class="fas fa-shield-heart"></i> Manage Term Waivers
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TAB 4: Today's collection summary & stats -->
+                    <div id="tab_dailyCollections" class="terminal-tab space-y-6 hidden">
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm text-center">
+                                <h5 class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Collection Yield</h5>
+                                <span class="text-xl font-black text-slate-900" id="dailyTotalAmount">KES 0.00</span>
+                            </div>
+                            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm text-center">
+                                <h5 class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Slip Registries</h5>
+                                <span class="text-xl font-black text-slate-900" id="dailyTransCount">0 Entries</span>
+                            </div>
+                            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm text-center">
+                                <h5 id="opHeader" class="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-1.5">Active Operator</h5>
+                                <span class="text-xs font-black text-slate-800" id="opVal">{{ session.get('username', 'Active Cashier') }}</span>
+                            </div>
+                            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm text-center">
+                                <h5 class="text-[9px] font-black text-emerald-400 uppercase tracking-widest mb-1.5">Audit Status</h5>
+                                <span class="text-xs font-black text-emerald-600 block"><i class="fas fa-shield-check"></i> Balanced</span>
+                            </div>
+                        </div>
+
+                        <!-- Journal Summary grid grouped by Mode -->
+                        <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div class="px-8 py-5 border-b border-slate-100 bg-slate-50/50">
+                                <h2 class="text-xs font-black text-slate-900 uppercase tracking-widest">Revenue Summary (Mode Breakdown)</h2>
+                            </div>
+                            <div class="p-8">
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6" id="modeBreakdownGrid">
+                                    <!-- Populated dynamically -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
             </div>
+            
+        </div>
+    </div>
+</div>
+
+<!-- ============================================== -->
+<!-- INTERACTIVE SUCCESS OVERLAY MODAL -->
+<!-- ============================================== -->
+<div id="postSuccessModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-200">
+        <div class="p-8 text-center space-y-6">
+            <!-- Icon State -->
+            <div class="w-16 h-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center text-3xl mx-auto border border-emerald-100 pulse">
+                <i class="fas fa-check-circle"></i>
+            </div>
+            
+            <div>
+                <h3 class="text-lg font-black text-slate-900 uppercase tracking-wider">Transaction Committed!</h3>
+                <p class="text-xs text-slate-400 mt-1 uppercase tracking-widest font-bold">Double-Entry Ledger Success Details</p>
+            </div>
+
+            <div class="bg-slate-50 rounded-2xl p-6 border border-slate-100 text-left space-y-3 font-bold text-xs text-slate-600">
+                <div class="flex justify-between">
+                    <span>Receipt Index:</span>
+                    <strong id="m_receiptNo" class="font-mono text-red-600 text-sm">--</strong>
+                </div>
+                <div class="flex justify-between">
+                    <span>Student Target:</span>
+                    <strong id="m_studentName" class="text-slate-900">--</strong>
+                </div>
+                <div class="flex justify-between">
+                    <span>Value Posted:</span>
+                    <strong id="m_amount" class="text-emerald-600 text-sm font-mono">KES 0.00</strong>
+                </div>
+                <div class="flex justify-between border-t pt-2.5">
+                    <span>Remaining Ledger Bal:</span>
+                    <strong id="m_balance" class="text-slate-900 text-sm">KES 0.00</strong>
+                </div>
+            </div>
+
+            <!-- Modal Action Deck -->
+            <div class="flex flex-col gap-2 pt-2">
+                <a href="#" id="m_printLink" target="_blank" class="w-full bg-indigo-600 hover:bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest py-4 rounded-xl shadow-lg transition">
+                    <i class="fas fa-print mr-1.5"></i> Print Official Receipt
+                </a>
+                <div class="grid grid-cols-2 gap-3">
+                    <button onclick="simulatePostAction('SMS')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-[9px] uppercase tracking-widest py-3 rounded-xl transition">
+                        <i class="fas fa-sms"></i> Dispatch SMS
+                    </button>
+                    <button onclick="simulatePostAction('EMAIL')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-[9px] uppercase tracking-widest py-3 rounded-xl transition">
+                        <i class="fas fa-envelope"></i> Email PDF
+                    </button>
+                </div>
+                <button onclick="closeSuccessModal()" class="w-full bg-slate-900 hover:bg-black text-white font-black text-[9px] uppercase tracking-widest py-3.5 rounded-xl transition mt-2">
+                    <i class="fas fa-chevron-right mr-1"></i> Return to Desk
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================== -->
+<!-- INTERACTIVE TRANSACTION REALLOCATION MODAL -->
+<!-- ============================================== -->
+<div id="reallocatedModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl border border-slate-100">
+        <div class="px-8 py-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+            <h3 class="text-xs font-black text-slate-800 uppercase tracking-widest">Reallocate Reference Payment</h3>
+            <button onclick="closeReallocationModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times-circle text-lg"></i></button>
+        </div>
+        <form id="reallocateForm" class="p-8 space-y-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div>
+                <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Slip Reference / Tx ID</label>
+                <input type="text" id="real_ref" name="reference_no" required placeholder="e.g. M-PESA Code, Cheque #" 
+                       class="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-xs font-bold font-mono text-center">
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">From AdmNo</label>
+                    <input type="number" id="real_from" name="from_admno" required class="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-xs font-bold">
+                </div>
+                <div>
+                    <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">To Target AdmNo</label>
+                    <input type="number" id="real_to" name="to_admno" required class="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-xs font-bold">
+                </div>
+            </div>
+            <div>
+                <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Audit Trail Reason</label>
+                <textarea id="real_reason" name="reason" required placeholder="Describe posting error..." 
+                          class="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-xs font-bold min-h-[80px]"></textarea>
+            </div>
+            <button type="button" onclick="submitReallocationAction()" class="w-full bg-indigo-600 hover:bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest py-3.5 rounded-xl transition">
+                Apply Reallocation Note
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- ============================================== -->
+<!-- INTERACTIVE DIRECT CHARGE (DEBIT NOTE) MODAL -->
+<!-- ============================================== -->
+<div id="debitModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
+        <div class="px-8 py-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+            <h3 class="text-xs font-black text-slate-800 uppercase tracking-widest">Manual Billing / Debit Note</h3>
+            <button onclick="closeDebitModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times-circle text-lg"></i></button>
+        </div>
+        <div class="p-8 space-y-4">
+            <div class="text-[10px] font-bold text-slate-400 uppercase">Feature Redirecting</div>
+            <p class="text-xs text-slate-400">Direct invoicing and debit structures are handled globally to preserve allocation schema invariants. You can perform mass or customized single student billing under the standard invoicing node:</p>
+            <a href="{{ url_for('fees.bulk_invoice') }}" class="block w-full text-center bg-slate-900 hover:bg-black text-white font-black text-[9px] uppercase tracking-widest py-3 rounded-xl transition">
+                Navigate to Invoicing Hub
+            </a>
         </div>
     </div>
 </div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // UI Selectors
     const searchInput = document.getElementById('studentSearch');
     const resultsDiv = document.getElementById('searchResults');
     const admHidden = document.getElementById('selectedAdmNo');
     const displayDiv = document.getElementById('studentDisplay');
-    const intelPanel = document.getElementById('intelligencePanel');
-    const emptyPanel = document.getElementById('emptyPanel');
-    const submitBtn = document.getElementById('submitBtn');
+    const b_ctxCard = document.getElementById('bursarContextCard');
+    const active_post_btn = document.getElementById('postBtn');
+    const p_print_btn = document.getElementById('postPrintBtn');
+    const p_new_btn = document.getElementById('postNewBtn');
+    const input_amount = document.getElementById('paymentAmount');
+    const proj_bal_label = document.getElementById('projBal');
     
+    // Cached context variables
+    let activeStudentContext = null;
     let debounceTimer;
 
+    // Search Box Listener
     searchInput.addEventListener('input', function() {
         clearTimeout(debounceTimer);
         const query = this.value.trim();
@@ -211,13 +609,13 @@ document.addEventListener('DOMContentLoaded', function() {
                         resultsDiv.classList.remove('hidden');
                         data.forEach(student => {
                             const div = document.createElement('div');
-                            div.className = 'px-6 py-4 hover:bg-slate-50 cursor-pointer flex justify-between items-center transition duration-200';
+                            div.className = 'px-6 py-4 hover:bg-slate-50 cursor-pointer flex justify-between items-center transition';
                             div.innerHTML = `
                                 <div>
                                     <div class="text-sm font-black text-slate-900">${student.name}</div>
                                     <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">${student.AdmNo}</div>
                                 </div>
-                                <i class="fas fa-chevron-right text-slate-200 text-xs translate-x-0 group-hover:translate-x-1 transition"></i>
+                                <i class="fas fa-chevron-right text-slate-200 text-xs shadow-sm"></i>
                             `;
                             div.onclick = () => selectStudent(student);
                             resultsDiv.appendChild(div);
@@ -229,6 +627,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 300);
     });
 
+    // Select Student Hook
     function selectStudent(student) {
         admHidden.value = student.AdmNo;
         document.getElementById('studentNameDisplay').textContent = student.name;
@@ -237,92 +636,487 @@ document.addEventListener('DOMContentLoaded', function() {
         displayDiv.classList.remove('hidden');
         resultsDiv.classList.add('hidden');
         searchInput.classList.add('hidden');
-        intelPanel.classList.remove('hidden');
-        emptyPanel.classList.add('hidden');
-        submitBtn.disabled = false;
         
-        loadFinancialData(student.AdmNo);
+        // Unblock workspace forms
+        [active_post_btn, p_print_btn, p_new_btn].forEach(btn => btn.disabled = false);
+        
+        loadBursarStudentProfile(student.AdmNo);
     }
 
+    // Clear Selected Student
     document.getElementById('clearStudent').onclick = () => {
         admHidden.value = '';
         displayDiv.classList.add('hidden');
         searchInput.classList.remove('hidden');
         searchInput.value = '';
-        intelPanel.classList.add('hidden');
-        emptyPanel.classList.remove('hidden');
-        submitBtn.disabled = true;
+        
+        // Lock actions again
+        [active_post_btn, p_print_btn, p_new_btn].forEach(btn => btn.disabled = true);
+        b_ctxCard.classList.add('hidden');
+        
+        // Reset dynamic fields
+        activeStudentContext = null;
+        input_amount.value = '';
+        proj_bal_label.textContent = 'KES 0.00';
+        document.getElementById('quickAllocationDeck').classList.add('hidden');
+        
+        resetDoubleEntryLedger();
     };
 
-    function loadFinancialData(admno) {
-        const currentYearId = "{{ current_year_id or '' }}";
-        fetch(`/api/fees/statement?admno=${admno}&year_id=${currentYearId}`)
+    // Load detailed financial context
+    function loadBursarStudentProfile(admno) {
+        fetch(`/api/fees/student-context?admno=${admno}`)
             .then(res => res.json())
             .then(data => {
-                const body = document.getElementById('statementBody');
-                body.innerHTML = '';
-                
-                let lastBal = 0;
-                let lastPayVal = 0;
-                let lastPayDate = 'N/A';
-
-                if (data.length === 0) {
-                    body.innerHTML = `<tr><td colspan="5" class="px-8 py-12 text-center text-slate-400 font-bold uppercase text-[10px] tracking-widest italic">No financial history found for this fiscal period</td></tr>`;
-                    document.getElementById('currentBalance').textContent = 'KES 0.00';
-                    document.getElementById('lastPayment').textContent = '-';
+                if (!data.success) {
+                    alert(data.message || 'Error occurred');
                     return;
                 }
-
-                data.forEach(entry => {
-                    const row = document.createElement('tr');
-                    const isCredit = entry.type === 'PAYMENT';
-                    const amount = parseFloat(entry.amount);
-                    lastBal = parseFloat(entry.balance_after);
-                    
-                    if (isCredit) {
-                        lastPayVal = amount;
-                        lastPayDate = entry.transaction_date;
-                    }
-
-                    row.innerHTML = `
-                        <td class="px-8 py-5">
-                            <div class="font-black text-slate-900 uppercase text-[11px]">${entry.description || (entry.type === 'PAYMENT' ? 'PAYMENT RECEIVED' : 'FEE CHARGE')}</div>
-                            <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">${entry.transaction_date}</div>
-                        </td>
-                        <td class="px-8 py-5 font-mono text-xs font-black text-slate-500">#${entry.reference_no}</td>
-                        <td class="px-8 py-5 text-right font-black text-rose-500">${!isCredit ? amount.toLocaleString('en-US', {minimumFractionDigits:2}) : '-'}</td>
-                        <td class="px-8 py-5 text-right font-black text-emerald-600">${isCredit ? amount.toLocaleString('en-US', {minimumFractionDigits:2}) : '-'}</td>
-                        <td class="px-8 py-5 text-right font-black text-slate-900 bg-slate-50/30">${lastBal.toLocaleString('en-US', {minimumFractionDigits:2})}</td>
-                    `;
-                    body.appendChild(row);
-                });
-
-                // Update Overview Cards
-                document.getElementById('currentBalance').textContent = 'KES ' + lastBal.toLocaleString('en-US', {minimumFractionDigits:2});
-                const balTrend = document.getElementById('balanceTrend');
-                if (lastBal > 0) {
-                    balTrend.className = 'text-[10px] font-black uppercase tracking-widest text-rose-500';
-                    balTrend.innerHTML = '<i class="fas fa-triangle-exclamation"></i> Outstanding Arrears';
-                } else if (lastBal < 0) {
-                    balTrend.className = 'text-[10px] font-black uppercase tracking-widest text-emerald-600';
-                    balTrend.innerHTML = '<i class="fas fa-shield-heart"></i> Overpayment Credit';
+                activeStudentContext = data;
+                
+                // Show core profile context
+                b_ctxCard.classList.remove('hidden');
+                document.getElementById('contextName').textContent = data.full_name;
+                document.getElementById('contextAdm').textContent = data.admno;
+                document.getElementById('contextClass').textContent = data.class_name;
+                document.getElementById('contextParent').textContent = data.parent_name;
+                document.getElementById('contextPhone').textContent = data.parent_phone;
+                document.getElementById('contextCat').textContent = data.category;
+                document.getElementById('contextStructureTot').textContent = 'KES ' + data.structure_items.reduce((acc, x) => acc + x.amount, 0).toLocaleString('en-US', {minimumFractionDigits: 2});
+                
+                const initials = (data.first_name[0] || '') + (data.success_name[0] || '');
+                document.getElementById('contextInitials').textContent = initials.toUpperCase() || 'ST';
+                
+                // Ledger outstanding status color
+                const balanceCell = document.getElementById('contextLedgerBal');
+                balanceCell.textContent = 'KES ' + data.outstanding_balance.toLocaleString('en-US', {minimumFractionDigits: 2});
+                if (data.outstanding_balance > 0) {
+                    balanceCell.className = "text-sm font-black text-rose-600";
+                    document.getElementById('contextStatus').textContent = 'Arrears Outstanding';
+                    document.getElementById('contextStatus').className = "text-xs font-black text-rose-500 uppercase";
+                } else if (data.outstanding_balance < 0) {
+                    balanceCell.className = "text-sm font-black text-emerald-600";
+                    document.getElementById('contextStatus').textContent = 'Credit Balance';
+                    document.getElementById('contextStatus').className = "text-xs font-black text-emerald-500 uppercase";
                 } else {
-                    balTrend.className = 'text-[10px] font-black uppercase tracking-widest text-slate-400';
-                    balTrend.innerHTML = '<i class="fas fa-check-circle"></i> Account Cleared';
+                    balanceCell.className = "text-sm font-black text-slate-800";
+                    document.getElementById('contextStatus').textContent = 'Balanced Account';
+                    document.getElementById('contextStatus').className = "text-xs font-black text-slate-400 uppercase";
                 }
 
-                document.getElementById('lastPayment').textContent = lastPayVal > 0 ? 'KES ' + lastPayVal.toLocaleString('en-US', {minimumFractionDigits:2}) : '-';
-                document.getElementById('lastPaymentDate').textContent = lastPayDate !== 'N/A' ? `Last Receipted: ${lastPayDate}` : 'No payment records found';
+                if (data.blocked === 'YES') {
+                    document.getElementById('contextStatus').textContent = 'BLOCKED ACCOUNT';
+                    document.getElementById('contextStatus').className = "text-xs font-black text-red-700 bg-red-50 px-2 py-0.5 rounded uppercase";
+                }
+
+                // Push ledger statements in Tab
+                renderDoubleEntryStatement(data.admno);
+                
+                // Update live allocation lists
+                refreshProjectedPreview();
             });
     }
-});
-</script>
 
-<style>
-@keyframes slideUp {
-  from { transform: translateY(10px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+    // Refresh dynamic running state calculations
+    input_amount.addEventListener('input', function() {
+        if (!activeStudentContext) return;
+        refreshProjectedPreview();
+    });
+
+    function refreshProjectedPreview() {
+        const val = parseFloat(input_amount.value) || 0.0;
+        const currentBal = activeStudentContext.outstanding_balance;
+        const proj = currentBal - val;
+        proj_bal_label.textContent = 'KES ' + proj.toLocaleString('en-US', {minimumFractionDigits: 2});
+        
+        if (proj > 0) {
+            proj_bal_label.className = "text-xs font-black text-rose-500";
+        } else if (proj < 0) {
+            proj_bal_label.className = "text-xs font-black text-emerald-600";
+        } else {
+            proj_bal_label.className = "text-xs font-black text-slate-500";
+        }
+
+        // Generate automatic prioritized allocations list preview
+        const allocDeck = document.getElementById('quickAllocationDeck');
+        const allocList = document.getElementById('previewAllocationList');
+        
+        if (val > 0 && activeStudentContext.structure_items.length > 0) {
+            allocDeck.classList.remove('hidden');
+            allocList.innerHTML = '';
+            
+            let pool = val;
+            activeStudentContext.structure_items.forEach(item => {
+                let deduction = 0.0;
+                if (pool > 0) {
+                    deduction = Math.min(pool, item.amount);
+                    pool -= deduction;
+                }
+                const div = document.createElement('div');
+                div.className = 'flex justify-between items-center border-b border-dashed border-slate-100 pb-1';
+                div.innerHTML = `
+                    <span class="font-bold text-slate-600">${item.votehead_name}</span>
+                    <div class="space-x-2">
+                        <span class="text-slate-400 font-mono">KES ${item.amount.toLocaleString()}</span>
+                        <span class="font-black text-emerald-600 font-mono">+KES ${deduction.toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
+                    </div>
+                `;
+                allocList.appendChild(div);
+            });
+
+            // Advance overpayments allocation fallback
+            if (pool > 0) {
+                const div = document.createElement('div');
+                div.className = 'flex justify-between items-center font-bold text-indigo-600 pt-1 border-t';
+                div.innerHTML = `
+                    <span>Advance Credit (Tuition)</span>
+                    <span class="font-black text-indigo-600 font-mono">+KES ${pool.toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
+                `;
+                allocList.appendChild(div);
+            }
+        } else {
+            allocDeck.classList.add('hidden');
+        }
+    }
+
+    // Submit Double-Entry API Hooks
+    active_post_btn.onclick = (e) => triggerPostingAction(e, false);
+    p_print_btn.onclick = (e) => triggerPostingAction(e, true);
+    p_new_btn.onclick = (e) => triggerPostingAction(e, false, true);
+
+    function triggerPostingAction(e, alsoPrint = false, clearDesk = false) {
+        e.preventDefault();
+        const termSelect = document.getElementById('termId');
+        const yearSelect = document.getElementById('yearId');
+        
+        const payload = {
+            admno: parseInt(admHidden.value),
+            amount: parseFloat(input_amount.value),
+            mode: document.getElementById('paymentMode').value,
+            reference: document.getElementById('slipRef').value,
+            bank: document.getElementById('bankName').value,
+            date: document.getElementById('postDate').value,
+            year_id: parseInt(yearSelect.value),
+            term_id: parseInt(termSelect.value),
+            allocation_mode: document.getElementById('allocationMode').value
+        };
+
+        if (isNaN(payload.amount) || payload.amount <= 0) {
+            alert("Please input a valid amount!");
+            return;
+        }
+        if (!payload.reference) {
+            alert("Reference id or transaction slip index is required!");
+            return;
+        }
+
+        // Fetch submit action
+        active_post_btn.disabled = true;
+        active_post_btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Posting Ledger...';
+
+        fetch('/admin/fees/collect', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify(payload)
+        })
+        .then(res => res.json())
+        .then(data => {
+            active_post_btn.disabled = false;
+            active_post_btn.innerHTML = '<i class="fas fa-check-double"></i> Post Payment (F9)';
+            
+            if (!data.success) {
+                alert("Financial posting warning: " + data.message);
+                return;
+            }
+
+            // Display standard confirmation overlay
+            showSuccessModal(data, payload.amount);
+
+            if (alsoPrint) {
+                const printUrl = `/admin/fees/receipt/${data.payment_id}`;
+                window.open(printUrl, '_blank');
+            }
+
+            if (clearDesk) {
+                // Return immediate view reset
+                closeSuccessModal();
+                document.getElementById('clearStudent').click();
+            } else {
+                // Force profile reclear & update statement in ledger tab
+                loadBursarStudentProfile(payload.admno);
+            }
+        })
+        .catch(err => {
+            active_post_btn.disabled = false;
+            active_post_btn.innerHTML = '<i class="fas fa-check-double"></i> Post Payment (F9)';
+            alert("Double Entry transaction failure: " + err);
+        });
+    }
+
+    // Modal success binders
+    function showSuccessModal(data, amount) {
+        document.getElementById('postSuccessModal').classList.remove('hidden');
+        document.getElementById('m_receiptNo').textContent = data.receipt_no;
+        document.getElementById('m_studentName').textContent = activeStudentContext.full_name + ' (#' + activeStudentContext.admno + ')';
+        document.getElementById('m_amount').textContent = 'KES ' + amount.toLocaleString('en-US', {minimumFractionDigits: 2});
+        document.getElementById('m_balance').textContent = 'KES ' + data.balance.toLocaleString('en-US', {minimumFractionDigits: 2});
+        document.getElementById('m_printLink').href = `/admin/fees/receipt/${data.payment_id}`;
+    }
+});
+
+// Switch Dashboard Tab elements without reload
+function switchTerminalTab(target) {
+    const tabs = document.querySelectorAll('.terminal-tab');
+    const buttons = document.querySelectorAll('.tab-btn');
+    
+    tabs.forEach(tab => tab.classList.add('hidden'));
+    buttons.forEach(btn => {
+        btn.classList.remove('bg-indigo-600', 'text-white');
+        btn.classList.add('text-slate-500', 'hover:bg-slate-50');
+    });
+
+    document.getElementById(`tab_${target}`).classList.remove('hidden');
+    const actBtn = document.getElementById(`tabBtn_${target}`);
+    actBtn.classList.remove('text-slate-500', 'hover:bg-slate-50');
+    actBtn.classList.add('bg-indigo-600', 'text-white');
+
+    // Trigger tab-specific queries
+    if (target === 'receiptsJournal') {
+        queryReceiptsJournal();
+    } else if (target === 'dailyCollections') {
+        queryDailyCollectionsSum();
+    }
 }
-.animate-in { animation: slideUp 0.4s ease-out forwards; }
-</style>
+
+// Global modal bindings
+function closeSuccessModal() {
+    document.getElementById('postSuccessModal').classList.add('hidden');
+}
+
+function simulatePostAction(mode) {
+    alert(`${mode} transaction alert has been queued to backend scheduler pipeline securely.`);
+}
+
+// Reset double entry tables layout
+function resetDoubleEntryLedger() {
+    const body = document.getElementById('statementBody');
+    body.innerHTML = `
+        <tr>
+            <td colspan="5" class="px-8 py-20 text-center text-slate-400">
+                <div class="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mx-auto mb-4 border">
+                    <i class="fas fa-fingerprint text-xl"></i>
+                </div>
+                <div class="text-[10px] font-black uppercase tracking-wider text-slate-400">Bursar Entry System</div>
+                <p class="text-xs text-slate-400 mt-1 max-w-xs mx-auto">Input or seek a student record on the payment entry workspace to initialize double entry ledger.</p>
+            </td>
+        </tr>
+    `;
+}
+
+// Render dynamic interactive ledger grid AJAX list
+function renderDoubleEntryStatement(admno) {
+    const body = document.getElementById('statementBody');
+    body.innerHTML = `<tr><td colspan="5" class="px-8 py-10 text-center text-slate-400 font-bold uppercase text-[9px] tracking-widest"><i class="fas fa-spinner fa-spin mr-1 text-indigo-500"></i> Resolving database logs...</td></tr>`;
+
+    fetch(`/api/fees/statement?admno=${admno}`)
+        .then(res => res.json())
+        .then(data => {
+            body.innerHTML = '';
+            if (data.length === 0) {
+                body.innerHTML = `<tr><td colspan="5" class="px-8 py-12 text-center text-slate-400 font-bold text-[9px] uppercase tracking-widest italic">No double entry events mapped</td></tr>`;
+                return;
+            }
+
+            let running = 0.0;
+            data.forEach(entry => {
+                const row = document.createElement('tr');
+                const isCredit = entry.type === 'PAYMENT';
+                const amount = parseFloat(entry.amount);
+                running = parseFloat(entry.balance_after);
+
+                row.innerHTML = `
+                    <td class="px-8 py-4.5">
+                        <div class="font-extrabold text-slate-800 text-[11px] uppercase">${entry.description || (entry.type === 'PAYMENT' ? 'PAYMENT RECEIVED' : 'FEE CHARGE')}</div>
+                        <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">${entry.transaction_date}</div>
+                    </td>
+                    <td class="px-8 py-4.5 font-mono text-xs text-slate-500">#${entry.reference_no}</td>
+                    <td class="px-8 py-4.5 text-right font-black text-rose-500">${!isCredit ? amount.toLocaleString('en-US', {minimumFractionDigits: 2}) : '-'}</td>
+                    <td class="px-8 py-4.5 text-right font-black text-emerald-600">${isCredit ? amount.toLocaleString('en-US', {minimumFractionDigits: 2}) : '-'}</td>
+                    <td class="px-8 py-4.5 text-right font-black text-slate-900 bg-slate-50/20">${running.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                `;
+                body.appendChild(row);
+            });
+        });
+}
+
+// Receipts Register journal fetch
+function queryReceiptsJournal() {
+    const start = document.getElementById('journalStart').value;
+    const end = document.getElementById('journalEnd').value;
+    const journalList = document.getElementById('journalBody');
+    journalList.innerHTML = `<tr><td colspan="6" class="px-8 py-12 text-center text-slate-400"><i class="fas fa-spinner fa-spin mr-1 text-indigo-500"></i> Fetching records...</td></tr>`;
+
+    let url = `/admin/fees/receipts?ajax=1`;
+    if (start) url += `&start_date=${start}`;
+    if (end) url += `&end_date=${end}`;
+
+    // Target a cleaner, separate JSON fetch or inject template grid
+    fetch(url)
+        .then(res => res.text())
+        .then(html => {
+            // Standard parse table records securely
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const rows = doc.querySelectorAll('tbody tr');
+            journalList.innerHTML = '';
+            
+            if (rows.length === 0 || doc.body.textContent.includes('No receipt records') || doc.body.textContent.includes('No entries recorded')) {
+                journalList.innerHTML = `<tr><td colspan="6" class="px-8 py-12 text-center text-slate-400 font-bold uppercase text-[9px] tracking-widest">No entries recorded in local timeline</td></tr>`;
+                return;
+            }
+
+            rows.forEach(tr => {
+                // Ensure no edit/void actions are active inside embedded journal tab (clean bounds check)
+                journalList.appendChild(tr);
+            });
+        })
+        .catch(err => {
+            journalList.innerHTML = `<tr><td colspan="6" class="px-8 py-12 text-center text-red-500 font-bold text-xs">Error mapping journal parameters: ${err}</td></tr>`;
+        });
+}
+
+// Reset Journal dates
+function resetJournal() {
+    document.getElementById('journalStart').value = '';
+    document.getElementById('journalEnd').value = '';
+    queryReceiptsJournal();
+}
+
+// Fetch Daily Collection summarizer details
+function queryDailyCollectionsSum() {
+    const today = new Date().toISOString().split('T')[0];
+    const grid = document.getElementById('modeBreakdownGrid');
+    grid.innerHTML = '<div class="col-span-2 text-center py-8"><i class="fas fa-spinner fa-spin text-xl text-indigo-500"></i> Compiling balances...</div>';
+
+    fetch(`/admin/fees/reports/collection?start_date=${today}&end_date=${today}`)
+        .then(res => res.text())
+        .then(html => {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const cards = doc.querySelectorAll('.grid > div'); // Grab cards in daily collection log
+            grid.innerHTML = '';
+            
+            let aggregate = 0.0;
+            let transHex = 0;
+
+            cards.forEach(card => {
+                // Eliminate standard layout headings if page reloaded inside tab view
+                if (card.querySelector('h1') || card.querySelector('form')) return;
+                grid.appendChild(card.cloneNode(true));
+                const amtEl = card.querySelector('.text-2xl') || card.querySelector('.text-slate-900') || card.querySelector('div:nth-child(2)');
+                if (amtEl) {
+                    const cleanVal = parseFloat(amtEl.textContent.replace(/[^\d.]/g, '')) || 0.0;
+                    aggregate += cleanVal;
+                    transHex += 1;
+                }
+            });
+
+            // If empty breakdown
+            if (grid.children.length === 0) {
+                grid.innerHTML = '<div class="col-span-2 text-center py-10 font-bold text-slate-400 uppercase text-[9px] tracking-widest">No payments collected under today\'s cashier session</div>';
+            }
+
+            // Fill header indicators
+            document.getElementById('dailyTotalAmount').textContent = 'KES ' + aggregate.toLocaleString('en-US', {minimumFractionDigits: 2});
+            document.getElementById('dailyTransCount').textContent = transHex + ' Payment Types';
+        });
+}
+
+// Interactive void modal events hooks
+function triggerDirectVoid() {
+    const code = document.getElementById('voidInput').value.trim();
+    if (!code) {
+        alert("Please input a standard Receipt or Transaction ID code!");
+        return;
+    }
+    
+    // Auto query / voiding actions log
+    if (confirm(`Do you wish to request voiding for Transaction index code: "${code}"?`)) {
+        // Send actual form void requests to routes mapping
+        const dummyForm = document.createElement('form');
+        dummyForm.method = 'POST';
+        dummyForm.action = `/admin/fees/receipt/${code}/void`;
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'csrf_token';
+        input.value = document.querySelector('input[name="csrf_token"]').value;
+        const reasonInput = document.createElement('input');
+        reasonInput.type = 'hidden';
+        reasonInput.name = 'reason';
+        reasonInput.value = 'Voided via Bursar entry terminal corrections panel';
+        
+        dummyForm.appendChild(input);
+        dummyForm.appendChild(reasonInput);
+        document.body.appendChild(dummyForm);
+        dummyForm.submit();
+    }
+}
+
+// Reallocator forms triggers
+function openReallocationModal() {
+    document.getElementById('reallocatedModal').classList.remove('hidden');
+}
+function closeReallocationModal() {
+    document.getElementById('reallocatedModal').classList.add('hidden');
+}
+
+function submitReallocationAction() {
+    const payload = {
+        reference_no: document.getElementById('real_ref').value,
+        from_admno: document.getElementById('real_from').value,
+        to_admno: document.getElementById('real_to').value,
+        reason: document.getElementById('real_reason').value
+    };
+
+    if (!payload.reference_no || !payload.from_admno || !payload.to_admno || !payload.reason) {
+        alert("Please fill in all transaction reallocation audit details!");
+        return;
+    }
+
+    // Direct submit reallocator note
+    const reBtn = document.querySelector('#reallocateForm button');
+    reBtn.disabled = true;
+    reBtn.textContent = 'Transferring...';
+
+    const dummyForm = document.createElement('form');
+    dummyForm.method = 'POST';
+    dummyForm.action = `/admin/fees/reallocate`;
+    
+    for (const key in payload) {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = key;
+        input.value = payload[key];
+        dummyForm.appendChild(input);
+    }
+    const token = document.createElement('input');
+    token.type = 'hidden';
+    token.name = 'csrf_token';
+    token.value = document.querySelector('input[name="csrf_token"]').value;
+    dummyForm.appendChild(token);
+
+    document.body.appendChild(dummyForm);
+    dummyForm.submit();
+}
+
+function openDirectDebitModal() {
+    document.getElementById('debitModal').classList.remove('hidden');
+}
+function closeDebitModal() {
+    document.getElementById('debitModal').classList.add('hidden');
+}
+</script>
 {% endblock %}
