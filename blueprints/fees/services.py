@@ -964,41 +964,99 @@ class FeesService:
         receipts_has_school_id = self._table_has_column('fee_receipts', 'school_id')
         allocations_has_school_id = self._table_has_column('fee_payment_allocations', 'school_id')
 
+        def _resolve_student_class_name(admno: int) -> Optional[str]:
+            """Resolve class display name across new and legacy allocation schemas."""
+            class_queries = [
+                (
+                    """
+                    SELECT c.display_name as class_name
+                    FROM class_allocation ca
+                    JOIN classes c ON ca.class_id = c.classID AND ca.school_id = c.school_id
+                    WHERE ca.student_id = %s AND ca.is_current = TRUE AND ca.school_id = %s
+                    ORDER BY ca.id DESC
+                    LIMIT 1
+                    """,
+                    (admno, self.school_id),
+                ),
+                (
+                    """
+                    SELECT c.display_name as class_name
+                    FROM class_allocation ca
+                    JOIN classes c ON ca.class_id = c.classID
+                    WHERE ca.student_id = %s AND ca.is_current = TRUE
+                    ORDER BY ca.id DESC
+                    LIMIT 1
+                    """,
+                    (admno,),
+                ),
+                (
+                    """
+                    SELECT c.display_name as class_name
+                    FROM classallocation lca
+                    JOIN classes c ON lca.classID = c.classID AND lca.school_id = c.school_id
+                    WHERE lca.AdmNo = %s AND lca.school_id = %s
+                    ORDER BY lca.AllcDate DESC
+                    LIMIT 1
+                    """,
+                    (admno, self.school_id),
+                ),
+                (
+                    """
+                    SELECT c.display_name as class_name
+                    FROM classallocation lca
+                    JOIN classes c ON lca.classID = c.classID
+                    WHERE lca.AdmNo = %s
+                    ORDER BY lca.AllcDate DESC
+                    LIMIT 1
+                    """,
+                    (admno,),
+                ),
+            ]
+
+            for query, params in class_queries:
+                try:
+                    self.cursor.execute(query, params)
+                    row = self.cursor.fetchone()
+                    if row and row.get('class_name'):
+                        return row['class_name']
+                except pymysql.Error:
+                    continue
+            return None
+
         if fee_payments_has_school_id and receipts_has_school_id:
             self.cursor.execute("""
-                SELECT fp.*, fr.receipt_no, fr.issued_at, si.FName, si.SName, 
-                       ay.year as year_name, utd.term_number, c.display_name as class_name,
-                       u.username as issued_by_name, fl.academic_year_id, fl.term_id
+                SELECT fp.*, fr.receipt_no, fr.issued_at, si.FName, si.MName, si.SName,
+                       ay.year as year_name, utd.term_number,
+                       u.username as issued_by_name, fl.academic_year_id, fl.term_id,
+                       fl.balance_after, COALESCE(fl.reference_no, fp.reference_number) as reference_no
                 FROM fee_payments fp
                 JOIN fee_receipts fr ON fp.id = fr.payment_id AND fp.school_id = fr.school_id
                 JOIN studentinfo si ON fp.admno = si.AdmNo AND fp.school_id = si.school_id
                 JOIN fee_ledger fl ON fp.ledger_id = fl.id AND fp.school_id = fl.school_id
-                JOIN academic_years ay ON fl.academic_year_id = ay.id AND fl.school_id = ay.school_id
-                JOIN uniform_term_dates utd ON fl.term_id = utd.id AND fl.school_id = utd.school_id
-                LEFT JOIN class_allocation ca ON si.AdmNo = ca.student_id AND ca.is_current = TRUE AND si.school_id = ca.school_id
-                LEFT JOIN classes c ON ca.class_id = c.classID AND ca.school_id = c.school_id
-                LEFT JOIN users u ON fp.received_by = u.userNo AND fp.school_id = u.school_id
+                LEFT JOIN academic_years ay ON fl.academic_year_id = ay.id AND fl.school_id = ay.school_id
+                LEFT JOIN uniform_term_dates utd ON fl.term_id = utd.id AND fl.school_id = utd.school_id
+                LEFT JOIN users u ON fp.received_by = u.userNo
                 WHERE fp.id = %s AND fp.school_id = %s
             """, (payment_id, self.school_id))
         else:
             self.cursor.execute("""
-                SELECT fp.*, fr.receipt_no, fr.issued_at, si.FName, si.SName,
-                       ay.year as year_name, utd.term_number, c.display_name as class_name,
-                       u.username as issued_by_name, fl.academic_year_id, fl.term_id
+                SELECT fp.*, fr.receipt_no, fr.issued_at, si.FName, si.MName, si.SName,
+                       ay.year as year_name, utd.term_number,
+                       u.username as issued_by_name, fl.academic_year_id, fl.term_id,
+                       fl.balance_after, COALESCE(fl.reference_no, fp.reference_number) as reference_no
                 FROM fee_payments fp
                 JOIN fee_receipts fr ON fp.id = fr.payment_id
                 JOIN fee_ledger fl ON fp.ledger_id = fl.id AND fl.school_id = %s
                 JOIN studentinfo si ON fp.admno = si.AdmNo AND si.school_id = fl.school_id
-                JOIN academic_years ay ON fl.academic_year_id = ay.id AND ay.school_id = fl.school_id
-                JOIN uniform_term_dates utd ON fl.term_id = utd.id AND utd.school_id = fl.school_id
-                LEFT JOIN class_allocation ca ON si.AdmNo = ca.student_id AND ca.is_current = TRUE AND si.school_id = ca.school_id
-                LEFT JOIN classes c ON ca.class_id = c.classID AND ca.school_id = c.school_id
-                LEFT JOIN users u ON fp.received_by = u.userNo AND u.school_id = si.school_id
+                LEFT JOIN academic_years ay ON fl.academic_year_id = ay.id AND ay.school_id = fl.school_id
+                LEFT JOIN uniform_term_dates utd ON fl.term_id = utd.id AND utd.school_id = fl.school_id
+                LEFT JOIN users u ON fp.received_by = u.userNo
                 WHERE fp.id = %s
             """, (self.school_id, payment_id))
         receipt = self.cursor.fetchone()
         
         if receipt:
+            receipt['display_name'] = _resolve_student_class_name(receipt['admno'])
             # Get allocations
             if allocations_has_school_id:
                 self.cursor.execute("""
