@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, g, jsonify, make_response
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, g, jsonify, make_response, current_app
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from core.permissions import admin_required, login_required
@@ -650,9 +650,27 @@ def print_fee_receipt(payment_id):
     connection = get_db_connection(); service = FeesService(connection)
     try:
         receipt = service.get_receipt_details(payment_id)
-        if not receipt: flash("Receipt not found.", "error"); return redirect(url_for('fees.fees_dashboard'))
-        receipt['Fullname'] = f"{receipt['FName']} {receipt.get('MName','') or ''} {receipt['SName']}".strip().replace('  ',' ')
-        return render_template('print_fee_receipt.html', receipt=receipt, allocations=receipt.get('allocations', []))
+        if not receipt:
+            flash("Receipt not found.", "error")
+            return redirect(url_for('fees.fees_dashboard'))
+
+        # Normalize optional keys used in templates to avoid render-time KeyError.
+        receipt.setdefault('MName', '')
+        receipt.setdefault('display_name', receipt.get('class_name') or 'N/A')
+        receipt.setdefault('reference_no', receipt.get('reference_number') or '')
+        receipt.setdefault('allocations', [])
+        receipt['Fullname'] = f"{receipt['FName']} {receipt.get('MName', '') or ''} {receipt['SName']}".strip().replace('  ', ' ')
+
+        return render_template(
+            'print_fee_receipt.html',
+            receipt=receipt,
+            allocations=receipt.get('allocations', []),
+            now=datetime.now(),
+        )
+    except Exception as e:
+        current_app.logger.exception("Failed to render fee receipt %s", payment_id)
+        flash(f"Receipt rendering failed: {str(e)}", "error")
+        return redirect(url_for('fees.fees_dashboard'))
     finally: connection.close()
 
 @fees_bp.route('/admin/fees/receipts')
