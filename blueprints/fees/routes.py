@@ -584,13 +584,63 @@ def collect_fees():
                 return jsonify({'success': False, 'message': str(e)}), 500
             flash(str(e), "error")
 
-    years = class_service.get_all_academic_years()
-    terms = service.get_recent_terms()
-    curr_term_id = service.get_current_term_id()
+    try:
+        years = class_service.get_all_academic_years()
+        terms = service.get_recent_terms()
+        curr_term_id = service.get_current_term_id()
+        connection.close()
+        return render_template('collect_fees.html', years=years, terms=terms, current_year_id=next((y['id'] for y in years if y['is_current']), None),
+                             current_term_id=curr_term_id, now=datetime.now())
+    except Exception as e:
+        import traceback
+        err_msg = traceback.format_exc()
+        try:
+            connection.close()
+        except Exception:
+            pass
+        return f"<h3>Bursar Terminal Diagnostic Traceback (GET /admin/fees/collect)</h3><pre style='background:#f8fafc; padding:20px; border:1px solid #e2e8f0; border-radius:8px; font-family:monospace; color:#ef4444;'>{err_msg}</pre>", 500
 
-    connection.close()
-    return render_template('collect_fees.html', years=years, terms=terms, current_year_id=next((y['id'] for y in years if y['is_current']), None),
-                         current_term_id=curr_term_id, now=datetime.now())
+@fees_bp.route('/admin/fees/diagnostics', methods=['GET'])
+@login_required
+@admin_required
+def fees_diagnostics():
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            # Check table existence and row counts
+            tables_to_check = ['academic_years', 'uniform_term_dates', 'class_group_settings']
+            status = {}
+            for tbl in tables_to_check:
+                cursor.execute(f"SHOW TABLES LIKE '{tbl}'")
+                exists = cursor.fetchone() is not None
+                count = 0
+                if exists:
+                    cursor.execute(f"SELECT COUNT(*) as cnt FROM `{tbl}`")
+                    count_res = cursor.fetchone()
+                    count = count_res['cnt'] if count_res else 0
+                status[tbl] = {'exists': exists, 'count': count}
+            
+            # Check current tenant
+            school_id = session.get("school_id")
+            
+        connection.close()
+        rows_html = "".join([f"<li><b>{tbl}</b>: exists={meta['exists']}, count={meta['count']}</li>" for tbl, meta in status.items()])
+        return f"""
+        <div style="font-family:sans-serif; max-width:600px; margin:40px auto; padding:30px; border:1px solid #e2e8f0; border-radius:12px;">
+            <h2 style="color:#4f46e5; margin-top:0;">MySQL Tables Diagnostic Report</h2>
+            <p>Active School Session ID: <b>{school_id}</b></p>
+            <ul>{rows_html}</ul>
+            <p style="color:#10b981; font-weight:bold;">✔ Diagnostics run completed successfully.</p>
+        </div>
+        """
+    except Exception as e:
+        import traceback
+        err_msg = traceback.format_exc()
+        try:
+            connection.close()
+        except Exception:
+            pass
+        return f"<h3>Diagnostics Process Failure</h3><pre style='background:#fef2f2; color:#b91c1c; padding:20px; border-radius:8px;'>{err_msg}</pre>", 500
 
 @fees_bp.route('/admin/fees/bulk_post', methods=['GET', 'POST'])
 @login_required
