@@ -703,6 +703,51 @@ class FeesService:
         """, (admno, term_id, self.school_id))
         return self.cursor.fetchall()
 
+    def get_category_change_preflight(self, admno: int, year_id: int, term_id: int) -> Dict:
+        """Identify whether a category-driven current-term invoice replacement is safe to automate."""
+        self._assert_student_belongs_to_school(admno)
+        self._assert_academic_year_belongs_to_school(year_id)
+        self._assert_term_belongs_to_school(term_id, year_id)
+        self.cursor.execute("""
+            SELECT reference_no
+            FROM fee_ledger
+            WHERE admno = %s AND academic_year_id = %s AND term_id = %s
+              AND type = 'CHARGE' AND reference_no LIKE 'INV-%%'
+              AND reference_no NOT LIKE 'INV-SPEC-%%' AND school_id = %s
+            GROUP BY reference_no
+        """, (admno, year_id, term_id, self.school_id))
+        invoice_references = [row['reference_no'] for row in self.cursor.fetchall()]
+
+        self.cursor.execute("""
+            SELECT COUNT(*) AS allocation_count
+            FROM fee_payment_allocations allocations
+            JOIN fee_payments payments ON allocations.payment_id = payments.id AND allocations.school_id = payments.school_id
+            JOIN fee_ledger payment_ledger ON payments.ledger_id = payment_ledger.id AND payments.school_id = payment_ledger.school_id
+            WHERE payments.admno = %s AND payments.status = 'COMPLETED'
+              AND payment_ledger.academic_year_id = %s AND payment_ledger.term_id = %s
+              AND allocations.school_id = %s
+        """, (admno, year_id, term_id, self.school_id))
+        allocation_count = self.cursor.fetchone()['allocation_count'] or 0
+
+        self.cursor.execute("""
+            SELECT COUNT(*) AS locked_count
+            FROM fee_structures
+            WHERE academic_year_id = %s AND term_id = %s AND is_locked = TRUE AND school_id = %s
+        """, (year_id, term_id, self.school_id))
+        locked_count = self.cursor.fetchone()['locked_count'] or 0
+
+        blockers = []
+        if allocation_count:
+            blockers.append('Completed payment allocations exist for this term and require manual review.')
+        if locked_count:
+            blockers.append('The term fee structure is locked and cannot be replaced automatically.')
+        return {
+            'eligible': not blockers,
+            'invoice_references': invoice_references,
+            'has_current_term_invoice': bool(invoice_references),
+            'blockers': blockers,
+        }
+
     def get_outstanding_voteheads(self, admno: int) -> List[Dict]:
         """Return the student's outstanding voteheads in payment priority order."""
         self.cursor.execute("""

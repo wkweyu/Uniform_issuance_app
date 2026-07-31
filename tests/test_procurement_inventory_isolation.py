@@ -937,6 +937,23 @@ def test_fees_service_collection_status_summary_scopes_receipt_statuses_to_schoo
     assert 'group by status, payment_mode' in query.lower()
 
 
+def test_fees_service_category_change_preflight_blocks_paid_term_allocations():
+    connection = RecordingConnection(responses=[
+        ('one', {'AdmNo': 1001}), ('one', {'id': 4}), ('one', {'id': 3}),
+        ('all', [{'reference_no': 'INV-1001-4-3'}]), ('one', {'allocation_count': 1}), ('one', {'locked_count': 0}),
+    ])
+    service = FeesService(connection, school_id=55)
+
+    result = service.get_category_change_preflight(1001, 4, 3)
+
+    assert result['eligible'] is False
+    assert result['has_current_term_invoice'] is True
+    assert 'Completed payment allocations exist' in result['blockers'][0]
+    allocation_query, allocation_params = connection.cursor_obj.executed[4]
+    assert allocation_params == (1001, 4, 3, 55)
+    assert 'allocations.school_id = payments.school_id' in allocation_query.lower()
+
+
 def test_fees_service_records_reprint_event_after_prior_print():
     connection = RecordingConnection(
         responses=[

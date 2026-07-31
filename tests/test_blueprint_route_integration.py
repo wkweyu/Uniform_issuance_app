@@ -141,6 +141,10 @@ class FeesServiceStub:
         self.calls.append(("get_collection_status_summary", start_date, end_date))
         return []
 
+    def get_category_change_preflight(self, admno, year_id, term_id):
+        self.calls.append(("get_category_change_preflight", admno, year_id, term_id))
+        return {"eligible": True, "blockers": [], "invoice_references": []}
+
     def record_receipt_print(self, payment_id, user_id):
         self.calls.append(("record_receipt_print", payment_id, user_id))
         return "PRINTED"

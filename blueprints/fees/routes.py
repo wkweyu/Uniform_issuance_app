@@ -813,6 +813,25 @@ def api_statement_summary():
     finally:
         connection.close()
 
+@fees_bp.route('/api/fees/category-change-preflight')
+@login_required
+@admin_required
+def api_category_change_preflight():
+    try:
+        admno = _required_int(request.args.get('admno'), 'admno')
+        year_id = _required_int(request.args.get('year_id'), 'year_id')
+        term_id = _required_int(request.args.get('term_id'), 'term_id')
+    except ValueError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    connection = get_db_connection()
+    service = FeesService(connection)
+    try:
+        return jsonify({'success': True, **service.get_category_change_preflight(admno, year_id, term_id)})
+    except FeesError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    finally:
+        connection.close()
+
 @fees_bp.route('/api/fees/payment-duplicate')
 @login_required
 def api_payment_duplicate():
