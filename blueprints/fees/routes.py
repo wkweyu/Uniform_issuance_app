@@ -736,6 +736,23 @@ def api_statement():
         return jsonify({'success': False, 'message': str(e)}), 400
     finally: connection.close()
 
+@fees_bp.route('/api/fees/statement-summary')
+@login_required
+def api_statement_summary():
+    admno = request.args.get('admno')
+    if not admno:
+        return jsonify([])
+    connection = get_db_connection(); service = FeesService(connection)
+    try:
+        return jsonify(service.get_student_statement_summary(
+            _required_int(admno, 'admno'),
+            _optional_int(request.args.get('year_id'), 'year_id'),
+        ))
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+    finally:
+        connection.close()
+
 @fees_bp.route('/api/fees/payment-duplicate')
 @login_required
 def api_payment_duplicate():

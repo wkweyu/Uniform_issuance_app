@@ -206,6 +206,10 @@ class FeesServiceStub:
         self.calls.append(("get_student_term_invoices", admno, term_id))
         return [{"reference_no": "INV-1001-2026-3", "issued_on": "2026-01-15", "amount": Decimal("1500.00"), "item_count": 1}]
 
+    def get_student_statement_summary(self, admno, year_id=None):
+        self.calls.append(("get_student_statement_summary", admno, year_id))
+        return [{"academic_year": 2026, "term_number": 1, "closing_balance": Decimal("850.00")}]
+
     def find_duplicate_payment(self, mode, reference):
         self.calls.append(("find_duplicate_payment", mode, reference))
         return self.duplicate_payment
@@ -1853,6 +1857,19 @@ def test_fees_statement_route_rejects_invalid_admno_before_service_call(client, 
     assert response.status_code == 400
     assert response.json == {"success": False, "message": "admno is required and must be a valid integer."}
     assert FeesServiceStub.last_instance.calls == []
+
+
+def test_fees_statement_summary_route_returns_tenant_service_summary(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+
+    response = client.get("/api/fees/statement-summary?admno=1001&year_id=4")
+
+    assert response.status_code == 200
+    assert response.json[0]["academic_year"] == 2026
+    assert FeesServiceStub.last_instance.calls == [("get_student_statement_summary", 1001, 4)]
 
 
 def test_fee_receipts_register_route_rejects_invalid_admno_filter(client, db_session, monkeypatch):

@@ -528,6 +528,29 @@ def test_fees_service_term_summary_is_scoped_to_student_term_and_school():
     assert "description like 'void receipt:%%'" in query.lower()
 
 
+def test_fees_service_statement_summary_is_scoped_and_classifies_ledger_events():
+    connection = RecordingConnection(
+        responses=[
+            ('all', [{'academic_year': 2026, 'term_number': 1, 'charges': Decimal('1500.00'),
+                      'debits': Decimal('50.00'), 'payments': Decimal('1000.00'),
+                      'credits': Decimal('100.00'), 'waivers': Decimal('200.00'),
+                      'refunds': Decimal('0.00'), 'opening_balance': Decimal('0.00'),
+                      'closing_balance': Decimal('250.00'), 'transaction_count': 5}]),
+        ]
+    )
+    service = FeesService(connection, school_id=55)
+
+    summary = service.get_student_statement_summary(1001, year_id=4)
+
+    assert summary[0]['closing_balance'] == Decimal('250.00')
+    query, params = connection.cursor_obj.executed[0]
+    assert params == [1001, 55, 4]
+    assert 'where fl.admno = %s and fl.school_id = %s' in query.lower()
+    assert 'fl.academic_year_id = %s' in query.lower()
+    assert "reference_no like 'wvr-%%'" in query.lower()
+    assert "description like 'void receipt:%%'" in query.lower()
+
+
 def test_fees_service_term_invoices_are_scoped_to_student_term_and_school():
     connection = RecordingConnection(
         responses=[

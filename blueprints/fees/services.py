@@ -1334,6 +1334,58 @@ class FeesService:
         self.cursor.execute(query, params)
         return self.cursor.fetchall()
 
+    def get_student_statement_summary(self, admno: int, year_id: Optional[int] = None) -> List[Dict]:
+        """Return an auditable year-and-term roll-up for a student's fee ledger."""
+        signed_amount = """
+            CASE
+                WHEN fl.type IN ('CHARGE', 'DEBIT', 'REFUND')
+                  OR (fl.type = 'ADJUSTMENT' AND (fl.description LIKE 'DEBIT NOTE:%%' OR fl.description LIKE 'VOID RECEIPT:%%'))
+                    THEN fl.amount
+                WHEN fl.type IN ('PAYMENT', 'CREDIT')
+                  OR (fl.type = 'ADJUSTMENT' AND fl.description LIKE 'CREDIT NOTE:%%')
+                    THEN -fl.amount
+                ELSE 0
+            END
+        """
+        query = f"""
+            SELECT
+                fl.academic_year_id,
+                ay.year AS academic_year,
+                fl.term_id,
+                utd.term_number,
+                CAST(SUBSTRING_INDEX(GROUP_CONCAT(fl.balance_after ORDER BY fl.transaction_date, fl.id), ',', 1) AS DECIMAL(15, 2))
+                    - CAST(SUBSTRING_INDEX(GROUP_CONCAT(({signed_amount}) ORDER BY fl.transaction_date, fl.id), ',', 1) AS DECIMAL(15, 2))
+                    AS opening_balance,
+                COALESCE(SUM(CASE WHEN fl.type = 'CHARGE' THEN fl.amount ELSE 0 END), 0) AS charges,
+                COALESCE(SUM(CASE
+                    WHEN fl.type = 'DEBIT'
+                      OR (fl.type = 'ADJUSTMENT' AND (fl.description LIKE 'DEBIT NOTE:%%' OR fl.description LIKE 'VOID RECEIPT:%%'))
+                    THEN fl.amount ELSE 0 END), 0) AS debits,
+                COALESCE(SUM(CASE WHEN fl.type = 'PAYMENT' THEN fl.amount ELSE 0 END), 0) AS payments,
+                COALESCE(SUM(CASE
+                    WHEN fl.type = 'CREDIT' AND fl.reference_no LIKE 'WVR-%%' THEN fl.amount ELSE 0 END), 0) AS waivers,
+                COALESCE(SUM(CASE
+                    WHEN (fl.type = 'CREDIT' AND (fl.reference_no IS NULL OR fl.reference_no NOT LIKE 'WVR-%%'))
+                      OR (fl.type = 'ADJUSTMENT' AND fl.description LIKE 'CREDIT NOTE:%%')
+                    THEN fl.amount ELSE 0 END), 0) AS credits,
+                COALESCE(SUM(CASE WHEN fl.type = 'REFUND' THEN fl.amount ELSE 0 END), 0) AS refunds,
+                CAST(SUBSTRING_INDEX(GROUP_CONCAT(fl.balance_after ORDER BY fl.transaction_date DESC, fl.id DESC), ',', 1) AS DECIMAL(15, 2))
+                    AS closing_balance,
+                COUNT(*) AS transaction_count
+            FROM fee_ledger fl
+            JOIN academic_years ay ON fl.academic_year_id = ay.id AND fl.school_id = ay.school_id
+            JOIN uniform_term_dates utd ON fl.term_id = utd.id AND fl.school_id = utd.school_id
+            WHERE fl.admno = %s AND fl.school_id = %s
+        """
+        params = [admno, self.school_id]
+        if year_id:
+            query += " AND fl.academic_year_id = %s"
+            params.append(year_id)
+        query += " GROUP BY fl.academic_year_id, ay.year, fl.term_id, utd.term_number"
+        query += " ORDER BY ay.year DESC, utd.term_number DESC"
+        self.cursor.execute(query, params)
+        return self.cursor.fetchall()
+
     def get_recent_payments(self, admno: int, limit: int = 5) -> List[Dict]:
         """Fetch most recent payments for a student."""
         fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')

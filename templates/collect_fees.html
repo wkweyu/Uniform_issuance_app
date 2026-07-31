@@ -306,6 +306,18 @@
 
                         <div id="financialAlerts" class="hidden space-y-2" aria-live="polite"></div>
 
+                        <div id="statementSummaryCard" class="hidden bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div class="px-8 py-5 border-b border-slate-100 bg-slate-50/50">
+                                <h2 class="text-xs font-black text-slate-900 uppercase tracking-widest">Term Statement Summary</h2>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse text-[10px]">
+                                    <thead><tr class="bg-slate-50 text-slate-500 font-black uppercase tracking-widest border-b border-slate-100"><th class="px-5 py-3">Period</th><th class="px-5 py-3 text-right">Opening</th><th class="px-5 py-3 text-right">Charges</th><th class="px-5 py-3 text-right">Receipts</th><th class="px-5 py-3 text-right">Credits / Waivers</th><th class="px-5 py-3 text-right">Closing</th></tr></thead>
+                                    <tbody id="statementSummaryBody" class="divide-y divide-slate-100"></tbody>
+                                </table>
+                            </div>
+                        </div>
+
                         <div id="recentReceiptsCard" class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden hidden">
                             <div class="px-8 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                                 <h2 class="text-xs font-black text-slate-900 uppercase tracking-widest">Recent Student Receipts</h2>
@@ -808,6 +820,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 // Push ledger statements in Tab
                 renderDoubleEntryStatement(data.admno);
+                renderStatementSummary(data.admno);
                 
                 // Update live allocation lists
                 refreshProjectedPreview();
@@ -1304,6 +1317,31 @@ function renderDoubleEntryStatement(admno) {
                 body.appendChild(row);
             });
         });
+}
+
+function renderStatementSummary(admno) {
+    const card = document.getElementById('statementSummaryCard');
+    const body = document.getElementById('statementSummaryBody');
+    body.innerHTML = '';
+
+    fetch(`/api/fees/statement-summary?admno=${admno}`)
+        .then(res => res.json())
+        .then(rows => {
+            if (!Array.isArray(rows) || rows.length === 0) {
+                card.classList.add('hidden');
+                return;
+            }
+            const formatCurrency = amount => Number(amount || 0).toLocaleString('en-US', {minimumFractionDigits: 2});
+            rows.forEach(row => {
+                const tr = document.createElement('tr');
+                const creditsAndWaivers = Number(row.credits || 0) + Number(row.waivers || 0);
+                const chargesAndDebits = Number(row.charges || 0) + Number(row.debits || 0) + Number(row.refunds || 0);
+                tr.innerHTML = `<td class="px-5 py-3 font-black text-slate-700">${row.academic_year} / Term ${row.term_number}</td><td class="px-5 py-3 text-right font-mono">${formatCurrency(row.opening_balance)}</td><td class="px-5 py-3 text-right font-mono text-rose-600">${formatCurrency(chargesAndDebits)}</td><td class="px-5 py-3 text-right font-mono text-emerald-700">${formatCurrency(row.payments)}</td><td class="px-5 py-3 text-right font-mono text-sky-700">${formatCurrency(creditsAndWaivers)}</td><td class="px-5 py-3 text-right font-mono font-black text-slate-900">${formatCurrency(row.closing_balance)}</td>`;
+                body.appendChild(tr);
+            });
+            card.classList.remove('hidden');
+        })
+        .catch(() => card.classList.add('hidden'));
 }
 
 // Receipts Register journal fetch
