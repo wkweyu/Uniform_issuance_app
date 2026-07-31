@@ -1488,6 +1488,36 @@ class FeesService:
         """, (payment_id, self.school_id))
         return self.cursor.fetchall()
 
+    def get_receipt_lifecycle_register(self, start_date: Optional[str] = None,
+                                       end_date: Optional[str] = None,
+                                       event_type: Optional[str] = None) -> List[Dict]:
+        """Return immutable receipt lifecycle events for audit and reconciliation."""
+        query = """
+            SELECT events.*, receipts.receipt_no, payments.reference_number, payments.amount,
+                   payments.payment_mode, payments.status AS payment_status,
+                   students.AdmNo AS admno, students.FName, students.SName,
+                   users.username AS actor_name
+            FROM fee_receipt_lifecycle_events events
+            JOIN fee_payments payments ON events.payment_id = payments.id AND events.school_id = payments.school_id
+            LEFT JOIN fee_receipts receipts ON payments.id = receipts.payment_id AND payments.school_id = receipts.school_id
+            LEFT JOIN studentinfo students ON payments.admno = students.AdmNo AND payments.school_id = students.school_id
+            LEFT JOIN users ON events.actor_user_id = users.userNo AND events.school_id = users.school_id
+            WHERE events.school_id = %s
+        """
+        params = [self.school_id]
+        if start_date:
+            query += " AND DATE(events.occurred_at) >= %s"
+            params.append(start_date)
+        if end_date:
+            query += " AND DATE(events.occurred_at) <= %s"
+            params.append(end_date)
+        if event_type:
+            query += " AND events.event_type = %s"
+            params.append(event_type)
+        query += " ORDER BY events.id DESC"
+        self.cursor.execute(query, params)
+        return self.cursor.fetchall()
+
     def record_receipt_print(self, payment_id: int, user_id: int) -> str:
         """Append a print or reprint event after confirming receipt ownership."""
         self.cursor.execute(

@@ -88,6 +88,28 @@ def fees_collection_report():
     finally:
         connection.close()
 
+@fees_bp.route('/admin/fees/reports/receipt-lifecycle')
+@login_required
+@admin_required
+def receipt_lifecycle_report():
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    event_type = request.args.get('event_type')
+    connection = get_db_connection()
+    service = FeesService(connection)
+    try:
+        records = service.get_receipt_lifecycle_register(start_date, end_date, event_type)
+        return render_template(
+            'receipt_lifecycle_report.html',
+            records=records,
+            start_date=start_date or '',
+            end_date=end_date or '',
+            event_type=event_type or '',
+            event_types=('POSTED', 'PRINTED', 'REPRINTED', 'CANCELLED', 'TRANSFERRED', 'REPOSTED', 'ARCHIVED'),
+        )
+    finally:
+        connection.close()
+
 @fees_bp.route('/admin/fees/reports/balances')
 @login_required
 @admin_required

@@ -1,0 +1,22 @@
+{% extends 'base_report.html' %}
+
+{% block report_title %}Receipt Lifecycle Audit Register{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex flex-wrap items-end justify-between gap-4 no-print">
+  <form class="flex flex-wrap items-end gap-3">
+    <label class="text-xs font-bold text-gray-600">From<input type="date" name="start_date" value="{{ start_date }}" class="mt-1 block border rounded px-3 py-1.5 text-sm"></label>
+    <label class="text-xs font-bold text-gray-600">To<input type="date" name="end_date" value="{{ end_date }}" class="mt-1 block border rounded px-3 py-1.5 text-sm"></label>
+    <label class="text-xs font-bold text-gray-600">Event<select name="event_type" class="mt-1 block border rounded px-3 py-1.5 text-sm"><option value="">All events</option>{% for item in event_types %}<option value="{{ item }}" {{ 'selected' if event_type == item }}>{{ item.replace('_', ' ') }}</option>{% endfor %}</select></label>
+    <button type="submit" class="bg-blue-700 text-white px-4 py-1.5 rounded text-sm font-bold">Filter</button>
+  </form>
+  <button onclick="window.print()" class="bg-gray-100 text-gray-700 px-4 py-1.5 rounded text-sm font-bold">Print</button>
+</div>
+
+<div class="bg-white border rounded-lg overflow-x-auto">
+  <table class="w-full text-left text-sm">
+    <thead><tr class="bg-gray-100 border-b text-gray-700 font-bold"><th class="px-4 py-3">When</th><th class="px-4 py-3">Receipt</th><th class="px-4 py-3">Student</th><th class="px-4 py-3">Event</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Reason</th><th class="px-4 py-3">Actor</th></tr></thead>
+    <tbody class="divide-y">{% for record in records %}<tr><td class="px-4 py-3 whitespace-nowrap">{{ record.occurred_at }}</td><td class="px-4 py-3 font-mono">{{ record.receipt_no or ('#' ~ record.payment_id) }}</td><td class="px-4 py-3">{{ record.admno }} {{ record.FName or '' }} {{ record.SName or '' }}</td><td class="px-4 py-3 font-semibold">{{ record.event_type.replace('_', ' ') }}</td><td class="px-4 py-3">{{ record.status_after }}</td><td class="px-4 py-3">{{ record.reason or '-' }}</td><td class="px-4 py-3">{{ record.actor_name or record.actor_user_id }}</td></tr>{% else %}<tr><td colspan="7" class="px-4 py-10 text-center text-gray-500">No lifecycle events matched the selected filters.</td></tr>{% endfor %}</tbody>
+  </table>
+</div>
+{% endblock %}

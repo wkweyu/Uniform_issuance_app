@@ -897,6 +897,19 @@ def test_fees_service_receipts_register_scopes_search_and_lifecycle_filters():
     assert 'fp.reference_number like %s' in query.lower()
 
 
+def test_fees_service_lifecycle_register_scopes_events_and_filters():
+    connection = RecordingConnection(responses=[('all', [])])
+    service = FeesService(connection, school_id=55)
+
+    assert service.get_receipt_lifecycle_register('2026-07-01', '2026-07-31', 'CANCELLED') == []
+
+    query, params = connection.cursor_obj.executed[0]
+    assert params == [55, '2026-07-01', '2026-07-31', 'CANCELLED']
+    assert 'events.school_id = %s' in query.lower()
+    assert 'events.event_type = %s' in query.lower()
+    assert 'payments.school_id = receipts.school_id' in query.lower()
+
+
 def test_fees_service_records_reprint_event_after_prior_print():
     connection = RecordingConnection(
         responses=[
