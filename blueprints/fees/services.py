@@ -2710,3 +2710,41 @@ def _get_collection_class_summary(self, start_date: str, end_date: str) -> List[
 
 
 FeesService.get_collection_class_summary = _get_collection_class_summary
+
+
+def _get_collection_votehead_summary(self, start_date: str, end_date: str) -> List[Dict]:
+        """Summarize completed payment allocations by votehead."""
+        allocations_has_school_id = self._table_has_column('fee_payment_allocations', 'school_id')
+        payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
+        if allocations_has_school_id and payments_has_school_id:
+                self.cursor.execute("""
+                        SELECT voteheads.name AS votehead_name, SUM(allocations.amount) AS total_amount,
+                                     COUNT(DISTINCT payments.id) AS receipt_count
+                        FROM fee_payment_allocations allocations
+                        JOIN fee_payments payments
+                            ON allocations.payment_id = payments.id AND allocations.school_id = payments.school_id
+                        JOIN fee_voteheads voteheads
+                            ON allocations.votehead_id = voteheads.id AND allocations.school_id = voteheads.school_id
+                        WHERE payments.payment_date BETWEEN %s AND %s
+                            AND payments.status = 'COMPLETED' AND payments.school_id = %s
+                        GROUP BY voteheads.id, voteheads.name
+                        ORDER BY total_amount DESC, votehead_name ASC
+                """, (start_date, end_date, self.school_id))
+        else:
+                self.cursor.execute("""
+                        SELECT voteheads.name AS votehead_name, SUM(allocations.amount) AS total_amount,
+                                     COUNT(DISTINCT payments.id) AS receipt_count
+                        FROM fee_payment_allocations allocations
+                        JOIN fee_payments payments ON allocations.payment_id = payments.id
+                        JOIN fee_ledger ledger ON payments.ledger_id = ledger.id
+                        JOIN fee_voteheads voteheads
+                            ON allocations.votehead_id = voteheads.id AND voteheads.school_id = ledger.school_id
+                        WHERE payments.payment_date BETWEEN %s AND %s
+                            AND payments.status = 'COMPLETED' AND ledger.school_id = %s
+                        GROUP BY voteheads.id, voteheads.name
+                        ORDER BY total_amount DESC, votehead_name ASC
+                """, (start_date, end_date, self.school_id))
+        return self.cursor.fetchall()
+
+
+FeesService.get_collection_votehead_summary = _get_collection_votehead_summary
