@@ -853,6 +853,24 @@ def test_fees_service_posts_credit_note_with_linked_adjustment_ledger_entry():
     assert ledger_params[7] == 'CRE-31'
 
 
+def test_fees_service_receipts_register_scopes_search_and_lifecycle_filters():
+    connection = RecordingConnection(responses=[('all', [])])
+    service = FeesService(connection, school_id=55)
+    service._table_columns_cache = {'fee_payments': {'school_id'}, 'fee_receipts': {'school_id'}}
+
+    assert service.get_receipts_register(
+        start_date='2026-07-01', end_date='2026-07-31', admno=1001,
+        mode='MPESA', query_text='RCP-001', status='CANCELLED',
+    ) == []
+
+    query, params = connection.cursor_obj.executed[0]
+    assert params == [55, '2026-07-01', '2026-07-31', 1001, 'MPESA', 'CANCELLED', '%RCP-001%', '%RCP-001%', '%RCP-001%']
+    assert 'fp.school_id = %s' in query.lower()
+    assert 'fp.status = %s' in query.lower()
+    assert 'fr.receipt_no like %s' in query.lower()
+    assert 'fp.reference_number like %s' in query.lower()
+
+
 def test_fees_service_rejects_structure_create_with_foreign_votehead():
     connection = RecordingConnection(
         responses=[

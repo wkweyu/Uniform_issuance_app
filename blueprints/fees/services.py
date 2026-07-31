@@ -1361,7 +1361,9 @@ class FeesService:
             )
         return self.cursor.fetchall()
 
-    def get_receipts_register(self, start_date: Optional[str] = None, end_date: Optional[str] = None, admno: Optional[int] = None, mode: Optional[str] = None) -> List[Dict]:
+    def get_receipts_register(self, start_date: Optional[str] = None, end_date: Optional[str] = None,
+                              admno: Optional[int] = None, mode: Optional[str] = None,
+                              query_text: Optional[str] = None, status: Optional[str] = None) -> List[Dict]:
         """Fetch list of receipts with filtering."""
         fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
         receipts_has_school_id = self._table_has_column('fee_receipts', 'school_id')
@@ -1406,6 +1408,13 @@ class FeesService:
         if mode:
             query += " AND fp.payment_mode = %s"
             params.append(mode)
+        if status:
+            query += " AND fp.status = %s"
+            params.append(status)
+        if query_text:
+            search_term = f"%{query_text.strip()}%"
+            query += " AND (fr.receipt_no LIKE %s OR fp.reference_number LIKE %s OR CONCAT_WS(' ', si.FName, si.MName, si.SName) LIKE %s)"
+            params.extend([search_term, search_term, search_term])
             
         query += " ORDER BY fp.id DESC"
         self.cursor.execute(query, params)

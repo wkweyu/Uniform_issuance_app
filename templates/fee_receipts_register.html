@@ -41,6 +41,18 @@
                     <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Adm No</label>
                     <input type="number" name="admno" value="{{ filters.admno }}" placeholder="Search ID..." class="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-indigo-500">
                 </div>
+                <div>
+                    <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Receipt, Reference, or Student</label>
+                    <input type="search" name="q" value="{{ filters.q }}" placeholder="Receipt, reference, name..." class="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Payment Mode</label>
+                    <select name="mode" class="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-indigo-500"><option value="">All modes</option>{% for value, label in [('CASH', 'Cash'), ('MPESA', 'M-PESA'), ('BANK_TRANSFER', 'Bank transfer'), ('CHEQUE', 'Cheque')] %}<option value="{{ value }}" {% if filters.mode == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Lifecycle Status</label>
+                    <select name="status" class="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-indigo-500"><option value="">All statuses</option>{% for value in ['COMPLETED', 'CANCELLED', 'REVERSED'] %}<option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ value.title() }}</option>{% endfor %}</select>
+                </div>
                 <div class="flex gap-2">
                     <button type="submit" class="flex-1 bg-gray-900 text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:bg-gray-800 transition">
                         Apply Filters

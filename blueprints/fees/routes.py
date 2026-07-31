@@ -953,7 +953,11 @@ def print_fee_receipt(payment_id):
 def fee_receipts_register():
     connection = get_db_connection(); service = FeesService(connection)
     try:
-        records = service.get_receipts_register(request.args.get('start_date'), request.args.get('end_date'), _optional_int(request.args.get('admno'), 'admno'), request.args.get('mode'))
+        records = service.get_receipts_register(
+            request.args.get('start_date'), request.args.get('end_date'),
+            _optional_int(request.args.get('admno'), 'admno'), request.args.get('mode'),
+            request.args.get('q'), request.args.get('status'),
+        )
     except ValueError as e:
         flash(str(e), 'error')
         records = []

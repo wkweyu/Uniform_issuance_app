@@ -215,8 +215,8 @@ class FeesServiceStub:
         self.calls.append(("get_student_statement", admno, year_id))
         return [{"admno": admno, "year_id": year_id, "balance": Decimal("0.00")}]
 
-    def get_receipts_register(self, start_date, end_date, admno, mode):
-        self.calls.append(("get_receipts_register", start_date, end_date, admno, mode))
+    def get_receipts_register(self, start_date, end_date, admno, mode, query_text=None, status=None):
+        self.calls.append(("get_receipts_register", start_date, end_date, admno, mode, query_text, status))
         return [{"receipt_no": "RCP-1", "admno": admno, "mode": mode}]
 
 
