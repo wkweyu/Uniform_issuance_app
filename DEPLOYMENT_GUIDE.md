@@ -34,17 +34,25 @@ Set `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, and `DB_NAME` for the target
 python3 migrate_db.py
 ```
 
-The runner records `schema.sql` and each completed migration in `schema_migrations`, skipping successful files on later runs. It fails closed on an unexpected SQL error, so a failed file is not recorded. For diagnostics on an existing database, process every pending migration and still receive a non-zero exit on any failure:
+The runner records `schema.sql`, each completed migration, and its SHA-256 checksum. It skips only matching files on later runs, fails closed if an applied file has changed, and never records a failed file. For diagnostics on an existing database, process every pending migration and still receive a non-zero exit on any failure:
 
 ```bash
 python3 migrate_db.py --continue-on-error
 ```
 
-Inspect applied and pending files without executing any migration:
+Inspect applied, pending, unverified, or drifted files without executing any migration:
 
 ```bash
 python3 migrate_db.py --status
 ```
+
+After upgrading from a runner that recorded filenames without checksums, review `--status` and explicitly baseline only its `UNVERIFIED` entries before the next migration run:
+
+```bash
+python3 migrate_db.py --backfill-checksums
+```
+
+This command records checksums for already-applied entries; it does not execute migration SQL.
 
 Do not use shell wildcard redirection such as `mysql < migrations/*.sql`; it does not reliably execute every migration file in order.
 
