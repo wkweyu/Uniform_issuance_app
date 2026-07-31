@@ -119,11 +119,15 @@ class FeesServiceStub:
 
     def get_receipt_details(self, payment_id):
         self.calls.append(("get_receipt_details", payment_id))
-        return {"id": payment_id, "receipt_no": "RCP-2026-00077", "payment_mode": "CASH", "amount": Decimal("1500.00")}
+        return {"id": payment_id, "receipt_no": "RCP-2026-00077", "payment_mode": "CASH", "amount": Decimal("1500.00"), "FName": "Test", "SName": "Student"}
 
     def get_receipt_lifecycle(self, payment_id):
         self.calls.append(("get_receipt_lifecycle", payment_id))
         return [{"event_type": "CANCELLED", "status_after": "CANCELLED", "reason": "Wrong student", "actor_user_id": 10, "correlation_id": "correlation", "occurred_at": "2026-07-31"}]
+
+    def record_receipt_print(self, payment_id, user_id):
+        self.calls.append(("record_receipt_print", payment_id, user_id))
+        return "PRINTED"
 
     def repost_cancelled_receipt(self, payment_id, new_reference, posting_date, user_id):
         self.calls.append(("repost_cancelled_receipt", payment_id, new_reference, posting_date, user_id))
@@ -1889,6 +1893,20 @@ def test_repost_fee_receipt_route_posts_new_reference(client, db_session, monkey
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/admin/fees/receipt/88")
     assert FeesServiceStub.last_instance.calls == [("repost_cancelled_receipt", 77, "MPESA-NEW", "2026-07-31", 10)]
+
+
+def test_print_fee_receipt_route_records_lifecycle_event(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "render_template", lambda template, **context: f"{template}:{context['receipt']['receipt_no']}")
+
+    response = client.get("/admin/fees/receipt/77")
+
+    assert response.status_code == 200
+    assert b"print_fee_receipt.html:RCP-2026-00077" in response.data
+    assert FeesServiceStub.last_instance.calls == [("get_receipt_details", 77), ("record_receipt_print", 77, 10)]
 
 
 def test_fee_adjustment_route_posts_typed_adjustment(client, db_session, monkeypatch):

@@ -871,6 +871,24 @@ def test_fees_service_receipts_register_scopes_search_and_lifecycle_filters():
     assert 'fp.reference_number like %s' in query.lower()
 
 
+def test_fees_service_records_reprint_event_after_prior_print():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {'id': 12}),
+            ('one', {'print_count': 1}),
+        ]
+    )
+    service = FeesService(connection, school_id=55)
+
+    event_type = service.record_receipt_print(12, user_id=9)
+
+    assert event_type == 'REPRINTED'
+    assert connection.commit_calls == 1
+    insert_query, insert_params = connection.cursor_obj.executed[-1]
+    assert 'insert into fee_receipt_lifecycle_events' in insert_query.lower()
+    assert insert_params[:5] == (55, 12, 'REPRINTED', 'COMPLETED', 9)
+
+
 def test_fees_service_rejects_structure_create_with_foreign_votehead():
     connection = RecordingConnection(
         responses=[

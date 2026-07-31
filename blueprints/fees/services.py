@@ -1431,6 +1431,31 @@ class FeesService:
         """, (payment_id, self.school_id))
         return self.cursor.fetchall()
 
+    def record_receipt_print(self, payment_id: int, user_id: int) -> str:
+        """Append a print or reprint event after confirming receipt ownership."""
+        self.cursor.execute(
+            "SELECT id FROM fee_payments WHERE id = %s AND school_id = %s",
+            (payment_id, self.school_id),
+        )
+        if not self.cursor.fetchone():
+            raise FeesError('Receipt not found.')
+        self.cursor.execute("""
+            SELECT COUNT(*) AS print_count
+            FROM fee_receipt_lifecycle_events
+            WHERE payment_id = %s AND school_id = %s AND event_type IN ('PRINTED', 'REPRINTED')
+        """, (payment_id, self.school_id))
+        event_type = 'REPRINTED' if self.cursor.fetchone()['print_count'] else 'PRINTED'
+        self.cursor.execute("""
+            INSERT INTO fee_receipt_lifecycle_events
+                (school_id, payment_id, event_type, status_after, actor_user_id, correlation_id, snapshot_json)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (
+            self.school_id, payment_id, event_type, 'COMPLETED', user_id, str(uuid.uuid4()),
+            json.dumps({'rendered_for_print': True}, sort_keys=True),
+        ))
+        self.connection.commit()
+        return event_type
+
     def get_receipt_details(self, payment_id: int) -> Optional[Dict]:
         """Fetch full details of a receipt including allocations."""
         fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')

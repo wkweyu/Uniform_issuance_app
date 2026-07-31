@@ -934,6 +934,7 @@ def print_fee_receipt(payment_id):
         receipt.setdefault('reference_no', receipt.get('reference_number') or '')
         receipt.setdefault('allocations', [])
         receipt['Fullname'] = f"{receipt['FName']} {receipt.get('MName', '') or ''} {receipt['SName']}".strip().replace('  ', ' ')
+        service.record_receipt_print(payment_id, session['userNo'])
 
         return render_template(
             'print_fee_receipt.html',
