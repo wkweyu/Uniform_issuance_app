@@ -1518,6 +1518,34 @@ class FeesService:
         self.cursor.execute(query, params)
         return self.cursor.fetchall()
 
+    def get_reallocation_register(self, start_date: Optional[str] = None,
+                                  end_date: Optional[str] = None) -> List[Dict]:
+        """Return immutable payment-reallocation audit records for the active school."""
+        query = """
+            SELECT reallocations.*, source.FName AS source_first_name, source.SName AS source_last_name,
+                   destination.FName AS destination_first_name, destination.SName AS destination_last_name,
+                   users.username AS reallocated_by_name, receipts.receipt_no
+            FROM fee_reallocation_log reallocations
+            LEFT JOIN studentinfo source
+              ON reallocations.original_admno = source.AdmNo AND reallocations.school_id = source.school_id
+            LEFT JOIN studentinfo destination
+              ON reallocations.new_admno = destination.AdmNo AND reallocations.school_id = destination.school_id
+            LEFT JOIN users ON reallocations.reallocated_by = users.userNo AND reallocations.school_id = users.school_id
+            LEFT JOIN fee_receipts receipts
+              ON reallocations.payment_id = receipts.payment_id AND reallocations.school_id = receipts.school_id
+            WHERE reallocations.school_id = %s
+        """
+        params = [self.school_id]
+        if start_date:
+            query += " AND DATE(reallocations.reallocated_at) >= %s"
+            params.append(start_date)
+        if end_date:
+            query += " AND DATE(reallocations.reallocated_at) <= %s"
+            params.append(end_date)
+        query += " ORDER BY reallocations.id DESC"
+        self.cursor.execute(query, params)
+        return self.cursor.fetchall()
+
     def record_receipt_print(self, payment_id: int, user_id: int) -> str:
         """Append a print or reprint event after confirming receipt ownership."""
         self.cursor.execute(

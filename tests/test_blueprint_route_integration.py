@@ -129,6 +129,10 @@ class FeesServiceStub:
         self.calls.append(("get_receipt_lifecycle_register", start_date, end_date, event_type))
         return []
 
+    def get_reallocation_register(self, start_date=None, end_date=None):
+        self.calls.append(("get_reallocation_register", start_date, end_date))
+        return []
+
     def record_receipt_print(self, payment_id, user_id):
         self.calls.append(("record_receipt_print", payment_id, user_id))
         return "PRINTED"
@@ -1903,6 +1907,20 @@ def test_receipt_lifecycle_report_passes_audit_filters_to_service(client, db_ses
     assert response.status_code == 200
     assert b"receipt_lifecycle_report.html:CANCELLED" in response.data
     assert FeesServiceStub.last_instance.calls == [("get_receipt_lifecycle_register", "2026-07-01", "2026-07-31", "CANCELLED")]
+
+
+def test_reallocation_report_passes_period_filters_to_service(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "render_template", lambda template, **context: f"{template}:{context['start_date']}")
+
+    response = client.get("/admin/fees/reports/reallocations?start_date=2026-07-01&end_date=2026-07-31")
+
+    assert response.status_code == 200
+    assert b"fee_reallocation_report.html:2026-07-01" in response.data
+    assert FeesServiceStub.last_instance.calls == [("get_reallocation_register", "2026-07-01", "2026-07-31")]
 
 
 def test_fee_receipts_register_route_rejects_invalid_admno_filter(client, db_session, monkeypatch):

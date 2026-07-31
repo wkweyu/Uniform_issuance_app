@@ -910,6 +910,20 @@ def test_fees_service_lifecycle_register_scopes_events_and_filters():
     assert 'payments.school_id = receipts.school_id' in query.lower()
 
 
+def test_fees_service_reallocation_register_scopes_source_and_destination_students():
+    connection = RecordingConnection(responses=[('all', [])])
+    service = FeesService(connection, school_id=55)
+
+    assert service.get_reallocation_register('2026-07-01', '2026-07-31') == []
+
+    query, params = connection.cursor_obj.executed[0]
+    assert params == [55, '2026-07-01', '2026-07-31']
+    assert 'reallocations.school_id = %s' in query.lower()
+    assert 'reallocations.school_id = source.school_id' in query.lower()
+    assert 'reallocations.school_id = destination.school_id' in query.lower()
+    assert 'reallocations.school_id = receipts.school_id' in query.lower()
+
+
 def test_fees_service_records_reprint_event_after_prior_print():
     connection = RecordingConnection(
         responses=[

@@ -110,6 +110,25 @@ def receipt_lifecycle_report():
     finally:
         connection.close()
 
+@fees_bp.route('/admin/fees/reports/reallocations')
+@login_required
+@admin_required
+def fee_reallocation_report():
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    connection = get_db_connection()
+    service = FeesService(connection)
+    try:
+        records = service.get_reallocation_register(start_date, end_date)
+        return render_template(
+            'fee_reallocation_report.html',
+            records=records,
+            start_date=start_date or '',
+            end_date=end_date or '',
+        )
+    finally:
+        connection.close()
+
 @fees_bp.route('/admin/fees/reports/balances')
 @login_required
 @admin_required
