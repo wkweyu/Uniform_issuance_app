@@ -1208,6 +1208,33 @@ def test_fees_service_rejects_votehead_waiver_with_foreign_votehead():
     assert connection.commit_calls == 0
 
 
+def test_fees_service_group_waiver_scopes_eligible_students_before_posting():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {'id': 3}),
+            ('one', {'id': 77}),
+            ('one', {'id': 2026}),
+            ('one', {'id': 1}),
+            ('all', [{'id': 7}]),
+            ('all', []),
+        ]
+    )
+    service = FeesService(connection, school_id=58)
+    service._table_columns_cache = {'student_waivers': {'allocation_mode'}}
+
+    with pytest.raises(FeesError, match='No eligible students'):
+        service.assign_waiver_to_student_group(
+            student_group_id=3, category_id=77, year_id=2026, term_id=1, user_id=4, votehead_ids=[7],
+        )
+
+    query, params = connection.cursor_obj.executed[5]
+    assert params == (3, 58, 2026, 1)
+    assert 'students.student_group_id = %s' in query.lower()
+    assert 'students.school_id = %s' in query.lower()
+    assert "waivers.status = 'active'" in query.lower()
+    assert connection.commit_calls == 0
+
+
 def test_fees_service_revokes_linked_waiver_with_a_debit_adjustment():
     connection = RecordingConnection(
         responses=[

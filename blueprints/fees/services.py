@@ -2390,7 +2390,7 @@ class FeesService:
 
     def _assign_votehead_waiver_to_student(self, admno: int, category_id: int, year_id: int,
                                             term_id: int, user_id: int,
-                                            votehead_ids: List[int]) -> int:
+                                            votehead_ids: List[int], manage_transaction: bool = True) -> int:
         """Apply one waiver across selected voteheads with ledger links for later reversal."""
         if not self._table_has_column('student_waivers', 'allocation_mode'):
             raise FeesError('Apply migration 040 before assigning votehead-specific waivers.')
@@ -2461,7 +2461,8 @@ class FeesService:
             if not allocation_rows:
                 raise FeesError('This waiver does not produce a positive selected-votehead credit.')
 
-            self.connection.begin()
+            if manage_transaction:
+                self.connection.begin()
             self.cursor.execute("""
                 INSERT INTO student_waivers
                     (admno, category_id, academic_year_id, term_id, assigned_by, allocation_mode, school_id)
@@ -2492,13 +2493,62 @@ class FeesService:
                 'UPDATE student_waivers SET ledger_id = %s WHERE id = %s AND school_id = %s',
                 (first_ledger_id, waiver_id, self.school_id),
             )
-            self.connection.commit()
+            if manage_transaction:
+                self.connection.commit()
             return waiver_id
+        except Exception as exc:
+            if manage_transaction:
+                self.connection.rollback()
+            if isinstance(exc, FeesError):
+                raise
+            raise FeesError(f'Failed to assign votehead waiver: {str(exc)}')
+
+    def assign_waiver_to_student_group(self, student_group_id: int, category_id: int, year_id: int,
+                                        term_id: int, user_id: int, votehead_ids: List[int]) -> Dict:
+        """Atomically assign a selected-votehead waiver to eligible students in one group."""
+        if not self._table_has_column('student_waivers', 'allocation_mode'):
+            raise FeesError('Apply migration 040 before assigning votehead-specific waivers.')
+        self._assert_student_group_belongs_to_school(student_group_id)
+        self._assert_waiver_category_belongs_to_school(category_id)
+        self._assert_academic_year_belongs_to_school(year_id)
+        self._assert_term_belongs_to_school(term_id, year_id)
+        selected_votehead_ids = list(dict.fromkeys(
+            self._required_int(votehead_id, 'votehead_id') for votehead_id in votehead_ids
+        ))
+        if not selected_votehead_ids:
+            raise FeesError('Select at least one votehead for this waiver.')
+        self._assert_voteheads_belong_to_school(selected_votehead_ids)
+        self.cursor.execute("""
+            SELECT students.AdmNo
+            FROM studentinfo students
+            WHERE students.student_group_id = %s AND students.school_id = %s AND students.blocked = 'NO'
+              AND NOT EXISTS (
+                  SELECT 1 FROM student_waivers waivers
+                  WHERE waivers.admno = students.AdmNo AND waivers.academic_year_id = %s
+                    AND waivers.term_id = %s AND waivers.status = 'ACTIVE'
+                    AND waivers.school_id = students.school_id
+              )
+            ORDER BY students.AdmNo
+        """, (student_group_id, self.school_id, year_id, term_id))
+        student_ids = [row['AdmNo'] for row in self.cursor.fetchall()]
+        if not student_ids:
+            raise FeesError('No eligible students without an active term waiver were found in this group.')
+
+        try:
+            self.connection.begin()
+            waiver_ids = []
+            for admno in student_ids:
+                waiver_ids.append(self._assign_votehead_waiver_to_student(
+                    admno, category_id, year_id, term_id, user_id, selected_votehead_ids,
+                    manage_transaction=False,
+                ))
+            self.connection.commit()
+            return {'assigned_count': len(waiver_ids), 'waiver_ids': waiver_ids}
         except Exception as exc:
             self.connection.rollback()
             if isinstance(exc, FeesError):
                 raise
-            raise FeesError(f'Failed to assign votehead waiver: {str(exc)}')
+            raise FeesError(f'Failed to assign group waiver: {str(exc)}')
 
     def get_student_waivers(self, admno: int) -> List[Dict]:
         """Fetch waiver history for a student."""

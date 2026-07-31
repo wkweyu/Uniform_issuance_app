@@ -65,6 +65,14 @@
                                 </div>
                             </fieldset>
 
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-1">Student Group (optional)</label>
+                                <select name="student_group_id" class="w-full border-gray-300 rounded-xl focus:ring-indigo-500">
+                                    <option value="">Selected student only</option>
+                                    {% for group in student_groups %}<option value="{{ group.id }}">{{ group.name }}</option>{% endfor %}
+                                </select>
+                            </div>
+
                             <div class="grid grid-cols-2 gap-4">
                                 <div>
                                     <label class="block text-sm font-semibold text-gray-700 mb-1">Year</label>

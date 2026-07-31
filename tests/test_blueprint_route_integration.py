@@ -161,6 +161,10 @@ class FeesServiceStub:
         self.calls.append(("get_waiver_register", start_date, end_date, status))
         return []
 
+    def assign_waiver_to_student_group(self, student_group_id, category_id, year_id, term_id, user_id, votehead_ids):
+        self.calls.append(("assign_waiver_to_student_group", student_group_id, category_id, year_id, term_id, user_id, votehead_ids))
+        return {"assigned_count": 2, "waiver_ids": [11, 12]}
+
     def get_category_change_preflight(self, admno, year_id, term_id):
         self.calls.append(("get_category_change_preflight", admno, year_id, term_id))
         return {"eligible": True, "blockers": [], "invoice_references": []}
@@ -885,6 +889,26 @@ def test_fees_assign_waiver_route_forwards_selected_voteheads(client, db_session
     assert response.status_code == 302
     assert FeesServiceStub.last_instance.calls == [
         ("assign_waiver_to_student", 1001, 2, 2026, 3, 10, [7, 8]),
+    ]
+
+
+def test_fees_assign_waiver_route_forwards_group_assignment(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+
+    response = client.post(
+        "/fees/waiver/assign",
+        data={
+            "student_group_id": "3", "category_id": "2", "year_id": "2026", "term_id": "3",
+            "votehead_ids": ["7", "8"],
+        },
+    )
+
+    assert response.status_code == 302
+    assert FeesServiceStub.last_instance.calls == [
+        ("assign_waiver_to_student_group", 3, 2, 2026, 3, 10, [7, 8]),
     ]
 
 

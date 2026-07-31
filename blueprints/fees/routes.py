@@ -304,12 +304,13 @@ def fees_waiver_management():
     try:
         categories = service.get_waiver_categories()
         voteheads = service.get_voteheads()
+        student_groups = service.get_student_groups()
         years = class_service.get_all_academic_years()
         recent_waivers = service.get_recent_waivers(limit=50)
         terms = service.get_recent_terms(limit=10)
 
         return render_template('fee_waiver_management.html',
-                             categories=categories, voteheads=voteheads, years=years, terms=terms,
+                             categories=categories, voteheads=voteheads, student_groups=student_groups, years=years, terms=terms,
                              recent_waivers=recent_waivers)
     finally:
         connection.close()
@@ -340,19 +341,29 @@ def assign_waiver():
     service = FeesService(connection)
     try:
         assignment = {
-            'admno': _required_int(request.form.get('admno'), 'admno'),
             'category_id': _required_int(request.form.get('category_id'), 'category_id'),
             'year_id': _required_int(request.form.get('year_id'), 'year_id'),
             'term_id': _required_int(request.form.get('term_id'), 'term_id'),
             'user_id': session.get('userNo'),
         }
         selected_voteheads = request.form.getlist('votehead_ids')
-        if selected_voteheads:
-            assignment['votehead_ids'] = [
-                _required_int(votehead_id, 'votehead_id') for votehead_id in selected_voteheads
-            ]
-        service.assign_waiver_to_student(**assignment)
-        flash("Waiver assigned successfully.", "success")
+        if request.form.get('student_group_id'):
+            if not selected_voteheads:
+                raise ValueError('Select at least one votehead for a group waiver.')
+            result = service.assign_waiver_to_student_group(
+                student_group_id=_required_int(request.form.get('student_group_id'), 'student_group_id'),
+                votehead_ids=[_required_int(votehead_id, 'votehead_id') for votehead_id in selected_voteheads],
+                **assignment,
+            )
+            flash(f"Waiver assigned to {result['assigned_count']} eligible students.", "success")
+        else:
+            assignment['admno'] = _required_int(request.form.get('admno'), 'admno')
+            if selected_voteheads:
+                assignment['votehead_ids'] = [
+                    _required_int(votehead_id, 'votehead_id') for votehead_id in selected_voteheads
+                ]
+            service.assign_waiver_to_student(**assignment)
+            flash("Waiver assigned successfully.", "success")
     except ValueError as e:
         flash(str(e), "error")
     except FeesError as e:
