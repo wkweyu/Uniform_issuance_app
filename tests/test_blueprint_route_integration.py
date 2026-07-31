@@ -144,6 +144,9 @@ class FeesServiceStub:
 
     def assign_waiver_to_student(self, admno, category_id, year_id, term_id, user_id):
         self.calls.append(("assign_waiver_to_student", admno, category_id, year_id, term_id, user_id))
+
+    def revoke_waiver(self, waiver_id, reason, user_id):
+        self.calls.append(("revoke_waiver", waiver_id, reason, user_id))
         if self.assign_waiver_error is not None:
             raise self.assign_waiver_error
 
@@ -1870,6 +1873,18 @@ def test_fees_statement_summary_route_returns_tenant_service_summary(client, db_
     assert response.status_code == 200
     assert response.json[0]["academic_year"] == 2026
     assert FeesServiceStub.last_instance.calls == [("get_student_statement_summary", 1001, 4)]
+
+
+def test_revoke_waiver_route_records_reason_with_current_user(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+
+    response = client.post("/fees/waiver/44/revoke", data={"reason": "Award withdrawn"})
+
+    assert response.status_code == 302
+    assert FeesServiceStub.last_instance.calls == [("revoke_waiver", 44, "Award withdrawn", 10)]
 
 
 def test_fee_receipts_register_route_rejects_invalid_admno_filter(client, db_session, monkeypatch):

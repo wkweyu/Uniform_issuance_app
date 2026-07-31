@@ -1039,6 +1039,25 @@ def test_fees_service_rejects_waiver_assignment_with_foreign_category():
         service.assign_waiver_to_student(admno=1001, category_id=77, year_id=2026, term_id=1, user_id=4)
 
 
+def test_fees_service_revokes_linked_waiver_with_a_debit_adjustment():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {'id': 44, 'admno': 1001, 'academic_year_id': 4, 'term_id': 3, 'ledger_id': 91,
+                     'status': 'ACTIVE', 'category_name': 'Bursary Award', 'waiver_amount': Decimal('500.00')}),
+            ('one', {'balance_after': Decimal('250.00')}),
+        ]
+    )
+    service = FeesService(connection, school_id=55)
+
+    service.revoke_waiver(44, 'Award criteria no longer apply', user_id=8)
+
+    insert_query, insert_params = connection.cursor_obj.executed[2]
+    assert "'adjustment'" in insert_query.lower()
+    assert insert_params[4] == Decimal('750.00')
+    assert insert_params[5].startswith('WAIVER REVERSAL: Bursary Award')
+    assert connection.commit_calls == 1
+
+
 def test_fees_service_rejects_votehead_create_with_foreign_student_group():
     connection = RecordingConnection(
         responses=[

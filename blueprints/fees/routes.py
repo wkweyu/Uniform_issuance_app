@@ -269,6 +269,21 @@ def assign_waiver():
         connection.close()
     return redirect(url_for('fees.fees_waiver_management'))
 
+@fees_bp.route('/fees/waiver/<int:waiver_id>/revoke', methods=['POST'])
+@login_required
+@admin_required
+def revoke_waiver(waiver_id):
+    connection = get_db_connection()
+    service = FeesService(connection)
+    try:
+        service.revoke_waiver(waiver_id, request.form.get('reason'), session.get('userNo'))
+        flash('Waiver revoked and a debit adjustment was posted.', 'success')
+    except FeesError as e:
+        flash(str(e), 'error')
+    finally:
+        connection.close()
+    return redirect(url_for('fees.fees_waiver_management'))
+
 @fees_bp.route('/admin/fees/adjustments', methods=['GET', 'POST'])
 @login_required
 @admin_required

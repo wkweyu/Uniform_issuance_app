@@ -2101,6 +2101,11 @@ class FeesService:
                 INSERT INTO fee_ledger (admno, academic_year_id, term_id, type, amount, balance_after, description, reference_no, transaction_date, created_by, school_id)
                 VALUES (%s, %s, %s, 'CREDIT', %s, %s, %s, %s, CURDATE(), %s, %s)
             """, (admno, year_id, term_id, waiver_amount, new_balance, f"Waiver Application: {cat['name']}", f"WVR-{assignment_id}", user_id, self.school_id))
+            ledger_id = self.cursor.lastrowid
+            self.cursor.execute(
+                "UPDATE student_waivers SET ledger_id = %s WHERE id = %s AND school_id = %s",
+                (ledger_id, assignment_id, self.school_id),
+            )
 
             self.connection.commit()
             return assignment_id
@@ -2120,6 +2125,54 @@ class FeesService:
             ORDER BY sw.created_at DESC
         """, (admno, self.school_id))
         return self.cursor.fetchall()
+
+    def revoke_waiver(self, waiver_id: int, reason: str, user_id: int) -> None:
+        """Revoke a linked active waiver by posting an immutable debit adjustment."""
+        reason = (reason or '').strip()
+        if not reason:
+            raise FeesError('A revocation reason is required.')
+        try:
+            self.cursor.execute("""
+                SELECT sw.id, sw.admno, sw.academic_year_id, sw.term_id, sw.ledger_id, sw.status,
+                       fwc.name AS category_name, fl.amount AS waiver_amount
+                FROM student_waivers sw
+                JOIN fee_waiver_categories fwc ON sw.category_id = fwc.id AND sw.school_id = fwc.school_id
+                LEFT JOIN fee_ledger fl ON sw.ledger_id = fl.id AND sw.school_id = fl.school_id
+                WHERE sw.id = %s AND sw.school_id = %s
+                FOR UPDATE
+            """, (waiver_id, self.school_id))
+            waiver = self.cursor.fetchone()
+            if not waiver:
+                raise FeesError('Waiver was not found for the active school.')
+            if waiver['status'] != 'ACTIVE':
+                raise FeesError('Only active waivers can be revoked.')
+            if not waiver.get('ledger_id') or waiver.get('waiver_amount') is None:
+                raise FeesError('This legacy waiver has no linked ledger credit and cannot be revoked automatically.')
+
+            amount = Decimal(str(waiver['waiver_amount']))
+            current_balance = self.get_student_balance(waiver['admno'])
+            reference = f'WVR-REV-{waiver_id}'
+            self.cursor.execute("""
+                INSERT INTO fee_ledger
+                    (admno, academic_year_id, term_id, type, amount, balance_after, description,
+                     reference_no, transaction_date, created_by, school_id)
+                VALUES (%s, %s, %s, 'ADJUSTMENT', %s, %s, %s, %s, CURDATE(), %s, %s)
+            """, (
+                waiver['admno'], waiver['academic_year_id'], waiver['term_id'], amount,
+                current_balance + amount, f'WAIVER REVERSAL: {waiver["category_name"]} - {reason}',
+                reference, user_id, self.school_id,
+            ))
+            self.cursor.execute("""
+                UPDATE student_waivers
+                SET status = 'REVOKED', revoked_by = %s, revoked_at = NOW(), revocation_reason = %s
+                WHERE id = %s AND school_id = %s
+            """, (user_id, reason, waiver_id, self.school_id))
+            self.connection.commit()
+        except Exception as exc:
+            self.connection.rollback()
+            if isinstance(exc, FeesError):
+                raise
+            raise FeesError(f'Failed to revoke waiver: {str(exc)}')
 
     # =========================================================================
     # 6. ENHANCED STRUCTURE MANAGEMENT (YEARLY)
