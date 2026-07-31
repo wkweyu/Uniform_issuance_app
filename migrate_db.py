@@ -9,6 +9,35 @@ class MigrationError(RuntimeError):
     """Raised when one or more database migration statements fail."""
 
 
+SCHEMA_MIGRATION_NAME = 'schema.sql'
+
+
+def _ensure_migration_journal(cursor):
+    cursor.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            migration_name VARCHAR(255) NOT NULL PRIMARY KEY,
+            applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        '''
+    )
+
+
+def _migration_is_applied(cursor, migration_name):
+    cursor.execute(
+        'SELECT migration_name FROM schema_migrations WHERE migration_name = %s',
+        (migration_name,),
+    )
+    return cursor.fetchone() is not None
+
+
+def _record_migration(cursor, migration_name):
+    cursor.execute(
+        'INSERT INTO schema_migrations (migration_name) VALUES (%s)',
+        (migration_name,),
+    )
+
+
 def migrate_db(continue_on_error=False):
     # Enable SSL for SkySQL
     ssl_config = None
@@ -38,33 +67,42 @@ def migrate_db(continue_on_error=False):
     try:
         with connection.cursor() as cursor:
             errors = []
+            _ensure_migration_journal(cursor)
 
             # First run schema.sql if it's new
-            if os.path.exists('schema.sql'):
+            if os.path.exists(SCHEMA_MIGRATION_NAME) and not _migration_is_applied(cursor, SCHEMA_MIGRATION_NAME):
                 print("Running schema.sql...")
                 try:
-                    with open('schema.sql', 'r') as f:
+                    with open(SCHEMA_MIGRATION_NAME, 'r') as f:
                         sql_script = f.read()
                     for statement in sql_script.split(';'):
                         statement = statement.strip()
                         if statement:
                             cursor.execute(statement)
                     print("✔️ schema.sql completed.")
+                    _record_migration(cursor, SCHEMA_MIGRATION_NAME)
                 except Exception as exc:
-                    errors.append(('schema.sql', str(exc)))
+                    errors.append((SCHEMA_MIGRATION_NAME, str(exc)))
                     print(f"❌ schema.sql failed: {exc}")
                     if not continue_on_error:
                         raise MigrationError('schema.sql failed') from exc
+            elif os.path.exists(SCHEMA_MIGRATION_NAME):
+                print("Skipping applied schema.sql")
 
             # Now run all migrations in order
             migration_files = sorted(glob.glob('migrations/*.sql'))
             for mig_file in migration_files:
+                if _migration_is_applied(cursor, mig_file):
+                    print(f"Skipping applied migration: {mig_file}")
+                    continue
+
                 print(f"Running migration: {mig_file}...")
                 with open(mig_file, 'r') as f:
                     sql_script = f.read()
 
                 # Split statements and execute one by one
                 statements = sql_script.split(';')
+                migration_failed = False
                 for statement in statements:
                     statement = statement.strip()
                     if not statement:
@@ -78,6 +116,7 @@ def migrate_db(continue_on_error=False):
                             # print(f"  ⏭️ Skipping statement (already applied).")
                             pass
                         else:
+                            migration_failed = True
                             errors.append((mig_file, str(exc)))
                             print(f"  ❌ Error in statement: {exc}")
                             if not continue_on_error:
@@ -87,17 +126,23 @@ def migrate_db(continue_on_error=False):
                              # print(f"  ⏭️ Skipping statement (already applied).")
                              pass
                         else:
+                            migration_failed = True
                             errors.append((mig_file, str(exc)))
                             print(f"  ❌ Error in statement: {exc}")
                             if not continue_on_error:
                                 raise MigrationError(f'Migration failed: {mig_file}') from exc
                     except Exception as exc:
+                        migration_failed = True
                         errors.append((mig_file, str(exc)))
                         print(f"  ❌ Unexpected error in statement: {exc}")
                         if not continue_on_error:
                             raise MigrationError(f'Migration failed: {mig_file}') from exc
 
-                print(f"✔️ Finished processing {mig_file}")
+                if migration_failed:
+                    print(f"❌ Migration was not recorded: {mig_file}")
+                else:
+                    print(f"✔️ Finished processing {mig_file}")
+                    _record_migration(cursor, mig_file)
 
         if errors:
             raise MigrationError(f'{len(errors)} migration statement(s) failed.')

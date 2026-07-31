@@ -6,18 +6,29 @@ import pytest
 import migrate_db
 
 
-class FailingCursor:
-    def __init__(self):
+class MigrationCursor:
+    def __init__(self, failing_statements=None, applied_migrations=None):
         self.executed = []
+        self.failing_statements = set(failing_statements or [])
+        self.applied_migrations = set(applied_migrations or [])
+        self._last_result = None
 
-    def execute(self, statement):
-        self.executed.append(statement)
-        raise pymysql.err.OperationalError(1064, 'synthetic migration syntax error')
+    def execute(self, statement, params=None):
+        self.executed.append((statement, params))
+        if statement in self.failing_statements:
+            raise pymysql.err.OperationalError(1064, 'synthetic migration syntax error')
+        if statement.startswith('SELECT migration_name'):
+            self._last_result = {'migration_name': params[0]} if params[0] in self.applied_migrations else None
+        elif statement.startswith('INSERT INTO schema_migrations'):
+            self.applied_migrations.add(params[0])
+
+    def fetchone(self):
+        return self._last_result
 
 
-class FailingConnection:
-    def __init__(self):
-        self.cursor_obj = FailingCursor()
+class MigrationConnection:
+    def __init__(self, failing_statements=None, applied_migrations=None):
+        self.cursor_obj = MigrationCursor(failing_statements, applied_migrations)
         self.closed = False
 
     def cursor(self):
@@ -33,30 +44,69 @@ class FailingConnection:
         self.closed = True
 
 
-def _configure_failing_migration(monkeypatch):
-    connection = FailingConnection()
+def _configure_migration(monkeypatch, failing_statements=None, applied_migrations=None, schema_exists=False):
+    connection = MigrationConnection(failing_statements, applied_migrations)
     monkeypatch.setattr(migrate_db.pymysql, 'connect', lambda **_kwargs: connection)
-    monkeypatch.setattr(migrate_db.os.path, 'exists', lambda _path: False)
+    monkeypatch.setattr(migrate_db.os.path, 'exists', lambda _path: schema_exists)
     monkeypatch.setattr(migrate_db.glob, 'glob', lambda _pattern: ['migrations/999_broken.sql'])
     monkeypatch.setattr('builtins.open', lambda *_args, **_kwargs: io.StringIO('BROKEN SQL;'))
     return connection
 
 
 def test_migration_runner_fails_closed_on_unexpected_statement_error(monkeypatch):
-    connection = _configure_failing_migration(monkeypatch)
+    connection = _configure_migration(monkeypatch, failing_statements={'BROKEN SQL'})
 
     with pytest.raises(migrate_db.MigrationError, match='Migration failed'):
         migrate_db.migrate_db()
 
-    assert connection.cursor_obj.executed == ['BROKEN SQL']
+    assert ('BROKEN SQL', None) in connection.cursor_obj.executed
+    assert 'migrations/999_broken.sql' not in connection.cursor_obj.applied_migrations
     assert connection.closed is True
 
 
 def test_migration_runner_diagnostic_mode_still_exits_failed(monkeypatch):
-    connection = _configure_failing_migration(monkeypatch)
+    connection = _configure_migration(monkeypatch, failing_statements={'BROKEN SQL'})
 
     with pytest.raises(migrate_db.MigrationError, match='1 migration statement'):
         migrate_db.migrate_db(continue_on_error=True)
 
-    assert connection.cursor_obj.executed == ['BROKEN SQL']
+    assert ('BROKEN SQL', None) in connection.cursor_obj.executed
+    assert 'migrations/999_broken.sql' not in connection.cursor_obj.applied_migrations
     assert connection.closed is True
+
+
+def test_migration_runner_records_successful_migration(monkeypatch):
+    connection = _configure_migration(monkeypatch)
+
+    migrate_db.migrate_db()
+
+    assert ('BROKEN SQL', None) in connection.cursor_obj.executed
+    assert connection.cursor_obj.applied_migrations == {'migrations/999_broken.sql'}
+
+
+def test_migration_runner_skips_previously_applied_migration(monkeypatch):
+    connection = _configure_migration(
+        monkeypatch,
+        applied_migrations={'migrations/999_broken.sql'},
+    )
+
+    migrate_db.migrate_db()
+
+    assert ('BROKEN SQL', None) not in connection.cursor_obj.executed
+    assert connection.cursor_obj.applied_migrations == {'migrations/999_broken.sql'}
+
+
+def test_migration_runner_records_and_skips_successful_schema(monkeypatch):
+    connection = _configure_migration(monkeypatch, schema_exists=True)
+
+    migrate_db.migrate_db()
+
+    assert connection.cursor_obj.applied_migrations == {
+        'schema.sql',
+        'migrations/999_broken.sql',
+    }
+
+    executed_count = len(connection.cursor_obj.executed)
+    migrate_db.migrate_db()
+
+    assert len(connection.cursor_obj.executed) == executed_count + 3

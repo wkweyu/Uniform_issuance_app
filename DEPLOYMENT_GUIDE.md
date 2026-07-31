@@ -34,7 +34,7 @@ Set `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, and `DB_NAME` for the target
 python3 migrate_db.py
 ```
 
-The runner fails closed on an unexpected SQL error. For diagnostics on an existing database, process every migration and still receive a non-zero exit on any failure:
+The runner records `schema.sql` and each completed migration in `schema_migrations`, skipping successful files on later runs. It fails closed on an unexpected SQL error, so a failed file is not recorded. For diagnostics on an existing database, process every pending migration and still receive a non-zero exit on any failure:
 
 ```bash
 python3 migrate_db.py --continue-on-error
