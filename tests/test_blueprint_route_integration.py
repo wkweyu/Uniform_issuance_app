@@ -157,6 +157,10 @@ class FeesServiceStub:
         self.calls.append(("get_collection_votehead_summary", start_date, end_date))
         return []
 
+    def get_fee_revenue_analysis(self, start_date, end_date):
+        self.calls.append(("get_fee_revenue_analysis", start_date, end_date))
+        return []
+
     def get_waiver_register(self, start_date, end_date, status):
         self.calls.append(("get_waiver_register", start_date, end_date, status))
         return []
@@ -2017,6 +2021,25 @@ def test_fee_waiver_report_forwards_filters_to_service(client, db_session, monke
     assert response.data == b'fee_waiver_report.html:ACTIVE'
     assert FeesServiceStub.last_instance.calls == [
         ('get_waiver_register', '2026-07-01', '2026-07-31', 'ACTIVE'),
+    ]
+
+
+def test_fee_revenue_analysis_report_forwards_dates(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(
+        fees_routes, "render_template",
+        lambda template, **context: f"{template}:{context['start_date']}",
+    )
+
+    response = client.get('/admin/fees/reports/revenue-analysis?start_date=2026-07-01&end_date=2026-07-31')
+
+    assert response.status_code == 200
+    assert response.data == b'fee_revenue_analysis_report.html:2026-07-01'
+    assert FeesServiceStub.last_instance.calls == [
+        ('get_fee_revenue_analysis', '2026-07-01', '2026-07-31'),
     ]
 
 

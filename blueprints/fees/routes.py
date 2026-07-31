@@ -96,6 +96,24 @@ def fees_collection_report():
     finally:
         connection.close()
 
+
+@fees_bp.route('/admin/fees/reports/revenue-analysis')
+@login_required
+@admin_required
+def fee_revenue_analysis_report():
+    start_date = request.args.get('start_date', datetime.now().strftime('%Y-%m-01'))
+    end_date = request.args.get('end_date', datetime.now().strftime('%Y-%m-%d'))
+    connection = get_db_connection()
+    service = FeesService(connection)
+    try:
+        records = service.get_fee_revenue_analysis(start_date, end_date)
+        return render_template(
+            'fee_revenue_analysis_report.html', records=records,
+            start_date=start_date, end_date=end_date,
+        )
+    finally:
+        connection.close()
+
 @fees_bp.route('/admin/fees/reports/receipt-lifecycle')
 @login_required
 @admin_required

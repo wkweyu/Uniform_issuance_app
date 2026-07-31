@@ -999,6 +999,36 @@ def test_fees_service_collection_votehead_summary_scopes_allocations_and_complet
     assert 'sum(allocations.amount)' in query.lower()
 
 
+def test_fees_service_revenue_analysis_scopes_ledger_and_completed_allocations():
+    connection = RecordingConnection(
+        responses=[
+            ('all', [{'votehead_id': 7, 'votehead_name': 'Tuition', 'invoiced_amount': Decimal('1000.00'),
+                      'debit_note_amount': Decimal('0.00'), 'credit_note_amount': Decimal('0.00'),
+                      'waiver_amount': Decimal('100.00')}]),
+            ('all', [{'votehead_id': 7, 'collected_amount': Decimal('800.00')}]),
+        ]
+    )
+    service = FeesService(connection, school_id=55)
+    service._table_columns_cache = {
+        'fee_payment_allocations': {'school_id'},
+        'fee_payments': {'school_id'},
+    }
+
+    assert service.get_fee_revenue_analysis('2026-07-01', '2026-07-31') == [{
+        'votehead_id': 7, 'votehead_name': 'Tuition', 'invoiced_amount': Decimal('1000.00'),
+        'debit_note_amount': Decimal('0.00'), 'credit_note_amount': Decimal('0.00'),
+        'waiver_amount': Decimal('100.00'), 'collected_amount': Decimal('800.00'),
+    }]
+
+    ledger_query, ledger_params = connection.cursor_obj.executed[0]
+    allocations_query, allocations_params = connection.cursor_obj.executed[1]
+    assert ledger_params == ('2026-07-01', '2026-07-31', 55)
+    assert 'ledger.school_id = voteheads.school_id' in ledger_query.lower()
+    assert allocations_params == ('2026-07-01', '2026-07-31', 55)
+    assert 'allocations.school_id = payments.school_id' in allocations_query.lower()
+    assert "payments.status = 'completed'" in allocations_query.lower()
+
+
 def test_fees_service_category_change_preflight_blocks_paid_term_allocations():
     connection = RecordingConnection(responses=[
         ('one', {'AdmNo': 1001}), ('one', {'id': 4}), ('one', {'id': 3}),

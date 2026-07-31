@@ -3013,3 +3013,59 @@ def _get_collection_votehead_summary(self, start_date: str, end_date: str) -> Li
 
 
 FeesService.get_collection_votehead_summary = _get_collection_votehead_summary
+
+
+def _get_fee_revenue_analysis(self, start_date: str, end_date: str) -> List[Dict]:
+    """Keep invoiced movements and completed allocated collections distinct by votehead."""
+    self.cursor.execute("""
+        SELECT voteheads.id AS votehead_id, voteheads.name AS votehead_name,
+               SUM(CASE WHEN ledger.type = 'CHARGE' THEN ledger.amount ELSE 0 END) AS invoiced_amount,
+               SUM(CASE WHEN ledger.type = 'ADJUSTMENT' AND ledger.description LIKE 'DEBIT NOTE:%%' THEN ledger.amount ELSE 0 END) AS debit_note_amount,
+               SUM(CASE WHEN ledger.type = 'ADJUSTMENT' AND ledger.description LIKE 'CREDIT NOTE:%%' THEN ledger.amount ELSE 0 END) AS credit_note_amount,
+               SUM(CASE WHEN ledger.type = 'CREDIT' AND ledger.reference_no LIKE 'WVR-%%' THEN ledger.amount ELSE 0 END) AS waiver_amount
+        FROM fee_ledger ledger
+        JOIN fee_voteheads voteheads
+          ON ledger.votehead_id = voteheads.id AND ledger.school_id = voteheads.school_id
+        WHERE ledger.transaction_date BETWEEN %s AND %s AND ledger.school_id = %s
+        GROUP BY voteheads.id, voteheads.name
+    """, (start_date, end_date, self.school_id))
+    movements = {
+        row['votehead_id']: row
+        for row in self.cursor.fetchall()
+    }
+
+    allocations_has_school_id = self._table_has_column('fee_payment_allocations', 'school_id')
+    payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
+    if allocations_has_school_id and payments_has_school_id:
+        self.cursor.execute("""
+            SELECT allocations.votehead_id, SUM(allocations.amount) AS collected_amount
+            FROM fee_payment_allocations allocations
+            JOIN fee_payments payments
+              ON allocations.payment_id = payments.id AND allocations.school_id = payments.school_id
+            WHERE payments.payment_date BETWEEN %s AND %s
+              AND payments.status = 'COMPLETED' AND payments.school_id = %s
+            GROUP BY allocations.votehead_id
+        """, (start_date, end_date, self.school_id))
+    else:
+        self.cursor.execute("""
+            SELECT allocations.votehead_id, SUM(allocations.amount) AS collected_amount
+            FROM fee_payment_allocations allocations
+            JOIN fee_payments payments ON allocations.payment_id = payments.id
+            JOIN fee_ledger ledger ON payments.ledger_id = ledger.id
+            WHERE payments.payment_date BETWEEN %s AND %s
+              AND payments.status = 'COMPLETED' AND ledger.school_id = %s
+            GROUP BY allocations.votehead_id
+        """, (start_date, end_date, self.school_id))
+    for collection in self.cursor.fetchall():
+        row = movements.setdefault(collection['votehead_id'], {
+            'votehead_id': collection['votehead_id'], 'votehead_name': 'Unclassified votehead',
+            'invoiced_amount': Decimal('0.00'), 'debit_note_amount': Decimal('0.00'),
+            'credit_note_amount': Decimal('0.00'), 'waiver_amount': Decimal('0.00'),
+        })
+        row['collected_amount'] = collection['collected_amount']
+    for row in movements.values():
+        row.setdefault('collected_amount', Decimal('0.00'))
+    return sorted(movements.values(), key=lambda row: row['votehead_name'])
+
+
+FeesService.get_fee_revenue_analysis = _get_fee_revenue_analysis
