@@ -165,6 +165,21 @@ def test_finance_service_closes_cashier_session_with_cash_variance():
     assert 'update cashier_sessions' in update_query.lower()
 
 
+def test_finance_service_cashier_session_register_scopes_completed_cash_receipts():
+    connection = RecordingConnection(responses=[('all', [])])
+    service = FinanceService(connection, school_id=18)
+
+    assert service.get_cashier_session_register('2026-07-01', '2026-07-31', 'CLOSED') == []
+
+    query, params = connection.cursor_obj.executed[0]
+    assert params == (18, '2026-07-01', '2026-07-31', 'CLOSED')
+    assert 'sessions.school_id = payments.school_id' in query.lower()
+    assert "payments.payment_mode = 'cash'" in query.lower()
+    assert "payments.status = 'completed'" in query.lower()
+    assert 'date(sessions.opened_at) >= %s' in query.lower()
+    assert 'sessions.status = %s' in query.lower()
+
+
 def test_dashboard_service_scopes_summary_reads_to_school():
     connection = RecordingConnection(
         responses=[

@@ -4,7 +4,7 @@
 <div class="max-w-6xl mx-auto px-4 py-8">
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-8">
         <div><h1 class="text-2xl font-extrabold text-gray-900">Cashier Sessions</h1><p class="text-sm text-gray-500">Cash receipts are accountable to the session open when they are posted.</p></div>
-        <a href="{{ url_for('finance.finance_dashboard') }}" class="text-sm font-semibold text-blue-700 hover:text-blue-900">Finance dashboard</a>
+        <div class="flex gap-4"><a href="{{ url_for('finance.cashier_session_report') }}" class="text-sm font-semibold text-blue-700 hover:text-blue-900">Session report</a><a href="{{ url_for('finance.finance_dashboard') }}" class="text-sm font-semibold text-blue-700 hover:text-blue-900">Finance dashboard</a></div>
     </div>
 
     {% if open_session %}

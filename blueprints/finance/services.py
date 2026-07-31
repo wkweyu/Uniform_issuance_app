@@ -190,6 +190,39 @@ class FinanceService:
         self.cursor.execute(query, tuple(params))
         return self.cursor.fetchall()
 
+    def get_cashier_session_register(self, start_date: Optional[str] = None, end_date: Optional[str] = None,
+                                     status: Optional[str] = None) -> List[Dict]:
+        """Return cashier-session accountability totals for the active school."""
+        query = """
+            SELECT sessions.*, cashiers.username AS cashier_name, openers.username AS opened_by_name,
+                   approvers.username AS approved_by_name, COUNT(payments.id) AS receipt_count,
+                   COALESCE(SUM(payments.amount), 0) AS posted_cash_total
+            FROM cashier_sessions sessions
+            LEFT JOIN users cashiers
+              ON sessions.cashier_user_id = cashiers.userNo AND sessions.school_id = cashiers.school_id
+            LEFT JOIN users openers
+              ON sessions.opened_by = openers.userNo AND sessions.school_id = openers.school_id
+            LEFT JOIN users approvers
+              ON sessions.approved_by = approvers.userNo AND sessions.school_id = approvers.school_id
+            LEFT JOIN fee_payments payments
+              ON sessions.id = payments.cashier_session_id AND sessions.school_id = payments.school_id
+              AND payments.payment_mode = 'CASH' AND payments.status = 'COMPLETED'
+            WHERE sessions.school_id = %s
+        """
+        params = [self.school_id]
+        if start_date:
+            query += ' AND DATE(sessions.opened_at) >= %s'
+            params.append(start_date)
+        if end_date:
+            query += ' AND DATE(sessions.opened_at) <= %s'
+            params.append(end_date)
+        if status:
+            query += ' AND sessions.status = %s'
+            params.append(status)
+        query += ' GROUP BY sessions.id ORDER BY sessions.opened_at DESC, sessions.id DESC'
+        self.cursor.execute(query, tuple(params))
+        return self.cursor.fetchall()
+
     def open_cashier_session(self, cashier_user_id: int, opened_by: int) -> int:
         """Open one cash-accountability session per cashier and school."""
         if self.get_open_cashier_session(cashier_user_id):

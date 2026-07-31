@@ -70,6 +70,10 @@ class FinanceServiceStub:
         self.calls.append(("get_cashier_sessions",))
         return []
 
+    def get_cashier_session_register(self, start_date, end_date, status):
+        self.calls.append(("get_cashier_session_register", start_date, end_date, status))
+        return []
+
     def open_cashier_session(self, cashier_user_id, opened_by):
         self.calls.append(("open_cashier_session", cashier_user_id, opened_by))
         return 1
@@ -693,6 +697,25 @@ def test_finance_cashier_sessions_route_opens_current_cashier_session(client, db
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/admin/finance/cashier-sessions")
     assert FinanceServiceStub.last_instance.calls == [("open_cashier_session", 10, 10)]
+
+
+def test_finance_cashier_session_report_forwards_filters(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(finance_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(finance_routes, "FinanceService", FinanceServiceStub)
+    monkeypatch.setattr(
+        finance_routes, "render_template",
+        lambda template, **context: f"{template}:{context['status']}",
+    )
+
+    response = client.get('/admin/finance/reports/cashier-sessions?start_date=2026-07-01&end_date=2026-07-31&status=CLOSED')
+
+    assert response.status_code == 200
+    assert response.data == b'cashier_session_report.html:CLOSED'
+    assert FinanceServiceStub.last_instance.calls == [
+        ('get_cashier_session_register', '2026-07-01', '2026-07-31', 'CLOSED'),
+    ]
 
 
 def test_finance_authorize_voucher_route_passes_source_account_to_service(client, db_session, monkeypatch):

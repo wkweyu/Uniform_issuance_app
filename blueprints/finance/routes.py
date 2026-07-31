@@ -238,6 +238,25 @@ def manage_cashier_sessions():
     finally:
         connection.close()
 
+
+@finance_bp.route('/admin/finance/reports/cashier-sessions')
+@login_required
+@admin_required
+def cashier_session_report():
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    status = request.args.get('status')
+    connection = get_db_connection()
+    service = FinanceService(connection)
+    try:
+        records = service.get_cashier_session_register(start_date, end_date, status)
+        return render_template(
+            'cashier_session_report.html', records=records, start_date=start_date or '',
+            end_date=end_date or '', status=status or '',
+        )
+    finally:
+        connection.close()
+
 @finance_bp.route('/admin/finance/reports/trial_balance')
 @login_required
 @admin_required
