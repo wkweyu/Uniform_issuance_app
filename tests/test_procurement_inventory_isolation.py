@@ -787,6 +787,40 @@ def test_fees_service_reposts_cancelled_receipt_through_normal_payment_posting()
     assert captured['lifecycle_correlation_id']
 
 
+def test_fees_service_reallocation_recalculates_both_student_ledger_balances():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {'AdmNo': 1001}),
+            ('one', {'AdmNo': 1002}),
+            ('one', {'id': 12, 'ledger_id': 45, 'amount': Decimal('1500.00'), 'status': 'COMPLETED'}),
+            ('all', [{'id': 10, 'type': 'CHARGE', 'amount': Decimal('2000.00'), 'description': 'Term fees'}]),
+            ('all', [
+                {'id': 20, 'type': 'CHARGE', 'amount': Decimal('3000.00'), 'description': 'Term fees'},
+                {'id': 45, 'type': 'PAYMENT', 'amount': Decimal('1500.00'), 'description': 'Payment via MPESA'},
+            ]),
+        ]
+    )
+    service = FeesService(connection, school_id=55)
+    service._table_columns_cache = {'fee_payments': {'school_id'}}
+
+    service.reallocate_payment('MPESA-1', 1001, 1002, user_id=9, reason='Wrong sibling')
+
+    assert connection.begin_calls == 1
+    assert connection.commit_calls == 1
+    audit_query, audit_params = connection.cursor_obj.executed[3]
+    assert 'insert into fee_reallocation_log' in audit_query.lower()
+    assert audit_params[:8] == (1001, 1002, 'MPESA-1', Decimal('1500.00'), 12, 'Wrong sibling', 9, 55)
+    balance_updates = [(query, params) for query, params in connection.cursor_obj.executed if 'update fee_ledger set balance_after' in query.lower()]
+    assert [params for _, params in balance_updates] == [
+        (Decimal('2000.00'), 10, 55),
+        (Decimal('3000.00'), 20, 55),
+        (Decimal('1500.00'), 45, 55),
+    ]
+    lifecycle_query, lifecycle_params = connection.cursor_obj.executed[-1]
+    assert 'insert into fee_receipt_lifecycle_events' in lifecycle_query.lower()
+    assert lifecycle_params[:4] == (55, 12, 'Wrong sibling', 9)
+
+
 def test_fees_service_rejects_structure_create_with_foreign_votehead():
     connection = RecordingConnection(
         responses=[

@@ -1148,9 +1148,38 @@ class FeesService:
             lifecycle_correlation_id=str(uuid.uuid4()),
         )
 
+    def _recalculate_student_ledger_balances(self, admno: int) -> None:
+        """Rebuild stored running balances after a financial correction."""
+        self.cursor.execute("""
+            SELECT id, type, amount, description
+            FROM fee_ledger
+            WHERE admno = %s AND school_id = %s
+            ORDER BY transaction_date ASC, id ASC
+        """, (admno, self.school_id))
+        running_balance = Decimal('0.00')
+        for row in self.cursor.fetchall():
+            amount = Decimal(str(row['amount']))
+            entry_type = row['type']
+            description = row.get('description') or ''
+            if entry_type in ('CHARGE', 'DEBIT', 'REFUND') or (
+                entry_type == 'ADJUSTMENT' and description.startswith('VOID RECEIPT:')
+            ):
+                running_balance += amount
+            else:
+                running_balance -= amount
+            self.cursor.execute(
+                "UPDATE fee_ledger SET balance_after = %s WHERE id = %s AND school_id = %s",
+                (running_balance, row['id'], self.school_id),
+            )
+
     def reallocate_payment(self, reference_no: str, from_admno: int, to_admno: int, user_id: int, reason: str):
-        """Reassign a payment from one student to another."""
+        """Transfer a completed payment and rebuild both affected running balances."""
         try:
+            reason = (reason or '').strip()
+            if from_admno == to_admno:
+                raise FeesError('The source and target students must be different.')
+            if not reason:
+                raise FeesError('A reallocation reason is required.')
             self._assert_student_belongs_to_school(from_admno)
             self._assert_student_belongs_to_school(to_admno)
             fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
@@ -1169,12 +1198,16 @@ class FeesService:
             payment = self.cursor.fetchone()
             if not payment:
                 raise FeesError("Payment record not found.")
+            if payment['status'] != 'COMPLETED':
+                raise FeesError('Only completed receipts can be reallocated.')
+
+            correlation_id = str(uuid.uuid4())
             
             # 2. Record in audit trail
             self.cursor.execute("""
-                INSERT INTO fee_reallocation_log (original_admno, new_admno, reference_no, amount, reason, reallocated_by, school_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """, (from_admno, to_admno, reference_no, payment['amount'], reason, user_id, self.school_id))
+                INSERT INTO fee_reallocation_log (original_admno, new_admno, reference_no, amount, payment_id, reason, reallocated_by, school_id, correlation_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (from_admno, to_admno, reference_no, payment['amount'], payment['id'], reason, user_id, self.school_id, correlation_id))
             
             # 3. Update main records
             if fee_payments_has_school_id:
@@ -1182,9 +1215,17 @@ class FeesService:
             else:
                 self.cursor.execute("UPDATE fee_payments SET admno = %s WHERE id = %s", (to_admno, payment['id']))
             self.cursor.execute("UPDATE fee_ledger SET admno = %s WHERE id = %s AND school_id = %s", (to_admno, payment['ledger_id'], self.school_id))
-            
-            # Logic for updating running balance (Complexity high, better to trigger a full balance recalculation)
-            # For simplicity in this demo, we shift the records and expect the system to re-read balances.
+
+            self._recalculate_student_ledger_balances(from_admno)
+            self._recalculate_student_ledger_balances(to_admno)
+            self.cursor.execute("""
+                INSERT INTO fee_receipt_lifecycle_events
+                    (school_id, payment_id, event_type, status_after, reason, actor_user_id, correlation_id, snapshot_json)
+                VALUES (%s, %s, 'TRANSFERRED', 'COMPLETED', %s, %s, %s, %s)
+            """, (
+                self.school_id, payment['id'], reason, user_id, correlation_id,
+                json.dumps({'from_admno': from_admno, 'to_admno': to_admno, 'reference_no': reference_no}, sort_keys=True),
+            ))
             
             self.connection.commit()
         except Exception as e:
