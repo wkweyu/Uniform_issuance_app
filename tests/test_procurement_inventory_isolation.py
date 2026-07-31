@@ -924,6 +924,19 @@ def test_fees_service_reallocation_register_scopes_source_and_destination_studen
     assert 'reallocations.school_id = receipts.school_id' in query.lower()
 
 
+def test_fees_service_collection_status_summary_scopes_receipt_statuses_to_school():
+    connection = RecordingConnection(responses=[('all', [])])
+    service = FeesService(connection, school_id=55)
+    service._table_columns_cache = {'fee_payments': {'school_id'}}
+
+    assert service.get_collection_status_summary('2026-07-01', '2026-07-31') == []
+
+    query, params = connection.cursor_obj.executed[0]
+    assert params == ('2026-07-01', '2026-07-31', 55)
+    assert 'where payment_date between %s and %s and school_id = %s' in query.lower()
+    assert 'group by status, payment_mode' in query.lower()
+
+
 def test_fees_service_records_reprint_event_after_prior_print():
     connection = RecordingConnection(
         responses=[

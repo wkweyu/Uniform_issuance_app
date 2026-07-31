@@ -133,6 +133,14 @@ class FeesServiceStub:
         self.calls.append(("get_reallocation_register", start_date, end_date))
         return []
 
+    def get_collection_summary(self, start_date, end_date):
+        self.calls.append(("get_collection_summary", start_date, end_date))
+        return []
+
+    def get_collection_status_summary(self, start_date, end_date):
+        self.calls.append(("get_collection_status_summary", start_date, end_date))
+        return []
+
     def record_receipt_print(self, payment_id, user_id):
         self.calls.append(("record_receipt_print", payment_id, user_id))
         return "PRINTED"
@@ -1921,6 +1929,23 @@ def test_reallocation_report_passes_period_filters_to_service(client, db_session
     assert response.status_code == 200
     assert b"fee_reallocation_report.html:2026-07-01" in response.data
     assert FeesServiceStub.last_instance.calls == [("get_reallocation_register", "2026-07-01", "2026-07-31")]
+
+
+def test_collection_report_loads_completed_and_status_summaries(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "render_template", lambda template, **context: f"{template}:{len(context['status_data'])}")
+
+    response = client.get("/admin/fees/reports/collection?start_date=2026-07-01&end_date=2026-07-31")
+
+    assert response.status_code == 200
+    assert b"fees_collection_report.html:0" in response.data
+    assert FeesServiceStub.last_instance.calls == [
+        ("get_collection_summary", "2026-07-01", "2026-07-31"),
+        ("get_collection_status_summary", "2026-07-01", "2026-07-31"),
+    ]
 
 
 def test_fee_receipts_register_route_rejects_invalid_admno_filter(client, db_session, monkeypatch):

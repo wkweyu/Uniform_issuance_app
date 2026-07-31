@@ -1891,6 +1891,28 @@ class FeesService:
             """, (start_date, end_date, self.school_id))
         return self.cursor.fetchall()
 
+    def get_collection_status_summary(self, start_date: str, end_date: str) -> List[Dict]:
+        """Summarize the current status of receipts posted within a reporting window."""
+        fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
+        if fee_payments_has_school_id:
+            self.cursor.execute("""
+                SELECT status, payment_mode, SUM(amount) AS total_amount, COUNT(*) AS count
+                FROM fee_payments
+                WHERE payment_date BETWEEN %s AND %s AND school_id = %s
+                GROUP BY status, payment_mode
+                ORDER BY status ASC, payment_mode ASC
+            """, (start_date, end_date, self.school_id))
+        else:
+            self.cursor.execute("""
+                SELECT fp.status, fp.payment_mode, SUM(fp.amount) AS total_amount, COUNT(*) AS count
+                FROM fee_payments fp
+                JOIN fee_ledger fl ON fp.ledger_id = fl.id
+                WHERE fp.payment_date BETWEEN %s AND %s AND fl.school_id = %s
+                GROUP BY fp.status, fp.payment_mode
+                ORDER BY fp.status ASC, fp.payment_mode ASC
+            """, (start_date, end_date, self.school_id))
+        return self.cursor.fetchall()
+
     def get_arrears_report(self, class_id: Optional[int] = None) -> List[Dict]:
         """Get list of students with outstanding balances."""
         query = """

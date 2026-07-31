@@ -84,7 +84,11 @@ def fees_collection_report():
     service = FeesService(connection)
     try:
         data = service.get_collection_summary(start_date, end_date)
-        return render_template('fees_collection_report.html', data=data, start_date=start_date, end_date=end_date)
+        status_data = service.get_collection_status_summary(start_date, end_date)
+        return render_template(
+            'fees_collection_report.html', data=data, status_data=status_data,
+            start_date=start_date, end_date=end_date,
+        )
     finally:
         connection.close()
 
