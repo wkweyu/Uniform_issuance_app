@@ -110,3 +110,20 @@ def test_migration_runner_records_and_skips_successful_schema(monkeypatch):
     migrate_db.migrate_db()
 
     assert len(connection.cursor_obj.executed) == executed_count + 3
+
+
+def test_migration_status_lists_applied_and_pending_files(monkeypatch):
+    connection = _configure_migration(
+        monkeypatch,
+        applied_migrations={'schema.sql'},
+        schema_exists=True,
+    )
+
+    status = migrate_db.get_migration_status()
+
+    assert status == [
+        {'migration_name': 'schema.sql', 'is_applied': True},
+        {'migration_name': 'migrations/999_broken.sql', 'is_applied': False},
+    ]
+    assert ('BROKEN SQL', None) not in connection.cursor_obj.executed
+    assert connection.closed is True

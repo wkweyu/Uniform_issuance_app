@@ -38,7 +38,7 @@ def _record_migration(cursor, migration_name):
     )
 
 
-def migrate_db(continue_on_error=False):
+def _get_database_connection():
     # Enable SSL for SkySQL
     ssl_config = None
     ca_path = os.path.join(os.path.dirname(__file__), 'globalsignrootca.pem')
@@ -54,7 +54,7 @@ def migrate_db(continue_on_error=False):
     DB_PASSWORD = os.environ.get('DB_PASSWORD') or os.environ.get('DB_PASS', getattr(config, 'DB_PASSWORD', ''))
     DB_NAME = os.environ.get('DB_NAME', getattr(config, 'DB_NAME', 'schoolmngt'))
 
-    connection = pymysql.connect(
+    return pymysql.connect(
         host=DB_HOST,
         user=DB_USER,
         password=DB_PASSWORD,
@@ -64,6 +64,28 @@ def migrate_db(continue_on_error=False):
         autocommit=True
     )
 
+
+def get_migration_status():
+    connection = _get_database_connection()
+    try:
+        with connection.cursor() as cursor:
+            _ensure_migration_journal(cursor)
+            migration_names = [SCHEMA_MIGRATION_NAME]
+            migration_names.extend(sorted(glob.glob('migrations/*.sql')))
+
+            status = []
+            for migration_name in migration_names:
+                status.append({
+                    'migration_name': migration_name,
+                    'is_applied': _migration_is_applied(cursor, migration_name),
+                })
+            return status
+    finally:
+        connection.close()
+
+
+def migrate_db(continue_on_error=False):
+    connection = _get_database_connection()
     try:
         with connection.cursor() as cursor:
             errors = []
@@ -152,9 +174,19 @@ def migrate_db(continue_on_error=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Run ordered database migrations.')
-    parser.add_argument(
+    action_group = parser.add_mutually_exclusive_group()
+    action_group.add_argument(
         '--continue-on-error', action='store_true',
         help='Process all migrations for diagnostics, then exit with failure if any statement failed.',
     )
+    action_group.add_argument(
+        '--status', action='store_true',
+        help='List applied and pending schema files without executing migrations.',
+    )
     args = parser.parse_args()
-    migrate_db(continue_on_error=args.continue_on_error)
+    if args.status:
+        for migration in get_migration_status():
+            state = 'APPLIED' if migration['is_applied'] else 'PENDING'
+            print(f"{state:7} {migration['migration_name']}")
+    else:
+        migrate_db(continue_on_error=args.continue_on_error)

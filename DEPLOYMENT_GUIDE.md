@@ -40,6 +40,12 @@ The runner records `schema.sql` and each completed migration in `schema_migratio
 python3 migrate_db.py --continue-on-error
 ```
 
+Inspect applied and pending files without executing any migration:
+
+```bash
+python3 migrate_db.py --status
+```
+
 Do not use shell wildcard redirection such as `mysql < migrations/*.sql`; it does not reliably execute every migration file in order.
 
 ### 3. Run the Application
