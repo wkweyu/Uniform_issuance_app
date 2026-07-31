@@ -523,6 +523,9 @@ def test_fees_service_term_summary_is_scoped_to_student_term_and_school():
     query, params = connection.cursor_obj.executed[0]
     assert params == (1001, 3, 55)
     assert 'where admno = %s and term_id = %s and school_id = %s' in query.lower()
+    assert "description like 'debit note:%%'" in query.lower()
+    assert "description like 'credit note:%%'" in query.lower()
+    assert "description like 'void receipt:%%'" in query.lower()
 
 
 def test_fees_service_term_invoices_are_scoped_to_student_term_and_school():

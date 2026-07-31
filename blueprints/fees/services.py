@@ -660,9 +660,14 @@ class FeesService:
         self.cursor.execute("""
             SELECT
                 COALESCE(SUM(CASE WHEN type = 'CHARGE' THEN amount ELSE 0 END), 0) AS charges,
-                COALESCE(SUM(CASE WHEN type = 'DEBIT' THEN amount ELSE 0 END), 0) AS debits,
+                                COALESCE(SUM(CASE
+                                        WHEN type = 'DEBIT'
+                                            OR (type = 'ADJUSTMENT' AND (description LIKE 'DEBIT NOTE:%%' OR description LIKE 'VOID RECEIPT:%%'))
+                                        THEN amount ELSE 0 END), 0) AS debits,
                 COALESCE(SUM(CASE WHEN type = 'PAYMENT' THEN amount ELSE 0 END), 0) AS payments,
-                COALESCE(SUM(CASE WHEN type = 'CREDIT' THEN amount ELSE 0 END), 0) AS credits
+                                COALESCE(SUM(CASE
+                                        WHEN type = 'CREDIT' OR (type = 'ADJUSTMENT' AND description LIKE 'CREDIT NOTE:%%')
+                                        THEN amount ELSE 0 END), 0) AS credits
             FROM fee_ledger
             WHERE admno = %s AND term_id = %s AND school_id = %s
         """, (admno, term_id, self.school_id))
