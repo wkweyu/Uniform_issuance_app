@@ -1241,6 +1241,22 @@ def test_fees_service_revokes_votehead_waiver_using_linked_allocations():
     assert connection.commit_calls == 1
 
 
+def test_fees_service_waiver_register_scopes_allocations_and_filters():
+    connection = RecordingConnection(responses=[('all', [])])
+    service = FeesService(connection, school_id=55)
+    service._table_columns_cache = {'student_waivers': {'allocation_mode'}}
+
+    assert service.get_waiver_register('2026-07-01', '2026-07-31', 'ACTIVE') == []
+
+    query, params = connection.cursor_obj.executed[0]
+    assert params == (55, '2026-07-01', '2026-07-31', 'ACTIVE')
+    assert 'waivers.school_id = students.school_id' in query.lower()
+    assert 'waivers.school_id = allocations.school_id' in query.lower()
+    assert 'date(waivers.created_at) >= %s' in query.lower()
+    assert 'waivers.status = %s' in query.lower()
+    assert 'group by waivers.id' in query.lower()
+
+
 def test_fees_service_rejects_votehead_create_with_foreign_student_group():
     connection = RecordingConnection(
         responses=[

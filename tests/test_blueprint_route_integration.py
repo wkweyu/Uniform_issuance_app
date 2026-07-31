@@ -153,6 +153,10 @@ class FeesServiceStub:
         self.calls.append(("get_collection_votehead_summary", start_date, end_date))
         return []
 
+    def get_waiver_register(self, start_date, end_date, status):
+        self.calls.append(("get_waiver_register", start_date, end_date, status))
+        return []
+
     def get_category_change_preflight(self, admno, year_id, term_id):
         self.calls.append(("get_category_change_preflight", admno, year_id, term_id))
         return {"eligible": True, "blockers": [], "invoice_references": []}
@@ -1948,6 +1952,25 @@ def test_revoke_waiver_route_records_reason_with_current_user(client, db_session
 
     assert response.status_code == 302
     assert FeesServiceStub.last_instance.calls == [("revoke_waiver", 44, "Award withdrawn", 10)]
+
+
+def test_fee_waiver_report_forwards_filters_to_service(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(
+        fees_routes, "render_template",
+        lambda template, **context: f"{template}:{context['status']}",
+    )
+
+    response = client.get('/admin/fees/reports/waivers?start_date=2026-07-01&end_date=2026-07-31&status=ACTIVE')
+
+    assert response.status_code == 200
+    assert response.data == b'fee_waiver_report.html:ACTIVE'
+    assert FeesServiceStub.last_instance.calls == [
+        ('get_waiver_register', '2026-07-01', '2026-07-31', 'ACTIVE'),
+    ]
 
 
 def test_receipt_lifecycle_report_passes_audit_filters_to_service(client, db_session, monkeypatch):

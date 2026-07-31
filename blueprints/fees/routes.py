@@ -314,6 +314,24 @@ def fees_waiver_management():
     finally:
         connection.close()
 
+@fees_bp.route('/admin/fees/reports/waivers')
+@login_required
+@admin_required
+def fee_waiver_report():
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    status = request.args.get('status')
+    connection = get_db_connection()
+    service = FeesService(connection)
+    try:
+        records = service.get_waiver_register(start_date, end_date, status)
+        return render_template(
+            'fee_waiver_report.html', records=records, start_date=start_date or '',
+            end_date=end_date or '', status=status or '',
+        )
+    finally:
+        connection.close()
+
 @fees_bp.route('/fees/waiver/assign', methods=['POST'])
 @login_required
 @admin_required

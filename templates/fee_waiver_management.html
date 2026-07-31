@@ -99,9 +99,9 @@
                 <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
                     <h2 class="text-xl font-bold text-gray-800">Recent Disbursements</h2>
                     <div class="flex space-x-2">
-                        <button class="bg-white border border-gray-200 px-3 py-1 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50 transition">
+                        <a href="{{ url_for('fees.fee_waiver_report') }}" class="bg-white border border-gray-200 px-3 py-1 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50 transition">
                             <i class="fas fa-file-export mr-1"></i>Report
-                        </button>
+                        </a>
                     </div>
                 </div>
                 <div class="overflow-x-auto">

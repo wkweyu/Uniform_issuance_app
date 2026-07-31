@@ -2513,6 +2513,61 @@ class FeesService:
         """, (admno, self.school_id))
         return self.cursor.fetchall()
 
+    def get_waiver_register(self, start_date: Optional[str] = None, end_date: Optional[str] = None,
+                            status: Optional[str] = None) -> List[Dict]:
+        """Return auditable waiver assignments for the active school."""
+        has_allocation_mode = self._table_has_column('student_waivers', 'allocation_mode')
+        if has_allocation_mode:
+            query = """
+                SELECT waivers.id, waivers.admno, waivers.status, waivers.allocation_mode,
+                       waivers.created_at, waivers.revoked_at, waivers.revocation_reason,
+                       students.FName, students.SName, categories.name AS category_name,
+                       years.year AS academic_year, terms.term_number,
+                       COALESCE(SUM(allocations.amount), linked_ledger.amount, 0) AS waiver_amount,
+                       COUNT(allocations.id) AS allocation_count
+                FROM student_waivers waivers
+                JOIN studentinfo students ON waivers.admno = students.AdmNo AND waivers.school_id = students.school_id
+                JOIN fee_waiver_categories categories ON waivers.category_id = categories.id AND waivers.school_id = categories.school_id
+                JOIN academic_years years ON waivers.academic_year_id = years.id AND waivers.school_id = years.school_id
+                JOIN uniform_term_dates terms ON waivers.term_id = terms.id AND waivers.school_id = terms.school_id
+                LEFT JOIN fee_ledger linked_ledger ON waivers.ledger_id = linked_ledger.id AND waivers.school_id = linked_ledger.school_id
+                LEFT JOIN fee_waiver_allocations allocations ON waivers.id = allocations.waiver_id AND waivers.school_id = allocations.school_id
+                WHERE waivers.school_id = %s
+            """
+        else:
+            query = """
+                SELECT waivers.id, waivers.admno, waivers.status, 'SINGLE' AS allocation_mode,
+                       waivers.created_at, waivers.revoked_at, waivers.revocation_reason,
+                       students.FName, students.SName, categories.name AS category_name,
+                       years.year AS academic_year, terms.term_number,
+                       COALESCE(linked_ledger.amount, 0) AS waiver_amount, 0 AS allocation_count
+                FROM student_waivers waivers
+                JOIN studentinfo students ON waivers.admno = students.AdmNo AND waivers.school_id = students.school_id
+                JOIN fee_waiver_categories categories ON waivers.category_id = categories.id AND waivers.school_id = categories.school_id
+                JOIN academic_years years ON waivers.academic_year_id = years.id AND waivers.school_id = years.school_id
+                JOIN uniform_term_dates terms ON waivers.term_id = terms.id AND waivers.school_id = terms.school_id
+                LEFT JOIN fee_ledger linked_ledger ON waivers.ledger_id = linked_ledger.id AND waivers.school_id = linked_ledger.school_id
+                WHERE waivers.school_id = %s
+            """
+        filters = []
+        params = [self.school_id]
+        if start_date:
+            filters.append('DATE(waivers.created_at) >= %s')
+            params.append(start_date)
+        if end_date:
+            filters.append('DATE(waivers.created_at) <= %s')
+            params.append(end_date)
+        if status:
+            filters.append('waivers.status = %s')
+            params.append(status)
+        if filters:
+            query += ' AND ' + ' AND '.join(filters)
+        if has_allocation_mode:
+            query += ' GROUP BY waivers.id, linked_ledger.amount'
+        query += ' ORDER BY waivers.created_at DESC, waivers.id DESC'
+        self.cursor.execute(query, tuple(params))
+        return self.cursor.fetchall()
+
     def revoke_waiver(self, waiver_id: int, reason: str, user_id: int) -> None:
         """Revoke a linked active waiver by posting an immutable debit adjustment."""
         reason = (reason or '').strip()
