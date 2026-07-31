@@ -954,6 +954,21 @@ def test_fees_service_category_change_preflight_blocks_paid_term_allocations():
     assert 'allocations.school_id = payments.school_id' in allocation_query.lower()
 
 
+def test_fees_service_category_invoice_replacement_stops_before_writes_when_paid():
+    connection = RecordingConnection(responses=[
+        ('one', {'AdmNo': 1001}), ('one', {'id': 4}), ('one', {'id': 3}),
+        ('all', [{'reference_no': 'INV-1001-4-3'}]), ('one', {'allocation_count': 1}), ('one', {'locked_count': 0}),
+    ])
+    service = FeesService(connection, school_id=55)
+
+    with pytest.raises(FeesError, match='Completed payment allocations exist'):
+        service.replace_category_invoice(1001, 4, 3, 'Boarding', None, 'Boarding correction', user_id=9)
+
+    assert connection.begin_calls == 0
+    assert connection.commit_calls == 0
+    assert all('insert into fee_ledger' not in query.lower() for query, _ in connection.cursor_obj.executed)
+
+
 def test_fees_service_records_reprint_event_after_prior_print():
     connection = RecordingConnection(
         responses=[

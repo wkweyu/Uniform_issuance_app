@@ -748,6 +748,122 @@ class FeesService:
             'blockers': blockers,
         }
 
+    def replace_category_invoice(self, admno: int, year_id: int, term_id: int,
+                                 new_category: str, new_student_group_id: Optional[int],
+                                 reason: str, user_id: int) -> Dict:
+        """Replace an unpaid current-term invoice after a tenant-scoped category correction."""
+        category = (new_category or '').strip()
+        reason = (reason or '').strip()
+        if not category or not reason:
+            raise FeesError('New category and replacement reason are required.')
+        if new_student_group_id is not None:
+            self._assert_student_group_belongs_to_school(new_student_group_id)
+
+        preflight = self.get_category_change_preflight(admno, year_id, term_id)
+        if preflight['blockers']:
+            raise FeesError(' '.join(preflight['blockers']))
+        if len(preflight['invoice_references']) != 1:
+            raise FeesError('Exactly one unpaid standard invoice is required for automatic replacement.')
+
+        original_reference = preflight['invoice_references'][0]
+        self.cursor.execute("""
+            SELECT category, student_group_id
+            FROM studentinfo WHERE AdmNo = %s AND school_id = %s FOR UPDATE
+        """, (admno, self.school_id))
+        student = self.cursor.fetchone()
+        if not student:
+            raise FeesError('Student not found for the active school.')
+        previous_group_id = student.get('student_group_id')
+        target_group_id = new_student_group_id if new_student_group_id is not None else previous_group_id
+
+        self.cursor.execute("""
+            SELECT c.classID, c.class_group_code
+            FROM class_allocation allocation
+            JOIN classes c ON allocation.class_id = c.classID AND allocation.school_id = c.school_id
+            WHERE allocation.student_id = %s AND allocation.is_current = TRUE AND allocation.school_id = %s
+            ORDER BY allocation.id DESC LIMIT 1
+        """, (admno, self.school_id))
+        class_info = self.cursor.fetchone()
+        if not class_info:
+            raise FeesError('Student has no current class assignment for fee structure resolution.')
+
+        self.cursor.execute("""
+            SELECT id, is_locked FROM fee_structures
+            WHERE academic_year_id = %s AND term_id = %s AND class_id = %s
+              AND student_category = %s AND school_id = %s
+            LIMIT 1
+        """, (year_id, term_id, class_info['classID'], category, self.school_id))
+        structure = self.cursor.fetchone()
+        if not structure:
+            self.cursor.execute("""
+                SELECT id, is_locked FROM fee_structures
+                WHERE academic_year_id = %s AND term_id = %s AND class_group_code = %s
+                  AND student_category = %s AND (class_id IS NULL OR class_id = 0) AND school_id = %s
+                LIMIT 1
+            """, (year_id, term_id, class_info['class_group_code'], category, self.school_id))
+            structure = self.cursor.fetchone()
+        if not structure or structure['is_locked']:
+            raise FeesError('No unlocked fee structure exists for the corrected category.')
+
+        self.cursor.execute("""
+            SELECT id, votehead_id, amount FROM fee_ledger
+            WHERE admno = %s AND academic_year_id = %s AND term_id = %s
+              AND type = 'CHARGE' AND reference_no = %s AND school_id = %s
+            ORDER BY id ASC FOR UPDATE
+        """, (admno, year_id, term_id, original_reference, self.school_id))
+        original_rows = self.cursor.fetchall()
+        self.cursor.execute("""
+            SELECT votehead_id, amount FROM fee_structure_items
+            WHERE fee_structure_id = %s AND school_id = %s ORDER BY id ASC
+        """, (structure['id'], self.school_id))
+        replacement_items = self.cursor.fetchall()
+        if not original_rows or not replacement_items:
+            raise FeesError('Invoice replacement data is incomplete.')
+
+        correlation = uuid.uuid4().hex[:24]
+        reversal_reference = f'INV-REV-{correlation}'
+        replacement_reference = f'INV-REP-{correlation}'
+        try:
+            self.connection.begin()
+            for row in original_rows:
+                self.cursor.execute("""
+                    INSERT INTO fee_ledger
+                        (admno, academic_year_id, term_id, type, votehead_id, amount, balance_after,
+                         description, reference_no, transaction_date, created_by, school_id)
+                    VALUES (%s, %s, %s, 'CREDIT', %s, %s, 0, %s, %s, CURDATE(), %s, %s)
+                """, (admno, year_id, term_id, row['votehead_id'], row['amount'],
+                      f'INVOICE REVERSAL: {original_reference} - {reason}', reversal_reference, user_id, self.school_id))
+            for item in replacement_items:
+                self.cursor.execute("""
+                    INSERT INTO fee_ledger
+                        (admno, academic_year_id, term_id, type, votehead_id, amount, balance_after,
+                         description, reference_no, transaction_date, created_by, school_id)
+                    VALUES (%s, %s, %s, 'CHARGE', %s, %s, 0, %s, %s, CURDATE(), %s, %s)
+                """, (admno, year_id, term_id, item['votehead_id'], item['amount'],
+                      f'CATEGORY REPLACEMENT INVOICE: {category}', replacement_reference, user_id, self.school_id))
+            self.cursor.execute("""
+                UPDATE studentinfo SET category = %s, student_group_id = %s
+                WHERE AdmNo = %s AND school_id = %s
+            """, (category, target_group_id, admno, self.school_id))
+            self.cursor.execute("""
+                INSERT INTO fee_invoice_replacements
+                    (school_id, admno, academic_year_id, term_id, original_invoice_reference,
+                     reversal_reference, replacement_invoice_reference, previous_category, new_category,
+                     previous_student_group_id, new_student_group_id, reason, changed_by)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (self.school_id, admno, year_id, term_id, original_reference, reversal_reference,
+                  replacement_reference, student.get('category') or '', category, previous_group_id,
+                  target_group_id, reason, user_id))
+            self._recalculate_student_ledger_balances(admno)
+            self.connection.commit()
+            return {'original_reference': original_reference, 'reversal_reference': reversal_reference,
+                    'replacement_reference': replacement_reference}
+        except Exception as exc:
+            self.connection.rollback()
+            if isinstance(exc, FeesError):
+                raise
+            raise FeesError(f'Category invoice replacement failed: {str(exc)}')
+
     def get_outstanding_voteheads(self, admno: int) -> List[Dict]:
         """Return the student's outstanding voteheads in payment priority order."""
         self.cursor.execute("""

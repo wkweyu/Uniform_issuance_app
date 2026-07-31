@@ -145,6 +145,10 @@ class FeesServiceStub:
         self.calls.append(("get_category_change_preflight", admno, year_id, term_id))
         return {"eligible": True, "blockers": [], "invoice_references": []}
 
+    def replace_category_invoice(self, **kwargs):
+        self.calls.append(("replace_category_invoice", kwargs))
+        return {"replacement_reference": "INV-REP-test"}
+
     def record_receipt_print(self, payment_id, user_id):
         self.calls.append(("record_receipt_print", payment_id, user_id))
         return "PRINTED"
@@ -1950,6 +1954,25 @@ def test_collection_report_loads_completed_and_status_summaries(client, db_sessi
         ("get_collection_summary", "2026-07-01", "2026-07-31"),
         ("get_collection_status_summary", "2026-07-01", "2026-07-31"),
     ]
+
+
+def test_replace_category_invoice_route_forwards_audited_request(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+
+    response = client.post("/admin/fees/student/1001/replace-category-invoice", data={
+        "year_id": "4", "term_id": "3", "category": "Boarding", "student_group_id": "7",
+        "reason": "Boarding correction",
+    })
+
+    assert response.status_code == 200
+    assert response.json["replacement_reference"] == "INV-REP-test"
+    assert FeesServiceStub.last_instance.calls == [("replace_category_invoice", {
+        "admno": 1001, "year_id": 4, "term_id": 3, "new_category": "Boarding",
+        "new_student_group_id": 7, "reason": "Boarding correction", "user_id": 10,
+    })]
 
 
 def test_fee_receipts_register_route_rejects_invalid_admno_filter(client, db_session, monkeypatch):

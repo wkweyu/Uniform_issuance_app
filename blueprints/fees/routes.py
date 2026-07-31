@@ -832,6 +832,28 @@ def api_category_change_preflight():
     finally:
         connection.close()
 
+@fees_bp.route('/admin/fees/student/<int:admno>/replace-category-invoice', methods=['POST'])
+@login_required
+@admin_required
+def replace_category_invoice(admno):
+    connection = get_db_connection()
+    service = FeesService(connection)
+    try:
+        result = service.replace_category_invoice(
+            admno=admno,
+            year_id=_required_int(request.form.get('year_id'), 'year_id'),
+            term_id=_required_int(request.form.get('term_id'), 'term_id'),
+            new_category=_required_text(request.form.get('category'), 'category'),
+            new_student_group_id=_optional_int(request.form.get('student_group_id'), 'student_group_id'),
+            reason=_required_text(request.form.get('reason'), 'reason'),
+            user_id=session['userNo'],
+        )
+        return jsonify({'success': True, **result})
+    except (ValueError, FeesError) as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    finally:
+        connection.close()
+
 @fees_bp.route('/api/fees/payment-duplicate')
 @login_required
 def api_payment_duplicate():
