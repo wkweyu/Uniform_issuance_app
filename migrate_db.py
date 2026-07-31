@@ -1,9 +1,15 @@
 import pymysql
 import os
 import glob
+import argparse
 import config
 
-def migrate_db():
+
+class MigrationError(RuntimeError):
+    """Raised when one or more database migration statements fail."""
+
+
+def migrate_db(continue_on_error=False):
     # Enable SSL for SkySQL
     ssl_config = None
     ca_path = os.path.join(os.path.dirname(__file__), 'globalsignrootca.pem')
@@ -31,6 +37,8 @@ def migrate_db():
 
     try:
         with connection.cursor() as cursor:
+            errors = []
+
             # First run schema.sql if it's new
             if os.path.exists('schema.sql'):
                 print("Running schema.sql...")
@@ -42,8 +50,11 @@ def migrate_db():
                         if statement:
                             cursor.execute(statement)
                     print("✔️ schema.sql completed.")
-                except Exception as e:
-                    print(f"⚠️ schema.sql had issues (might already be applied): {e}")
+                except Exception as exc:
+                    errors.append(('schema.sql', str(exc)))
+                    print(f"❌ schema.sql failed: {exc}")
+                    if not continue_on_error:
+                        raise MigrationError('schema.sql failed') from exc
 
             # Now run all migrations in order
             migration_files = sorted(glob.glob('migrations/*.sql'))
@@ -51,37 +62,54 @@ def migrate_db():
                 print(f"Running migration: {mig_file}...")
                 with open(mig_file, 'r') as f:
                     sql_script = f.read()
-                
+
                 # Split statements and execute one by one
                 statements = sql_script.split(';')
                 for statement in statements:
                     statement = statement.strip()
                     if not statement:
                         continue
-                    
+
                     try:
                         cursor.execute(statement)
                         # print(f"  ✔️ Executed statement.")
-                    except pymysql.err.InternalError as e:
-                        if 'Duplicate column name' in str(e) or 'already exists' in str(e) or 'Duplicate key name' in str(e) or 'Duplicate entry' in str(e):
+                    except pymysql.err.InternalError as exc:
+                        if 'Duplicate column name' in str(exc) or 'already exists' in str(exc) or 'Duplicate key name' in str(exc) or 'Duplicate entry' in str(exc):
                             # print(f"  ⏭️ Skipping statement (already applied).")
                             pass
                         else:
-                            print(f"  ❌ Error in statement: {e}")
-                    except pymysql.err.OperationalError as e:
-                        if 'Duplicate column name' in str(e) or 'already exists' in str(e) or 'Duplicate key name' in str(e):
+                            errors.append((mig_file, str(exc)))
+                            print(f"  ❌ Error in statement: {exc}")
+                            if not continue_on_error:
+                                raise MigrationError(f'Migration failed: {mig_file}') from exc
+                    except pymysql.err.OperationalError as exc:
+                        if 'Duplicate column name' in str(exc) or 'already exists' in str(exc) or 'Duplicate key name' in str(exc):
                              # print(f"  ⏭️ Skipping statement (already applied).")
                              pass
                         else:
-                            print(f"  ❌ Error in statement: {e}")
-                    except Exception as e:
-                        print(f"  ❌ Unexpected error in statement: {e}")
-                
+                            errors.append((mig_file, str(exc)))
+                            print(f"  ❌ Error in statement: {exc}")
+                            if not continue_on_error:
+                                raise MigrationError(f'Migration failed: {mig_file}') from exc
+                    except Exception as exc:
+                        errors.append((mig_file, str(exc)))
+                        print(f"  ❌ Unexpected error in statement: {exc}")
+                        if not continue_on_error:
+                            raise MigrationError(f'Migration failed: {mig_file}') from exc
+
                 print(f"✔️ Finished processing {mig_file}")
 
+        if errors:
+            raise MigrationError(f'{len(errors)} migration statement(s) failed.')
         print("\n✅ All database migrations completed.")
     finally:
         connection.close()
 
 if __name__ == "__main__":
-    migrate_db()
+    parser = argparse.ArgumentParser(description='Run ordered database migrations.')
+    parser.add_argument(
+        '--continue-on-error', action='store_true',
+        help='Process all migrations for diagnostics, then exit with failure if any statement failed.',
+    )
+    args = parser.parse_args()
+    migrate_db(continue_on_error=args.continue_on_error)

@@ -27,7 +27,22 @@ pip install -r requirements.txt
 Successfully installed Flask-WTF-1.2.2 wtforms-3.2.1
 ```
 
-### 2. Run the Application
+### 2. Run Database Migrations
+Set `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, and `DB_NAME` for the target environment, then run the ordered migration runner against a staging or production-equivalent database first:
+
+```bash
+python3 migrate_db.py
+```
+
+The runner fails closed on an unexpected SQL error. For diagnostics on an existing database, process every migration and still receive a non-zero exit on any failure:
+
+```bash
+python3 migrate_db.py --continue-on-error
+```
+
+Do not use shell wildcard redirection such as `mysql < migrations/*.sql`; it does not reliably execute every migration file in order.
+
+### 3. Run the Application
 ```bash
 source venv/bin/activate
 python3 app.py
@@ -39,7 +54,7 @@ python3 app.py
 * Debug mode: off
 ```
 
-### 3. Access the Application
+### 4. Access the Application
 Open browser: **http://localhost:5000/login**
 
 ---
