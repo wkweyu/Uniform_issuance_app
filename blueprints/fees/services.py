@@ -3110,3 +3110,34 @@ def _get_fee_ledger_summary(self, start_date: str, end_date: str) -> List[Dict]:
 
 
 FeesService.get_fee_ledger_summary = _get_fee_ledger_summary
+
+
+def _get_receivables_class_summary(self) -> List[Dict]:
+        """Aggregate positive latest student balances by current class and stream."""
+        self.cursor.execute("""
+                SELECT COALESCE(classes.display_name, 'Unassigned') AS class_name,
+                             COALESCE(classes.stream_code, '-') AS stream_code,
+                             COUNT(*) AS student_count, SUM(latest_balances.balance_after) AS total_balance
+                FROM (
+                        SELECT ledger.admno, ledger.balance_after
+                        FROM fee_ledger ledger
+                        JOIN (
+                                SELECT admno, MAX(id) AS latest_ledger_id
+                                FROM fee_ledger
+                                WHERE school_id = %s
+                                GROUP BY admno
+                        ) latest ON ledger.id = latest.latest_ledger_id
+                        WHERE ledger.school_id = %s AND ledger.balance_after > 0
+                ) latest_balances
+                LEFT JOIN class_allocation allocations
+                    ON latest_balances.admno = allocations.student_id AND allocations.school_id = %s
+                    AND allocations.is_current = TRUE
+                LEFT JOIN classes
+                    ON allocations.class_id = classes.classID AND allocations.school_id = classes.school_id
+                GROUP BY classes.display_name, classes.stream_code
+                ORDER BY total_balance DESC, class_name ASC
+        """, (self.school_id, self.school_id, self.school_id))
+        return self.cursor.fetchall()
+
+
+FeesService.get_receivables_class_summary = _get_receivables_class_summary

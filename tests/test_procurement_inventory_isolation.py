@@ -1050,6 +1050,20 @@ def test_fees_service_ledger_summary_scopes_terms_and_calculates_net_movement():
     assert "ledger.description like 'void receipt:%%'" in query.lower()
 
 
+def test_fees_service_receivables_class_summary_uses_latest_tenant_balance():
+    connection = RecordingConnection(responses=[('all', [])])
+    service = FeesService(connection, school_id=55)
+
+    assert service.get_receivables_class_summary() == []
+
+    query, params = connection.cursor_obj.executed[0]
+    assert params == (55, 55, 55)
+    assert 'select admno, max(id) as latest_ledger_id' in query.lower()
+    assert 'ledger.school_id = %s and ledger.balance_after > 0' in query.lower()
+    assert 'allocations.is_current = true' in query.lower()
+    assert 'allocations.school_id = classes.school_id' in query.lower()
+
+
 def test_fees_service_category_change_preflight_blocks_paid_term_allocations():
     connection = RecordingConnection(responses=[
         ('one', {'AdmNo': 1001}), ('one', {'id': 4}), ('one', {'id': 3}),

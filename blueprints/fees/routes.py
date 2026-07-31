@@ -228,7 +228,8 @@ def fee_arrears_aging_report():
     service = FeesService(connection)
     try:
         data = service.get_arrears_aging_report()
-        return render_template("fees_aging_report.html", data=data)
+        class_summary = service.get_receivables_class_summary()
+        return render_template("fees_aging_report.html", data=data, class_summary=class_summary)
     finally:
         connection.close()
 

@@ -165,6 +165,14 @@ class FeesServiceStub:
         self.calls.append(("get_fee_ledger_summary", start_date, end_date))
         return []
 
+    def get_arrears_aging_report(self):
+        self.calls.append(("get_arrears_aging_report",))
+        return []
+
+    def get_receivables_class_summary(self):
+        self.calls.append(("get_receivables_class_summary",))
+        return []
+
     def get_waiver_register(self, start_date, end_date, status):
         self.calls.append(("get_waiver_register", start_date, end_date, status))
         return []
@@ -2063,6 +2071,25 @@ def test_fee_ledger_summary_report_forwards_dates(client, db_session, monkeypatc
     assert response.data == b'fee_ledger_summary_report.html:2026-07-31'
     assert FeesServiceStub.last_instance.calls == [
         ('get_fee_ledger_summary', '2026-07-01', '2026-07-31'),
+    ]
+
+
+def test_fee_arrears_aging_report_loads_receivables_class_summary(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(
+        fees_routes, "render_template",
+        lambda template, **context: f"{template}:{len(context['class_summary'])}",
+    )
+
+    response = client.get('/admin/fees/reports/aging')
+
+    assert response.status_code == 200
+    assert response.data == b'fees_aging_report.html:0'
+    assert FeesServiceStub.last_instance.calls == [
+        ('get_arrears_aging_report',), ('get_receivables_class_summary',),
     ]
 
 
