@@ -3069,3 +3069,44 @@ def _get_fee_revenue_analysis(self, start_date: str, end_date: str) -> List[Dict
 
 
 FeesService.get_fee_revenue_analysis = _get_fee_revenue_analysis
+
+
+def _get_fee_ledger_summary(self, start_date: str, end_date: str) -> List[Dict]:
+        """Summarize fee-ledger activity by term without summing student running balances."""
+        self.cursor.execute("""
+                SELECT years.year AS academic_year, terms.term_number,
+                             COALESCE(SUM(CASE WHEN ledger.type = 'CHARGE' THEN ledger.amount ELSE 0 END), 0) AS charges,
+                             COALESCE(SUM(CASE WHEN ledger.type = 'DEBIT'
+                                        OR (ledger.type = 'ADJUSTMENT' AND ledger.description LIKE 'DEBIT NOTE:%%')
+                                        THEN ledger.amount ELSE 0 END), 0) AS debits,
+                             COALESCE(SUM(CASE WHEN ledger.type = 'PAYMENT' THEN ledger.amount ELSE 0 END), 0) AS payments,
+                             COALESCE(SUM(CASE WHEN ledger.type = 'CREDIT' AND ledger.reference_no LIKE 'WVR-%%'
+                                        THEN ledger.amount ELSE 0 END), 0) AS waivers,
+                             COALESCE(SUM(CASE WHEN (ledger.type = 'CREDIT' AND (ledger.reference_no IS NULL OR ledger.reference_no NOT LIKE 'WVR-%%'))
+                                        OR (ledger.type = 'ADJUSTMENT' AND ledger.description LIKE 'CREDIT NOTE:%%')
+                                        THEN ledger.amount ELSE 0 END), 0) AS credits,
+                             COALESCE(SUM(CASE WHEN ledger.type = 'REFUND' THEN ledger.amount ELSE 0 END), 0) AS refunds,
+                             COALESCE(SUM(CASE WHEN ledger.type = 'ADJUSTMENT' AND ledger.description LIKE 'VOID RECEIPT:%%'
+                                        THEN ledger.amount ELSE 0 END), 0) AS void_reversals,
+                             COUNT(*) AS transaction_count
+                FROM fee_ledger ledger
+                JOIN academic_years years
+                    ON ledger.academic_year_id = years.id AND ledger.school_id = years.school_id
+                JOIN uniform_term_dates terms
+                    ON ledger.term_id = terms.id AND ledger.school_id = terms.school_id
+                WHERE ledger.transaction_date BETWEEN %s AND %s AND ledger.school_id = %s
+                GROUP BY ledger.academic_year_id, years.year, ledger.term_id, terms.term_number
+                ORDER BY years.year DESC, terms.term_number DESC
+        """, (start_date, end_date, self.school_id))
+        records = self.cursor.fetchall()
+        for record in records:
+                record['net_movement'] = (
+                        Decimal(str(record['charges'])) + Decimal(str(record['debits']))
+                        + Decimal(str(record['refunds'])) + Decimal(str(record['void_reversals']))
+                        - Decimal(str(record['payments'])) - Decimal(str(record['credits']))
+                        - Decimal(str(record['waivers']))
+                )
+        return records
+
+
+FeesService.get_fee_ledger_summary = _get_fee_ledger_summary

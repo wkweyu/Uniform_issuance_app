@@ -1029,6 +1029,27 @@ def test_fees_service_revenue_analysis_scopes_ledger_and_completed_allocations()
     assert "payments.status = 'completed'" in allocations_query.lower()
 
 
+def test_fees_service_ledger_summary_scopes_terms_and_calculates_net_movement():
+    connection = RecordingConnection(
+        responses=[
+            ('all', [{'academic_year': 2026, 'term_number': 2, 'charges': Decimal('1000.00'),
+                      'debits': Decimal('50.00'), 'payments': Decimal('800.00'), 'credits': Decimal('20.00'),
+                      'waivers': Decimal('100.00'), 'refunds': Decimal('10.00'),
+                      'void_reversals': Decimal('30.00'), 'transaction_count': 7}]),
+        ]
+    )
+    service = FeesService(connection, school_id=55)
+
+    records = service.get_fee_ledger_summary('2026-07-01', '2026-07-31')
+
+    assert records[0]['net_movement'] == Decimal('170.00')
+    query, params = connection.cursor_obj.executed[0]
+    assert params == ('2026-07-01', '2026-07-31', 55)
+    assert 'ledger.school_id = years.school_id' in query.lower()
+    assert 'ledger.school_id = terms.school_id' in query.lower()
+    assert "ledger.description like 'void receipt:%%'" in query.lower()
+
+
 def test_fees_service_category_change_preflight_blocks_paid_term_allocations():
     connection = RecordingConnection(responses=[
         ('one', {'AdmNo': 1001}), ('one', {'id': 4}), ('one', {'id': 3}),

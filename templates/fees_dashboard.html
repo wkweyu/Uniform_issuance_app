@@ -164,6 +164,11 @@
                             <i class="fas fa-arrow-right text-slate-300 group-hover:text-emerald-700 transition -translate-x-2 opacity-0 group-hover:opacity-100 group-hover:translate-x-0"></i>
                         </a>
 
+                        <a href="{{ url_for('fees.fee_ledger_summary_report') }}" class="flex items-center justify-between p-4 rounded-2xl hover:bg-slate-50 border border-transparent hover:border-slate-100 transition group">
+                            <div class="flex items-center gap-4"><div class="w-10 h-10 bg-cyan-50 rounded-xl flex items-center justify-center text-cyan-700"><i class="fas fa-book text-sm"></i></div><div><div class="text-xs font-black text-slate-900 uppercase tracking-widest">Ledger Summary</div><div class="text-[10px] font-bold text-slate-400">Term movements and net account position</div></div></div>
+                            <i class="fas fa-arrow-right text-slate-300 group-hover:text-cyan-700 transition -translate-x-2 opacity-0 group-hover:opacity-100 group-hover:translate-x-0"></i>
+                        </a>
+
                         <a href="{{ url_for('fees.receipt_lifecycle_report') }}" class="flex items-center justify-between p-4 rounded-2xl hover:bg-slate-50 border border-transparent hover:border-slate-100 transition group">
                             <div class="flex items-center gap-4">
                                 <div class="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center text-amber-700">
