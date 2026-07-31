@@ -131,6 +131,22 @@ class SmokeTestRunner:
         # The form page should exist (may redirect on POST but GET should load)
         self.log("INFO", "  Issue uniform form loaded")
 
+    def test_fee_reporting_routes_load(self):
+        """Test the authenticated fee reporting surfaces without posting financial data."""
+        routes = [
+            "/admin/fees",
+            "/admin/fees/reports/collection",
+            "/admin/fees/reports/revenue-analysis",
+            "/admin/fees/reports/ledger-summary",
+            "/admin/fees/reports/aging",
+            "/admin/fees/reports/waivers",
+            "/admin/finance/reports/cashier-sessions",
+        ]
+        for route in routes:
+            resp = self.session.get(f"{self.base_url}{route}", timeout=10)
+            assert resp.status_code == 200, f"{route}: expected 200, got {resp.status_code}"
+        self.log("INFO", f"  Loaded {len(routes)} fee and cashier reporting routes")
+
     def test_protected_admin_route_forbidden_to_user(self):
         """Test that non-admin users get denied on @admin_required routes."""
         # Assuming current user 'admin' with TA=1 is admin; this test would need a non-admin user
@@ -179,6 +195,7 @@ class SmokeTestRunner:
         # Test authenticated access
         self.test("Dashboard Loads", self.test_index_dashboard)
         self.test("Issue Uniform Form", self.test_issue_uniform_form_loads)
+        self.test("Fee Reporting Routes", self.test_fee_reporting_routes_load)
         self.test("Admin Route Access", self.test_protected_admin_route_forbidden_to_user)
 
         # Test session/logout

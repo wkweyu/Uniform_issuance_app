@@ -61,7 +61,10 @@ jobs:
           DB_PORT: 3306
         run: |
           mysql -h $DB_HOST -u $DB_USER -p$DB_PASSWORD $DB_NAME < uniform_app_setup.sql || true
-          mysql -h $DB_HOST -u $DB_USER -p$DB_PASSWORD $DB_NAME < migrations/*.sql || true
+          for migration in migrations/*.sql; do
+            echo "Applying $migration"
+            mysql -h $DB_HOST -u $DB_USER -p$DB_PASSWORD $DB_NAME < "$migration"
+          done
           # Add test user: admin/admin123 with school DEFAULT
           mysql -h $DB_HOST -u $DB_USER -p$DB_PASSWORD $DB_NAME << EOF
           INSERT IGNORE INTO schools (id, name, code, is_active) VALUES (1, 'DEFAULT School', 'DEFAULT', 1);

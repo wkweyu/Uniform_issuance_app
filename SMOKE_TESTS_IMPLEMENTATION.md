@@ -16,16 +16,17 @@ This document summarizes the smoke test implementation and automated testing wor
 - Covers login flow, dashboard access, protected routes, and logout
 - Reports detailed pass/fail results with structured output
 
-**Test Cases (9 total):**
+**Test Cases (10 total):**
 1. **Health Check** — Verifies `/health` endpoint returns healthy status
 2. **Login Page Loads** — GET `/login` returns 200 with CSRF token
 3. **Login Success** — POST login with valid credentials, session established
 4. **Unauthenticated Redirect** — Unauth users redirected from protected routes
 5. **Dashboard Loads** — GET `/` (index) after login returns 200
 6. **Issue Uniform Form** — GET `/issue_uniform` form accessible
-7. **Admin Route Access** — Admin-only routes respect permissions
-8. **Health Endpoint JSON Structure** — Response contains required keys
-9. **Logout** — Session cleared after logout, protected routes redirect
+7. **Fee Reporting Routes** — Authenticated fee, waiver, aging, revenue, ledger, and cashier reports load
+8. **Admin Route Access** — Admin-only routes respect permissions
+9. **Health Endpoint JSON Structure** — Response contains required keys
+10. **Logout** — Session cleared after logout, protected routes redirect
 
 **Local Execution:**
 ```bash
@@ -36,7 +37,7 @@ python3 smoke_tests.py --base-url http://127.0.0.1:5000 --username admin --passw
 
 **Result (locally tested):**
 ```
-Total: 9 | Passed: 9 | Failed: 0 | Skipped: 0
+Total: 10 | Passed: 10 | Failed: 0 | Skipped: 0
 ```
 
 ### 2. ✅ GitHub Actions Workflow (`.github/workflows/smoke-tests.yml`)
@@ -55,7 +56,7 @@ Total: 9 | Passed: 9 | Failed: 0 | Skipped: 0
 3. Install dependencies from `requirements.txt`
 4. Start MySQL 8.0 service (for test DB)
 5. Wait for MySQL to be ready
-6. Initialize database schema from `uniform_app_setup.sql` and migrations
+6. Initialize database schema from `uniform_app_setup.sql` and every ordered `migrations/*.sql` file
 7. Load test data (schools, admin user)
 8. Start Flask app in development mode
 9. Run smoke tests against `http://127.0.0.1:5000`
