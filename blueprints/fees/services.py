@@ -596,6 +596,65 @@ class FeesService:
         result = self.cursor.fetchone()
         return Decimal(str(result['balance_after'])) if result else Decimal("0.00")
 
+    def create_account_adjustment(
+        self, admno: int, adjustment_type: str, votehead_id: int, amount: Decimal,
+        year_id: int, term_id: int, effective_date: str, reason: str,
+        supporting_reference: str, user_id: int,
+    ) -> int:
+        """Post an audited debit or credit note distinct from payments and waivers."""
+        adjustment_type = (adjustment_type or '').strip().upper()
+        if adjustment_type not in ('DEBIT', 'CREDIT'):
+            raise FeesError('Adjustment type must be DEBIT or CREDIT.')
+        amount = Decimal(str(amount))
+        if amount <= 0:
+            raise FeesError('Adjustment amount must be greater than zero.')
+        reason = (reason or '').strip()
+        supporting_reference = (supporting_reference or '').strip()
+        if not reason:
+            raise FeesError('An adjustment reason is required.')
+        if not supporting_reference:
+            raise FeesError('A supporting reference is required.')
+        try:
+            self._assert_student_belongs_to_school(admno)
+            self._assert_academic_year_belongs_to_school(year_id)
+            self._assert_term_belongs_to_school(term_id, year_id)
+            self._assert_voteheads_belong_to_school([votehead_id])
+            self.connection.begin()
+            self.cursor.execute("""
+                INSERT INTO fee_adjustments
+                    (admno, academic_year_id, term_id, votehead_id, amount, adjustment_type, reason,
+                     effective_date, supporting_reference, approved_by, created_by, school_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                admno, year_id, term_id, votehead_id, amount, adjustment_type, reason,
+                effective_date, supporting_reference, user_id, user_id, self.school_id,
+            ))
+            adjustment_id = self.cursor.lastrowid
+            current_balance = self.get_student_balance(admno)
+            new_balance = current_balance + amount if adjustment_type == 'DEBIT' else current_balance - amount
+            reference = f"{adjustment_type[:3]}-{adjustment_id}"
+            self.cursor.execute("""
+                INSERT INTO fee_ledger
+                    (admno, academic_year_id, term_id, type, votehead_id, amount, balance_after,
+                     description, reference_no, transaction_date, created_by, school_id)
+                VALUES (%s, %s, %s, 'ADJUSTMENT', %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                admno, year_id, term_id, votehead_id, amount, new_balance,
+                f"{adjustment_type} NOTE: {reason}", reference, effective_date, user_id, self.school_id,
+            ))
+            ledger_id = self.cursor.lastrowid
+            self.cursor.execute(
+                "UPDATE fee_adjustments SET ledger_id = %s WHERE id = %s AND school_id = %s",
+                (ledger_id, adjustment_id, self.school_id),
+            )
+            self.connection.commit()
+            return adjustment_id
+        except Exception as exc:
+            self.connection.rollback()
+            if isinstance(exc, FeesError):
+                raise
+            raise FeesError(f'Adjustment posting failed: {str(exc)}')
+
     def get_student_term_summary(self, admno: int, term_id: int) -> Dict:
         """Summarize current-term ledger movements for a student."""
         self.cursor.execute("""

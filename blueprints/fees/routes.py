@@ -269,6 +269,40 @@ def assign_waiver():
         connection.close()
     return redirect(url_for('fees.fees_waiver_management'))
 
+@fees_bp.route('/admin/fees/adjustments', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def manage_fee_adjustments():
+    connection = get_db_connection()
+    service = FeesService(connection)
+    class_service = ClassManagementService(connection, school_id=service.school_id)
+    try:
+        if request.method == 'POST':
+            service.create_account_adjustment(
+                admno=_required_int(request.form.get('admno'), 'admno'),
+                adjustment_type=_required_text(request.form.get('adjustment_type'), 'adjustment_type'),
+                votehead_id=_required_int(request.form.get('votehead_id'), 'votehead_id'),
+                amount=_parse_decimal(request.form.get('amount'), 'amount'),
+                year_id=_required_int(request.form.get('year_id'), 'year_id'),
+                term_id=_required_int(request.form.get('term_id'), 'term_id'),
+                effective_date=_required_text(request.form.get('effective_date'), 'effective_date'),
+                reason=_required_text(request.form.get('reason'), 'reason'),
+                supporting_reference=_required_text(request.form.get('supporting_reference'), 'supporting_reference'),
+                user_id=session['userNo'],
+            )
+            flash('Account adjustment posted.', 'success')
+            return redirect(url_for('fees.manage_fee_adjustments'))
+        return render_template(
+            'manage_fee_adjustments.html',
+            voteheads=service.get_voteheads(), years=class_service.get_all_academic_years(),
+            terms=service.get_recent_terms(), now=datetime.now(),
+        )
+    except (ValueError, FeesError) as exc:
+        flash(str(exc), 'error')
+        return redirect(url_for('fees.manage_fee_adjustments'))
+    finally:
+        connection.close()
+
 @fees_bp.route('/admin/fees/structures', methods=['GET', 'POST'])
 @login_required
 @admin_required

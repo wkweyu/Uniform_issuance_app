@@ -157,6 +157,14 @@ class FeesServiceStub:
         self.calls.append(("get_recent_terms",))
         return [{"id": 3, "term_number": 2}]
 
+    def get_voteheads(self):
+        self.calls.append(("get_voteheads",))
+        return [{"id": 4, "name": "Tuition"}]
+
+    def create_account_adjustment(self, admno, adjustment_type, votehead_id, amount, year_id, term_id, effective_date, reason, supporting_reference, user_id):
+        self.calls.append(("create_account_adjustment", admno, adjustment_type, votehead_id, amount, year_id, term_id, effective_date, reason, supporting_reference, user_id))
+        return 31
+
     def get_current_term_id(self):
         self.calls.append(("get_current_term_id",))
         return 3
@@ -1881,6 +1889,26 @@ def test_repost_fee_receipt_route_posts_new_reference(client, db_session, monkey
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/admin/fees/receipt/88")
     assert FeesServiceStub.last_instance.calls == [("repost_cancelled_receipt", 77, "MPESA-NEW", "2026-07-31", 10)]
+
+
+def test_fee_adjustment_route_posts_typed_adjustment(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+
+    response = client.post("/admin/fees/adjustments", data={
+        "admno": "1001", "adjustment_type": "CREDIT", "votehead_id": "4", "amount": "250.00",
+        "year_id": "2026", "term_id": "3", "effective_date": "2026-07-31",
+        "reason": "Approved correction", "supporting_reference": "CASE-42",
+    })
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/fees/adjustments")
+    assert FeesServiceStub.last_instance.calls == [
+        ("create_account_adjustment", 1001, "CREDIT", 4, Decimal("250.00"), 2026, 3, "2026-07-31", "Approved correction", "CASE-42", 10),
+    ]
 
 
 def test_procurement_dashboard_route_rejects_invalid_supplier_filter(client, db_session, monkeypatch):

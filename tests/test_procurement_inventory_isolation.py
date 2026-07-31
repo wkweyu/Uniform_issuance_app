@@ -821,6 +821,38 @@ def test_fees_service_reallocation_recalculates_both_student_ledger_balances():
     assert lifecycle_params[:4] == (55, 12, 'Wrong sibling', 9)
 
 
+def test_fees_service_posts_credit_note_with_linked_adjustment_ledger_entry():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {'AdmNo': 1001}),
+            ('one', {'id': 2026}),
+            ('one', {'id': 3}),
+            ('all', [{'id': 4}]),
+            ('one', {'balance_after': Decimal('2000.00')}),
+        ]
+    )
+    connection.cursor_obj.lastrowid = 31
+    service = FeesService(connection, school_id=55)
+
+    adjustment_id = service.create_account_adjustment(
+        admno=1001, adjustment_type='CREDIT', votehead_id=4, amount=Decimal('250.00'),
+        year_id=2026, term_id=3, effective_date='2026-07-31', reason='Approved overcharge correction',
+        supporting_reference='CASE-42', user_id=9,
+    )
+
+    assert adjustment_id == 31
+    assert connection.begin_calls == 1
+    assert connection.commit_calls == 1
+    adjustment_query, adjustment_params = connection.cursor_obj.executed[4]
+    assert 'insert into fee_adjustments' in adjustment_query.lower()
+    assert adjustment_params == (1001, 2026, 3, 4, Decimal('250.00'), 'CREDIT', 'Approved overcharge correction', '2026-07-31', 'CASE-42', 9, 9, 55)
+    ledger_query, ledger_params = connection.cursor_obj.executed[6]
+    assert "'adjustment'" in ledger_query.lower()
+    assert ledger_params[5] == Decimal('1750.00')
+    assert ledger_params[6] == 'CREDIT NOTE: Approved overcharge correction'
+    assert ledger_params[7] == 'CRE-31'
+
+
 def test_fees_service_rejects_structure_create_with_foreign_votehead():
     connection = RecordingConnection(
         responses=[

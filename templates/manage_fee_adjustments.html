@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+
+{% block title %}Fee Account Adjustments{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto px-4 py-8">
+    <div class="flex items-center justify-between gap-4 mb-8"><div><h1 class="text-2xl font-extrabold text-gray-900">Debit and Credit Notes</h1><p class="text-sm text-gray-500">Post audited student-account corrections without creating a payment or waiver.</p></div><a href="{{ url_for('fees.fees_dashboard') }}" class="text-sm font-semibold text-blue-700 hover:text-blue-900">Fees dashboard</a></div>
+    <form method="post" class="bg-white border border-gray-200 rounded-lg p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="block text-sm font-semibold text-gray-700">Admission number<input name="admno" type="number" required class="mt-1 block w-full border-gray-300 rounded-md"></label>
+        <label class="block text-sm font-semibold text-gray-700">Note type<select name="adjustment_type" required class="mt-1 block w-full border-gray-300 rounded-md"><option value="DEBIT">Debit note (increases balance)</option><option value="CREDIT">Credit note (reduces balance)</option></select></label>
+        <label class="block text-sm font-semibold text-gray-700">Votehead<select name="votehead_id" required class="mt-1 block w-full border-gray-300 rounded-md"><option value="">Select votehead</option>{% for votehead in voteheads %}<option value="{{ votehead.id }}">{{ votehead.name }}</option>{% endfor %}</select></label>
+        <label class="block text-sm font-semibold text-gray-700">Amount<input name="amount" type="number" min="0.01" step="0.01" required class="mt-1 block w-full border-gray-300 rounded-md"></label>
+        <label class="block text-sm font-semibold text-gray-700">Academic year<select name="year_id" required class="mt-1 block w-full border-gray-300 rounded-md">{% for year in years %}<option value="{{ year.id }}" {% if year.is_current %}selected{% endif %}>{{ year.year }}</option>{% endfor %}</select></label>
+        <label class="block text-sm font-semibold text-gray-700">Term<select name="term_id" required class="mt-1 block w-full border-gray-300 rounded-md">{% for term in terms %}<option value="{{ term.id }}">Term {{ term.term_number }} - {{ term.year }}</option>{% endfor %}</select></label>
+        <label class="block text-sm font-semibold text-gray-700">Effective date<input name="effective_date" type="date" value="{{ now.strftime('%Y-%m-%d') }}" required class="mt-1 block w-full border-gray-300 rounded-md"></label>
+        <label class="block text-sm font-semibold text-gray-700">Supporting reference<input name="supporting_reference" maxlength="100" required class="mt-1 block w-full border-gray-300 rounded-md"></label>
+        <label class="block md:col-span-2 text-sm font-semibold text-gray-700">Reason<textarea name="reason" required maxlength="1000" class="mt-1 block w-full border-gray-300 rounded-md"></textarea></label>
+        <div class="md:col-span-2 flex justify-end"><button type="submit" class="bg-blue-700 hover:bg-blue-800 text-white font-semibold px-5 py-2 rounded-md">Post adjustment</button></div>
+    </form>
+</div>
+{% endblock %}
