@@ -2668,3 +2668,45 @@ def _get_invoice_replacement_register(self, start_date: Optional[str] = None,
 
 
 FeesService.get_invoice_replacement_register = _get_invoice_replacement_register
+
+
+def _get_collection_class_summary(self, start_date: str, end_date: str) -> List[Dict]:
+        """Summarize completed collections by each student's current class and stream."""
+        fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
+        if fee_payments_has_school_id:
+                self.cursor.execute("""
+                        SELECT COALESCE(classes.display_name, 'Unassigned') AS class_name,
+                                     COALESCE(classes.stream_code, '-') AS stream_code,
+                                     SUM(payments.amount) AS total_amount, COUNT(*) AS count
+                        FROM fee_payments payments
+                        LEFT JOIN class_allocation allocations
+                            ON payments.admno = allocations.student_id AND payments.school_id = allocations.school_id
+                            AND allocations.is_current = TRUE
+                        LEFT JOIN classes ON allocations.class_id = classes.classID
+                            AND allocations.school_id = classes.school_id
+                        WHERE payments.payment_date BETWEEN %s AND %s
+                            AND payments.status = 'COMPLETED' AND payments.school_id = %s
+                        GROUP BY classes.display_name, classes.stream_code
+                        ORDER BY total_amount DESC, class_name ASC
+                """, (start_date, end_date, self.school_id))
+        else:
+                self.cursor.execute("""
+                        SELECT COALESCE(classes.display_name, 'Unassigned') AS class_name,
+                                     COALESCE(classes.stream_code, '-') AS stream_code,
+                                     SUM(payments.amount) AS total_amount, COUNT(*) AS count
+                        FROM fee_payments payments
+                        JOIN fee_ledger ledger ON payments.ledger_id = ledger.id
+                        LEFT JOIN class_allocation allocations
+                            ON payments.admno = allocations.student_id AND ledger.school_id = allocations.school_id
+                            AND allocations.is_current = TRUE
+                        LEFT JOIN classes ON allocations.class_id = classes.classID
+                            AND allocations.school_id = classes.school_id
+                        WHERE payments.payment_date BETWEEN %s AND %s
+                            AND payments.status = 'COMPLETED' AND ledger.school_id = %s
+                        GROUP BY classes.display_name, classes.stream_code
+                        ORDER BY total_amount DESC, class_name ASC
+                """, (start_date, end_date, self.school_id))
+        return self.cursor.fetchall()
+
+
+FeesService.get_collection_class_summary = _get_collection_class_summary

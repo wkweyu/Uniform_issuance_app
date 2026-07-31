@@ -951,6 +951,21 @@ def test_fees_service_collection_category_summary_scopes_student_join_and_comple
     assert 'group by students.category' in query.lower()
 
 
+def test_fees_service_collection_class_summary_scopes_current_allocations_and_completed_status():
+    connection = RecordingConnection(responses=[('all', [])])
+    service = FeesService(connection, school_id=55)
+    service._table_columns_cache = {'fee_payments': {'school_id'}}
+
+    assert service.get_collection_class_summary('2026-07-01', '2026-07-31') == []
+
+    query, params = connection.cursor_obj.executed[0]
+    assert params == ('2026-07-01', '2026-07-31', 55)
+    assert 'payments.school_id = allocations.school_id' in query.lower()
+    assert 'allocations.is_current = true' in query.lower()
+    assert 'allocations.school_id = classes.school_id' in query.lower()
+    assert "payments.status = 'completed'" in query.lower()
+
+
 def test_fees_service_category_change_preflight_blocks_paid_term_allocations():
     connection = RecordingConnection(responses=[
         ('one', {'AdmNo': 1001}), ('one', {'id': 4}), ('one', {'id': 3}),

@@ -86,8 +86,10 @@ def fees_collection_report():
         data = service.get_collection_summary(start_date, end_date)
         status_data = service.get_collection_status_summary(start_date, end_date)
         category_data = service.get_collection_category_summary(start_date, end_date)
+        class_data = service.get_collection_class_summary(start_date, end_date)
         return render_template(
             'fees_collection_report.html', data=data, status_data=status_data, category_data=category_data,
+            class_data=class_data,
             start_date=start_date, end_date=end_date,
         )
     finally:
