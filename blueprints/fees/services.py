@@ -2603,3 +2603,39 @@ class FeesService:
         """Lock or unlock a structure to prevent edits."""
         self.cursor.execute("UPDATE fee_structures SET is_locked = %s WHERE id = %s AND school_id = %s", (1 if lock else 0, structure_id, self.school_id))
         self.connection.commit()
+
+
+def _get_invoice_replacement_register(self, start_date: Optional[str] = None,
+                                                                            end_date: Optional[str] = None) -> List[Dict]:
+        """Return category-driven invoice replacement chains for the active school."""
+        query = """
+                SELECT replacements.*, students.FName, students.SName, years.year AS academic_year,
+                             terms.term_number, old_groups.name AS previous_group_name,
+                             new_groups.name AS new_group_name, users.username AS changed_by_name
+                FROM fee_invoice_replacements replacements
+                JOIN studentinfo students
+                    ON replacements.admno = students.AdmNo AND replacements.school_id = students.school_id
+                JOIN academic_years years
+                    ON replacements.academic_year_id = years.id AND replacements.school_id = years.school_id
+                JOIN uniform_term_dates terms
+                    ON replacements.term_id = terms.id AND replacements.school_id = terms.school_id
+                LEFT JOIN student_groups old_groups
+                    ON replacements.previous_student_group_id = old_groups.id AND replacements.school_id = old_groups.school_id
+                LEFT JOIN student_groups new_groups
+                    ON replacements.new_student_group_id = new_groups.id AND replacements.school_id = new_groups.school_id
+                LEFT JOIN users ON replacements.changed_by = users.userNo AND replacements.school_id = users.school_id
+                WHERE replacements.school_id = %s
+        """
+        params = [self.school_id]
+        if start_date:
+                query += " AND DATE(replacements.created_at) >= %s"
+                params.append(start_date)
+        if end_date:
+                query += " AND DATE(replacements.created_at) <= %s"
+                params.append(end_date)
+        query += " ORDER BY replacements.id DESC"
+        self.cursor.execute(query, params)
+        return self.cursor.fetchall()
+
+
+FeesService.get_invoice_replacement_register = _get_invoice_replacement_register

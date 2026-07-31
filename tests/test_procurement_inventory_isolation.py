@@ -969,6 +969,20 @@ def test_fees_service_category_invoice_replacement_stops_before_writes_when_paid
     assert all('insert into fee_ledger' not in query.lower() for query, _ in connection.cursor_obj.executed)
 
 
+def test_fees_service_invoice_replacement_register_scopes_all_audit_joins():
+    connection = RecordingConnection(responses=[('all', [])])
+    service = FeesService(connection, school_id=55)
+
+    assert service.get_invoice_replacement_register('2026-07-01', '2026-07-31') == []
+
+    query, params = connection.cursor_obj.executed[0]
+    assert params == [55, '2026-07-01', '2026-07-31']
+    assert 'replacements.school_id = %s' in query.lower()
+    assert 'replacements.school_id = students.school_id' in query.lower()
+    assert 'replacements.school_id = years.school_id' in query.lower()
+    assert 'replacements.school_id = terms.school_id' in query.lower()
+
+
 def test_fees_service_records_reprint_event_after_prior_print():
     connection = RecordingConnection(
         responses=[

@@ -1,0 +1,21 @@
+{% extends 'base_report.html' %}
+
+{% block report_title %}Category Invoice Replacement Register{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex flex-wrap items-end justify-between gap-4 no-print">
+  <form class="flex flex-wrap items-end gap-3">
+    <label class="text-xs font-bold text-gray-600">From<input type="date" name="start_date" value="{{ start_date }}" class="mt-1 block border rounded px-3 py-1.5 text-sm"></label>
+    <label class="text-xs font-bold text-gray-600">To<input type="date" name="end_date" value="{{ end_date }}" class="mt-1 block border rounded px-3 py-1.5 text-sm"></label>
+    <button type="submit" class="bg-blue-700 text-white px-4 py-1.5 rounded text-sm font-bold">Filter</button>
+  </form>
+  <button onclick="window.print()" class="bg-gray-100 text-gray-700 px-4 py-1.5 rounded text-sm font-bold">Print</button>
+</div>
+
+<div class="bg-white border rounded-lg overflow-x-auto">
+  <table class="w-full text-left text-sm">
+    <thead><tr class="bg-gray-100 border-b text-gray-700 font-bold"><th class="px-4 py-3">When</th><th class="px-4 py-3">Student / Period</th><th class="px-4 py-3">Category / Group</th><th class="px-4 py-3">Invoice Chain</th><th class="px-4 py-3">Reason</th><th class="px-4 py-3">Operator</th></tr></thead>
+    <tbody class="divide-y">{% for record in records %}<tr><td class="px-4 py-3 whitespace-nowrap">{{ record.created_at }}</td><td class="px-4 py-3"><div>{{ record.admno }} {{ record.FName }} {{ record.SName }}</div><div class="text-xs text-gray-500">{{ record.academic_year }} / Term {{ record.term_number }}</div></td><td class="px-4 py-3"><div>{{ record.previous_category }} to {{ record.new_category }}</div><div class="text-xs text-gray-500">{{ record.previous_group_name or '-' }} to {{ record.new_group_name or '-' }}</div></td><td class="px-4 py-3 font-mono text-xs"><div>Original: {{ record.original_invoice_reference }}</div><div>Reversal: {{ record.reversal_reference }}</div><div>Replacement: {{ record.replacement_invoice_reference }}</div></td><td class="px-4 py-3">{{ record.reason }}</td><td class="px-4 py-3">{{ record.changed_by_name or record.changed_by }}</td></tr>{% else %}<tr><td colspan="6" class="px-4 py-10 text-center text-gray-500">No invoice replacements matched the selected period.</td></tr>{% endfor %}</tbody>
+  </table>
+</div>
+{% endblock %}
