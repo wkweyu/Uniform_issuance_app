@@ -2074,6 +2074,35 @@ class FeesService:
             """, (start_date, end_date, self.school_id))
         return self.cursor.fetchall()
 
+    def get_collection_category_summary(self, start_date: str, end_date: str) -> List[Dict]:
+        """Summarize completed collections by the student's current category."""
+        fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
+        if fee_payments_has_school_id:
+            self.cursor.execute("""
+                SELECT COALESCE(students.category, 'Unclassified') AS category,
+                       SUM(payments.amount) AS total_amount, COUNT(*) AS count
+                FROM fee_payments payments
+                JOIN studentinfo students
+                  ON payments.admno = students.AdmNo AND payments.school_id = students.school_id
+                WHERE payments.payment_date BETWEEN %s AND %s
+                  AND payments.status = 'COMPLETED' AND payments.school_id = %s
+                GROUP BY students.category
+                ORDER BY total_amount DESC, category ASC
+            """, (start_date, end_date, self.school_id))
+        else:
+            self.cursor.execute("""
+                SELECT COALESCE(students.category, 'Unclassified') AS category,
+                       SUM(payments.amount) AS total_amount, COUNT(*) AS count
+                FROM fee_payments payments
+                JOIN fee_ledger ledger ON payments.ledger_id = ledger.id
+                JOIN studentinfo students ON payments.admno = students.AdmNo AND ledger.school_id = students.school_id
+                WHERE payments.payment_date BETWEEN %s AND %s
+                  AND payments.status = 'COMPLETED' AND ledger.school_id = %s
+                GROUP BY students.category
+                ORDER BY total_amount DESC, category ASC
+            """, (start_date, end_date, self.school_id))
+        return self.cursor.fetchall()
+
     def get_arrears_report(self, class_id: Optional[int] = None) -> List[Dict]:
         """Get list of students with outstanding balances."""
         query = """

@@ -141,6 +141,10 @@ class FeesServiceStub:
         self.calls.append(("get_collection_status_summary", start_date, end_date))
         return []
 
+    def get_collection_category_summary(self, start_date, end_date):
+        self.calls.append(("get_collection_category_summary", start_date, end_date))
+        return []
+
     def get_category_change_preflight(self, admno, year_id, term_id):
         self.calls.append(("get_category_change_preflight", admno, year_id, term_id))
         return {"eligible": True, "blockers": [], "invoice_references": []}
@@ -1971,6 +1975,7 @@ def test_collection_report_loads_completed_and_status_summaries(client, db_sessi
     assert FeesServiceStub.last_instance.calls == [
         ("get_collection_summary", "2026-07-01", "2026-07-31"),
         ("get_collection_status_summary", "2026-07-01", "2026-07-31"),
+        ("get_collection_category_summary", "2026-07-01", "2026-07-31"),
     ]
 
 

@@ -55,4 +55,12 @@
     <tbody class="divide-y">{% for row in status_data %}<tr><td class="px-4 py-3 font-semibold">{{ row.status }}</td><td class="px-4 py-3">{{ row.payment_mode }}</td><td class="px-4 py-3 text-right font-mono">{{ row.count }}</td><td class="px-4 py-3 text-right font-mono">{{ row.total_amount | currency }}</td></tr>{% else %}<tr><td colspan="4" class="px-4 py-8 text-center text-gray-500">No receipts were posted in this period.</td></tr>{% endfor %}</tbody>
   </table>
 </div>
+
+<div class="mt-8 bg-white border rounded-lg overflow-hidden">
+  <div class="px-4 py-3 border-b bg-gray-50"><h2 class="text-sm font-bold text-gray-800">Completed Collections by Student Category</h2></div>
+  <table class="w-full text-left text-sm">
+    <thead><tr class="bg-gray-100 border-b text-gray-700 font-bold"><th class="px-4 py-3">Category</th><th class="px-4 py-3 text-right">Receipt Count</th><th class="px-4 py-3 text-right">Amount (KES)</th></tr></thead>
+    <tbody class="divide-y">{% for row in category_data %}<tr><td class="px-4 py-3 font-semibold">{{ row.category }}</td><td class="px-4 py-3 text-right font-mono">{{ row.count }}</td><td class="px-4 py-3 text-right font-mono">{{ row.total_amount | currency }}</td></tr>{% else %}<tr><td colspan="3" class="px-4 py-8 text-center text-gray-500">No completed collections were posted in this period.</td></tr>{% endfor %}</tbody>
+  </table>
+</div>
 {% endblock %}
