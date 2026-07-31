@@ -2315,8 +2315,13 @@ class FeesService:
         self.cursor.execute(query, params)
         return self.cursor.fetchall()
 
-    def assign_waiver_to_student(self, admno: int, category_id: int, year_id: int, term_id: int, user_id: int) -> int:
+    def assign_waiver_to_student(self, admno: int, category_id: int, year_id: int, term_id: int, user_id: int,
+                                 votehead_ids: Optional[List[int]] = None) -> int:
         """Assign a waiver/scholarship to a student and apply it to their ledger."""
+        if votehead_ids:
+            return self._assign_votehead_waiver_to_student(
+                admno, category_id, year_id, term_id, user_id, votehead_ids,
+            )
         try:
             self._assert_student_belongs_to_school(admno)
             self._assert_academic_year_belongs_to_school(year_id)
@@ -2383,6 +2388,118 @@ class FeesService:
             self.connection.rollback()
             raise FeesError(f"Failed to assign waiver: {str(e)}")
 
+    def _assign_votehead_waiver_to_student(self, admno: int, category_id: int, year_id: int,
+                                            term_id: int, user_id: int,
+                                            votehead_ids: List[int]) -> int:
+        """Apply one waiver across selected voteheads with ledger links for later reversal."""
+        if not self._table_has_column('student_waivers', 'allocation_mode'):
+            raise FeesError('Apply migration 040 before assigning votehead-specific waivers.')
+
+        selected_votehead_ids = list(dict.fromkeys(
+            self._required_int(votehead_id, 'votehead_id') for votehead_id in votehead_ids
+        ))
+        if not selected_votehead_ids:
+            raise FeesError('Select at least one votehead for this waiver.')
+
+        try:
+            self._assert_student_belongs_to_school(admno)
+            self._assert_academic_year_belongs_to_school(year_id)
+            self._assert_term_belongs_to_school(term_id, year_id)
+            self._assert_waiver_category_belongs_to_school(category_id)
+            self._assert_voteheads_belong_to_school(selected_votehead_ids)
+            self.cursor.execute("""
+                SELECT id FROM student_waivers
+                WHERE admno = %s AND academic_year_id = %s AND term_id = %s
+                  AND status = 'ACTIVE' AND school_id = %s
+            """, (admno, year_id, term_id, self.school_id))
+            if self.cursor.fetchone():
+                raise FeesError('Student already has an active waiver for this term.')
+
+            self.cursor.execute(
+                'SELECT * FROM fee_waiver_categories WHERE id = %s AND school_id = %s',
+                (category_id, self.school_id),
+            )
+            category = self.cursor.fetchone()
+            if not category:
+                raise FeesError('Invalid waiver category.')
+
+            placeholders = ', '.join(['%s'] * len(selected_votehead_ids))
+            self.cursor.execute(f"""
+                SELECT ledger.votehead_id, voteheads.name, SUM(ledger.amount) AS charge_amount
+                FROM fee_ledger ledger
+                JOIN fee_voteheads voteheads
+                  ON ledger.votehead_id = voteheads.id AND ledger.school_id = voteheads.school_id
+                WHERE ledger.admno = %s AND ledger.academic_year_id = %s AND ledger.term_id = %s
+                  AND ledger.type = 'CHARGE' AND ledger.school_id = %s
+                  AND ledger.votehead_id IN ({placeholders})
+                GROUP BY ledger.votehead_id, voteheads.name, voteheads.priority
+                ORDER BY voteheads.priority ASC, voteheads.name ASC
+            """, (admno, year_id, term_id, self.school_id, *selected_votehead_ids))
+            charges = self.cursor.fetchall()
+            if not charges:
+                raise FeesError('The selected voteheads have no charges for this student and term.')
+
+            allocation_rows = []
+            if category['discount_type'] == 'PERCENTAGE':
+                percentage = Decimal(str(category['value'])) / Decimal('100')
+                allocation_rows = [
+                    (row['votehead_id'], row['name'], Decimal(str(row['charge_amount'])) * percentage)
+                    for row in charges
+                ]
+            else:
+                remaining = Decimal(str(category['value']))
+                for row in charges:
+                    charge_amount = Decimal(str(row['charge_amount']))
+                    allocated_amount = min(charge_amount, remaining)
+                    if allocated_amount > 0:
+                        allocation_rows.append((row['votehead_id'], row['name'], allocated_amount))
+                        remaining -= allocated_amount
+                if remaining > 0:
+                    raise FeesError('The fixed waiver exceeds the selected voteheads\' total charges.')
+
+            allocation_rows = [row for row in allocation_rows if row[2] > 0]
+            if not allocation_rows:
+                raise FeesError('This waiver does not produce a positive selected-votehead credit.')
+
+            self.connection.begin()
+            self.cursor.execute("""
+                INSERT INTO student_waivers
+                    (admno, category_id, academic_year_id, term_id, assigned_by, allocation_mode, school_id)
+                VALUES (%s, %s, %s, %s, %s, 'VOTEHEADS', %s)
+            """, (admno, category_id, year_id, term_id, user_id, self.school_id))
+            waiver_id = self.cursor.lastrowid
+            balance = self.get_student_balance(admno)
+            first_ledger_id = None
+            for votehead_id, votehead_name, amount in allocation_rows:
+                balance -= amount
+                self.cursor.execute("""
+                    INSERT INTO fee_ledger
+                        (admno, academic_year_id, term_id, type, votehead_id, amount, balance_after,
+                         description, reference_no, transaction_date, created_by, school_id)
+                    VALUES (%s, %s, %s, 'CREDIT', %s, %s, %s, %s, %s, CURDATE(), %s, %s)
+                """, (
+                    admno, year_id, term_id, votehead_id, amount, balance,
+                    f'Waiver Application: {category["name"]} - {votehead_name}',
+                    f'WVR-{waiver_id}-{votehead_id}', user_id, self.school_id,
+                ))
+                ledger_id = self.cursor.lastrowid
+                first_ledger_id = first_ledger_id or ledger_id
+                self.cursor.execute("""
+                    INSERT INTO fee_waiver_allocations (waiver_id, votehead_id, ledger_id, amount, school_id)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (waiver_id, votehead_id, ledger_id, amount, self.school_id))
+            self.cursor.execute(
+                'UPDATE student_waivers SET ledger_id = %s WHERE id = %s AND school_id = %s',
+                (first_ledger_id, waiver_id, self.school_id),
+            )
+            self.connection.commit()
+            return waiver_id
+        except Exception as exc:
+            self.connection.rollback()
+            if isinstance(exc, FeesError):
+                raise
+            raise FeesError(f'Failed to assign votehead waiver: {str(exc)}')
+
     def get_student_waivers(self, admno: int) -> List[Dict]:
         """Fetch waiver history for a student."""
         self.cursor.execute("""
@@ -2402,20 +2519,63 @@ class FeesService:
         if not reason:
             raise FeesError('A revocation reason is required.')
         try:
+            has_allocation_mode = self._table_has_column('student_waivers', 'allocation_mode')
+            allocation_mode_select = 'sw.allocation_mode,' if has_allocation_mode else "'SINGLE' AS allocation_mode,"
             self.cursor.execute("""
                 SELECT sw.id, sw.admno, sw.academic_year_id, sw.term_id, sw.ledger_id, sw.status,
-                       fwc.name AS category_name, fl.amount AS waiver_amount
+                       {allocation_mode_select} fwc.name AS category_name, fl.amount AS waiver_amount
                 FROM student_waivers sw
                 JOIN fee_waiver_categories fwc ON sw.category_id = fwc.id AND sw.school_id = fwc.school_id
                 LEFT JOIN fee_ledger fl ON sw.ledger_id = fl.id AND sw.school_id = fl.school_id
                 WHERE sw.id = %s AND sw.school_id = %s
                 FOR UPDATE
-            """, (waiver_id, self.school_id))
+            """.format(allocation_mode_select=allocation_mode_select), (waiver_id, self.school_id))
             waiver = self.cursor.fetchone()
             if not waiver:
                 raise FeesError('Waiver was not found for the active school.')
             if waiver['status'] != 'ACTIVE':
                 raise FeesError('Only active waivers can be revoked.')
+
+            if waiver.get('allocation_mode', 'SINGLE') == 'VOTEHEADS':
+                self.cursor.execute("""
+                    SELECT allocations.id, allocations.votehead_id, allocations.amount, voteheads.name AS votehead_name
+                    FROM fee_waiver_allocations allocations
+                    JOIN fee_voteheads voteheads
+                      ON allocations.votehead_id = voteheads.id AND allocations.school_id = voteheads.school_id
+                    WHERE allocations.waiver_id = %s AND allocations.school_id = %s
+                    FOR UPDATE
+                """, (waiver_id, self.school_id))
+                allocations = self.cursor.fetchall()
+                if not allocations:
+                    raise FeesError('This votehead waiver has no linked allocation records.')
+
+                balance = self.get_student_balance(waiver['admno'])
+                for allocation in allocations:
+                    amount = Decimal(str(allocation['amount']))
+                    balance += amount
+                    self.cursor.execute("""
+                        INSERT INTO fee_ledger
+                            (admno, academic_year_id, term_id, type, votehead_id, amount, balance_after,
+                             description, reference_no, transaction_date, created_by, school_id)
+                        VALUES (%s, %s, %s, 'ADJUSTMENT', %s, %s, %s, %s, %s, CURDATE(), %s, %s)
+                    """, (
+                        waiver['admno'], waiver['academic_year_id'], waiver['term_id'], allocation['votehead_id'],
+                        amount, balance,
+                        f'WAIVER REVERSAL: {waiver["category_name"]} - {allocation["votehead_name"]} - {reason}',
+                        f'WVR-REV-{waiver_id}-{allocation["votehead_id"]}', user_id, self.school_id,
+                    ))
+                    self.cursor.execute("""
+                        UPDATE fee_waiver_allocations SET revocation_ledger_id = %s
+                        WHERE id = %s AND school_id = %s
+                    """, (self.cursor.lastrowid, allocation['id'], self.school_id))
+                self.cursor.execute("""
+                    UPDATE student_waivers
+                    SET status = 'REVOKED', revoked_by = %s, revoked_at = NOW(), revocation_reason = %s
+                    WHERE id = %s AND school_id = %s
+                """, (user_id, reason, waiver_id, self.school_id))
+                self.connection.commit()
+                return
+
             if not waiver.get('ledger_id') or waiver.get('waiver_amount') is None:
                 raise FeesError('This legacy waiver has no linked ledger credit and cannot be revoked automatically.')
 

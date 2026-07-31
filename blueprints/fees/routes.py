@@ -303,12 +303,14 @@ def fees_waiver_management():
     class_service = ClassManagementService(connection, school_id=service.school_id)
     try:
         categories = service.get_waiver_categories()
+        voteheads = service.get_voteheads()
         years = class_service.get_all_academic_years()
         recent_waivers = service.get_recent_waivers(limit=50)
         terms = service.get_recent_terms(limit=10)
 
         return render_template('fee_waiver_management.html',
-                             categories=categories, years=years, terms=terms, recent_waivers=recent_waivers)
+                             categories=categories, voteheads=voteheads, years=years, terms=terms,
+                             recent_waivers=recent_waivers)
     finally:
         connection.close()
 
@@ -319,13 +321,19 @@ def assign_waiver():
     connection = get_db_connection()
     service = FeesService(connection)
     try:
-        service.assign_waiver_to_student(
-            admno=_required_int(request.form.get('admno'), 'admno'),
-            category_id=_required_int(request.form.get('category_id'), 'category_id'),
-            year_id=_required_int(request.form.get('year_id'), 'year_id'),
-            term_id=_required_int(request.form.get('term_id'), 'term_id'),
-            user_id=session.get('userNo')
-        )
+        assignment = {
+            'admno': _required_int(request.form.get('admno'), 'admno'),
+            'category_id': _required_int(request.form.get('category_id'), 'category_id'),
+            'year_id': _required_int(request.form.get('year_id'), 'year_id'),
+            'term_id': _required_int(request.form.get('term_id'), 'term_id'),
+            'user_id': session.get('userNo'),
+        }
+        selected_voteheads = request.form.getlist('votehead_ids')
+        if selected_voteheads:
+            assignment['votehead_ids'] = [
+                _required_int(votehead_id, 'votehead_id') for votehead_id in selected_voteheads
+            ]
+        service.assign_waiver_to_student(**assignment)
         flash("Waiver assigned successfully.", "success")
     except ValueError as e:
         flash(str(e), "error")

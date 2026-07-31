@@ -53,6 +53,18 @@
                                 </select>
                             </div>
 
+                            <fieldset>
+                                <legend class="block text-sm font-semibold text-gray-700 mb-1">Affected Voteheads</legend>
+                                <div class="max-h-32 overflow-y-auto space-y-1 border border-gray-200 rounded-xl p-3">
+                                    {% for votehead in voteheads %}
+                                    <label class="flex items-center gap-2 text-sm text-gray-700">
+                                        <input type="checkbox" name="votehead_ids" value="{{ votehead.id }}" {{ 'checked' if votehead.name == 'Tuition' }}>
+                                        <span>{{ votehead.name }}</span>
+                                    </label>
+                                    {% endfor %}
+                                </div>
+                            </fieldset>
+
                             <div class="grid grid-cols-2 gap-4">
                                 <div>
                                     <label class="block text-sm font-semibold text-gray-700 mb-1">Year</label>

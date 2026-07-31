@@ -182,8 +182,11 @@ class FeesServiceStub:
             raise self.import_mpesa_error
         return {"imported": len(transactions), "duplicates": 0}
 
-    def assign_waiver_to_student(self, admno, category_id, year_id, term_id, user_id):
-        self.calls.append(("assign_waiver_to_student", admno, category_id, year_id, term_id, user_id))
+    def assign_waiver_to_student(self, admno, category_id, year_id, term_id, user_id, votehead_ids=None):
+        call = ("assign_waiver_to_student", admno, category_id, year_id, term_id, user_id)
+        if votehead_ids is not None:
+            call += (votehead_ids,)
+        self.calls.append(call)
 
     def revoke_waiver(self, waiver_id, reason, user_id):
         self.calls.append(("revoke_waiver", waiver_id, reason, user_id))
@@ -836,6 +839,26 @@ def test_fees_assign_waiver_route_rejects_invalid_admno_before_service_call(clie
     assert FeesServiceStub.last_instance.calls == []
     with client.session_transaction() as session:
         assert session.get("_flashes")[-1] == ("error", "admno is required and must be a valid integer.")
+
+
+def test_fees_assign_waiver_route_forwards_selected_voteheads(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+
+    response = client.post(
+        "/fees/waiver/assign",
+        data={
+            "admno": "1001", "category_id": "2", "year_id": "2026", "term_id": "3",
+            "votehead_ids": ["7", "8"],
+        },
+    )
+
+    assert response.status_code == 302
+    assert FeesServiceStub.last_instance.calls == [
+        ("assign_waiver_to_student", 1001, 2, 2026, 3, 10, [7, 8]),
+    ]
 
 
 def test_fees_collect_route_rejects_invalid_amount_before_service_call(client, db_session, monkeypatch):

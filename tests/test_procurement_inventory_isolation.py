@@ -1172,6 +1172,27 @@ def test_fees_service_rejects_waiver_assignment_with_foreign_category():
         service.assign_waiver_to_student(admno=1001, category_id=77, year_id=2026, term_id=1, user_id=4)
 
 
+def test_fees_service_rejects_votehead_waiver_with_foreign_votehead():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {'AdmNo': '1001'}),
+            ('one', {'id': 2026}),
+            ('one', {'id': 1}),
+            ('one', {'id': 77}),
+            ('all', []),
+        ]
+    )
+    service = FeesService(connection, school_id=58)
+    service._table_columns_cache = {'student_waivers': {'allocation_mode'}}
+
+    with pytest.raises(FeesError, match='One or more voteheads do not belong to the active school'):
+        service.assign_waiver_to_student(
+            admno=1001, category_id=77, year_id=2026, term_id=1, user_id=4, votehead_ids=[99],
+        )
+
+    assert connection.commit_calls == 0
+
+
 def test_fees_service_revokes_linked_waiver_with_a_debit_adjustment():
     connection = RecordingConnection(
         responses=[
@@ -1181,6 +1202,7 @@ def test_fees_service_revokes_linked_waiver_with_a_debit_adjustment():
         ]
     )
     service = FeesService(connection, school_id=55)
+    service._table_columns_cache = {'student_waivers': set()}
 
     service.revoke_waiver(44, 'Award criteria no longer apply', user_id=8)
 
@@ -1188,6 +1210,34 @@ def test_fees_service_revokes_linked_waiver_with_a_debit_adjustment():
     assert "'adjustment'" in insert_query.lower()
     assert insert_params[4] == Decimal('750.00')
     assert insert_params[5].startswith('WAIVER REVERSAL: Bursary Award')
+    assert connection.commit_calls == 1
+
+
+def test_fees_service_revokes_votehead_waiver_using_linked_allocations():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {'id': 44, 'admno': 1001, 'academic_year_id': 4, 'term_id': 3, 'ledger_id': 91,
+                     'status': 'ACTIVE', 'allocation_mode': 'VOTEHEADS', 'category_name': 'Bursary Award',
+                     'waiver_amount': Decimal('500.00')}),
+            ('all', [
+                {'id': 101, 'votehead_id': 7, 'amount': Decimal('300.00'), 'votehead_name': 'Tuition'},
+                {'id': 102, 'votehead_id': 8, 'amount': Decimal('200.00'), 'votehead_name': 'Transport'},
+            ]),
+            ('one', {'balance_after': Decimal('250.00')}),
+        ]
+    )
+    service = FeesService(connection, school_id=55)
+    service._table_columns_cache = {'student_waivers': {'allocation_mode'}}
+
+    service.revoke_waiver(44, 'Award criteria no longer apply', user_id=8)
+
+    first_reversal_query, first_reversal_params = connection.cursor_obj.executed[3]
+    assert "'adjustment'" in first_reversal_query.lower()
+    assert first_reversal_params[5] == Decimal('550.00')
+    assert first_reversal_params[6].startswith('WAIVER REVERSAL: Bursary Award - Tuition')
+    second_reversal_query, second_reversal_params = connection.cursor_obj.executed[5]
+    assert "'adjustment'" in second_reversal_query.lower()
+    assert second_reversal_params[5] == Decimal('750.00')
     assert connection.commit_calls == 1
 
 
