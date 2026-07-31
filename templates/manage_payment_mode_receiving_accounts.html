@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 py-8">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-8">
+        <div>
+            <h1 class="text-2xl font-extrabold text-gray-900">Fee Receiving Accounts</h1>
+            <p class="text-sm text-gray-500">Assign one active Finance account to each fees payment mode.</p>
+        </div>
+        <a href="{{ url_for('finance.finance_dashboard') }}" class="text-sm font-semibold text-blue-700 hover:text-blue-900">Finance dashboard</a>
+    </div>
+
+    <form method="post" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end bg-white border border-gray-200 p-5 rounded-lg shadow-sm mb-8">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="block text-sm font-semibold text-gray-700">Payment mode
+            <select name="payment_mode" required class="mt-1 block w-full border-gray-300 rounded-md">
+                {% for mode in payment_modes %}<option value="{{ mode }}">{{ mode.replace('_', ' ') }}</option>{% endfor %}
+            </select>
+        </label>
+        <label class="block text-sm font-semibold text-gray-700">Receiving account
+            <select name="account_id" required class="mt-1 block w-full border-gray-300 rounded-md">
+                <option value="">Select account</option>
+                {% for account in accounts %}<option value="{{ account.id }}">{{ account.code }} - {{ account.name }}</option>{% endfor %}
+            </select>
+        </label>
+        <label class="flex items-center gap-2 text-sm font-semibold text-gray-700 pb-2"><input type="checkbox" name="is_active" checked> Active</label>
+        <button type="submit" class="bg-blue-700 hover:bg-blue-800 text-white font-semibold px-4 py-2 rounded-md">Save mapping</button>
+    </form>
+
+    <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <table class="w-full text-left text-sm">
+            <thead class="bg-gray-50 text-gray-500 uppercase text-xs"><tr><th class="px-5 py-3">Mode</th><th class="px-5 py-3">Receiving account</th><th class="px-5 py-3">Status</th><th class="px-5 py-3">Updated</th></tr></thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for mapping in mappings %}
+                <tr><td class="px-5 py-3 font-semibold">{{ mapping.payment_mode.replace('_', ' ') }}</td><td class="px-5 py-3">{{ mapping.account_code }} - {{ mapping.account_name }}</td><td class="px-5 py-3">{{ 'Active' if mapping.is_active else 'Inactive' }}</td><td class="px-5 py-3 text-gray-500">{{ mapping.configured_at }}</td></tr>
+                {% else %}
+                <tr><td colspan="4" class="px-5 py-8 text-center text-gray-500">No payment modes are configured yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

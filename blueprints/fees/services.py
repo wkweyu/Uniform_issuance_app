@@ -17,10 +17,13 @@ This module provides business logic for:
 import pymysql
 from datetime import datetime
 import logging
+import json
+import uuid
 from typing import Dict, List, Optional, Tuple
 from decimal import Decimal
 from core.audit import audit_log
 from core.tenancy import require_current_school_id
+from blueprints.finance.services import FinanceService
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -300,6 +303,81 @@ class FeesService:
         self.cursor.execute(query, tuple(params))
         return self.cursor.fetchall()
 
+    def get_allocation_templates(self) -> List[Dict]:
+        """Return reusable manual allocation templates for the active school."""
+        self.cursor.execute("""
+            SELECT t.id, t.name, t.created_at, i.votehead_id, i.amount, v.name AS votehead_name
+            FROM fee_allocation_templates t
+            LEFT JOIN fee_allocation_template_items i
+              ON i.template_id = t.id AND i.school_id = t.school_id
+            LEFT JOIN fee_voteheads v
+              ON v.id = i.votehead_id AND v.school_id = i.school_id
+            WHERE t.school_id = %s
+            ORDER BY t.name ASC, v.priority ASC, v.name ASC
+        """, (self.school_id,))
+
+        templates = {}
+        for row in self.cursor.fetchall():
+            template = templates.setdefault(row['id'], {
+                'id': row['id'],
+                'name': row['name'],
+                'created_at': row['created_at'],
+                'items': [],
+            })
+            if row.get('votehead_id') is not None:
+                template['items'].append({
+                    'votehead_id': row['votehead_id'],
+                    'votehead_name': row['votehead_name'],
+                    'amount': Decimal(str(row['amount'])),
+                })
+        return list(templates.values())
+
+    def create_allocation_template(self, name: str, allocations: List[Dict], user_id: int) -> Dict:
+        """Persist a reusable manual allocation template after tenant validation."""
+        template_name = (name or '').strip()
+        if not template_name:
+            raise FeesError('Template name is required.')
+        if not allocations:
+            raise FeesError('At least one allocation is required.')
+
+        normalized_items = []
+        seen_voteheads = set()
+        for allocation in allocations:
+            try:
+                votehead_id = self._required_int(allocation.get('votehead_id'), 'votehead_id')
+                amount = Decimal(str(allocation.get('amount')))
+            except (AttributeError, InvalidOperation, TypeError, ValueError):
+                raise FeesError('Each template allocation requires a valid votehead_id and amount.')
+            if votehead_id in seen_voteheads:
+                raise FeesError('A votehead can only appear once in an allocation template.')
+            if amount <= 0:
+                raise FeesError('Template allocation amounts must be greater than zero.')
+            seen_voteheads.add(votehead_id)
+            normalized_items.append({'votehead_id': votehead_id, 'amount': amount})
+
+        self._assert_voteheads_belong_to_school([item['votehead_id'] for item in normalized_items])
+        try:
+            self.connection.begin()
+            self.cursor.execute("""
+                INSERT INTO fee_allocation_templates (school_id, name, created_by)
+                VALUES (%s, %s, %s)
+            """, (self.school_id, template_name, user_id))
+            template_id = self.cursor.lastrowid
+            for item in normalized_items:
+                self.cursor.execute("""
+                    INSERT INTO fee_allocation_template_items (template_id, votehead_id, amount, school_id)
+                    VALUES (%s, %s, %s, %s)
+                """, (template_id, item['votehead_id'], item['amount'], self.school_id))
+            self.connection.commit()
+        except pymysql.IntegrityError:
+            self.connection.rollback()
+            raise FeesError(f"An allocation template named '{template_name}' already exists.")
+        except Exception as e:
+            self.connection.rollback()
+            raise FeesError(f'Failed to save allocation template: {str(e)}')
+
+        return {'id': template_id, 'name': template_name, 'items': normalized_items}
+
     def create_votehead(self, name: str, priority: int = 99, group_id: Optional[int] = None, description: str = "") -> int:
         """Create a new fee votehead."""
         try:
@@ -518,6 +596,66 @@ class FeesService:
         result = self.cursor.fetchone()
         return Decimal(str(result['balance_after'])) if result else Decimal("0.00")
 
+    def get_student_term_summary(self, admno: int, term_id: int) -> Dict:
+        """Summarize current-term ledger movements for a student."""
+        self.cursor.execute("""
+            SELECT
+                COALESCE(SUM(CASE WHEN type = 'CHARGE' THEN amount ELSE 0 END), 0) AS charges,
+                COALESCE(SUM(CASE WHEN type = 'DEBIT' THEN amount ELSE 0 END), 0) AS debits,
+                COALESCE(SUM(CASE WHEN type = 'PAYMENT' THEN amount ELSE 0 END), 0) AS payments,
+                COALESCE(SUM(CASE WHEN type = 'CREDIT' THEN amount ELSE 0 END), 0) AS credits
+            FROM fee_ledger
+            WHERE admno = %s AND term_id = %s AND school_id = %s
+        """, (admno, term_id, self.school_id))
+        summary = self.cursor.fetchone() or {}
+        charges = Decimal(str(summary.get('charges') or 0))
+        debits = Decimal(str(summary.get('debits') or 0))
+        payments = Decimal(str(summary.get('payments') or 0))
+        credits = Decimal(str(summary.get('credits') or 0))
+        return {
+            'charges': charges,
+            'debits': debits,
+            'payments': payments,
+            'credits': credits,
+            'net_due': charges + debits - payments - credits,
+        }
+
+    def get_student_term_invoices(self, admno: int, term_id: int) -> List[Dict]:
+        """Return invoice references and totals posted for a student in a term."""
+        self.cursor.execute("""
+            SELECT
+                reference_no,
+                MIN(transaction_date) AS issued_on,
+                SUM(amount) AS amount,
+                COUNT(*) AS item_count
+            FROM fee_ledger
+            WHERE admno = %s
+              AND term_id = %s
+              AND type = 'CHARGE'
+              AND reference_no LIKE 'INV-%%'
+              AND school_id = %s
+            GROUP BY reference_no
+            ORDER BY issued_on DESC, reference_no DESC
+        """, (admno, term_id, self.school_id))
+        return self.cursor.fetchall()
+
+    def get_outstanding_voteheads(self, admno: int) -> List[Dict]:
+        """Return the student's outstanding voteheads in payment priority order."""
+        self.cursor.execute("""
+            SELECT
+                fl.votehead_id,
+                MAX(fv.name) AS votehead_name,
+                MAX(fv.priority) AS priority,
+                SUM(CASE WHEN fl.type = 'CHARGE' THEN fl.amount ELSE -fl.amount END) AS outstanding
+            FROM fee_ledger fl
+            JOIN fee_voteheads fv ON fl.votehead_id = fv.id AND fl.school_id = fv.school_id
+            WHERE fl.admno = %s AND fl.school_id = %s AND fl.votehead_id IS NOT NULL
+            GROUP BY fl.votehead_id
+            HAVING outstanding > 0
+            ORDER BY priority ASC, votehead_name ASC
+        """, (admno, self.school_id))
+        return self.cursor.fetchall()
+
     @audit_log('invoice_student')
     def invoice_student(self, admno: int, year_id: int, term_id: int, structure_id: int, user_id: int, custom_items: List[Dict] = None) -> List[int]:
         """Apply a fee structure or custom items to a student's ledger."""
@@ -685,16 +823,108 @@ class FeesService:
     # 3. PAYMENTS & RECEIPTS
     # =========================================================================
 
-    @audit_log('record_fee_payment')
-    def record_payment(self, admno: int, amount: Decimal, mode: str, reference: str, bank: str, date: str, year_id: int, term_id: int, user_id: int) -> Dict:
-        """Record a student payment and distribute across voteheads by priority."""
+    def find_duplicate_payment(self, mode: str, reference: str) -> Optional[Dict]:
+        """Find an existing payment with the same mode and reference in this school."""
+        if not reference:
+            return None
+
+        fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
+        receipts_has_school_id = self._table_has_column('fee_receipts', 'school_id')
+        if fee_payments_has_school_id:
+            receipt_join = "fr.payment_id = fp.id AND fr.school_id = fp.school_id" if receipts_has_school_id else "fr.payment_id = fp.id"
+            self.cursor.execute("""
+                SELECT fp.id, fp.admno, fp.amount, fp.payment_date, fp.status, fr.receipt_no
+                FROM fee_payments fp
+                LEFT JOIN fee_receipts fr ON """ + receipt_join + """
+                WHERE fp.payment_mode = %s AND fp.reference_number = %s AND fp.school_id = %s
+                ORDER BY fp.id DESC
+                LIMIT 1
+            """, (mode, reference, self.school_id))
+        else:
+            self.cursor.execute("""
+                SELECT fp.id, fp.admno, fp.amount, fp.payment_date, fp.status, fr.receipt_no
+                FROM fee_payments fp
+                JOIN fee_ledger fl ON fp.ledger_id = fl.id
+                LEFT JOIN fee_receipts fr ON fr.payment_id = fp.id
+                WHERE fp.payment_mode = %s AND fp.reference_number = %s AND fl.school_id = %s
+                ORDER BY fp.id DESC
+                LIMIT 1
+            """, (mode, reference, self.school_id))
+        return self.cursor.fetchone()
+
+    def get_payment_mode_receiving_account(self, mode: str) -> int:
+        """Return the active Finance receiving account for a fee payment mode."""
+        payment_mode = (mode or '').strip().upper()
+        if not payment_mode:
+            raise FeesError('Payment mode is required.')
+        self.cursor.execute("""
+            SELECT config.account_id
+            FROM payment_mode_receiving_accounts config
+            JOIN finance_accounts account
+              ON account.id = config.account_id AND account.school_id = config.school_id
+            WHERE config.school_id = %s
+              AND config.payment_mode = %s
+              AND config.is_active = TRUE
+              AND account.is_active = TRUE
+            LIMIT 1
+        """, (self.school_id, payment_mode))
+        account = self.cursor.fetchone()
+        if not account:
+            raise FeesError(
+                f"No active receiving account is configured for payment mode '{payment_mode}'."
+            )
+        return account['account_id']
+
+    def get_payment_mode_receiving_account_labels(self) -> Dict[str, str]:
+        """Return active configured account labels for the bursar payment form."""
         try:
+            self.cursor.execute("""
+                SELECT config.payment_mode, account.code, account.name
+                FROM payment_mode_receiving_accounts config
+                JOIN finance_accounts account
+                  ON account.id = config.account_id AND account.school_id = config.school_id
+                WHERE config.school_id = %s AND config.is_active = TRUE AND account.is_active = TRUE
+            """, (self.school_id,))
+            return {
+                row['payment_mode']: f"{row['code']} - {row['name']}"
+                for row in self.cursor.fetchall()
+            }
+        except pymysql.Error:
+            return {}
+
+    @audit_log('record_fee_payment')
+    def record_payment(self, admno: int, amount: Decimal, mode: str, reference: str, bank: str, date: str, year_id: int, term_id: int, user_id: int,
+                       allocation_mode: str = 'AUTOMATIC', manual_allocations: Optional[List[Dict]] = None,
+                       lifecycle_source_payment_id: Optional[int] = None, lifecycle_correlation_id: Optional[str] = None) -> Dict:
+        """Record a student payment with manual or priority-based votehead allocation."""
+        try:
+            mode = (mode or '').strip().upper()
             self._assert_student_belongs_to_school(admno)
             self._assert_academic_year_belongs_to_school(year_id)
             self._assert_term_belongs_to_school(term_id, year_id)
             fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
+            fee_payments_has_receiving_account_id = self._table_has_column('fee_payments', 'receiving_account_id')
+            fee_payments_has_cashier_session_id = self._table_has_column('fee_payments', 'cashier_session_id')
             allocations_has_school_id = self._table_has_column('fee_payment_allocations', 'school_id')
             receipts_has_school_id = self._table_has_column('fee_receipts', 'school_id')
+
+            duplicate = self.find_duplicate_payment(mode, reference)
+            if duplicate:
+                receipt_no = duplicate.get('receipt_no') or 'unissued receipt'
+                raise FeesError(
+                    f"Payment reference '{reference}' already exists for {mode} "
+                    f"(receipt {receipt_no}, admission {duplicate['admno']})."
+                )
+
+            receiving_account_id = self.get_payment_mode_receiving_account(mode)
+            cashier_session_id = None
+            if mode == 'CASH':
+                if not fee_payments_has_cashier_session_id:
+                    raise FeesError('Cashier-session support is unavailable. Apply migration 034 before posting cash receipts.')
+                cashier_session = FinanceService(self.connection, school_id=self.school_id).get_open_cashier_session(user_id)
+                if not cashier_session:
+                    raise FeesError('Open a cashier session before posting a cash receipt.')
+                cashier_session_id = cashier_session['id']
             self.connection.begin()
             
             amount = Decimal(str(amount))
@@ -710,7 +940,17 @@ class FeesService:
             ledger_id = self.cursor.lastrowid
             
             # 2. Payment Detail
-            if fee_payments_has_school_id:
+            if fee_payments_has_school_id and fee_payments_has_receiving_account_id and fee_payments_has_cashier_session_id:
+                self.cursor.execute("""
+                    INSERT INTO fee_payments (ledger_id, admno, payment_mode, reference_number, bank_name, receiving_account_id, cashier_session_id, payment_date, amount, received_by, school_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (ledger_id, admno, mode, reference, bank, receiving_account_id, cashier_session_id, date, amount, user_id, self.school_id))
+            elif fee_payments_has_school_id and fee_payments_has_receiving_account_id:
+                self.cursor.execute("""
+                    INSERT INTO fee_payments (ledger_id, admno, payment_mode, reference_number, bank_name, receiving_account_id, payment_date, amount, received_by, school_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (ledger_id, admno, mode, reference, bank, receiving_account_id, date, amount, user_id, self.school_id))
+            elif fee_payments_has_school_id:
                 self.cursor.execute("""
                     INSERT INTO fee_payments (ledger_id, admno, payment_mode, reference_number, bank_name, payment_date, amount, received_by, school_id)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -723,7 +963,7 @@ class FeesService:
             payment_id = self.cursor.lastrowid
             
             # 3. Votehead Distribution (Double-Entry Allocation)
-            # Fetch outstanding liabilities by votehead priority
+            # Fetch outstanding liabilities by votehead priority.
             self.cursor.execute("""
                 SELECT votehead_id, SUM(CASE WHEN type='CHARGE' THEN amount ELSE -amount END) as outstanding
                 FROM fee_ledger 
@@ -733,23 +973,65 @@ class FeesService:
                 ORDER BY (SELECT priority FROM fee_voteheads WHERE id = votehead_id AND school_id = %s) ASC
             """, (admno, self.school_id, self.school_id))
             liabilities = self.cursor.fetchall()
+
+            outstanding_by_votehead = {
+                liability['votehead_id']: Decimal(str(liability['outstanding']))
+                for liability in liabilities
+            }
+            allocation_mode = (allocation_mode or 'AUTOMATIC').upper()
+            if allocation_mode not in ('AUTOMATIC', 'MANUAL'):
+                raise FeesError('allocation_mode must be AUTOMATIC or MANUAL.')
+
+            allocations = []
+
+            def add_allocation(votehead_id: int, allocation_amount: Decimal) -> None:
+                if allocation_amount <= 0:
+                    return
+                if allocations_has_school_id:
+                    self.cursor.execute("""
+                        INSERT INTO fee_payment_allocations (payment_id, votehead_id, amount, school_id)
+                        VALUES (%s, %s, %s, %s)
+                    """, (payment_id, votehead_id, allocation_amount, self.school_id))
+                else:
+                    self.cursor.execute("""
+                        INSERT INTO fee_payment_allocations (payment_id, votehead_id, amount)
+                        VALUES (%s, %s, %s)
+                    """, (payment_id, votehead_id, allocation_amount))
+                allocations.append({'votehead_id': votehead_id, 'amount': allocation_amount})
+
+            if allocation_mode == 'MANUAL':
+                manual_allocations = manual_allocations or []
+                seen_voteheads = set()
+                for allocation in manual_allocations:
+                    try:
+                        votehead_id = int(allocation.get('votehead_id'))
+                        allocation_amount = Decimal(str(allocation.get('amount')))
+                    except (AttributeError, TypeError, ValueError, InvalidOperation):
+                        raise FeesError('Each manual allocation requires a valid votehead_id and amount.')
+
+                    if votehead_id in seen_voteheads:
+                        raise FeesError('A votehead can only be selected once for manual allocation.')
+                    if allocation_amount <= 0:
+                        raise FeesError('Manual allocation amounts must be greater than zero.')
+                    if allocation_amount > remaining_payment:
+                        raise FeesError('Manual allocation total cannot exceed the receipt amount.')
+                    if votehead_id not in outstanding_by_votehead:
+                        raise FeesError('Manual allocation must target an outstanding votehead for this student.')
+                    if allocation_amount > outstanding_by_votehead[votehead_id]:
+                        raise FeesError('Manual allocation cannot exceed the votehead outstanding balance.')
+
+                    add_allocation(votehead_id, allocation_amount)
+                    outstanding_by_votehead[votehead_id] -= allocation_amount
+                    remaining_payment -= allocation_amount
+                    seen_voteheads.add(votehead_id)
             
             for liab in liabilities:
                 if remaining_payment <= 0:
                     break
                 
-                pay_amount = min(remaining_payment, Decimal(str(liab['outstanding'])))
+                pay_amount = min(remaining_payment, outstanding_by_votehead[liab['votehead_id']])
                 if pay_amount > 0:
-                    if allocations_has_school_id:
-                        self.cursor.execute("""
-                            INSERT INTO fee_payment_allocations (payment_id, votehead_id, amount, school_id)
-                            VALUES (%s, %s, %s, %s)
-                        """, (payment_id, liab['votehead_id'], pay_amount, self.school_id))
-                    else:
-                        self.cursor.execute("""
-                            INSERT INTO fee_payment_allocations (payment_id, votehead_id, amount)
-                            VALUES (%s, %s, %s)
-                        """, (payment_id, liab['votehead_id'], pay_amount))
+                    add_allocation(liab['votehead_id'], pay_amount)
                     remaining_payment -= pay_amount
 
             # If still remaining (Advance Payment / Arrears clearing without specific votehead)
@@ -758,16 +1040,7 @@ class FeesService:
                 self.cursor.execute("SELECT id FROM fee_voteheads WHERE name = 'Tuition' AND school_id = %s LIMIT 1", (self.school_id,))
                 tuition = self.cursor.fetchone()
                 vid = tuition['id'] if tuition else 1 # Fallback to first votehead
-                if allocations_has_school_id:
-                    self.cursor.execute("""
-                        INSERT INTO fee_payment_allocations (payment_id, votehead_id, amount, school_id)
-                        VALUES (%s, %s, %s, %s)
-                    """, (payment_id, vid, remaining_payment, self.school_id))
-                else:
-                    self.cursor.execute("""
-                        INSERT INTO fee_payment_allocations (payment_id, votehead_id, amount)
-                        VALUES (%s, %s, %s)
-                    """, (payment_id, vid, remaining_payment))
+                add_allocation(vid, remaining_payment)
 
             # 4. Generate Receipt Number
             receipt_no = f"RCP-{datetime.now().year}-{str(payment_id).zfill(5)}"
@@ -781,19 +1054,99 @@ class FeesService:
                     INSERT INTO fee_receipts (payment_id, receipt_no, issued_by)
                     VALUES (%s, %s, %s)
                 """, (payment_id, receipt_no, user_id))
+
+            lifecycle_snapshot = {
+                'payment': {
+                    'admno': admno,
+                    'amount': amount,
+                    'payment_mode': mode,
+                    'reference_number': reference,
+                    'payment_date': date,
+                    'receiving_account_id': receiving_account_id,
+                },
+                'receipt_no': receipt_no,
+                'allocations': allocations,
+            }
+            correlation_id = lifecycle_correlation_id or str(uuid.uuid4())
+            self.cursor.execute("""
+                INSERT INTO fee_receipt_lifecycle_events
+                    (school_id, payment_id, event_type, status_after, actor_user_id, correlation_id, snapshot_json)
+                VALUES (%s, %s, 'POSTED', 'COMPLETED', %s, %s, %s)
+            """, (
+                self.school_id, payment_id, user_id, correlation_id,
+                json.dumps(lifecycle_snapshot, default=str, sort_keys=True),
+            ))
+            if lifecycle_source_payment_id:
+                self.cursor.execute("""
+                    INSERT INTO fee_receipt_lifecycle_events
+                        (school_id, payment_id, event_type, status_after, reason, actor_user_id, correlation_id, replacement_payment_id, snapshot_json)
+                    VALUES (%s, %s, 'REPOSTED', 'CANCELLED', %s, %s, %s, %s, %s)
+                """, (
+                    self.school_id, lifecycle_source_payment_id,
+                    f'Reposted as {receipt_no}', user_id, correlation_id, payment_id,
+                    json.dumps({'replacement_receipt_no': receipt_no}, sort_keys=True),
+                ))
             
             self.connection.commit()
             return {
                 'payment_id': payment_id,
                 'receipt_no': receipt_no,
-                'balance': new_balance
+                'balance': new_balance,
+                'allocations': [
+                    {'votehead_id': allocation['votehead_id'], 'amount': float(allocation['amount'])}
+                    for allocation in allocations
+                ]
             }
         except pymysql.IntegrityError:
             self.connection.rollback()
             raise FeesError(f"Payment reference '{reference}' already exists for this mode.")
+        except FeesError:
+            self.connection.rollback()
+            raise
         except Exception as e:
             self.connection.rollback()
             raise FeesError(f"Payment failed: {str(e)}")
+
+    @audit_log('repost_fee_receipt')
+    def repost_cancelled_receipt(self, payment_id: int, new_reference: str, posting_date: str, user_id: int) -> Dict:
+        """Create a replacement receipt for a cancelled payment without reactivating it."""
+        reference = (new_reference or '').strip()
+        if not reference:
+            raise FeesError('A new payment reference is required when reposting a receipt.')
+        fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
+        if fee_payments_has_school_id:
+            self.cursor.execute("""
+                SELECT fp.*, fl.academic_year_id, fl.term_id
+                FROM fee_payments fp
+                JOIN fee_ledger fl ON fp.ledger_id = fl.id AND fp.school_id = fl.school_id
+                WHERE fp.id = %s AND fp.school_id = %s
+            """, (payment_id, self.school_id))
+        else:
+            self.cursor.execute("""
+                SELECT fp.*, fl.academic_year_id, fl.term_id
+                FROM fee_payments fp
+                JOIN fee_ledger fl ON fp.ledger_id = fl.id
+                WHERE fp.id = %s AND fl.school_id = %s
+            """, (payment_id, self.school_id))
+        original = self.cursor.fetchone()
+        if not original:
+            raise FeesError('Original receipt not found.')
+        if original['status'] != 'CANCELLED':
+            raise FeesError('Only cancelled receipts can be reposted.')
+
+        return self.record_payment(
+            admno=original['admno'],
+            amount=Decimal(str(original['amount'])),
+            mode=original['payment_mode'],
+            reference=reference,
+            bank=original.get('bank_name') or '',
+            date=posting_date,
+            year_id=original['academic_year_id'],
+            term_id=original['term_id'],
+            user_id=user_id,
+            lifecycle_source_payment_id=payment_id,
+            lifecycle_correlation_id=str(uuid.uuid4()),
+        )
 
     def reallocate_payment(self, reference_no: str, from_admno: int, to_admno: int, user_id: int, reason: str):
         """Reassign a payment from one student to another."""
@@ -958,9 +1311,21 @@ class FeesService:
         self.cursor.execute(query, params)
         return self.cursor.fetchall()
 
+    def get_receipt_lifecycle(self, payment_id: int) -> List[Dict]:
+        """Return immutable lifecycle events for a receipt in the active school."""
+        self.cursor.execute("""
+            SELECT events.*, users.username AS actor_name
+            FROM fee_receipt_lifecycle_events events
+            LEFT JOIN users ON users.userNo = events.actor_user_id AND users.school_id = events.school_id
+            WHERE events.payment_id = %s AND events.school_id = %s
+            ORDER BY events.id ASC
+        """, (payment_id, self.school_id))
+        return self.cursor.fetchall()
+
     def get_receipt_details(self, payment_id: int) -> Optional[Dict]:
         """Fetch full details of a receipt including allocations."""
         fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
+        fee_payments_has_receiving_account_id = self._table_has_column('fee_payments', 'receiving_account_id')
         receipts_has_school_id = self._table_has_column('fee_receipts', 'school_id')
         allocations_has_school_id = self._table_has_column('fee_payment_allocations', 'school_id')
 
@@ -1024,11 +1389,16 @@ class FeesService:
             return None
 
         if fee_payments_has_school_id and receipts_has_school_id:
-            self.cursor.execute("""
+            account_select = ""
+            account_join = ""
+            if fee_payments_has_receiving_account_id:
+                account_select = ", receiving_account.code AS receiving_account_code, receiving_account.name AS receiving_account_name"
+                account_join = " LEFT JOIN finance_accounts receiving_account ON fp.receiving_account_id = receiving_account.id AND fp.school_id = receiving_account.school_id"
+            self.cursor.execute(f"""
                 SELECT fp.*, fr.receipt_no, fr.issued_at, si.FName, si.MName, si.SName,
                        ay.year as year_name, utd.term_number,
                        u.username as issued_by_name, fl.academic_year_id, fl.term_id,
-                       fl.balance_after, COALESCE(fl.reference_no, fp.reference_number) as reference_no
+                       fl.balance_after, COALESCE(fl.reference_no, fp.reference_number) as reference_no{account_select}
                 FROM fee_payments fp
                 JOIN fee_receipts fr ON fp.id = fr.payment_id AND fp.school_id = fr.school_id
                 JOIN studentinfo si ON fp.admno = si.AdmNo AND fp.school_id = si.school_id
@@ -1036,6 +1406,7 @@ class FeesService:
                 LEFT JOIN academic_years ay ON fl.academic_year_id = ay.id AND fl.school_id = ay.school_id
                 LEFT JOIN uniform_term_dates utd ON fl.term_id = utd.id AND fl.school_id = utd.school_id
                 LEFT JOIN users u ON fp.received_by = u.userNo
+                {account_join}
                 WHERE fp.id = %s AND fp.school_id = %s
             """, (payment_id, self.school_id))
         else:
@@ -1148,6 +1519,24 @@ class FeesService:
             if payment['status'] != 'COMPLETED':
                 raise FeesError(f"Receipt is already {payment['status']}.")
 
+            reason = (reason or '').strip()
+            if not reason:
+                raise FeesError('A cancellation reason is required.')
+
+            allocations_has_school_id = self._table_has_column('fee_payment_allocations', 'school_id')
+            if allocations_has_school_id:
+                self.cursor.execute("""
+                    SELECT votehead_id, amount FROM fee_payment_allocations
+                    WHERE payment_id = %s AND school_id = %s
+                    ORDER BY id ASC
+                """, (payment_id, self.school_id))
+            else:
+                self.cursor.execute("""
+                    SELECT votehead_id, amount FROM fee_payment_allocations
+                    WHERE payment_id = %s ORDER BY id ASC
+                """, (payment_id,))
+            allocations = self.cursor.fetchall()
+
             admno = payment['admno']
             amount = Decimal(str(payment['amount']))
             
@@ -1172,9 +1561,19 @@ class FeesService:
             else:
                 self.cursor.execute("UPDATE fee_payments SET status = 'CANCELLED' WHERE id = %s", (payment_id,))
             
-            # 5. Delete allocations
-            # self.cursor.execute("DELETE FROM fee_payment_allocations WHERE payment_id = %s", (payment_id,))
-            # Better to keep allocations for history but marked as part of a cancelled payment (FK to fee_payments does this)
+            snapshot = {
+                'payment': payment,
+                'allocations': allocations,
+                'reversal_reference': void_ref,
+            }
+            self.cursor.execute("""
+                INSERT INTO fee_receipt_lifecycle_events
+                    (school_id, payment_id, event_type, status_after, reason, actor_user_id, correlation_id, snapshot_json)
+                VALUES (%s, %s, 'CANCELLED', 'CANCELLED', %s, %s, %s, %s)
+            """, (
+                self.school_id, payment_id, reason, user_id, str(uuid.uuid4()),
+                json.dumps(snapshot, default=str, sort_keys=True),
+            ))
 
             self.connection.commit()
             return True

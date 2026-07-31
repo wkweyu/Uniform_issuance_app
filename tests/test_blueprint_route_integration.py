@@ -12,6 +12,7 @@ import blueprints.farm.routes as farm_routes
 import blueprints.inventory.routes as inventory_routes
 import blueprints.procurement.routes as procurement_routes
 import blueprints.students.routes as students_routes
+import blueprints.students.services as students_services
 import blueprints.transport.routes as transport_routes
 import blueprints.classes.routes as classes_routes
 from models import School
@@ -50,6 +51,36 @@ class FinanceServiceStub:
         self.calls.append(("get_accounts",))
         return [{"id": 1, "account_name": "Utilities", "account_code": "5000"}]
 
+    def get_payment_mode_receiving_accounts(self):
+        self.calls.append(("get_payment_mode_receiving_accounts",))
+        return [{"payment_mode": "CASH", "account_id": 1, "account_code": "1000", "account_name": "Cash on Hand", "is_active": True}]
+
+    def get_payment_mode_receiving_account_labels(self):
+        self.calls.append(("get_payment_mode_receiving_account_labels",))
+        return {"CASH": "1000 - Cash on Hand"}
+
+    def configure_payment_mode_receiving_account(self, payment_mode, account_id, configured_by, is_active=True):
+        self.calls.append(("configure_payment_mode_receiving_account", payment_mode, account_id, configured_by, is_active))
+
+    def get_open_cashier_session(self, cashier_user_id):
+        self.calls.append(("get_open_cashier_session", cashier_user_id))
+        return None
+
+    def get_cashier_sessions(self):
+        self.calls.append(("get_cashier_sessions",))
+        return []
+
+    def open_cashier_session(self, cashier_user_id, opened_by):
+        self.calls.append(("open_cashier_session", cashier_user_id, opened_by))
+        return 1
+
+    def close_cashier_session(self, session_id, cashier_user_id, actual_cash, closed_by, notes=''):
+        self.calls.append(("close_cashier_session", session_id, cashier_user_id, actual_cash, closed_by, notes))
+        return {"expected_cash": Decimal("0.00"), "actual_cash": actual_cash, "variance": actual_cash, "status": "CLOSED"}
+
+    def approve_cashier_session_variance(self, session_id, approved_by):
+        self.calls.append(("approve_cashier_session_variance", session_id, approved_by))
+
     def get_pending_purchase_orders(self):
         self.calls.append(("get_pending_purchase_orders",))
         return [{"id": 5, "po_number": "PO-001"}]
@@ -74,11 +105,29 @@ class FeesServiceStub:
     import_mpesa_error = None
     assign_waiver_error = None
     record_payment_error = None
+    duplicate_payment = None
+    allocation_templates = []
 
     def __init__(self, _connection):
         self.school_id = 7
         self.calls = []
         FeesServiceStub.last_instance = self
+
+    def get_payment_mode_receiving_account_labels(self):
+        self.calls.append(("get_payment_mode_receiving_account_labels",))
+        return {"CASH": "1000 - Cash on Hand"}
+
+    def get_receipt_details(self, payment_id):
+        self.calls.append(("get_receipt_details", payment_id))
+        return {"id": payment_id, "receipt_no": "RCP-2026-00077", "payment_mode": "CASH", "amount": Decimal("1500.00")}
+
+    def get_receipt_lifecycle(self, payment_id):
+        self.calls.append(("get_receipt_lifecycle", payment_id))
+        return [{"event_type": "CANCELLED", "status_after": "CANCELLED", "reason": "Wrong student", "actor_user_id": 10, "correlation_id": "correlation", "occurred_at": "2026-07-31"}]
+
+    def repost_cancelled_receipt(self, payment_id, new_reference, posting_date, user_id):
+        self.calls.append(("repost_cancelled_receipt", payment_id, new_reference, posting_date, user_id))
+        return {"payment_id": 88, "receipt_no": "RCP-2026-00088"}
 
     def import_mpesa_statement(self, transactions):
         self.calls.append(("import_mpesa_statement", transactions))
@@ -91,11 +140,18 @@ class FeesServiceStub:
         if self.assign_waiver_error is not None:
             raise self.assign_waiver_error
 
-    def record_payment(self, admno, amount, mode, reference, bank, date, year_id, term_id, user_id):
-        self.calls.append(("record_payment", admno, amount, mode, reference, bank, date, year_id, term_id, user_id))
+    def record_payment(self, admno, amount, mode, reference, bank, date, year_id, term_id, user_id,
+                       allocation_mode="AUTOMATIC", manual_allocations=None):
+        self.calls.append(("record_payment", admno, amount, mode, reference, bank, date, year_id, term_id,
+                           user_id, allocation_mode, manual_allocations))
         if self.record_payment_error is not None:
             raise self.record_payment_error
-        return {"payment_id": 77, "receipt_no": "RCP-2026-00077"}
+        return {
+            "payment_id": 77,
+            "receipt_no": "RCP-2026-00077",
+            "balance": Decimal("250.00"),
+            "allocations": [{"votehead_id": 4, "amount": 1000.0}],
+        }
 
     def get_recent_terms(self):
         self.calls.append(("get_recent_terms",))
@@ -104,6 +160,48 @@ class FeesServiceStub:
     def get_current_term_id(self):
         self.calls.append(("get_current_term_id",))
         return 3
+
+    def get_student_balance(self, admno):
+        self.calls.append(("get_student_balance", admno))
+        return Decimal("850.00")
+
+    def get_recent_payments(self, admno, limit=5):
+        self.calls.append(("get_recent_payments", admno, limit))
+        return [{"id": 77, "receipt_no": "RCP-2026-00077", "amount": Decimal("650.00")}]
+
+    def get_outstanding_voteheads(self, admno):
+        self.calls.append(("get_outstanding_voteheads", admno))
+        return [{"votehead_id": 4, "votehead_name": "Tuition", "priority": 1, "outstanding": Decimal("850.00")}]
+
+    def get_student_fee_structure(self, admno, term_id=None):
+        self.calls.append(("get_student_fee_structure", admno, term_id))
+        return [{"votehead_id": 4, "votehead_name": "Tuition", "amount": Decimal("1500.00"), "priority": 1}]
+
+    def get_student_term_summary(self, admno, term_id):
+        self.calls.append(("get_student_term_summary", admno, term_id))
+        return {
+            "charges": Decimal("1500.00"),
+            "debits": Decimal("0.00"),
+            "payments": Decimal("650.00"),
+            "credits": Decimal("0.00"),
+            "net_due": Decimal("850.00"),
+        }
+
+    def get_student_term_invoices(self, admno, term_id):
+        self.calls.append(("get_student_term_invoices", admno, term_id))
+        return [{"reference_no": "INV-1001-2026-3", "issued_on": "2026-01-15", "amount": Decimal("1500.00"), "item_count": 1}]
+
+    def find_duplicate_payment(self, mode, reference):
+        self.calls.append(("find_duplicate_payment", mode, reference))
+        return self.duplicate_payment
+
+    def get_allocation_templates(self):
+        self.calls.append(("get_allocation_templates",))
+        return self.allocation_templates
+
+    def create_allocation_template(self, name, allocations, user_id):
+        self.calls.append(("create_allocation_template", name, allocations, user_id))
+        return {"id": 9, "name": name, "items": allocations}
 
     def get_student_statement(self, admno, year_id=None):
         self.calls.append(("get_student_statement", admno, year_id))
@@ -212,10 +310,18 @@ class ExamServiceStub:
 class StudentServiceStub:
     last_instance = None
 
-    def __init__(self, _connection):
-        self.school_id = 7
+    def __init__(self, _connection, school_id=None):
+        self.school_id = school_id or 7
         self.calls = []
         StudentServiceStub.last_instance = self
+
+    def get_student_by_admno(self, admno):
+        self.calls.append(("get_student_by_admno", admno))
+        return {"AdmNo": admno, "FName": "Ada", "MName": "", "SName": "Lovelace", "Sex": "F", "category": "Day", "student_group_name": "Scholarship"}
+
+    def get_student_class_info(self, admno):
+        self.calls.append(("get_student_class_info", admno))
+        return {"class_name": "Grade 7 A", "class_group": "Grade 7-9", "stream": "A"}
 
     def clear_student_subject_enrollments(self, allocation_id):
         self.calls.append(("clear", allocation_id))
@@ -279,6 +385,8 @@ class ClassServiceStub:
 
     def get_all_academic_years(self):
         self.calls.append(("get_all_academic_years",))
+        if getattr(self, "get_all_academic_years_error", None) is not None:
+            raise self.get_all_academic_years_error
         return [{"id": 2026, "is_current": True, "name": "2026"}]
 
     def get_active_classes(self):
@@ -447,6 +555,7 @@ def _login_admin(client, school_id):
         session["userNo"] = 10
         session["school_id"] = school_id
         session["is_admin"] = True
+        session["is_super_admin"] = True
         session["username"] = "admin"
 
 
@@ -477,6 +586,44 @@ def test_finance_manage_budgets_route_uses_service_methods(client, db_session, m
         ("get_budgets",),
         ("get_accounts",),
     ]
+
+
+def test_finance_payment_mode_receiving_accounts_route_configures_mapping(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(finance_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(finance_routes, "FinanceService", FinanceServiceStub)
+    monkeypatch.setattr(
+        finance_routes,
+        "render_template",
+        lambda template, **context: f"{template}:{len(context['mappings'])}:{len(context['accounts'])}:{','.join(context['payment_modes'])}",
+    )
+
+    response = client.post(
+        "/admin/finance/payment-mode-accounts",
+        data={"payment_mode": "MPESA", "account_id": "1", "is_active": "on"},
+    )
+
+    assert response.status_code == 200
+    assert b"manage_payment_mode_receiving_accounts.html:1:1:CASH,MPESA,BANK_TRANSFER,CHEQUE" in response.data
+    assert FinanceServiceStub.last_instance.calls == [
+        ("configure_payment_mode_receiving_account", "MPESA", 1, 10, True),
+        ("get_payment_mode_receiving_accounts",),
+        ("get_accounts",),
+    ]
+
+
+def test_finance_cashier_sessions_route_opens_current_cashier_session(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(finance_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(finance_routes, "FinanceService", FinanceServiceStub)
+
+    response = client.post("/admin/finance/cashier-sessions", data={"action": "open"})
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/finance/cashier-sessions")
+    assert FinanceServiceStub.last_instance.calls == [("open_cashier_session", 10, 10)]
 
 
 def test_finance_authorize_voucher_route_passes_source_account_to_service(client, db_session, monkeypatch):
@@ -649,6 +796,205 @@ def test_fees_collect_route_rejects_invalid_amount_before_service_call(client, d
         assert session.get("_flashes")[-1] == ("error", "amount must be a valid number.")
 
 
+def test_fees_collect_route_forwards_manual_allocations_for_ajax_post(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+
+    response = client.post(
+        "/admin/fees/collect",
+        json={
+            "admno": 1001,
+            "amount": "1500.00",
+            "mode": "MPESA",
+            "reference": " QWE123 ",
+            "bank": "",
+            "date": "2026-04-03",
+            "year_id": 2026,
+            "term_id": 3,
+            "allocation_mode": "MANUAL",
+            "manual_allocations": [{"votehead_id": 4, "amount": "1000.00"}],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json == {
+        "success": True,
+        "message": "Payment received. Receipt No: RCP-2026-00077",
+        "receipt_no": "RCP-2026-00077",
+        "payment_id": 77,
+        "balance": 250.0,
+        "allocations": [{"votehead_id": 4, "amount": 1000.0}],
+    }
+    assert FeesServiceStub.last_instance.calls == [
+        (
+            "record_payment", 1001, Decimal("1500.00"), "MPESA", "QWE123", "", "2026-04-03",
+            2026, 3, 10, "MANUAL", [{"votehead_id": 4, "amount": "1000.00"}],
+        )
+    ]
+
+
+def test_fees_collect_route_hides_workspace_initialization_traceback(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+    monkeypatch.setattr(ClassServiceStub, "get_all_academic_years_error", RuntimeError("database password exposed"), raising=False)
+
+    response = client.get("/admin/fees/collect")
+
+    assert response.status_code == 500
+    assert response.data == b"Unable to load the bursar workspace. Please try again later."
+    assert b"database password exposed" not in response.data
+    assert b"Traceback" not in response.data
+
+
+def test_fees_student_context_returns_ledger_outstanding_voteheads(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+    monkeypatch.setattr(students_services, "StudentService", StudentServiceStub)
+
+    response = client.get("/api/fees/student-context?admno=1001")
+
+    assert response.status_code == 200
+    assert response.json["success"] is True
+    assert response.json["admno"] == 1001
+    assert response.json["stream"] == "A"
+    assert response.json["student_group"] == "Scholarship"
+    assert response.json["outstanding_balance"] == 850.0
+    assert response.json["structure_items"] == [
+        {"votehead_id": 4, "votehead_name": "Tuition", "amount": 1500.0, "priority": 1}
+    ]
+    assert response.json["outstanding_voteheads"] == [
+        {"votehead_id": 4, "votehead_name": "Tuition", "amount": 850.0, "priority": 1}
+    ]
+    assert response.json["financial_alerts"] == []
+    assert response.json["term_summary"] == {
+        "charges": 1500.0,
+        "debits": 0.0,
+        "payments": 650.0,
+        "credits": 0.0,
+        "net_due": 850.0,
+    }
+    assert response.json["term_invoices"] == [
+        {"reference_no": "INV-1001-2026-3", "issued_on": "2026-01-15", "amount": 1500.0, "item_count": 1}
+    ]
+    assert ("get_outstanding_voteheads", 1001) in FeesServiceStub.last_instance.calls
+
+
+def test_fees_duplicate_payment_preflight_returns_tenant_scoped_result(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+
+    clear_response = client.get("/api/fees/payment-duplicate?mode=mpesa&reference=QWE123")
+
+    assert clear_response.status_code == 200
+    assert clear_response.json == {"duplicate": False}
+    assert FeesServiceStub.last_instance.calls == [("find_duplicate_payment", "MPESA", "QWE123")]
+
+    FeesServiceStub.duplicate_payment = {
+        "id": 77,
+        "admno": 1001,
+        "amount": Decimal("1500.00"),
+        "payment_date": "2026-07-30",
+        "receipt_no": "RCP-2026-00077",
+    }
+    duplicate_response = client.get("/api/fees/payment-duplicate?mode=MPESA&reference=QWE123")
+
+    assert duplicate_response.status_code == 200
+    assert duplicate_response.json == {
+        "duplicate": True,
+        "payment": {
+            "id": 77,
+            "admno": 1001,
+            "amount": 1500.0,
+            "payment_date": "2026-07-30",
+            "receipt_no": "RCP-2026-00077",
+        },
+    }
+    FeesServiceStub.duplicate_payment = None
+
+
+def test_fees_allocation_template_api_loads_and_saves_for_admin(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    FeesServiceStub.allocation_templates = [{"id": 4, "name": "Tuition First", "items": []}]
+
+    get_response = client.get("/api/fees/allocation-templates")
+    post_response = client.post(
+        "/api/fees/allocation-templates",
+        json={"name": "Boarding Split", "allocations": [{"votehead_id": 4, "amount": 1000}]},
+    )
+
+    assert get_response.status_code == 200
+    assert get_response.json == {"templates": [{"id": 4, "name": "Tuition First", "items": []}]}
+    assert post_response.status_code == 201
+    assert post_response.json == {
+        "success": True,
+        "template": {"id": 9, "name": "Boarding Split", "items": [{"votehead_id": 4, "amount": 1000}]},
+    }
+    assert FeesServiceStub.last_instance.calls == [
+        ("create_allocation_template", "Boarding Split", [{"votehead_id": 4, "amount": 1000}], 10),
+    ]
+    FeesServiceStub.allocation_templates = []
+
+
+def test_fees_allocation_template_api_blocks_non_admin_save(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    with client.session_transaction() as session:
+        session["is_admin"] = False
+
+    response = client.post(
+        "/api/fees/allocation-templates",
+        json={"name": "Boarding Split", "allocations": [{"votehead_id": 4, "amount": 1000}]},
+    )
+
+    assert response.status_code == 403
+    assert response.json == {"success": False, "message": "Administrator access is required."}
+
+
+def test_fees_student_context_returns_blocked_credit_alerts(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+    monkeypatch.setattr(students_services, "StudentService", StudentServiceStub)
+    monkeypatch.setattr(
+        StudentServiceStub,
+        "get_student_by_admno",
+        lambda self, admno: {"AdmNo": admno, "FName": "Ada", "SName": "Lovelace", "blocked": "YES"},
+    )
+    monkeypatch.setattr(FeesServiceStub, "get_student_balance", lambda self, admno: Decimal("-250.00"))
+
+    response = client.get("/api/fees/student-context?admno=1001")
+
+    assert response.status_code == 200
+    assert response.json["financial_alerts"] == [
+        {
+            "code": "BLOCKED_ACCOUNT",
+            "severity": "warning",
+            "message": "This student account is blocked. Confirm the account status before posting.",
+        },
+        {
+            "code": "CREDIT_BALANCE",
+            "severity": "info",
+            "message": "This student has a credit balance of KES 250.00.",
+        },
+    ]
+
+
 def test_fees_bulk_post_route_reports_malformed_rows_explicitly(client, db_session, monkeypatch):
     school = _create_school(db_session)
     _login_admin(client, school.id)
@@ -672,7 +1018,10 @@ def test_fees_bulk_post_route_reports_malformed_rows_explicitly(client, db_sessi
 
     assert response.status_code == 302
     assert FeesServiceStub.last_instance.calls == [
-        ("record_payment", 1001, Decimal("1500.00"), "CASH", "REF-1", "Equity", "2026-04-03", 2026, 2, 10),
+        (
+            "record_payment", 1001, Decimal("1500.00"), "CASH", "REF-1", "Equity", "2026-04-03",
+            2026, 2, 10, "AUTOMATIC", None,
+        ),
     ]
     with client.session_transaction() as session:
         flashes = session.get("_flashes")
@@ -1505,6 +1854,33 @@ def test_fee_receipts_register_route_rejects_invalid_admno_filter(client, db_ses
     assert FeesServiceStub.last_instance.calls == []
     with client.session_transaction() as session:
         assert session.get("_flashes")[-1] == ("error", "admno must be a valid integer.")
+
+
+def test_receipt_lifecycle_route_loads_receipt_and_events(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "render_template", lambda template, **context: f"{template}:{context['receipt']['receipt_no']}:{len(context['events'])}")
+
+    response = client.get("/admin/fees/receipt/77/lifecycle")
+
+    assert response.status_code == 200
+    assert b"fee_receipt_lifecycle.html:RCP-2026-00077:1" in response.data
+    assert FeesServiceStub.last_instance.calls == [("get_receipt_details", 77), ("get_receipt_lifecycle", 77)]
+
+
+def test_repost_fee_receipt_route_posts_new_reference(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+
+    response = client.post("/admin/fees/receipt/77/repost", data={"reference": "MPESA-NEW", "posting_date": "2026-07-31"})
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/fees/receipt/88")
+    assert FeesServiceStub.last_instance.calls == [("repost_cancelled_receipt", 77, "MPESA-NEW", "2026-07-31", 10)]
 
 
 def test_procurement_dashboard_route_rejects_invalid_supplier_filter(client, db_session, monkeypatch):

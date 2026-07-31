@@ -130,6 +130,127 @@ class FinanceService:
         except Exception as e:
             raise FinanceError(f"Failed to create account: {str(e)}")
 
+    def get_payment_mode_receiving_accounts(self) -> List[Dict]:
+        """Return configured fee-receiving accounts for the active school."""
+        self.cursor.execute("""
+            SELECT config.id, config.payment_mode, config.account_id, config.is_active,
+                   config.configured_at, account.code AS account_code, account.name AS account_name
+            FROM payment_mode_receiving_accounts config
+            JOIN finance_accounts account
+              ON account.id = config.account_id AND account.school_id = config.school_id
+            WHERE config.school_id = %s
+            ORDER BY config.payment_mode ASC
+        """, (self.school_id,))
+        return self.cursor.fetchall()
+
+    def configure_payment_mode_receiving_account(
+        self, payment_mode: str, account_id: int, configured_by: int, is_active: bool = True
+    ) -> None:
+        """Set the single receiving account assigned to a fee payment mode."""
+        mode = (payment_mode or '').strip().upper()
+        if not mode:
+            raise FinanceError("Payment mode is required.")
+        self._assert_account_belongs_to_school(account_id)
+        self.cursor.execute("""
+            INSERT INTO payment_mode_receiving_accounts
+                (school_id, payment_mode, account_id, is_active, configured_by)
+            VALUES (%s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                account_id = VALUES(account_id),
+                is_active = VALUES(is_active),
+                configured_by = VALUES(configured_by)
+        """, (self.school_id, mode, account_id, is_active, configured_by))
+        self.connection.commit()
+
+    def get_open_cashier_session(self, cashier_user_id: int) -> Optional[Dict]:
+        """Return the cashier's single open session for the active school."""
+        self.cursor.execute("""
+            SELECT id, cashier_user_id, opened_at
+            FROM cashier_sessions
+            WHERE school_id = %s AND cashier_user_id = %s AND status = 'OPEN'
+            ORDER BY id DESC
+            LIMIT 1
+        """, (self.school_id, cashier_user_id))
+        return self.cursor.fetchone()
+
+    def get_cashier_sessions(self, cashier_user_id: Optional[int] = None) -> List[Dict]:
+        """Return recent cashier sessions for the active school."""
+        query = """
+            SELECT sessions.*, opener.username AS opened_by_name, approver.username AS approved_by_name
+            FROM cashier_sessions sessions
+            LEFT JOIN users opener ON opener.userNo = sessions.opened_by AND opener.school_id = sessions.school_id
+            LEFT JOIN users approver ON approver.userNo = sessions.approved_by AND approver.school_id = sessions.school_id
+            WHERE sessions.school_id = %s
+        """
+        params = [self.school_id]
+        if cashier_user_id is not None:
+            query += " AND sessions.cashier_user_id = %s"
+            params.append(cashier_user_id)
+        query += " ORDER BY sessions.id DESC"
+        self.cursor.execute(query, tuple(params))
+        return self.cursor.fetchall()
+
+    def open_cashier_session(self, cashier_user_id: int, opened_by: int) -> int:
+        """Open one cash-accountability session per cashier and school."""
+        if self.get_open_cashier_session(cashier_user_id):
+            raise FinanceError('This cashier already has an open session.')
+        self.cursor.execute("""
+            INSERT INTO cashier_sessions (school_id, cashier_user_id, opened_by)
+            VALUES (%s, %s, %s)
+        """, (self.school_id, cashier_user_id, opened_by))
+        self.connection.commit()
+        return self.cursor.lastrowid
+
+    def close_cashier_session(
+        self, session_id: int, cashier_user_id: int, actual_cash: Decimal, closed_by: int, notes: str = ''
+    ) -> Dict:
+        """Close a session, requiring approval later when its cash variance is non-zero."""
+        self.cursor.execute("""
+            SELECT id FROM cashier_sessions
+            WHERE id = %s AND school_id = %s AND cashier_user_id = %s AND status = 'OPEN'
+            FOR UPDATE
+        """, (session_id, self.school_id, cashier_user_id))
+        if not self.cursor.fetchone():
+            raise FinanceError('Open cashier session not found.')
+
+        self.cursor.execute("""
+            SELECT COALESCE(SUM(amount), 0) AS expected_cash
+            FROM fee_payments
+            WHERE cashier_session_id = %s AND school_id = %s
+              AND payment_mode = 'CASH' AND status = 'COMPLETED'
+        """, (session_id, self.school_id))
+        expected_cash = Decimal(str(self.cursor.fetchone()['expected_cash']))
+        actual_cash = Decimal(str(actual_cash))
+        variance = actual_cash - expected_cash
+        status = 'CLOSED' if variance == 0 else 'PENDING_APPROVAL'
+        self.cursor.execute("""
+            UPDATE cashier_sessions
+            SET status = %s, closed_at = NOW(), closed_by = %s, expected_cash = %s,
+                actual_cash = %s, variance = %s, closure_notes = %s
+            WHERE id = %s AND school_id = %s
+        """, (status, closed_by, expected_cash, actual_cash, variance, notes.strip() or None, session_id, self.school_id))
+        self.connection.commit()
+        return {'expected_cash': expected_cash, 'actual_cash': actual_cash, 'variance': variance, 'status': status}
+
+    def approve_cashier_session_variance(self, session_id: int, approved_by: int) -> None:
+        """Approve a non-zero cash variance; cashier and approver must be distinct users."""
+        self.cursor.execute("""
+            SELECT cashier_user_id FROM cashier_sessions
+            WHERE id = %s AND school_id = %s AND status = 'PENDING_APPROVAL'
+            FOR UPDATE
+        """, (session_id, self.school_id))
+        session_record = self.cursor.fetchone()
+        if not session_record:
+            raise FinanceError('Cashier session awaiting approval was not found.')
+        if session_record['cashier_user_id'] == approved_by:
+            raise FinanceError('A cashier cannot approve their own session variance.')
+        self.cursor.execute("""
+            UPDATE cashier_sessions
+            SET status = 'CLOSED', approved_by = %s, approved_at = NOW()
+            WHERE id = %s AND school_id = %s
+        """, (approved_by, session_id, self.school_id))
+        self.connection.commit()
+
     # =========================================================================
     # 2. GENERAL LEDGER TRANSACTIONS
     # =========================================================================

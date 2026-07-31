@@ -493,7 +493,9 @@ def create_yearly_fee_structure_route():
             flash("Yearly fee structure updated.", "success")
         except (ValueError, FeesError) as e: flash(str(e), "error")
         except Exception as e: flash(str(e), "error")
-        finally: connection.close(); return redirect(url_for('fees.fee_structures_overview'))
+        finally:
+            connection.close()
+        return redirect(url_for('fees.fee_structures_overview'))
 
     context = {
         'years': class_service.get_all_academic_years(),
@@ -541,6 +543,7 @@ def collect_fees():
                 year_id_val = data.get('year_id')
                 term_id_val = data.get('term_id')
                 allocation_mode = data.get('allocation_mode', 'AUTOMATIC')
+                manual_allocations = data.get('manual_allocations')
             else:
                 admno_val = request.form.get('admno')
                 amount_val = request.form.get('amount')
@@ -551,6 +554,10 @@ def collect_fees():
                 year_id_val = request.form.get('year_id')
                 term_id_val = request.form.get('term_id')
                 allocation_mode = request.form.get('allocation_mode', 'AUTOMATIC')
+                manual_allocations = None
+
+            if manual_allocations is not None and not isinstance(manual_allocations, list):
+                raise ValueError('manual_allocations must be a list.')
 
             result = service.record_payment(
                 admno=_required_int(admno_val, 'admno'),
@@ -561,7 +568,9 @@ def collect_fees():
                 date=date_val,
                 year_id=_required_int(year_id_val, 'year_id'),
                 term_id=_required_int(term_id_val, 'term_id'),
-                user_id=session['userNo']
+                user_id=session['userNo'],
+                allocation_mode=allocation_mode,
+                manual_allocations=manual_allocations,
             )
 
             if is_ajax:
@@ -570,7 +579,8 @@ def collect_fees():
                     'message': f"Payment received. Receipt No: {result['receipt_no']}",
                     'receipt_no': result['receipt_no'],
                     'payment_id': result['payment_id'],
-                    'balance': float(result['balance']) if result['balance'] is not None else 0.0
+                    'balance': float(result['balance']) if result['balance'] is not None else 0.0,
+                    'allocations': result.get('allocations', []),
                 })
 
             flash(f"Payment received. Receipt No: {result['receipt_no']}", "success")
@@ -588,59 +598,17 @@ def collect_fees():
         years = class_service.get_all_academic_years()
         terms = service.get_recent_terms()
         curr_term_id = service.get_current_term_id()
+        payment_mode_accounts = service.get_payment_mode_receiving_account_labels()
         connection.close()
         return render_template('collect_fees.html', years=years, terms=terms, current_year_id=next((y['id'] for y in years if y['is_current']), None),
-                             current_term_id=curr_term_id, now=datetime.now())
-    except Exception as e:
-        import traceback
-        err_msg = traceback.format_exc()
+                     current_term_id=curr_term_id, now=datetime.now(), payment_mode_accounts=payment_mode_accounts)
+    except Exception:
+        current_app.logger.exception("Failed to load bursar workspace")
         try:
             connection.close()
         except Exception:
             pass
-        return f"<h3>Bursar Terminal Diagnostic Traceback (GET /admin/fees/collect)</h3><pre style='background:#f8fafc; padding:20px; border:1px solid #e2e8f0; border-radius:8px; font-family:monospace; color:#ef4444;'>{err_msg}</pre>", 500
-
-@fees_bp.route('/admin/fees/diagnostics', methods=['GET'])
-@login_required
-@admin_required
-def fees_diagnostics():
-    connection = get_db_connection()
-    try:
-        with connection.cursor() as cursor:
-            # Check table existence and row counts
-            tables_to_check = ['academic_years', 'uniform_term_dates', 'class_group_settings']
-            status = {}
-            for tbl in tables_to_check:
-                cursor.execute(f"SHOW TABLES LIKE '{tbl}'")
-                exists = cursor.fetchone() is not None
-                count = 0
-                if exists:
-                    cursor.execute(f"SELECT COUNT(*) as cnt FROM `{tbl}`")
-                    count_res = cursor.fetchone()
-                    count = count_res['cnt'] if count_res else 0
-                status[tbl] = {'exists': exists, 'count': count}
-            
-            # Check current tenant
-            school_id = session.get("school_id")
-            
-        connection.close()
-        rows_html = "".join([f"<li><b>{tbl}</b>: exists={meta['exists']}, count={meta['count']}</li>" for tbl, meta in status.items()])
-        return f"""
-        <div style="font-family:sans-serif; max-width:600px; margin:40px auto; padding:30px; border:1px solid #e2e8f0; border-radius:12px;">
-            <h2 style="color:#4f46e5; margin-top:0;">MySQL Tables Diagnostic Report</h2>
-            <p>Active School Session ID: <b>{school_id}</b></p>
-            <ul>{rows_html}</ul>
-            <p style="color:#10b981; font-weight:bold;">✔ Diagnostics run completed successfully.</p>
-        </div>
-        """
-    except Exception as e:
-        import traceback
-        err_msg = traceback.format_exc()
-        try:
-            connection.close()
-        except Exception:
-            pass
-        return f"<h3>Diagnostics Process Failure</h3><pre style='background:#fef2f2; color:#b91c1c; padding:20px; border-radius:8px;'>{err_msg}</pre>", 500
+        return "Unable to load the bursar workspace. Please try again later.", 500
 
 @fees_bp.route('/admin/fees/bulk_post', methods=['GET', 'POST'])
 @login_required
@@ -734,6 +702,59 @@ def api_statement():
         return jsonify({'success': False, 'message': str(e)}), 400
     finally: connection.close()
 
+@fees_bp.route('/api/fees/payment-duplicate')
+@login_required
+def api_payment_duplicate():
+    try:
+        mode = _required_text(request.args.get('mode'), 'mode').upper()
+        reference = _required_text(request.args.get('reference'), 'reference')
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+
+    connection = get_db_connection()
+    service = FeesService(connection)
+    try:
+        payment = service.find_duplicate_payment(mode, reference)
+        if not payment:
+            return jsonify({'duplicate': False})
+        return jsonify({
+            'duplicate': True,
+            'payment': {
+                'id': payment['id'],
+                'admno': payment['admno'],
+                'amount': float(payment['amount']),
+                'payment_date': payment['payment_date'].isoformat() if hasattr(payment['payment_date'], 'isoformat') else payment['payment_date'],
+                'receipt_no': payment.get('receipt_no'),
+            },
+        })
+    finally:
+        connection.close()
+
+@fees_bp.route('/api/fees/allocation-templates', methods=['GET', 'POST'])
+@login_required
+def api_allocation_templates():
+    if request.method == 'POST' and not session.get('is_admin', False):
+        return jsonify({'success': False, 'message': 'Administrator access is required.'}), 403
+
+    connection = get_db_connection()
+    service = FeesService(connection)
+    try:
+        if request.method == 'GET':
+            templates = service.get_allocation_templates()
+            return jsonify({'templates': templates})
+
+        data = request.get_json() or {}
+        template = service.create_allocation_template(
+            data.get('name'),
+            data.get('allocations'),
+            session['userNo'],
+        )
+        return jsonify({'success': True, 'template': template}), 201
+    except (ValueError, FeesError) as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+    finally:
+        connection.close()
+
 @fees_bp.route('/api/fees/student-context')
 @login_required
 def api_fees_student_context():
@@ -759,12 +780,38 @@ def api_fees_student_context():
         class_info = student_service.get_student_class_info(admno)
         balance = fees_service.get_student_balance(admno)
         recent_receipts = fees_service.get_recent_payments(admno, limit=5)
+        outstanding_voteheads = fees_service.get_outstanding_voteheads(admno)
         
         # Get active term / structure totals
         term_id = fees_service.get_current_term_id()
         structure_items = []
+        term_summary = None
+        term_invoices = []
         if term_id:
             structure_items = fees_service.get_student_fee_structure(admno, term_id)
+            term_summary = fees_service.get_student_term_summary(admno, term_id)
+            term_invoices = fees_service.get_student_term_invoices(admno, term_id)
+
+        financial_alerts = []
+        balance_value = float(balance) if balance is not None else 0.0
+        if student.get('blocked') == 'YES':
+            financial_alerts.append({
+                'code': 'BLOCKED_ACCOUNT',
+                'severity': 'warning',
+                'message': 'This student account is blocked. Confirm the account status before posting.',
+            })
+        if balance_value < 0:
+            financial_alerts.append({
+                'code': 'CREDIT_BALANCE',
+                'severity': 'info',
+                'message': f'This student has a credit balance of KES {abs(balance_value):,.2f}.',
+            })
+        elif balance_value == 0:
+            financial_alerts.append({
+                'code': 'FULLY_PAID',
+                'severity': 'info',
+                'message': 'This student has no outstanding ledger balance.',
+            })
 
         # Standardize student name & contact info
         student_context = {
@@ -784,8 +831,19 @@ def api_fees_student_context():
             'residency': student.get('residency', 'N/A'),
             'class_name': class_info.get('class_name') if class_info else 'Not Assigned',
             'class_group': class_info.get('class_group') if class_info else 'N/A',
-            'outstanding_balance': float(balance) if balance is not None else 0.0,
+            'stream': (class_info or {}).get('stream') or student.get('stream') or 'N/A',
+            'student_group': student.get('student_group_name') or 'Not Assigned',
+            'outstanding_balance': balance_value,
             'recent_receipts': recent_receipts,
+            'financial_alerts': financial_alerts,
+            'outstanding_voteheads': [
+                {
+                    'votehead_id': item['votehead_id'],
+                    'votehead_name': item['votehead_name'],
+                    'amount': float(item['outstanding']),
+                    'priority': item['priority'],
+                } for item in outstanding_voteheads
+            ],
             'structure_items': [
                 {
                     'votehead_id': item['votehead_id'],
@@ -794,7 +852,24 @@ def api_fees_student_context():
                     'priority': item['priority']
                 } for item in structure_items
             ],
-            'term_id': term_id
+            'term_id': term_id,
+            'term_summary': (
+                {
+                    'charges': float(term_summary['charges']),
+                    'debits': float(term_summary['debits']),
+                    'payments': float(term_summary['payments']),
+                    'credits': float(term_summary['credits']),
+                    'net_due': float(term_summary['net_due']),
+                } if term_summary else None
+            ),
+            'term_invoices': [
+                {
+                    'reference_no': invoice['reference_no'],
+                    'issued_on': invoice['issued_on'].isoformat() if hasattr(invoice['issued_on'], 'isoformat') else invoice['issued_on'],
+                    'amount': float(invoice['amount']),
+                    'item_count': invoice['item_count'],
+                } for invoice in term_invoices
+            ],
         }
 
         # Resolve some dummy values mock allocation preview
@@ -862,7 +937,9 @@ def edit_fee_receipt(payment_id):
             flash("Receipt updated.", "success")
         except FeesError as e: flash(str(e), "error")
         except Exception as e: flash(str(e), "error")
-        finally: connection.close(); return redirect(url_for('fees.fee_receipts_register'))
+        finally:
+            connection.close()
+        return redirect(url_for('fees.fee_receipts_register'))
     receipt = service.get_receipt_details(payment_id)
     connection.close()
     return render_template('edit_fee_receipt.html', receipt=receipt)
@@ -879,6 +956,49 @@ def void_fee_receipt(payment_id):
     except Exception as e: flash(str(e), "error")
     finally: connection.close()
     return redirect(request.referrer or url_for('fees.fee_receipts_register'))
+
+@fees_bp.route('/admin/fees/receipt/<int:payment_id>/lifecycle')
+@login_required
+@admin_required
+def receipt_lifecycle(payment_id):
+    connection = get_db_connection(); service = FeesService(connection)
+    try:
+        receipt = service.get_receipt_details(payment_id)
+        if not receipt:
+            flash('Receipt not found.', 'error')
+            return redirect(url_for('fees.fee_receipts_register'))
+        return render_template(
+            'fee_receipt_lifecycle.html',
+            receipt=receipt,
+            events=service.get_receipt_lifecycle(payment_id),
+            now=datetime.now(),
+        )
+    except Exception:
+        current_app.logger.exception('Failed to load receipt lifecycle for payment %s', payment_id)
+        flash('Receipt lifecycle could not be loaded.', 'error')
+        return redirect(url_for('fees.fee_receipts_register'))
+    finally:
+        connection.close()
+
+@fees_bp.route('/admin/fees/receipt/<int:payment_id>/repost', methods=['POST'])
+@login_required
+@admin_required
+def repost_fee_receipt(payment_id):
+    connection = get_db_connection(); service = FeesService(connection)
+    try:
+        result = service.repost_cancelled_receipt(
+            payment_id=payment_id,
+            new_reference=_required_text(request.form.get('reference'), 'reference'),
+            posting_date=request.form.get('posting_date') or datetime.now().strftime('%Y-%m-%d'),
+            user_id=session['userNo'],
+        )
+        flash(f"Receipt reposted as {result['receipt_no']}.", 'success')
+        return redirect(url_for('fees.print_fee_receipt', payment_id=result['payment_id']))
+    except (ValueError, FeesError) as e:
+        flash(str(e), 'error')
+        return redirect(url_for('fees.receipt_lifecycle', payment_id=payment_id))
+    finally:
+        connection.close()
 
 @fees_bp.route('/api/mpesa/callback', methods=['POST'])
 def mpesa_callback():

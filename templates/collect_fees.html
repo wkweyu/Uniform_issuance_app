@@ -142,9 +142,9 @@
                             </div>
 
                             <div>
-                                <label class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 ml-1">Bank Name (Optional)</label>
-                                <input type="text" id="bankName" name="bank" placeholder="e.g. Equity Bank" 
-                                       class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-black focus:ring-indigo-500 transition">
+                                <label class="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 ml-1">Receiving Account</label>
+                                <input type="text" id="receivingAccount" readonly value="Not configured"
+                                       class="w-full bg-slate-100 border border-slate-200 text-slate-500 rounded-xl px-4 py-2.5 text-xs font-black cursor-not-allowed">
                             </div>
 
                             <!-- Value Input Deck -->
@@ -169,6 +169,27 @@
                                 <!-- Populated dynamically -->
                             </div>
                         </div>
+
+                        <div id="manualAllocationDeck" class="hidden bg-amber-50 rounded-2xl p-4 border border-amber-100 text-xs space-y-3">
+                            <div class="flex items-center justify-between gap-3">
+                                <h4 class="text-[9px] font-black uppercase tracking-wider text-amber-700">Manual Votehead Allocation</h4>
+                                <span class="text-[9px] font-bold text-amber-700">Any remainder follows priority</span>
+                            </div>
+                            <select id="allocationTemplateSelect" class="w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 focus:border-amber-500 focus:ring-amber-500">
+                                <option value="">Apply saved allocation template</option>
+                            </select>
+                            <div id="manualAllocationList" class="space-y-2"></div>
+                            {% if session.get('is_admin') %}
+                            <div class="grid grid-cols-[1fr_auto] gap-2 border-t border-amber-100 pt-3">
+                                <input id="allocationTemplateName" type="text" maxlength="100" placeholder="Template name" class="min-w-0 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 focus:border-amber-500 focus:ring-amber-500">
+                                <button type="button" id="saveAllocationTemplate" title="Save allocation template" class="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white hover:bg-amber-700 transition">
+                                    <i class="fas fa-bookmark"></i>
+                                </button>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <div id="duplicateReferenceAlert" class="hidden rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-bold text-rose-800" role="alert"></div>
 
                         <!-- Posting Controls Stack -->
                         <div class="grid grid-cols-2 gap-3 pt-2">
@@ -234,6 +255,7 @@
                                     <div class="flex flex-wrap gap-4 text-xs font-bold text-slate-500 pt-1 justify-center md:justify-start">
                                         <span>Parent: <strong id="contextParent" class="text-slate-700">Name</strong></span>
                                         <span>Phone: <strong id="contextPhone" class="text-slate-700">Phone</strong></span>
+                                        <span>Group: <strong id="contextStudentGroup" class="text-slate-700">Not Assigned</strong></span>
                                     </div>
                                 </div>
                                 <!-- Dynamic fiscal KPIs -->
@@ -256,6 +278,40 @@
                                     </div>
                                 </div>
                             </div>
+                        </div>
+
+                        <div id="termSummary" class="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3 border-t border-slate-100 pt-5 hidden">
+                            <div class="text-center">
+                                <p class="text-[9px] font-black uppercase tracking-widest text-slate-400">Term Charges</p>
+                                <p id="termCharges" class="mt-1 text-xs font-black text-slate-800">KES 0.00</p>
+                            </div>
+                            <div class="text-center">
+                                <p class="text-[9px] font-black uppercase tracking-widest text-slate-400">Term Payments</p>
+                                <p id="termPayments" class="mt-1 text-xs font-black text-emerald-700">KES 0.00</p>
+                            </div>
+                            <div class="text-center">
+                                <p class="text-[9px] font-black uppercase tracking-widest text-slate-400">Term Credits</p>
+                                <p id="termCredits" class="mt-1 text-xs font-black text-sky-700">KES 0.00</p>
+                            </div>
+                            <div class="text-center">
+                                <p class="text-[9px] font-black uppercase tracking-widest text-slate-400">Term Net Due</p>
+                                <p id="termNetDue" class="mt-1 text-xs font-black text-rose-600">KES 0.00</p>
+                            </div>
+                        </div>
+
+                        <div id="termInvoices" class="mt-4 hidden border-t border-slate-100 pt-4">
+                            <p class="text-[9px] font-black uppercase tracking-widest text-slate-400">Current-Term Invoices</p>
+                            <div id="termInvoiceList" class="mt-2 space-y-1.5"></div>
+                        </div>
+
+                        <div id="financialAlerts" class="hidden space-y-2" aria-live="polite"></div>
+
+                        <div id="recentReceiptsCard" class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden hidden">
+                            <div class="px-8 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                                <h2 class="text-xs font-black text-slate-900 uppercase tracking-widest">Recent Student Receipts</h2>
+                                <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Latest Five</span>
+                            </div>
+                            <div id="recentReceiptsList" class="divide-y divide-slate-100"></div>
                         </div>
 
                         <!-- Statement Listing Grid -->
@@ -581,15 +637,40 @@ document.addEventListener('DOMContentLoaded', function() {
     const admHidden = document.getElementById('selectedAdmNo');
     const displayDiv = document.getElementById('studentDisplay');
     const b_ctxCard = document.getElementById('bursarContextCard');
+    const termSummary = document.getElementById('termSummary');
+    const termInvoices = document.getElementById('termInvoices');
+    const termInvoiceList = document.getElementById('termInvoiceList');
+    const financialAlerts = document.getElementById('financialAlerts');
+    const recentReceiptsCard = document.getElementById('recentReceiptsCard');
+    const recentReceiptsList = document.getElementById('recentReceiptsList');
     const active_post_btn = document.getElementById('postBtn');
     const p_print_btn = document.getElementById('postPrintBtn');
     const p_new_btn = document.getElementById('postNewBtn');
     const input_amount = document.getElementById('paymentAmount');
     const proj_bal_label = document.getElementById('projBal');
+    const allocationMode = document.getElementById('allocationMode');
+    const allocationTemplateSelect = document.getElementById('allocationTemplateSelect');
+    const allocationTemplateName = document.getElementById('allocationTemplateName');
+    const saveAllocationTemplate = document.getElementById('saveAllocationTemplate');
+    const paymentMode = document.getElementById('paymentMode');
+    const receivingAccount = document.getElementById('receivingAccount');
+    const slipRef = document.getElementById('slipRef');
+    const duplicateReferenceAlert = document.getElementById('duplicateReferenceAlert');
+    const manualAllocationDeck = document.getElementById('manualAllocationDeck');
+    const manualAllocationList = document.getElementById('manualAllocationList');
     
     // Cached context variables
     let activeStudentContext = null;
     let debounceTimer;
+    let duplicateReferenceTimer;
+    let allocationTemplates = [];
+    const paymentModeAccounts = {{ payment_mode_accounts | default({}) | tojson }};
+
+    function updateReceivingAccount() {
+        receivingAccount.value = paymentModeAccounts[paymentMode.value] || 'Not configured';
+    }
+
+    updateReceivingAccount();
 
     // Search Box Listener
     searchInput.addEventListener('input', function() {
@@ -653,12 +734,22 @@ document.addEventListener('DOMContentLoaded', function() {
         // Lock actions again
         [active_post_btn, p_print_btn, p_new_btn].forEach(btn => btn.disabled = true);
         b_ctxCard.classList.add('hidden');
+        termSummary.classList.add('hidden');
+        termInvoices.classList.add('hidden');
+        termInvoiceList.innerHTML = '';
+        financialAlerts.classList.add('hidden');
+        financialAlerts.innerHTML = '';
+        recentReceiptsCard.classList.add('hidden');
+        recentReceiptsList.innerHTML = '';
         
         // Reset dynamic fields
         activeStudentContext = null;
         input_amount.value = '';
         proj_bal_label.textContent = 'KES 0.00';
         document.getElementById('quickAllocationDeck').classList.add('hidden');
+        manualAllocationDeck.classList.add('hidden');
+        manualAllocationList.innerHTML = '';
+        hideDuplicateReferenceAlert();
         
         resetDoubleEntryLedger();
     };
@@ -678,11 +769,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 b_ctxCard.classList.remove('hidden');
                 document.getElementById('contextName').textContent = data.full_name;
                 document.getElementById('contextAdm').textContent = data.admno;
-                document.getElementById('contextClass').textContent = data.class_name;
+                document.getElementById('contextClass').textContent = `${data.class_name} | Stream ${data.stream}`;
                 document.getElementById('contextParent').textContent = data.parent_name;
                 document.getElementById('contextPhone').textContent = data.parent_phone;
                 document.getElementById('contextCat').textContent = data.category;
+                document.getElementById('contextStudentGroup').textContent = data.student_group;
                 document.getElementById('contextStructureTot').textContent = 'KES ' + data.structure_items.reduce((acc, x) => acc + x.amount, 0).toLocaleString('en-US', {minimumFractionDigits: 2});
+                renderTermSummary(data.term_summary);
+                renderTermInvoices(data.term_invoices || []);
                 
                 const initials = (data.first_name[0] || '') + (data.success_name[0] || '');
                 document.getElementById('contextInitials').textContent = initials.toUpperCase() || 'ST';
@@ -709,12 +803,108 @@ document.addEventListener('DOMContentLoaded', function() {
                     document.getElementById('contextStatus').className = "text-xs font-black text-red-700 bg-red-50 px-2 py-0.5 rounded uppercase";
                 }
 
+                renderFinancialAlerts(data.financial_alerts || []);
+                renderRecentReceipts(data.recent_receipts || []);
+
                 // Push ledger statements in Tab
                 renderDoubleEntryStatement(data.admno);
                 
                 // Update live allocation lists
                 refreshProjectedPreview();
+                renderManualAllocationFields();
             });
+    }
+
+    function renderTermSummary(summary) {
+        termSummary.classList.toggle('hidden', !summary);
+        if (!summary) return;
+
+        const formatCurrency = amount => `KES ${Number(amount || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+        document.getElementById('termCharges').textContent = formatCurrency(summary.charges + summary.debits);
+        document.getElementById('termPayments').textContent = formatCurrency(summary.payments);
+        document.getElementById('termCredits').textContent = formatCurrency(summary.credits);
+        const netDue = document.getElementById('termNetDue');
+        netDue.textContent = formatCurrency(summary.net_due);
+        netDue.className = `mt-1 text-xs font-black ${summary.net_due > 0 ? 'text-rose-600' : summary.net_due < 0 ? 'text-emerald-700' : 'text-slate-700'}`;
+    }
+
+    function renderTermInvoices(invoices) {
+        termInvoiceList.innerHTML = '';
+        termInvoices.classList.toggle('hidden', !invoices.length);
+        invoices.forEach(invoice => {
+            const row = document.createElement('div');
+            row.className = 'flex flex-wrap items-center justify-between gap-2 text-xs';
+
+            const reference = document.createElement('span');
+            reference.className = 'font-mono font-bold text-slate-700';
+            reference.textContent = invoice.reference_no;
+            const amount = document.createElement('span');
+            amount.className = 'font-black text-slate-900';
+            amount.textContent = `KES ${Number(invoice.amount).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            row.append(reference, amount);
+            termInvoiceList.appendChild(row);
+        });
+    }
+
+    function renderFinancialAlerts(alerts) {
+        financialAlerts.innerHTML = '';
+        financialAlerts.classList.toggle('hidden', !alerts.length);
+
+        const alertStyles = {
+            warning: 'border-amber-200 bg-amber-50 text-amber-800',
+            info: 'border-sky-200 bg-sky-50 text-sky-800'
+        };
+        const alertIcons = {
+            warning: 'fa-triangle-exclamation',
+            info: 'fa-circle-info'
+        };
+
+        alerts.forEach(alertData => {
+            const item = document.createElement('div');
+            const severity = alertData.severity === 'warning' ? 'warning' : 'info';
+            item.className = `flex items-start gap-3 rounded-xl border px-4 py-3 text-xs font-bold ${alertStyles[severity]}`;
+
+            const icon = document.createElement('i');
+            icon.className = `fas ${alertIcons[severity]} mt-0.5`;
+            const message = document.createElement('p');
+            message.textContent = alertData.message;
+            item.append(icon, message);
+            financialAlerts.appendChild(item);
+        });
+    }
+
+    function renderRecentReceipts(receipts) {
+        recentReceiptsCard.classList.remove('hidden');
+        recentReceiptsList.innerHTML = '';
+
+        if (!receipts.length) {
+            recentReceiptsList.innerHTML = '<p class="px-8 py-6 text-xs font-bold text-slate-400">No posted receipts for this student.</p>';
+            return;
+        }
+
+        receipts.forEach(receipt => {
+            const amount = Number(receipt.amount || 0).toLocaleString('en-US', {minimumFractionDigits: 2});
+            const status = receipt.status || 'COMPLETED';
+            const statusClass = status === 'COMPLETED' ? 'text-emerald-600 bg-emerald-50' : 'text-rose-600 bg-rose-50';
+            const row = document.createElement('div');
+            row.className = 'px-8 py-4 flex flex-wrap items-center justify-between gap-3';
+            row.innerHTML = `
+                <div>
+                    <p class="text-xs font-black text-slate-900">${receipt.receipt_no || 'Receipt pending'}</p>
+                    <p class="mt-0.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">${receipt.payment_date || '-'} | ${receipt.payment_mode || '-'} | ${receipt.reference_number || '-'}</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="text-right">
+                        <p class="text-xs font-black text-slate-900">KES ${amount}</p>
+                        <span class="inline-flex mt-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${statusClass}">${status}</span>
+                    </div>
+                    <a href="/admin/fees/receipt/${receipt.id}" target="_blank" title="Print receipt" class="w-9 h-9 rounded-xl bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-500 flex items-center justify-center transition">
+                        <i class="fas fa-print"></i>
+                    </a>
+                </div>
+            `;
+            recentReceiptsList.appendChild(row);
+        });
     }
 
     // Refresh dynamic running state calculations
@@ -722,6 +912,140 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!activeStudentContext) return;
         refreshProjectedPreview();
     });
+
+    allocationMode.addEventListener('change', function() {
+        renderManualAllocationFields();
+    });
+
+    allocationTemplateSelect.addEventListener('change', function() {
+        const template = allocationTemplates.find(item => String(item.id) === this.value);
+        if (!template) return;
+
+        document.querySelectorAll('.manual-allocation').forEach(input => {
+            const item = template.items.find(entry => Number(entry.votehead_id) === Number(input.dataset.voteheadId));
+            input.value = item ? Number(item.amount).toFixed(2) : '';
+        });
+        refreshProjectedPreview();
+    });
+
+    async function loadAllocationTemplates(selectedTemplateId = '') {
+        try {
+            const response = await fetch('/api/fees/allocation-templates');
+            if (!response.ok) return;
+            const data = await response.json();
+            allocationTemplates = data.templates || [];
+            allocationTemplateSelect.innerHTML = '<option value="">Apply saved allocation template</option>';
+            allocationTemplates.forEach(template => {
+                const option = document.createElement('option');
+                option.value = template.id;
+                option.textContent = template.name;
+                allocationTemplateSelect.appendChild(option);
+            });
+            allocationTemplateSelect.value = selectedTemplateId;
+        } catch (_error) {
+            allocationTemplates = [];
+        }
+    }
+
+    if (saveAllocationTemplate) {
+        saveAllocationTemplate.addEventListener('click', async function() {
+            const name = allocationTemplateName.value.trim();
+            const allocations = getManualAllocations();
+            if (!name || !allocations.length) {
+                alert('Enter a template name and at least one allocation amount.');
+                return;
+            }
+
+            saveAllocationTemplate.disabled = true;
+            try {
+                const response = await fetch('/api/fees/allocation-templates', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({name, allocations})
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    alert(data.message || 'Unable to save allocation template.');
+                    return;
+                }
+                allocationTemplateName.value = '';
+                await loadAllocationTemplates(String(data.template.id));
+            } catch (_error) {
+                alert('Unable to save allocation template.');
+            } finally {
+                saveAllocationTemplate.disabled = false;
+            }
+        });
+    }
+
+    slipRef.addEventListener('input', function() {
+        clearTimeout(duplicateReferenceTimer);
+        duplicateReferenceTimer = setTimeout(checkDuplicateReference, 350);
+    });
+
+    paymentMode.addEventListener('change', () => {
+        updateReceivingAccount();
+        checkDuplicateReference();
+    });
+
+    function hideDuplicateReferenceAlert() {
+        duplicateReferenceAlert.classList.add('hidden');
+        duplicateReferenceAlert.textContent = '';
+    }
+
+    async function checkDuplicateReference() {
+        const reference = slipRef.value.trim();
+        if (!reference) {
+            hideDuplicateReferenceAlert();
+            return false;
+        }
+
+        try {
+            const response = await fetch(`/api/fees/payment-duplicate?mode=${encodeURIComponent(paymentMode.value)}&reference=${encodeURIComponent(reference)}`);
+            if (!response.ok) return false;
+            const data = await response.json();
+            if (!data.duplicate) {
+                hideDuplicateReferenceAlert();
+                return false;
+            }
+
+            const payment = data.payment;
+            duplicateReferenceAlert.textContent = `Duplicate reference: ${payment.receipt_no || `payment #${payment.id}`} was posted for admission ${payment.admno} on ${payment.payment_date}.`;
+            duplicateReferenceAlert.classList.remove('hidden');
+            return true;
+        } catch (_error) {
+            return false;
+        }
+    }
+
+    function renderManualAllocationFields() {
+        const manualMode = allocationMode.value === 'MANUAL';
+        manualAllocationDeck.classList.toggle('hidden', !manualMode || !activeStudentContext);
+        manualAllocationList.innerHTML = '';
+
+        if (!manualMode || !activeStudentContext) return;
+
+        (activeStudentContext.outstanding_voteheads || []).forEach(item => {
+            const row = document.createElement('label');
+            row.className = 'grid grid-cols-[1fr_96px] gap-3 items-center';
+            row.innerHTML = `
+                <span class="font-bold text-slate-700 truncate">${item.votehead_name}<span class="block mt-0.5 text-[9px] font-mono text-slate-400">Outstanding: KES ${Number(item.amount).toLocaleString('en-US', {minimumFractionDigits: 2})}</span></span>
+                <input type="number" min="0" step="0.01" inputmode="decimal" data-votehead-id="${item.votehead_id}" placeholder="0.00" class="manual-allocation w-full rounded-lg border border-amber-200 bg-white px-2 py-2 text-right text-xs font-black text-slate-800 focus:border-amber-500 focus:ring-amber-500">
+            `;
+            manualAllocationList.appendChild(row);
+        });
+    }
+
+    function getManualAllocations() {
+        return Array.from(document.querySelectorAll('.manual-allocation'))
+            .map(input => ({
+                votehead_id: Number(input.dataset.voteheadId),
+                amount: Number(input.value || 0)
+            }))
+            .filter(allocation => allocation.amount > 0);
+    }
+
+            loadAllocationTemplates();
 
     function refreshProjectedPreview() {
         const val = parseFloat(input_amount.value) || 0.0;
@@ -741,12 +1065,13 @@ document.addEventListener('DOMContentLoaded', function() {
         const allocDeck = document.getElementById('quickAllocationDeck');
         const allocList = document.getElementById('previewAllocationList');
         
-        if (val > 0 && activeStudentContext.structure_items.length > 0) {
+        const outstandingVoteheads = activeStudentContext.outstanding_voteheads || [];
+        if (val > 0 && outstandingVoteheads.length > 0) {
             allocDeck.classList.remove('hidden');
             allocList.innerHTML = '';
             
             let pool = val;
-            activeStudentContext.structure_items.forEach(item => {
+            outstandingVoteheads.forEach(item => {
                 let deduction = 0.0;
                 if (pool > 0) {
                     deduction = Math.min(pool, item.amount);
@@ -784,7 +1109,32 @@ document.addEventListener('DOMContentLoaded', function() {
     p_print_btn.onclick = (e) => triggerPostingAction(e, true);
     p_new_btn.onclick = (e) => triggerPostingAction(e, false, true);
 
-    function triggerPostingAction(e, alsoPrint = false, clearDesk = false) {
+    document.addEventListener('keydown', function(event) {
+        const activeElement = document.activeElement;
+        const isTyping = activeElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeElement.tagName);
+
+        if (event.key === 'F9') {
+            event.preventDefault();
+            if (!active_post_btn.disabled) active_post_btn.click();
+            return;
+        }
+
+        if (!event.ctrlKey || event.altKey || event.metaKey) return;
+
+        if (event.key.toLowerCase() === 'k') {
+            event.preventDefault();
+            searchInput.classList.remove('hidden');
+            searchInput.focus();
+        } else if (event.key.toLowerCase() === 'p' && !active_post_btn.disabled && !isTyping) {
+            event.preventDefault();
+            active_post_btn.click();
+        } else if (event.key.toLowerCase() === 'n' && !p_new_btn.disabled && !isTyping) {
+            event.preventDefault();
+            p_new_btn.click();
+        }
+    });
+
+    async function triggerPostingAction(e, alsoPrint = false, clearDesk = false) {
         e.preventDefault();
         const termSelect = document.getElementById('termId');
         const yearSelect = document.getElementById('yearId');
@@ -794,11 +1144,12 @@ document.addEventListener('DOMContentLoaded', function() {
             amount: parseFloat(input_amount.value),
             mode: document.getElementById('paymentMode').value,
             reference: document.getElementById('slipRef').value,
-            bank: document.getElementById('bankName').value,
+            bank: '',
             date: document.getElementById('postDate').value,
             year_id: parseInt(yearSelect.value),
             term_id: parseInt(termSelect.value),
-            allocation_mode: document.getElementById('allocationMode').value
+            allocation_mode: allocationMode.value,
+            manual_allocations: allocationMode.value === 'MANUAL' ? getManualAllocations() : []
         };
 
         if (isNaN(payload.amount) || payload.amount <= 0) {
@@ -807,6 +1158,9 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         if (!payload.reference) {
             alert("Reference id or transaction slip index is required!");
+            return;
+        }
+        if (await checkDuplicateReference()) {
             return;
         }
 

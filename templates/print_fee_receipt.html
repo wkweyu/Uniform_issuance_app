@@ -93,7 +93,7 @@
                     <tr>
                         <td class="p-3 font-bold text-gray-800 uppercase">General School Fees / Arrears</td>
                         <td class="p-3 font-bold uppercase text-gray-800">{{ receipt.payment_mode }}</td>
-                        <td class="p-3 font-mono text-xs">{{ receipt.reference_no or 'N/A' }}{% if receipt.bank_name %} ({{ receipt.bank_name }}){% endif %}</td>
+                        <td class="p-3 font-mono text-xs">{{ receipt.reference_no or 'N/A' }}{% if receipt.receiving_account_name %} ({{ receipt.receiving_account_code }} - {{ receipt.receiving_account_name }}){% elif receipt.bank_name %} ({{ receipt.bank_name }}){% endif %}</td>
                         <td class="p-3 text-right font-black">KES {{ receipt.amount | currency }}</td>
                     </tr>
                 </tbody>

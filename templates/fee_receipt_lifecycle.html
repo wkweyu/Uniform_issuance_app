@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+
+{% block title %}Receipt Lifecycle{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto px-4 py-8">
+    <div class="flex items-center justify-between gap-4 mb-8">
+        <div>
+            <h1 class="text-2xl font-extrabold text-gray-900">Receipt Lifecycle</h1>
+            <p class="text-sm text-gray-500">{{ receipt.receipt_no }} | {{ receipt.payment_mode }} | {{ receipt.amount | currency }}</p>
+        </div>
+        <a href="{{ url_for('fees.fee_receipts_register') }}" class="text-sm font-semibold text-blue-700 hover:text-blue-900">Receipts journal</a>
+    </div>
+
+    <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <ol class="divide-y divide-gray-100">
+            {% for event in events %}
+            <li class="p-5 grid grid-cols-1 md:grid-cols-[10rem_1fr_auto] gap-3 items-start">
+                <div><span class="inline-flex px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-bold">{{ event.event_type }}</span><p class="mt-2 text-xs text-gray-500">{{ event.occurred_at }}</p></div>
+                <div><p class="font-semibold text-gray-900">{{ event.status_after.replace('_', ' ') }}</p>{% if event.reason %}<p class="mt-1 text-sm text-gray-600">{{ event.reason }}</p>{% endif %}{% if event.replacement_payment_id %}<p class="mt-1 text-xs text-gray-500">Replacement payment #{{ event.replacement_payment_id }}</p>{% endif %}</div>
+                <div class="text-xs text-gray-500 text-left md:text-right"><p>{{ event.actor_name or event.actor_user_id }}</p><p class="font-mono mt-1">{{ event.correlation_id }}</p></div>
+            </li>
+            {% else %}
+            <li class="p-8 text-center text-gray-500">No lifecycle events have been recorded for this receipt.</li>
+            {% endfor %}
+        </ol>
+    </div>
+    {% if receipt.status == 'CANCELLED' %}
+    <form method="post" action="{{ url_for('fees.repost_fee_receipt', payment_id=receipt.id) }}" class="mt-6 bg-white border border-gray-200 rounded-lg p-5 grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="block text-sm font-semibold text-gray-700">New payment reference<input name="reference" required class="mt-1 block w-full border-gray-300 rounded-md"></label>
+        <label class="block text-sm font-semibold text-gray-700">Posting date<input name="posting_date" type="date" value="{{ now.strftime('%Y-%m-%d') }}" required class="mt-1 block w-full border-gray-300 rounded-md"></label>
+        <button type="submit" class="bg-blue-700 hover:bg-blue-800 text-white font-semibold px-4 py-2 rounded-md">Repost receipt</button>
+    </form>
+    {% endif %}
+</div>
+{% endblock %}

@@ -163,6 +163,81 @@ def manage_budgets():
     connection.close()
     return render_template('manage_budgets.html', budgets=budgets, accounts=accounts)
 
+
+@finance_bp.route('/admin/finance/payment-mode-accounts', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def manage_payment_mode_receiving_accounts():
+    connection = get_db_connection()
+    service = FinanceService(connection)
+    try:
+        if request.method == 'POST':
+            service.configure_payment_mode_receiving_account(
+                payment_mode=request.form.get('payment_mode'),
+                account_id=_parse_required_int(request.form.get('account_id'), 'account_id'),
+                configured_by=session['userNo'],
+                is_active=request.form.get('is_active') == 'on',
+            )
+            flash('Receiving account configuration saved.', 'success')
+
+        return render_template(
+            'manage_payment_mode_receiving_accounts.html',
+            mappings=service.get_payment_mode_receiving_accounts(),
+            accounts=service.get_accounts(),
+            payment_modes=('CASH', 'MPESA', 'BANK_TRANSFER', 'CHEQUE'),
+        )
+    except (ValueError, FinanceError) as e:
+        flash(str(e), 'error')
+        return redirect(url_for('finance.manage_payment_mode_receiving_accounts'))
+    finally:
+        connection.close()
+
+
+@finance_bp.route('/admin/finance/cashier-sessions', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def manage_cashier_sessions():
+    connection = get_db_connection()
+    service = FinanceService(connection)
+    try:
+        if request.method == 'POST':
+            action = request.form.get('action')
+            cashier_user_id = session['userNo']
+            if action == 'open':
+                service.open_cashier_session(cashier_user_id, opened_by=session['userNo'])
+                flash('Cashier session opened.', 'success')
+            elif action == 'close':
+                result = service.close_cashier_session(
+                    session_id=_parse_required_int(request.form.get('session_id'), 'session_id'),
+                    cashier_user_id=cashier_user_id,
+                    actual_cash=_parse_decimal(request.form.get('actual_cash'), 'actual_cash'),
+                    closed_by=session['userNo'],
+                    notes=request.form.get('notes', ''),
+                )
+                message = f"Session closed. Expected: {result['expected_cash']:.2f}; variance: {result['variance']:.2f}."
+                if result['status'] == 'PENDING_APPROVAL':
+                    message += ' Supervisor approval is required.'
+                flash(message, 'success')
+            elif action == 'approve':
+                service.approve_cashier_session_variance(
+                    _parse_required_int(request.form.get('session_id'), 'session_id'), session['userNo']
+                )
+                flash('Cashier-session variance approved.', 'success')
+            else:
+                raise ValueError('Unknown cashier-session action.')
+            return redirect(url_for('finance.manage_cashier_sessions'))
+
+        return render_template(
+            'manage_cashier_sessions.html',
+            open_session=service.get_open_cashier_session(session['userNo']),
+            sessions=service.get_cashier_sessions(),
+        )
+    except (ValueError, FinanceError) as e:
+        flash(str(e), 'error')
+        return redirect(url_for('finance.manage_cashier_sessions'))
+    finally:
+        connection.close()
+
 @finance_bp.route('/admin/finance/reports/trial_balance')
 @login_required
 @admin_required

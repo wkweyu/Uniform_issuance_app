@@ -44,9 +44,11 @@ class StudentService:
                    p.email as parent_email,
                    p.address as home_address,
                    p.hometown as residency,
-                   p.nationalID as parent_id
+                     p.nationalID as parent_id,
+                     sg.name as student_group_name
             FROM studentinfo s
             LEFT JOIN parentinfo p ON s.AdmNo = p.admno AND s.school_id = p.school_id
+                 LEFT JOIN student_groups sg ON s.student_group_id = sg.id AND s.school_id = sg.school_id
             WHERE s.AdmNo = %s AND s.school_id = %s
         """, (admno, self.school_id))
         return cursor.fetchone()
@@ -576,6 +578,7 @@ class StudentService:
                 COALESCE(c_current.class_name, c_legacy.class_name) as class_name,
                 COALESCE(c_current.class_group, c_legacy.class_group) as class_group,
                 COALESCE(c_current.classID, c_legacy.classID) as classID,
+                COALESCE(c_current.stream_code, c_legacy.stream_code, s.stream) as stream,
                 COALESCE(modern_ca.academic_year_id, legacy_ca.thisYear) as thisYear
             FROM studentinfo s
             LEFT JOIN class_allocation modern_ca ON s.AdmNo = modern_ca.student_id AND modern_ca.is_current = TRUE AND s.school_id = modern_ca.school_id

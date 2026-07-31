@@ -103,6 +103,9 @@
                                     <a href="{{ url_for('print_fee_receipt', payment_id=record.id) }}" target="_blank" class="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center hover:bg-indigo-600 hover:text-white transition" title="Print Receipt">
                                         <i class="fas fa-print text-xs"></i>
                                     </a>
+                                    <a href="{{ url_for('fees.receipt_lifecycle', payment_id=record.id) }}" class="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center hover:bg-slate-700 hover:text-white transition" title="Lifecycle History">
+                                        <i class="fas fa-history text-xs"></i>
+                                    </a>
                                     {% if record.status == 'COMPLETED' %}
                                     <a href="{{ url_for('edit_fee_receipt', payment_id=record.id) }}" class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center hover:bg-amber-600 hover:text-white transition" title="Edit Meta">
                                         <i class="fas fa-edit text-xs"></i>
