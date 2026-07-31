@@ -1456,6 +1456,34 @@ class FeesService:
         self.connection.commit()
         return event_type
 
+    def archive_receipt(self, payment_id: int, reason: str, user_id: int) -> None:
+        """Append an archive event without deleting or changing the underlying payment."""
+        reason = (reason or '').strip()
+        if not reason:
+            raise FeesError('An archive reason is required.')
+        self.cursor.execute(
+            "SELECT id FROM fee_payments WHERE id = %s AND school_id = %s",
+            (payment_id, self.school_id),
+        )
+        if not self.cursor.fetchone():
+            raise FeesError('Receipt not found.')
+        self.cursor.execute("""
+            SELECT id FROM fee_receipt_lifecycle_events
+            WHERE payment_id = %s AND school_id = %s AND event_type = 'ARCHIVED'
+            LIMIT 1
+        """, (payment_id, self.school_id))
+        if self.cursor.fetchone():
+            raise FeesError('Receipt is already archived.')
+        self.cursor.execute("""
+            INSERT INTO fee_receipt_lifecycle_events
+                (school_id, payment_id, event_type, status_after, reason, actor_user_id, correlation_id, snapshot_json)
+            VALUES (%s, %s, 'ARCHIVED', 'ARCHIVED', %s, %s, %s, %s)
+        """, (
+            self.school_id, payment_id, reason, user_id, str(uuid.uuid4()),
+            json.dumps({'archived': True}, sort_keys=True),
+        ))
+        self.connection.commit()
+
     def get_receipt_details(self, payment_id: int) -> Optional[Dict]:
         """Fetch full details of a receipt including allocations."""
         fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')

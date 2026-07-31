@@ -33,5 +33,12 @@
         <button type="submit" class="bg-blue-700 hover:bg-blue-800 text-white font-semibold px-4 py-2 rounded-md">Repost receipt</button>
     </form>
     {% endif %}
+    {% if not events | selectattr('event_type', 'equalto', 'ARCHIVED') | list %}
+    <form method="post" action="{{ url_for('fees.archive_fee_receipt', payment_id=receipt.id) }}" class="mt-4 bg-white border border-gray-200 rounded-lg p-5 flex flex-col md:flex-row gap-4 items-end">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="block text-sm font-semibold text-gray-700 flex-1">Archive reason<input name="reason" required maxlength="500" class="mt-1 block w-full border-gray-300 rounded-md"></label>
+        <button type="submit" class="bg-slate-700 hover:bg-slate-800 text-white font-semibold px-4 py-2 rounded-md">Archive receipt</button>
+    </form>
+    {% endif %}
 </div>
 {% endblock %}

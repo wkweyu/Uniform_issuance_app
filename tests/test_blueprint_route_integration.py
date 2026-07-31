@@ -133,6 +133,9 @@ class FeesServiceStub:
         self.calls.append(("repost_cancelled_receipt", payment_id, new_reference, posting_date, user_id))
         return {"payment_id": 88, "receipt_no": "RCP-2026-00088"}
 
+    def archive_receipt(self, payment_id, reason, user_id):
+        self.calls.append(("archive_receipt", payment_id, reason, user_id))
+
     def import_mpesa_statement(self, transactions):
         self.calls.append(("import_mpesa_statement", transactions))
         if self.import_mpesa_error is not None:
@@ -1907,6 +1910,19 @@ def test_print_fee_receipt_route_records_lifecycle_event(client, db_session, mon
     assert response.status_code == 200
     assert b"print_fee_receipt.html:RCP-2026-00077" in response.data
     assert FeesServiceStub.last_instance.calls == [("get_receipt_details", 77), ("record_receipt_print", 77, 10)]
+
+
+def test_archive_fee_receipt_route_records_reason(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+
+    response = client.post("/admin/fees/receipt/77/archive", data={"reason": "End of year retention"})
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/fees/receipt/77/lifecycle")
+    assert FeesServiceStub.last_instance.calls == [("archive_receipt", 77, "End of year retention", 10)]
 
 
 def test_fee_adjustment_route_posts_typed_adjustment(client, db_session, monkeypatch):

@@ -1039,6 +1039,20 @@ def repost_fee_receipt(payment_id):
     finally:
         connection.close()
 
+@fees_bp.route('/admin/fees/receipt/<int:payment_id>/archive', methods=['POST'])
+@login_required
+@admin_required
+def archive_fee_receipt(payment_id):
+    connection = get_db_connection(); service = FeesService(connection)
+    try:
+        service.archive_receipt(payment_id, _required_text(request.form.get('reason'), 'reason'), session['userNo'])
+        flash('Receipt archived.', 'success')
+    except (ValueError, FeesError) as exc:
+        flash(str(exc), 'error')
+    finally:
+        connection.close()
+    return redirect(url_for('fees.receipt_lifecycle', payment_id=payment_id))
+
 @fees_bp.route('/api/mpesa/callback', methods=['POST'])
 def mpesa_callback():
     # logic from app.py

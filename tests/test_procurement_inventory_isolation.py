@@ -889,6 +889,19 @@ def test_fees_service_records_reprint_event_after_prior_print():
     assert insert_params[:5] == (55, 12, 'REPRINTED', 'COMPLETED', 9)
 
 
+def test_fees_service_archives_receipt_without_changing_payment():
+    connection = RecordingConnection(responses=[('one', {'id': 12}), ('one', None)])
+    service = FeesService(connection, school_id=55)
+
+    service.archive_receipt(12, 'End of year retention', user_id=9)
+
+    assert connection.commit_calls == 1
+    assert all('update fee_payments' not in query.lower() for query, _ in connection.cursor_obj.executed)
+    insert_query, insert_params = connection.cursor_obj.executed[-1]
+    assert 'insert into fee_receipt_lifecycle_events' in insert_query.lower()
+    assert insert_params[:5] == (55, 12, 'End of year retention', 9, insert_params[4])
+
+
 def test_fees_service_rejects_structure_create_with_foreign_votehead():
     connection = RecordingConnection(
         responses=[
