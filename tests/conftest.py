@@ -38,9 +38,11 @@ def client(app):
 
 @pytest.fixture(scope='function')
 def db_session(app):
-    """Provide a transactional DB session for individual tests."""
+    """Provide an isolated SQLite schema for each platform test."""
     with app.app_context():
-        # Use the app's existing session which is tied to the test DB (SQLite)
+        db.session.remove()
+        db.drop_all()
+        db.create_all()
         yield db.session
-        # Rollback any changes made during the test
-        db.session.rollback()
+        db.session.remove()
+        db.drop_all()

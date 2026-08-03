@@ -4,19 +4,19 @@
 <div class="space-y-6">
   <div class="flex items-center justify-between border-b border-slate-200 pb-5">
     <div>
-      <h1 class="text-xl font-extrabold tracking-tight text-slate-900 md:text-2xl">Tenants</h1>
+      <h1 class="text-xl font-extrabold tracking-tight text-slate-900 md:text-2xl">Tenant Portfolio</h1>
       <p class="mt-1 text-xs text-slate-500 font-medium">Global school portfolio and provisioning status.</p>
     </div>
     <div class="flex flex-wrap gap-2">
       <a href="{{ url_for('platform.pricing_reports') }}" class="platform-btn-secondary py-1 text-xs">Analytics</a>
-      <a href="{{ url_for('platform.export_schools_csv') }}{% if export_query_string %}?{{ export_query_string }}{% endif %}" class="platform-btn-secondary py-1 text-xs">Export</a>
+      <a href="{{ url_for('platform.export_schools_csv') }}{% if export_query_string %}?{{ export_query_string }}{% endif %}" class="platform-btn-secondary py-1 text-xs">Export CSV</a>
       <a href="{{ url_for('platform.onboarding_wizard') }}" class="platform-btn-primary">Provision New</a>
     </div>
   </div>
 
   <div class="grid gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
     <div class="platform-card px-4 py-3 bg-white">
-      <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Provisioned</div>
+      <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Configured</div>
       <div class="text-xl font-extrabold text-slate-900">{{ entitlement_state_counts.configured }}</div>
     </div>
     <div class="platform-card px-4 py-3 bg-white">
