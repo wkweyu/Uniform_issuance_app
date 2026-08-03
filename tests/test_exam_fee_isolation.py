@@ -166,6 +166,10 @@ def test_fees_service_scopes_recent_payments_and_receipts_register_to_school():
         ]
     )
     service = FeesService(connection, school_id=31)
+    service._table_columns_cache = {
+        'fee_payments': {'school_id'},
+        'fee_receipts': {'school_id'},
+    }
 
     recent = service.get_recent_payments(1001, limit=3)
     register = service.get_receipts_register(start_date='2026-01-01', end_date='2026-12-31', admno=1001, mode='MPESA')
