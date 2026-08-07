@@ -999,6 +999,14 @@ def test_collect_fees_template_declares_accessible_cashier_shortcuts():
     assert "event.key.toLowerCase() === 'p' && !event.shiftKey" in template
 
 
+def test_receipt_lifecycle_report_includes_audit_correlation_and_replacement_links():
+    template = (Path(__file__).resolve().parents[1] / 'templates' / 'receipt_lifecycle_report.html').read_text(encoding='utf-8')
+
+    assert 'record.replacement_payment_id' in template
+    assert 'record.correlation_id' in template
+    assert 'colspan="9"' in template
+
+
 def test_fees_collect_route_forwards_manual_allocations_for_ajax_post(client, db_session, monkeypatch):
     school = _create_school(db_session)
     _login_admin(client, school.id)
