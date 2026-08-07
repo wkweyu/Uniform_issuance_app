@@ -1,6 +1,9 @@
 import sys
 
+import run_remote_migrations as migration_runner
+
 from run_remote_migrations import (
+    _get_connection_settings,
     _preflight_cashier_session_open_uniqueness,
     _is_ignorable_migration_error,
     _normalize_column_type,
@@ -159,3 +162,27 @@ def test_parse_args_supports_preflight_only(monkeypatch):
     args = parse_args()
 
     assert args.preflight_only is True
+
+
+def test_migration_runner_uses_central_config_when_db_environment_is_not_set(monkeypatch):
+    for name in ('DB_HOST', 'DB_PORT', 'DB_USER', 'DB_PASSWORD', 'DB_PASS', 'DB_NAME'):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(
+        migration_runner.config,
+        'Config',
+        type('CloudConfig', (), {
+            'DB_HOST': 'cloud-db.example.com',
+            'DB_PORT': 3307,
+            'DB_USER': 'cloud-user',
+            'DB_PASSWORD': 'cloud-password',
+            'DB_NAME': 'cloud-school',
+        }),
+    )
+
+    assert _get_connection_settings() == {
+        'host': 'cloud-db.example.com',
+        'port': 3307,
+        'user': 'cloud-user',
+        'password': 'cloud-password',
+        'database': 'cloud-school',
+    }

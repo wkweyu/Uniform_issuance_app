@@ -184,13 +184,27 @@ def _preflight_cashier_session_open_uniqueness(cursor, file_path):
         f'{examples}'
     )
 
+
+def _get_connection_settings():
+    """Resolve migration credentials from explicit environment variables or Config."""
+    settings = getattr(config, 'Config', config)
+    return {
+        'host': os.environ.get('DB_HOST') or getattr(settings, 'DB_HOST', 'localhost'),
+        'port': int(os.environ.get('DB_PORT') or getattr(settings, 'DB_PORT', 3306)),
+        'user': os.environ.get('DB_USER') or getattr(settings, 'DB_USER', 'root'),
+        'password': os.environ.get('DB_PASSWORD') or os.environ.get('DB_PASS') or getattr(settings, 'DB_PASSWORD', ''),
+        'database': os.environ.get('DB_NAME') or getattr(settings, 'DB_NAME', 'schoolmngt'),
+    }
+
+
 def run_migrations(preflight_only=False):
     # Connection details: prefer environment variables, then central config
-    DB_HOST = os.environ.get('DB_HOST', getattr(config, 'DB_HOST', 'localhost'))
-    DB_PORT = int(os.environ.get('DB_PORT', getattr(config, 'DB_PORT', 3306)))
-    DB_USER = os.environ.get('DB_USER', getattr(config, 'DB_USER', 'root'))
-    DB_PASSWORD = os.environ.get('DB_PASSWORD') or os.environ.get('DB_PASS', getattr(config, 'DB_PASSWORD', ''))
-    DB_NAME = os.environ.get('DB_NAME', getattr(config, 'DB_NAME', 'schoolmngt'))
+    connection_settings = _get_connection_settings()
+    DB_HOST = connection_settings['host']
+    DB_PORT = connection_settings['port']
+    DB_USER = connection_settings['user']
+    DB_PASSWORD = connection_settings['password']
+    DB_NAME = connection_settings['database']
 
     ssl_config = None
     ca_path = os.path.join(os.getcwd(), 'globalsignrootca.pem')
