@@ -73,6 +73,28 @@ def test_preflight_foreign_keys_raises_on_type_mismatch():
         raise AssertionError('Expected preflight to raise on type mismatch')
 
 
+def test_preflight_foreign_keys_accepts_reference_created_earlier_in_migration_run():
+    statement = """
+    CREATE TABLE IF NOT EXISTS fee_allocation_template_items (
+      `id` INT NOT NULL AUTO_INCREMENT,
+      `template_id` INT NOT NULL,
+      CONSTRAINT `fk_template`
+        FOREIGN KEY (`template_id`) REFERENCES `fee_allocation_templates` (`id`)
+    ) ENGINE=InnoDB
+    """
+    cursor = FakeCursor(None)
+
+    _preflight_foreign_keys(
+        cursor,
+        'migrations/032_fee_allocation_templates.sql',
+        statement,
+        'schoolmngt',
+        {'fee_allocation_templates': {'id': 'INT'}},
+    )
+
+    assert cursor.executed
+
+
 def test_normalize_column_type_treats_integer_display_width_as_equivalent():
     assert _normalize_column_type('INT') == 'int'
     assert _normalize_column_type('int(11)') == 'int'

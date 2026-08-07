@@ -87,7 +87,7 @@ def _parse_create_table_statement(statement):
     return table_name, column_types, foreign_keys
 
 
-def _preflight_foreign_keys(cursor, file_path, statement, database_name):
+def _preflight_foreign_keys(cursor, file_path, statement, database_name, planned_tables=None):
     table_name, column_types, foreign_keys = _parse_create_table_statement(statement)
     if not table_name or not foreign_keys:
         return
@@ -108,19 +108,21 @@ def _preflight_foreign_keys(cursor, file_path, statement, database_name):
             )
 
         live_reference = _get_live_column_metadata(cursor, ref_table, ref_column, database_name)
-        if not live_reference:
+        planned_reference_type = (planned_tables or {}).get(ref_table, {}).get(ref_column)
+        if not live_reference and not planned_reference_type:
             raise RuntimeError(
                 f"referenced column {ref_table}.{ref_column} does not exist in database {database_name}"
             )
 
         normalized_local = _normalize_column_type(local_column_type)
-        normalized_reference = _normalize_column_type(live_reference['COLUMN_TYPE'])
+        reference_type = live_reference['COLUMN_TYPE'] if live_reference else planned_reference_type
+        normalized_reference = _normalize_column_type(reference_type)
         if normalized_local != normalized_reference:
             raise RuntimeError(
-                f"foreign key type mismatch for {table_name}.{local_column} ({local_column_type}) -> {ref_table}.{ref_column} ({live_reference['COLUMN_TYPE']})"
+                f"foreign key type mismatch for {table_name}.{local_column} ({local_column_type}) -> {ref_table}.{ref_column} ({reference_type})"
             )
 
-        if _is_character_type(local_column_type):
+        if _is_character_type(local_column_type) and live_reference:
             if table_charset and live_reference['CHARACTER_SET_NAME'] and table_charset.lower() != live_reference['CHARACTER_SET_NAME'].lower():
                 raise RuntimeError(
                     f"foreign key charset mismatch for {table_name}.{local_column} ({table_charset}) -> {ref_table}.{ref_column} ({live_reference['CHARACTER_SET_NAME']})"
@@ -235,6 +237,7 @@ def run_migrations(preflight_only=False):
         return
 
     had_errors = False
+    planned_tables = {}
 
     with connection.cursor(pymysql.cursors.DictCursor) as cursor:
         # Get all migration files in order
@@ -250,9 +253,12 @@ def run_migrations(preflight_only=False):
             
             for stmt in statements:
                 try:
+                    table_name, column_types, _ = _parse_create_table_statement(stmt)
+                    if table_name:
+                        planned_tables[table_name] = column_types
                     _preflight_fee_payment_reference_uniqueness(cursor, file_path)
                     _preflight_cashier_session_open_uniqueness(cursor, file_path)
-                    _preflight_foreign_keys(cursor, file_path, stmt, DB_NAME)
+                    _preflight_foreign_keys(cursor, file_path, stmt, DB_NAME, planned_tables)
                     if preflight_only:
                         continue
                     cursor.execute(stmt)
