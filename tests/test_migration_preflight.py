@@ -176,6 +176,7 @@ def test_migration_runner_uses_central_config_when_db_environment_is_not_set(mon
             'DB_USER': 'cloud-user',
             'DB_PASSWORD': 'cloud-password',
             'DB_NAME': 'cloud-school',
+            'DB_SSL_CA': 'C:/certificates/cloud-ca.pem',
         }),
     )
 
@@ -185,4 +186,5 @@ def test_migration_runner_uses_central_config_when_db_environment_is_not_set(mon
         'user': 'cloud-user',
         'password': 'cloud-password',
         'database': 'cloud-school',
+        'ssl_ca': 'C:/certificates/cloud-ca.pem',
     }

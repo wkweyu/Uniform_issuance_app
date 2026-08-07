@@ -194,6 +194,7 @@ def _get_connection_settings():
         'user': os.environ.get('DB_USER') or getattr(settings, 'DB_USER', 'root'),
         'password': os.environ.get('DB_PASSWORD') or os.environ.get('DB_PASS') or getattr(settings, 'DB_PASSWORD', ''),
         'database': os.environ.get('DB_NAME') or getattr(settings, 'DB_NAME', 'schoolmngt'),
+        'ssl_ca': os.environ.get('DB_SSL_CA') or getattr(settings, 'DB_SSL_CA', None),
     }
 
 
@@ -207,7 +208,7 @@ def run_migrations(preflight_only=False):
     DB_NAME = connection_settings['database']
 
     ssl_config = None
-    ca_path = os.path.join(os.getcwd(), 'globalsignrootca.pem')
+    ca_path = connection_settings['ssl_ca'] or os.path.join(os.getcwd(), 'globalsignrootca.pem')
     if os.path.exists(ca_path):
         ssl_config = {'ca': ca_path, 'check_hostname': False}
         print(f"DEBUG: Using SSL certificate at {ca_path}")
