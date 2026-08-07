@@ -252,7 +252,6 @@ def run_migrations(preflight_only=False):
         print(f"Connection failed: {e}")
         return
 
-    had_errors = False
     planned_tables = {}
 
     with connection.cursor(pymysql.cursors.DictCursor) as cursor:
@@ -298,17 +297,19 @@ def run_migrations(preflight_only=False):
                         pass
                     else:
                         print(f"  ERROR in {file_path}: {e}")
-                        had_errors = True
+                        connection.close()
+                        return False
                 except Exception as e:
                     print(f"  CRITICAL ERROR in {file_path}: {e}")
-                    had_errors = True
+                    connection.close()
+                    return False
 
     connection.close()
     if preflight_only:
         print("Migration preflight completed.")
     else:
         print("Migration process completed.")
-    return not had_errors
+    return True
 
 
 def parse_args():

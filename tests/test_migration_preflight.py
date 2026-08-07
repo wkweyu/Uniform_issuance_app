@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 
 import run_remote_migrations as migration_runner
 
@@ -118,6 +119,24 @@ def test_split_sql_statements_ignores_comment_only_lines():
 def test_is_ignorable_migration_error_allows_duplicate_constraint_name():
     error = Exception(1005, 'Can\'t create table `db`.`classes` (errno: 121 "Duplicate key on write or update")')
     assert _is_ignorable_migration_error(error) is True
+
+
+def test_legacy_schema_repair_migrations_handle_views_and_tenant_columns():
+    migration_root = Path(__file__).resolve().parents[1] / 'migrations'
+    multi_tenant_migration = (migration_root / '012_multi_tenant_missing_tables.sql').read_text(encoding='utf-8')
+    payroll_migration = (migration_root / '025_payroll_phase_b.sql').read_text(encoding='utf-8')
+    waiver_migration = (migration_root / '038_fee_waiver_revocations.sql').read_text(encoding='utf-8')
+
+    assert "TABLE_TYPE = 'BASE TABLE'" in multi_tenant_migration
+    assert 'CREATE TABLE IF NOT EXISTS payroll_voteheads' in payroll_migration
+    assert 'REFERENCES payroll_voteheads(id)' in payroll_migration
+    assert 'INSERT INTO payroll_voteheads' in payroll_migration
+    assert 'ADD COLUMN IF NOT EXISTS school_id INT NOT NULL DEFAULT 1' in waiver_migration
+
+
+def test_is_ignorable_migration_error_rejects_schema_compatibility_failures():
+    assert _is_ignorable_migration_error(Exception(1347, 'is not of type BASE TABLE')) is False
+    assert _is_ignorable_migration_error(Exception(1054, "Unknown column 'school_id'")) is False
 
 
 def test_fee_payment_reference_preflight_rejects_duplicate_tenant_references():

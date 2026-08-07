@@ -18,9 +18,40 @@ ALTER TABLE `fuel_invoices` ADD KEY `idx_fuel_invoices_school_id` (`school_id`);
 ALTER TABLE `fuel_invoices` ADD CONSTRAINT `fk_fuel_invoices_school_id` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`);
 
 -- 4. Service Records
-ALTER TABLE `service_records` ADD COLUMN `school_id` INT NOT NULL DEFAULT 1;
-ALTER TABLE `service_records` ADD KEY `idx_service_records_school_id` (`school_id`);
-ALTER TABLE `service_records` ADD CONSTRAINT `fk_service_records_school_id` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`);
+-- service_records may be a legacy compatibility view after fleet normalization.
+SET @service_records_is_base_table = (
+	SELECT COUNT(*) FROM information_schema.TABLES
+	WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'service_records' AND TABLE_TYPE = 'BASE TABLE'
+);
+SET @service_records_sql = IF(
+	@service_records_is_base_table = 1,
+	'ALTER TABLE `service_records` ADD COLUMN IF NOT EXISTS `school_id` INT NOT NULL DEFAULT 1',
+	'SELECT 1'
+);
+PREPARE stmt FROM @service_records_sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+SET @service_records_sql = IF(
+	@service_records_is_base_table = 1,
+	'ALTER TABLE `service_records` ADD KEY IF NOT EXISTS `idx_service_records_school_id` (`school_id`)',
+	'SELECT 1'
+);
+PREPARE stmt FROM @service_records_sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+SET @service_records_has_school_fk = (
+	SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+	WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'service_records'
+		AND CONSTRAINT_NAME = 'fk_service_records_school_id'
+);
+SET @service_records_sql = IF(
+	@service_records_is_base_table = 1 AND @service_records_has_school_fk = 0,
+	'ALTER TABLE `service_records` ADD CONSTRAINT `fk_service_records_school_id` FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`)',
+	'SELECT 1'
+);
+PREPARE stmt FROM @service_records_sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- 5. Oil Records
 ALTER TABLE `oil_records` ADD COLUMN `school_id` INT NOT NULL DEFAULT 1;

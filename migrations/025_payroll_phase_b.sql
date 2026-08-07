@@ -10,8 +10,8 @@
 ALTER TABLE finance_ledger_entries
     ADD COLUMN votehead_id INT NULL AFTER note;
 
--- General voteheads table (school-scoped, not just fees)
-CREATE TABLE IF NOT EXISTS voteheads (
+-- Keep payroll voteheads separate from legacy fee voteheads.
+CREATE TABLE IF NOT EXISTS payroll_voteheads (
     id          INT AUTO_INCREMENT PRIMARY KEY,
     school_id   INT NOT NULL,
     code        VARCHAR(30) NOT NULL,
@@ -19,13 +19,13 @@ CREATE TABLE IF NOT EXISTS voteheads (
     category    ENUM('salary','operations','capital','fees','other') DEFAULT 'other',
     is_active   TINYINT(1) DEFAULT 1,
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_votehead (school_id, code)
+    UNIQUE KEY uq_pvh (school_id, code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- FK from ledger entries to voteheads
+-- FK from ledger entries to payroll voteheads.
 ALTER TABLE finance_ledger_entries
-    ADD CONSTRAINT fk_ledger_votehead
-    FOREIGN KEY (votehead_id) REFERENCES voteheads(id) ON DELETE SET NULL;
+    ADD CONSTRAINT fk_ledger_payroll_votehead
+    FOREIGN KEY (votehead_id) REFERENCES payroll_voteheads(id) ON DELETE SET NULL;
 
 -- Payroll votehead allocations (split payroll line amounts by votehead)
 CREATE TABLE IF NOT EXISTS payroll_votehead_allocations (
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS payroll_votehead_allocations (
     KEY idx_pva_line (payroll_line_id),
     KEY idx_pva_votehead (votehead_id),
     CONSTRAINT fk_pva_line FOREIGN KEY (payroll_line_id) REFERENCES payroll_lines(id) ON DELETE CASCADE,
-    CONSTRAINT fk_pva_votehead FOREIGN KEY (votehead_id) REFERENCES voteheads(id)
+    CONSTRAINT fk_pva_votehead FOREIGN KEY (votehead_id) REFERENCES payroll_voteheads(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS payroll_payments (
 -- Seed default voteheads for salary category
 -- ---------------------------------------------------------------------------
 -- These are inserted with school_id=0 as global templates (copied per school)
-INSERT INTO voteheads (school_id, code, name, category) VALUES
+INSERT INTO payroll_voteheads (school_id, code, name, category) VALUES
     (0, 'SAL_BASIC', 'Basic Salary', 'salary'),
     (0, 'SAL_ALLOW', 'Allowances', 'salary'),
     (0, 'SAL_EMPLOYER_STAT', 'Employer Statutory Contributions', 'salary'),
