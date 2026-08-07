@@ -2328,6 +2328,32 @@ def test_fee_receipts_register_route_hides_unexpected_error_and_closes_connectio
         assert session.get("_flashes")[-1] == ("error", "Receipt register could not be loaded. Please try again later.")
 
 
+def test_edit_fee_receipt_route_hides_unexpected_error_and_closes_connection(client, db_session, monkeypatch):
+    class TrackingConnection(DummyConnection):
+        closed = False
+
+        def close(self):
+            self.closed = True
+
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    connection = TrackingConnection()
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: connection)
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(
+        FeesServiceStub,
+        "get_receipt_details",
+        lambda _self, _payment_id: (_ for _ in ()).throw(RuntimeError("database password exposed")),
+    )
+
+    response = client.get("/admin/fees/receipt/77/edit")
+
+    assert response.status_code == 302
+    assert connection.closed is True
+    with client.session_transaction() as session:
+        assert session.get("_flashes")[-1] == ("error", "Receipt could not be updated. Please try again later.")
+
+
 def test_receipt_lifecycle_route_loads_receipt_and_events(client, db_session, monkeypatch):
     school = _create_school(db_session)
     _login_admin(client, school.id)

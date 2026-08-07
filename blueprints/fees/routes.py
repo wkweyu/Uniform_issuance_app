@@ -1200,18 +1200,21 @@ def fee_receipts_register():
 @admin_required
 def edit_fee_receipt(payment_id):
     connection = get_db_connection(); service = FeesService(connection)
-    if request.method == 'POST':
-        try:
+    try:
+        if request.method == 'POST':
             service.update_payment_details(payment_id, request.form.get('mode'), request.form.get('reference'), request.form.get('bank'), request.form.get('date'), session['userNo'])
             flash("Receipt updated.", "success")
-        except FeesError as e: flash(str(e), "error")
-        except Exception as e: flash(str(e), "error")
-        finally:
-            connection.close()
-        return redirect(url_for('fees.fee_receipts_register'))
-    receipt = service.get_receipt_details(payment_id)
-    connection.close()
-    return render_template('edit_fee_receipt.html', receipt=receipt)
+            return redirect(url_for('fees.fee_receipts_register'))
+        receipt = service.get_receipt_details(payment_id)
+        return render_template('edit_fee_receipt.html', receipt=receipt)
+    except FeesError as exc:
+        flash(str(exc), "error")
+    except Exception:
+        current_app.logger.exception('Failed to edit fee receipt %s', payment_id)
+        flash('Receipt could not be updated. Please try again later.', 'error')
+    finally:
+        connection.close()
+    return redirect(url_for('fees.fee_receipts_register'))
 
 @fees_bp.route('/admin/fees/receipt/<int:payment_id>/void', methods=['POST'])
 @login_required
