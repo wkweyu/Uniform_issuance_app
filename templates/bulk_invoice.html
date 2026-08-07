@@ -9,7 +9,7 @@
             <nav class="flex mb-2" aria-label="Breadcrumb">
                 <ol class="inline-flex items-center space-x-1 md:space-x-3 text-sm font-medium text-gray-500">
                     <li class="inline-flex items-center">
-                        <a href="{{ url_for('fees_dashboard') }}" class="hover:text-blue-600">Fees Management</a>
+                        <a href="{{ url_for('fees.fees_dashboard') }}" class="hover:text-blue-600">Fees Management</a>
                     </li>
                     <li>
                         <div class="flex items-center">
@@ -23,7 +23,7 @@
             <p class="text-gray-500 mt-2">Generate invoices for multiple classes based on their defined fee structures.</p>
         </div>
 
-        <form action="{{ url_for('bulk_invoice') }}" method="POST" id="bulkForm">
+        <form action="{{ url_for('fees.bulk_invoice') }}" method="POST" id="bulkForm">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             
             <div class="bg-white rounded-lg shadow-md overflow-hidden">

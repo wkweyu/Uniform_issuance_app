@@ -1007,11 +1007,14 @@ def test_fee_structure_templates_use_blueprint_qualified_endpoints():
         'create_yearly_fee_structure.html',
         'edit_fee_structure.html',
         'fee_structure_card.html',
+        'bulk_invoice.html',
+        'bulk_debit_term.html',
     )
     unqualified_endpoints = (
         'fees_dashboard', 'manage_fee_structures', 'fee_structures_overview',
         'create_yearly_fee_structure_route', 'fee_structure_card',
-        'edit_fee_structure', 'copy_fee_structure',
+        'edit_fee_structure', 'copy_fee_structure', 'fee_structure_download',
+        'bulk_invoice', 'bulk_debit_term',
     )
 
     for template_name in template_names:
@@ -1023,6 +1026,7 @@ def test_fee_structure_templates_use_blueprint_qualified_endpoints():
 def test_collect_fees_template_reports_unexpected_post_response_safely():
     template = (Path(__file__).resolve().parents[1] / 'templates' / 'collect_fees.html').read_text(encoding='utf-8')
 
+    assert "'X-CSRFToken': document.querySelector('#paymentForm input[name=\"csrf_token\"]').value" in template
     assert 'const responseText = await res.text();' in template
     assert 'The server returned an unexpected response (${res.status}). Please try again later.' in template
 

@@ -1194,7 +1194,8 @@ document.addEventListener('DOMContentLoaded', function() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': document.querySelector('#paymentForm input[name="csrf_token"]').value
             },
             body: JSON.stringify(payload)
         })
