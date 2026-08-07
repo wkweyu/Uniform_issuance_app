@@ -26,6 +26,7 @@ class RecordingCursor:
         self.responses = list(responses or [])
         self.executed = []
         self.lastrowid = 0
+        self.rowcount = 1
 
     def execute(self, query, params=None):
         self.executed.append((query, params))
@@ -153,6 +154,7 @@ def test_finance_service_closes_cashier_session_with_cash_variance():
         'variance': Decimal('-50.00'),
         'status': 'PENDING_APPROVAL',
     }
+    assert connection.begin_calls == 1
     assert connection.commit_calls == 1
     session_query, session_params = connection.cursor_obj.executed[0]
     total_query, total_params = connection.cursor_obj.executed[1]
@@ -163,6 +165,61 @@ def test_finance_service_closes_cashier_session_with_cash_variance():
     assert "payment_mode = 'cash'" in total_query.lower()
     assert update_params == ('PENDING_APPROVAL', 8, Decimal('1500.00'), Decimal('1450.00'), Decimal('-50.00'), 'Short cash', 7, 18)
     assert 'update cashier_sessions' in update_query.lower()
+    assert 'open_session_marker = null' in update_query.lower()
+
+
+@pytest.mark.parametrize(
+    ('actual_cash', 'message'),
+    [
+        (Decimal('-1.00'), 'Actual cash cannot be negative'),
+        ('not-a-number', 'Actual cash must be a valid number'),
+    ],
+)
+def test_finance_service_rejects_invalid_cashier_close_count_before_transaction(actual_cash, message):
+    connection = RecordingConnection()
+    service = FinanceService(connection, school_id=18)
+
+    with pytest.raises(FinanceError, match=message):
+        service.close_cashier_session(
+            session_id=7,
+            cashier_user_id=8,
+            actual_cash=actual_cash,
+            closed_by=8,
+        )
+
+    assert connection.begin_calls == 0
+    assert connection.commit_calls == 0
+    assert connection.rollback_calls == 1
+    assert connection.cursor_obj.executed == []
+
+
+def test_finance_service_opens_single_cashier_session_atomically():
+    connection = RecordingConnection(responses=[('one', None)])
+    connection.cursor_obj.lastrowid = 7
+    service = FinanceService(connection, school_id=18)
+
+    assert service.open_cashier_session(cashier_user_id=8, opened_by=9) == 7
+
+    assert connection.begin_calls == 1
+    assert connection.commit_calls == 1
+    lock_query, lock_params = connection.cursor_obj.executed[0]
+    insert_query, insert_params = connection.cursor_obj.executed[1]
+    assert 'for update' in lock_query.lower()
+    assert lock_params == (18, 8)
+    assert 'open_session_marker' in insert_query.lower()
+    assert insert_params == (18, 8, 9)
+
+
+def test_finance_service_rejects_duplicate_open_cashier_session_without_commit():
+    connection = RecordingConnection(responses=[('one', {'id': 7})])
+    service = FinanceService(connection, school_id=18)
+
+    with pytest.raises(FinanceError, match='already has an open session'):
+        service.open_cashier_session(cashier_user_id=8, opened_by=9)
+
+    assert connection.begin_calls == 1
+    assert connection.commit_calls == 0
+    assert connection.rollback_calls == 1
 
 
 def test_finance_service_cashier_session_register_scopes_completed_cash_receipts():
@@ -664,6 +721,53 @@ def test_fees_service_rejects_duplicate_payment_before_ledger_write():
     assert all('insert into fee_ledger' not in query.lower() for query, _ in connection.cursor_obj.executed)
 
 
+def test_fees_service_rejects_payment_without_reference_before_transaction():
+    connection = RecordingConnection()
+    service = FeesService(connection, school_id=55)
+
+    with pytest.raises(FeesError, match='Payment reference is required'):
+        FeesService.record_payment.__wrapped__(
+            service,
+            admno=1001,
+            amount=Decimal('1500.00'),
+            mode='MPESA',
+            reference='  ',
+            bank='',
+            date='2026-07-30',
+            year_id=2026,
+            term_id=3,
+            user_id=9,
+        )
+
+    assert connection.begin_calls == 0
+    assert connection.rollback_calls == 1
+    assert connection.cursor_obj.executed == []
+
+
+@pytest.mark.parametrize('amount', [Decimal('0.00'), Decimal('-1.00')])
+def test_fees_service_rejects_non_positive_payment_before_transaction(amount):
+    connection = RecordingConnection()
+    service = FeesService(connection, school_id=55)
+
+    with pytest.raises(FeesError, match='Payment amount must be greater than zero'):
+        FeesService.record_payment.__wrapped__(
+            service,
+            admno=1001,
+            amount=amount,
+            mode='MPESA',
+            reference='MPESA-NEGATIVE',
+            bank='',
+            date='2026-08-07',
+            year_id=2026,
+            term_id=3,
+            user_id=9,
+        )
+
+    assert connection.begin_calls == 0
+    assert connection.rollback_calls == 1
+    assert connection.cursor_obj.executed == []
+
+
 def test_fees_service_rejects_payment_with_unmapped_receiving_account_before_transaction():
     connection = RecordingConnection(
         responses=[
@@ -727,6 +831,96 @@ def test_fees_service_rejects_cash_payment_without_open_cashier_session():
     assert all('insert into fee_ledger' not in query.lower() for query, _ in connection.cursor_obj.executed)
 
 
+def test_fees_service_locks_cashier_session_before_posting_cash_payment():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {'AdmNo': 1001}),
+            ('one', {'id': 2026}),
+            ('one', {'id': 3}),
+            ('one', None),
+            ('one', {'account_id': 17}),
+            ('one', {'id': 7}),
+            ('one', {'id': 7}),
+            ('one', {'balance_after': Decimal('1500.00')}),
+            ('all', [{'votehead_id': 4, 'outstanding': Decimal('1500.00')}]),
+        ]
+    )
+    connection.cursor_obj.lastrowid = 12
+    service = FeesService(connection, school_id=55)
+    service._table_columns_cache = {
+        'fee_payments': {'school_id', 'receiving_account_id', 'cashier_session_id'},
+        'fee_payment_allocations': {'school_id'},
+        'fee_receipts': {'school_id'},
+    }
+
+    result = FeesService.record_payment.__wrapped__(
+        service,
+        admno=1001,
+        amount=Decimal('1500.00'),
+        mode='CASH',
+        reference='CASH-LOCK-1',
+        bank='',
+        date='2026-08-07',
+        year_id=2026,
+        term_id=3,
+        user_id=9,
+    )
+
+    assert result['payment_id'] == 12
+    assert connection.begin_calls == 1
+    session_queries = [
+        (query, params) for query, params in connection.cursor_obj.executed
+        if 'from cashier_sessions' in query.lower()
+    ]
+    assert len(session_queries) == 2
+    assert 'for update' not in session_queries[0][0].lower()
+    assert 'for update' in session_queries[1][0].lower()
+    payment_insert = next(
+        (query, params) for query, params in connection.cursor_obj.executed
+        if 'insert into fee_payments' in query.lower()
+    )
+    assert payment_insert[1][6] == 7
+
+
+def test_fees_service_rolls_back_cash_payment_when_session_closes_before_lock():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {'AdmNo': 1001}),
+            ('one', {'id': 2026}),
+            ('one', {'id': 3}),
+            ('one', None),
+            ('one', {'account_id': 17}),
+            ('one', {'id': 7}),
+            ('one', None),
+        ]
+    )
+    service = FeesService(connection, school_id=55)
+    service._table_columns_cache = {
+        'fee_payments': {'school_id', 'receiving_account_id', 'cashier_session_id'},
+        'fee_payment_allocations': {'school_id'},
+        'fee_receipts': {'school_id'},
+    }
+
+    with pytest.raises(FeesError, match='cashier session was closed before this payment could be posted'):
+        FeesService.record_payment.__wrapped__(
+            service,
+            admno=1001,
+            amount=Decimal('1500.00'),
+            mode='CASH',
+            reference='CASH-LOCK-LOST',
+            bank='',
+            date='2026-08-07',
+            year_id=2026,
+            term_id=3,
+            user_id=9,
+        )
+
+    assert connection.begin_calls == 1
+    assert connection.commit_calls == 0
+    assert connection.rollback_calls == 1
+    assert all('insert into fee_ledger' not in query.lower() for query, _ in connection.cursor_obj.executed)
+
+
 def test_fees_service_void_receipt_records_immutable_lifecycle_snapshot():
     connection = RecordingConnection(
         responses=[
@@ -749,6 +943,9 @@ def test_fees_service_void_receipt_records_immutable_lifecycle_snapshot():
 
     assert connection.begin_calls == 1
     assert connection.commit_calls == 1
+    payment_query, payment_params = connection.cursor_obj.executed[0]
+    assert 'for update' in payment_query.lower()
+    assert payment_params == (12, 55)
     lifecycle_query, lifecycle_params = connection.cursor_obj.executed[-1]
     assert 'insert into fee_receipt_lifecycle_events' in lifecycle_query.lower()
     assert lifecycle_params[:6] == (55, 12, 'Wrong student', 9, lifecycle_params[4], lifecycle_params[5])
@@ -795,6 +992,63 @@ def test_fees_service_record_payment_records_posted_lifecycle_snapshot():
     assert snapshot['allocations'] == [{'amount': '1500.00', 'votehead_id': 4}]
 
 
+def test_fees_service_combines_manual_and_automatic_remainder_for_same_votehead():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {'AdmNo': 1001}),
+            ('one', {'id': 2026}),
+            ('one', {'id': 3}),
+            ('one', None),
+            ('one', {'account_id': 17}),
+            ('one', {'balance_after': Decimal('2000.00')}),
+            ('all', [
+                {'votehead_id': 4, 'outstanding': Decimal('1000.00')},
+                {'votehead_id': 7, 'outstanding': Decimal('800.00')},
+            ]),
+        ]
+    )
+    connection.cursor_obj.lastrowid = 12
+    service = FeesService(connection, school_id=55)
+    service._table_columns_cache = {
+        'fee_payments': {'school_id', 'receiving_account_id'},
+        'fee_payment_allocations': {'school_id'},
+        'fee_receipts': {'school_id'},
+    }
+
+    result = FeesService.record_payment.__wrapped__(
+        service,
+        admno=1001,
+        amount=Decimal('1500.00'),
+        mode='MPESA',
+        reference='MPESA-MIXED-1',
+        bank='',
+        date='2026-08-07',
+        year_id=2026,
+        term_id=3,
+        user_id=9,
+        allocation_mode='MANUAL',
+        manual_allocations=[{'votehead_id': 7, 'amount': '300.00'}],
+    )
+
+    assert result['allocations'] == [
+        {'votehead_id': 7, 'amount': 500.0},
+        {'votehead_id': 4, 'amount': 1000.0},
+    ]
+    allocation_inserts = [
+        (query, params) for query, params in connection.cursor_obj.executed
+        if 'insert into fee_payment_allocations' in query.lower()
+    ]
+    allocation_updates = [
+        (query, params) for query, params in connection.cursor_obj.executed
+        if 'update fee_payment_allocations' in query.lower()
+    ]
+    assert [params for _, params in allocation_inserts] == [
+        (12, 7, Decimal('300.00'), 55),
+        (12, 4, Decimal('1000.00'), 55),
+    ]
+    assert allocation_updates[0][1] == (Decimal('200.00'), 12, 7, 55)
+
+
 def test_fees_service_reposts_cancelled_receipt_through_normal_payment_posting():
     connection = RecordingConnection(
         responses=[
@@ -805,7 +1059,7 @@ def test_fees_service_reposts_cancelled_receipt_through_normal_payment_posting()
         ]
     )
     service = FeesService(connection, school_id=55)
-    service._table_columns_cache = {'fee_payments': {'school_id'}}
+    service._table_columns_cache = {'fee_payments': {'school_id', 'reposted_payment_id'}}
     captured = {}
 
     def record_payment(**kwargs):
@@ -828,6 +1082,104 @@ def test_fees_service_reposts_cancelled_receipt_through_normal_payment_posting()
     assert captured['lifecycle_correlation_id']
 
 
+def test_fees_service_links_repost_source_to_replacement_in_same_payment_transaction():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {'AdmNo': 1001}),
+            ('one', {'id': 2026}),
+            ('one', {'id': 3}),
+            ('one', None),
+            ('one', {'account_id': 17}),
+            ('one', {'balance_after': Decimal('1500.00')}),
+            ('all', [{'votehead_id': 4, 'outstanding': Decimal('1500.00')}]),
+        ]
+    )
+    connection.cursor_obj.lastrowid = 88
+    service = FeesService(connection, school_id=55)
+    service._table_columns_cache = {
+        'fee_payments': {'school_id', 'receiving_account_id', 'reposted_payment_id'},
+        'fee_payment_allocations': {'school_id'},
+        'fee_receipts': {'school_id'},
+    }
+
+    result = FeesService.record_payment.__wrapped__(
+        service,
+        admno=1001,
+        amount=Decimal('1500.00'),
+        mode='MPESA',
+        reference='MPESA-REPOST-1',
+        bank='',
+        date='2026-08-07',
+        year_id=2026,
+        term_id=3,
+        user_id=9,
+        lifecycle_source_payment_id=12,
+        lifecycle_correlation_id='repost-correlation',
+    )
+
+    assert result['payment_id'] == 88
+    source_update = next(
+        (query, params) for query, params in connection.cursor_obj.executed
+        if 'set reposted_payment_id = %s' in query.lower()
+    )
+    assert source_update[1] == (88, 12, 55)
+    assert "status = 'cancelled'" in source_update[0].lower()
+    assert 'reposted_payment_id is null' in source_update[0].lower()
+
+
+def test_fees_service_rolls_back_repost_when_source_was_already_claimed():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {'AdmNo': 1001}),
+            ('one', {'id': 2026}),
+            ('one', {'id': 3}),
+            ('one', None),
+            ('one', {'account_id': 17}),
+            ('one', {'balance_after': Decimal('1500.00')}),
+            ('all', [{'votehead_id': 4, 'outstanding': Decimal('1500.00')}]),
+        ]
+    )
+    connection.cursor_obj.lastrowid = 89
+    original_execute = connection.cursor_obj.execute
+
+    def execute_with_claim_loss(query, params=None):
+        original_execute(query, params)
+        if 'set reposted_payment_id = %s' in query.lower():
+            connection.cursor_obj.rowcount = 0
+
+    connection.cursor_obj.execute = execute_with_claim_loss
+    service = FeesService(connection, school_id=55)
+    service._table_columns_cache = {
+        'fee_payments': {'school_id', 'receiving_account_id', 'reposted_payment_id'},
+        'fee_payment_allocations': {'school_id'},
+        'fee_receipts': {'school_id'},
+    }
+
+    with pytest.raises(FeesError, match='already been reposted or is no longer eligible'):
+        FeesService.record_payment.__wrapped__(
+            service,
+            admno=1001,
+            amount=Decimal('1500.00'),
+            mode='MPESA',
+            reference='MPESA-REPOST-LOSE',
+            bank='',
+            date='2026-08-07',
+            year_id=2026,
+            term_id=3,
+            user_id=9,
+            lifecycle_source_payment_id=12,
+            lifecycle_correlation_id='repost-lost-race',
+        )
+
+    assert connection.commit_calls == 0
+    assert connection.rollback_calls == 1
+    assert all(
+        "'reposted'" not in query.lower()
+        for query, _ in connection.cursor_obj.executed
+        if 'insert into fee_receipt_lifecycle_events' in query.lower()
+    )
+
+
 def test_fees_service_reallocation_recalculates_both_student_ledger_balances():
     connection = RecordingConnection(
         responses=[
@@ -848,6 +1200,9 @@ def test_fees_service_reallocation_recalculates_both_student_ledger_balances():
 
     assert connection.begin_calls == 1
     assert connection.commit_calls == 1
+    payment_query, payment_params = connection.cursor_obj.executed[2]
+    assert 'for update' in payment_query.lower()
+    assert payment_params == ('MPESA-1', 1001, 55)
     audit_query, audit_params = connection.cursor_obj.executed[3]
     assert 'insert into fee_reallocation_log' in audit_query.lower()
     assert audit_params[:8] == (1001, 1002, 'MPESA-1', Decimal('1500.00'), 12, 'Wrong sibling', 9, 55)
@@ -1113,7 +1468,8 @@ def test_fees_service_invoice_replacement_register_scopes_all_audit_joins():
 def test_fees_service_records_reprint_event_after_prior_print():
     connection = RecordingConnection(
         responses=[
-            ('one', {'id': 12}),
+            ('one', {'id': 12, 'status': 'COMPLETED'}),
+            ('one', None),
             ('one', {'print_count': 1}),
         ]
     )
@@ -1122,10 +1478,37 @@ def test_fees_service_records_reprint_event_after_prior_print():
     event_type = service.record_receipt_print(12, user_id=9)
 
     assert event_type == 'REPRINTED'
+    assert connection.begin_calls == 1
     assert connection.commit_calls == 1
+    payment_query, payment_params = connection.cursor_obj.executed[0]
+    assert 'for update' in payment_query.lower()
+    assert payment_params == (12, 55)
     insert_query, insert_params = connection.cursor_obj.executed[-1]
     assert 'insert into fee_receipt_lifecycle_events' in insert_query.lower()
     assert insert_params[:5] == (55, 12, 'REPRINTED', 'COMPLETED', 9)
+
+
+def test_fees_service_rejects_reprint_for_cancelled_or_archived_receipt():
+    cancelled_connection = RecordingConnection(responses=[('one', {'id': 12, 'status': 'CANCELLED'})])
+    cancelled_service = FeesService(cancelled_connection, school_id=55)
+
+    with pytest.raises(FeesError, match='Only completed receipts can be printed or reprinted'):
+        cancelled_service.record_receipt_print(12, user_id=9)
+
+    assert cancelled_connection.commit_calls == 0
+    assert cancelled_connection.rollback_calls == 1
+
+    archived_connection = RecordingConnection(responses=[
+        ('one', {'id': 13, 'status': 'COMPLETED'}),
+        ('one', {'id': 89}),
+    ])
+    archived_service = FeesService(archived_connection, school_id=55)
+
+    with pytest.raises(FeesError, match='Archived receipts cannot be printed or reprinted'):
+        archived_service.record_receipt_print(13, user_id=9)
+
+    assert archived_connection.commit_calls == 0
+    assert archived_connection.rollback_calls == 1
 
 
 def test_fees_service_archives_receipt_without_changing_payment():
@@ -1134,11 +1517,95 @@ def test_fees_service_archives_receipt_without_changing_payment():
 
     service.archive_receipt(12, 'End of year retention', user_id=9)
 
+    assert connection.begin_calls == 1
     assert connection.commit_calls == 1
     assert all('update fee_payments' not in query.lower() for query, _ in connection.cursor_obj.executed)
+    payment_query, payment_params = connection.cursor_obj.executed[0]
+    assert 'for update' in payment_query.lower()
+    assert payment_params == (12, 55)
     insert_query, insert_params = connection.cursor_obj.executed[-1]
     assert 'insert into fee_receipt_lifecycle_events' in insert_query.lower()
     assert insert_params[:5] == (55, 12, 'End of year retention', 9, insert_params[4])
+
+
+def test_fees_service_rejects_duplicate_archive_without_commit():
+    connection = RecordingConnection(responses=[('one', {'id': 12}), ('one', {'id': 88})])
+    service = FeesService(connection, school_id=55)
+
+    with pytest.raises(FeesError, match='Receipt is already archived'):
+        service.archive_receipt(12, 'Duplicate request', user_id=9)
+
+    assert connection.begin_calls == 1
+    assert connection.commit_calls == 0
+    assert connection.rollback_calls == 1
+    assert all(
+        'insert into fee_receipt_lifecycle_events' not in query.lower()
+        for query, _ in connection.cursor_obj.executed
+    )
+
+
+def test_fees_service_rejects_posted_receipt_financial_field_edits():
+    connection = RecordingConnection(responses=[
+        ('one', {
+            'ledger_id': 45,
+            'status': 'COMPLETED',
+            'payment_mode': 'MPESA',
+            'reference_number': 'MPESA-1',
+            'payment_date': '2026-08-07',
+        }),
+    ])
+    service = FeesService(connection, school_id=55)
+    service._table_columns_cache = {'fee_payments': {'school_id'}}
+
+    with pytest.raises(FeesError, match='Payment mode, reference, and value date are immutable'):
+        FeesService.update_payment_details.__wrapped__(
+            service,
+            payment_id=12,
+            mode='CASH',
+            reference='CASH-1',
+            bank='',
+            date='2026-08-08',
+            user_id=9,
+        )
+
+    assert connection.begin_calls == 1
+    assert connection.commit_calls == 0
+    assert connection.rollback_calls == 1
+    payment_query, payment_params = connection.cursor_obj.executed[0]
+    assert 'for update' in payment_query.lower()
+    assert payment_params == (12, 55)
+    assert all('update fee_payments' not in query.lower() for query, _ in connection.cursor_obj.executed)
+
+
+def test_fees_service_updates_only_supplementary_bank_metadata():
+    connection = RecordingConnection(responses=[
+        ('one', {
+            'ledger_id': 45,
+            'status': 'COMPLETED',
+            'payment_mode': 'CHEQUE',
+            'reference_number': 'CHQ-1',
+            'payment_date': '2026-08-07',
+        }),
+    ])
+    service = FeesService(connection, school_id=55)
+    service._table_columns_cache = {'fee_payments': {'school_id'}}
+
+    assert FeesService.update_payment_details.__wrapped__(
+        service,
+        payment_id=12,
+        mode='CHEQUE',
+        reference='CHQ-1',
+        bank='Equity Bank',
+        date='2026-08-07',
+        user_id=9,
+    ) is True
+
+    assert connection.begin_calls == 1
+    assert connection.commit_calls == 1
+    update_query, update_params = connection.cursor_obj.executed[-1]
+    assert 'set bank_name = %s' in update_query.lower()
+    assert update_params == ('Equity Bank', 12, 55)
+    assert all('update fee_ledger' not in query.lower() for query, _ in connection.cursor_obj.executed)
 
 
 def test_fees_service_rejects_structure_create_with_foreign_votehead():

@@ -23,6 +23,29 @@ class DummyConnection:
         return None
 
 
+class FakeCursor:
+    def __init__(self, rows=None):
+        self.rows = rows or []
+        self.executed_sql = None
+        self.executed_params = None
+
+    def execute(self, statement, params):
+        self.executed_sql = statement
+        self.executed_params = params
+
+    def fetchall(self):
+        return self.rows
+
+
+class FakeConnection:
+    def __init__(self, rows=None):
+        self._rows = rows or []
+        self.cursor_obj = FakeCursor(self._rows)
+
+    def cursor(self):
+        return self.cursor_obj
+
+
 class FinanceServiceStub:
     last_instance = None
     create_voucher_error = None
@@ -660,6 +683,21 @@ def _create_school(db_session):
     return school
 
 
+def test_student_service_searches_normalized_full_name_for_bursar_lookup():
+    connection = FakeConnection([{"AdmNo": 1001, "FName": "Mary", "SName": "Wanjiku", "name": "Mary Wanjiku", "class_name": "Grade 1"}])
+    service = students_services.StudentService(connection, school_id=7)
+
+    rows = service.search_students("Mary  Wanjiku", limit=5)
+
+    assert rows == [{"AdmNo": 1001, "FName": "Mary", "SName": "Wanjiku", "name": "Mary Wanjiku", "class_name": "Grade 1"}]
+    assert "AS NAME" in connection.cursor_obj.executed_sql.upper()
+    assert "CONCAT_WS" in connection.cursor_obj.executed_sql.upper()
+    assert "REPLACE(LOWER" in connection.cursor_obj.executed_sql.upper()
+    assert connection.cursor_obj.executed_params[1] == "%Mary  Wanjiku%"
+    assert connection.cursor_obj.executed_params[2] == "%Mary  Wanjiku%"
+    assert connection.cursor_obj.executed_params[3] == "%marywanjiku%"
+
+
 def test_finance_manage_budgets_route_uses_service_methods(client, db_session, monkeypatch):
     school = _create_school(db_session)
     _login_admin(client, school.id)
@@ -988,6 +1026,35 @@ def test_fees_collect_route_forwards_manual_allocations_for_ajax_post(client, db
     ]
 
 
+def test_fees_collect_route_hides_unexpected_posting_errors(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+    FeesServiceStub.record_payment_error = RuntimeError("database password exposed")
+
+    response = client.post(
+        "/admin/fees/collect",
+        json={
+            "admno": 1001,
+            "amount": "1500.00",
+            "mode": "CASH",
+            "reference": "RCP-001",
+            "date": "2026-08-07",
+            "year_id": 2026,
+            "term_id": 3,
+        },
+    )
+
+    assert response.status_code == 500
+    assert response.json == {
+        "success": False,
+        "message": "Unable to post the payment. Please try again later.",
+    }
+    FeesServiceStub.record_payment_error = None
+
+
 def test_fees_collect_route_hides_workspace_initialization_traceback(client, db_session, monkeypatch):
     school = _create_school(db_session)
     _login_admin(client, school.id)
@@ -1145,6 +1212,28 @@ def test_fees_student_context_returns_blocked_credit_alerts(client, db_session, 
             "message": "This student has a credit balance of KES 250.00.",
         },
     ]
+
+
+def test_fees_student_context_hides_internal_errors(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+    monkeypatch.setattr(students_services, "StudentService", StudentServiceStub)
+    monkeypatch.setattr(
+        FeesServiceStub,
+        "get_student_balance",
+        lambda self, admno: (_ for _ in ()).throw(RuntimeError("database password exposed")),
+    )
+
+    response = client.get("/api/fees/student-context?admno=1001")
+
+    assert response.status_code == 500
+    assert response.json == {
+        "success": False,
+        "message": "Unable to load the student financial context. Please try again later.",
+    }
 
 
 def test_fees_bulk_post_route_reports_malformed_rows_explicitly(client, db_session, monkeypatch):

@@ -1,9 +1,11 @@
 import sys
 
 from run_remote_migrations import (
+    _preflight_cashier_session_open_uniqueness,
     _is_ignorable_migration_error,
     _normalize_column_type,
     _parse_create_table_statement,
+    _preflight_fee_payment_reference_uniqueness,
     _preflight_foreign_keys,
     _split_sql_statements,
     parse_args,
@@ -15,11 +17,14 @@ class FakeCursor:
         self.result = result
         self.executed = []
 
-    def execute(self, query, params):
+    def execute(self, query, params=None):
         self.executed.append((query, params))
 
     def fetchone(self):
         return self.result
+
+    def fetchall(self):
+        return self.result if isinstance(self.result, list) else []
 
 
 def test_parse_create_table_statement_extracts_columns_and_foreign_keys():
@@ -88,6 +93,64 @@ def test_split_sql_statements_ignores_comment_only_lines():
 def test_is_ignorable_migration_error_allows_duplicate_constraint_name():
     error = Exception(1005, 'Can\'t create table `db`.`classes` (errno: 121 "Duplicate key on write or update")')
     assert _is_ignorable_migration_error(error) is True
+
+
+def test_fee_payment_reference_preflight_rejects_duplicate_tenant_references():
+    cursor = FakeCursor([
+        {
+            'school_id': 7,
+            'payment_mode': 'MPESA',
+            'reference_number': 'QWE123',
+            'duplicate_count': 2,
+        },
+    ])
+
+    try:
+        _preflight_fee_payment_reference_uniqueness(
+            cursor,
+            'migrations/041_tenant_scoped_fee_payment_references.sql',
+        )
+    except RuntimeError as error:
+        assert 'duplicate fee payment references block migration 041' in str(error)
+        assert 'school 7 / MPESA / QWE123 (2)' in str(error)
+    else:
+        raise AssertionError('Expected duplicate references to block migration 041')
+
+
+def test_fee_payment_reference_preflight_ignores_other_migrations():
+    cursor = FakeCursor([
+        {
+            'school_id': 7,
+            'payment_mode': 'MPESA',
+            'reference_number': 'QWE123',
+            'duplicate_count': 2,
+        },
+    ])
+
+    _preflight_fee_payment_reference_uniqueness(cursor, 'migrations/042_fee_receipt_repost_links.sql')
+
+    assert cursor.executed == []
+
+
+def test_cashier_session_preflight_rejects_duplicate_open_sessions():
+    cursor = FakeCursor([
+        {
+            'school_id': 7,
+            'cashier_user_id': 19,
+            'duplicate_count': 2,
+        },
+    ])
+
+    try:
+        _preflight_cashier_session_open_uniqueness(
+            cursor,
+            'migrations/043_cashier_session_open_guard.sql',
+        )
+    except RuntimeError as error:
+        assert 'duplicate open cashier sessions block migration 043' in str(error)
+        assert 'school 7 / cashier 19 (2)' in str(error)
+    else:
+        raise AssertionError('Expected duplicate open sessions to block migration 043')
 
 
 def test_parse_args_supports_preflight_only(monkeypatch):

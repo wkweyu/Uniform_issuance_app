@@ -23,16 +23,29 @@ class StudentService:
         return cursor.fetchall()
 
     def search_students(self, query, limit=15):
+        search_text = (query or '').strip()
+        normalized_search = ' '.join(search_text.split()).lower().replace(' ', '')
+        pattern = f"%{search_text}%"
+        normalized_pattern = f"%{normalized_search}%"
         cursor = self.connection.cursor()
         cursor.execute("""
-            SELECT si.AdmNo, si.FName, si.SName, c.display_name as class_name
+                 SELECT si.AdmNo,
+                     si.FName,
+                     si.SName,
+                     CONCAT_WS(' ', COALESCE(si.FName, ''), COALESCE(si.MName, ''), COALESCE(si.SName, '')) AS name,
+                     c.display_name as class_name
             FROM studentinfo si
                         LEFT JOIN class_allocation ca ON si.AdmNo = ca.student_id AND ca.is_current = TRUE AND si.school_id = ca.school_id
                         LEFT JOIN classes c ON ca.class_id = c.classID AND ca.school_id = c.school_id
-            WHERE (si.AdmNo LIKE %s OR si.FName LIKE %s OR si.SName LIKE %s)
-              AND si.school_id = %s
+            WHERE si.school_id = %s
+              AND (
+                    si.AdmNo LIKE %s
+                    OR LOWER(CONCAT_WS(' ', COALESCE(si.FName, ''), COALESCE(si.MName, ''), COALESCE(si.SName, ''))) LIKE %s
+                    OR REPLACE(LOWER(CONCAT_WS(' ', COALESCE(si.FName, ''), COALESCE(si.MName, ''), COALESCE(si.SName, ''))), ' ', '') LIKE %s
+              )
+            ORDER BY si.AdmNo
             LIMIT %s
-        """, (f"%{query}%", f"%{query}%", f"%{query}%", self.school_id, limit))
+        """, (self.school_id, pattern, pattern, normalized_pattern, limit))
         return cursor.fetchall()
 
     def get_student_by_admno(self, admno):

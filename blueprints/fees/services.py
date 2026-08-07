@@ -20,7 +20,7 @@ import logging
 import json
 import uuid
 from typing import Dict, List, Optional, Tuple
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from core.audit import audit_log
 from core.tenancy import require_current_school_id
 from blueprints.finance.services import FinanceService
@@ -1124,6 +1124,15 @@ class FeesService:
         """Record a student payment with manual or priority-based votehead allocation."""
         try:
             mode = (mode or '').strip().upper()
+            reference = (reference or '').strip()
+            if not reference:
+                raise FeesError('Payment reference is required.')
+            try:
+                amount = Decimal(str(amount))
+            except (InvalidOperation, TypeError, ValueError):
+                raise FeesError('Payment amount must be a valid number.')
+            if amount <= 0:
+                raise FeesError('Payment amount must be greater than zero.')
             self._assert_student_belongs_to_school(admno)
             self._assert_academic_year_belongs_to_school(year_id)
             self._assert_term_belongs_to_school(term_id, year_id)
@@ -1143,16 +1152,21 @@ class FeesService:
 
             receiving_account_id = self.get_payment_mode_receiving_account(mode)
             cashier_session_id = None
+            cashier_service = None
             if mode == 'CASH':
                 if not fee_payments_has_cashier_session_id:
                     raise FeesError('Cashier-session support is unavailable. Apply migration 034 before posting cash receipts.')
-                cashier_session = FinanceService(self.connection, school_id=self.school_id).get_open_cashier_session(user_id)
+                cashier_service = FinanceService(self.connection, school_id=self.school_id)
+                cashier_session = cashier_service.get_open_cashier_session(user_id)
                 if not cashier_session:
                     raise FeesError('Open a cashier session before posting a cash receipt.')
-                cashier_session_id = cashier_session['id']
             self.connection.begin()
+            if cashier_service:
+                cashier_session = cashier_service.get_open_cashier_session(user_id, lock_for_update=True)
+                if not cashier_session:
+                    raise FeesError('The cashier session was closed before this payment could be posted.')
+                cashier_session_id = cashier_session['id']
             
-            amount = Decimal(str(amount))
             remaining_payment = amount
             current_balance = self.get_student_balance(admno)
             new_balance = current_balance - amount
@@ -1208,9 +1222,26 @@ class FeesService:
                 raise FeesError('allocation_mode must be AUTOMATIC or MANUAL.')
 
             allocations = []
+            allocations_by_votehead = {}
 
             def add_allocation(votehead_id: int, allocation_amount: Decimal) -> None:
                 if allocation_amount <= 0:
+                    return
+                existing_allocation = allocations_by_votehead.get(votehead_id)
+                if existing_allocation:
+                    if allocations_has_school_id:
+                        self.cursor.execute("""
+                            UPDATE fee_payment_allocations
+                            SET amount = amount + %s
+                            WHERE payment_id = %s AND votehead_id = %s AND school_id = %s
+                        """, (allocation_amount, payment_id, votehead_id, self.school_id))
+                    else:
+                        self.cursor.execute("""
+                            UPDATE fee_payment_allocations
+                            SET amount = amount + %s
+                            WHERE payment_id = %s AND votehead_id = %s
+                        """, (allocation_amount, payment_id, votehead_id))
+                    existing_allocation['amount'] += allocation_amount
                     return
                 if allocations_has_school_id:
                     self.cursor.execute("""
@@ -1222,7 +1253,9 @@ class FeesService:
                         INSERT INTO fee_payment_allocations (payment_id, votehead_id, amount)
                         VALUES (%s, %s, %s)
                     """, (payment_id, votehead_id, allocation_amount))
-                allocations.append({'votehead_id': votehead_id, 'amount': allocation_amount})
+                allocation = {'votehead_id': votehead_id, 'amount': allocation_amount}
+                allocations.append(allocation)
+                allocations_by_votehead[votehead_id] = allocation
 
             if allocation_mode == 'MANUAL':
                 manual_allocations = manual_allocations or []
@@ -1302,6 +1335,18 @@ class FeesService:
                 json.dumps(lifecycle_snapshot, default=str, sort_keys=True),
             ))
             if lifecycle_source_payment_id:
+                if not self._table_has_column('fee_payments', 'reposted_payment_id'):
+                    raise FeesError('Receipt reposting requires migration 042 before creating a replacement receipt.')
+                self.cursor.execute("""
+                    UPDATE fee_payments
+                    SET reposted_payment_id = %s
+                    WHERE id = %s
+                      AND school_id = %s
+                      AND status = 'CANCELLED'
+                      AND reposted_payment_id IS NULL
+                """, (payment_id, lifecycle_source_payment_id, self.school_id))
+                if self.cursor.rowcount != 1:
+                    raise FeesError('This cancelled receipt has already been reposted or is no longer eligible for reposting.')
                 self.cursor.execute("""
                     INSERT INTO fee_receipt_lifecycle_events
                         (school_id, payment_id, event_type, status_after, reason, actor_user_id, correlation_id, replacement_payment_id, snapshot_json)
@@ -1339,6 +1384,8 @@ class FeesService:
         if not reference:
             raise FeesError('A new payment reference is required when reposting a receipt.')
         fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
+        if not self._table_has_column('fee_payments', 'reposted_payment_id'):
+            raise FeesError('Receipt reposting requires migration 042 before creating a replacement receipt.')
         if fee_payments_has_school_id:
             self.cursor.execute("""
                 SELECT fp.*, fl.academic_year_id, fl.term_id
@@ -1358,6 +1405,8 @@ class FeesService:
             raise FeesError('Original receipt not found.')
         if original['status'] != 'CANCELLED':
             raise FeesError('Only cancelled receipts can be reposted.')
+        if original.get('reposted_payment_id'):
+            raise FeesError('This cancelled receipt has already been reposted.')
 
         return self.record_payment(
             admno=original['admno'],
@@ -1412,13 +1461,14 @@ class FeesService:
             
             # 1. Fetch payment
             if fee_payments_has_school_id:
-                self.cursor.execute("SELECT * FROM fee_payments WHERE reference_number = %s AND admno = %s AND school_id = %s", (reference_no, from_admno, self.school_id))
+                self.cursor.execute("SELECT * FROM fee_payments WHERE reference_number = %s AND admno = %s AND school_id = %s FOR UPDATE", (reference_no, from_admno, self.school_id))
             else:
                 self.cursor.execute("""
                     SELECT fp.*
                     FROM fee_payments fp
                     JOIN fee_ledger fl ON fp.ledger_id = fl.id
                     WHERE fp.reference_number = %s AND fp.admno = %s AND fl.school_id = %s
+                    FOR UPDATE
                 """, (reference_no, from_admno, self.school_id))
             payment = self.cursor.fetchone()
             if not payment:
@@ -1555,9 +1605,10 @@ class FeesService:
         if fee_payments_has_school_id and receipts_has_school_id:
             self.cursor.execute(
                 """
-                SELECT fp.*, fr.receipt_no
+                SELECT fp.*, fr.receipt_no, fl.balance_after
                 FROM fee_payments fp
                 LEFT JOIN fee_receipts fr ON fp.id = fr.payment_id AND fp.school_id = fr.school_id
+                LEFT JOIN fee_ledger fl ON fp.ledger_id = fl.id AND fp.school_id = fl.school_id
                 WHERE fp.admno = %s AND fp.school_id = %s
                 ORDER BY fp.payment_date DESC, fp.id DESC
                 LIMIT %s
@@ -1567,7 +1618,7 @@ class FeesService:
         else:
             self.cursor.execute(
                 """
-                SELECT fp.*, fr.receipt_no
+                SELECT fp.*, fr.receipt_no, fl.balance_after
                 FROM fee_payments fp
                 LEFT JOIN fee_receipts fr ON fp.id = fr.payment_id
                 JOIN fee_ledger fl ON fp.ledger_id = fl.id
@@ -1709,56 +1760,80 @@ class FeesService:
 
     def record_receipt_print(self, payment_id: int, user_id: int) -> str:
         """Append a print or reprint event after confirming receipt ownership."""
-        self.cursor.execute(
-            "SELECT id FROM fee_payments WHERE id = %s AND school_id = %s",
-            (payment_id, self.school_id),
-        )
-        if not self.cursor.fetchone():
-            raise FeesError('Receipt not found.')
-        self.cursor.execute("""
-            SELECT COUNT(*) AS print_count
-            FROM fee_receipt_lifecycle_events
-            WHERE payment_id = %s AND school_id = %s AND event_type IN ('PRINTED', 'REPRINTED')
-        """, (payment_id, self.school_id))
-        event_type = 'REPRINTED' if self.cursor.fetchone()['print_count'] else 'PRINTED'
-        self.cursor.execute("""
-            INSERT INTO fee_receipt_lifecycle_events
-                (school_id, payment_id, event_type, status_after, actor_user_id, correlation_id, snapshot_json)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, (
-            self.school_id, payment_id, event_type, 'COMPLETED', user_id, str(uuid.uuid4()),
-            json.dumps({'rendered_for_print': True}, sort_keys=True),
-        ))
-        self.connection.commit()
-        return event_type
+        try:
+            self.connection.begin()
+            self.cursor.execute(
+                "SELECT id, status FROM fee_payments WHERE id = %s AND school_id = %s FOR UPDATE",
+                (payment_id, self.school_id),
+            )
+            payment = self.cursor.fetchone()
+            if not payment:
+                raise FeesError('Receipt not found.')
+            if payment['status'] != 'COMPLETED':
+                raise FeesError('Only completed receipts can be printed or reprinted.')
+            self.cursor.execute("""
+                SELECT id FROM fee_receipt_lifecycle_events
+                WHERE payment_id = %s AND school_id = %s AND event_type = 'ARCHIVED'
+                LIMIT 1
+            """, (payment_id, self.school_id))
+            if self.cursor.fetchone():
+                raise FeesError('Archived receipts cannot be printed or reprinted.')
+            self.cursor.execute("""
+                SELECT COUNT(*) AS print_count
+                FROM fee_receipt_lifecycle_events
+                WHERE payment_id = %s AND school_id = %s AND event_type IN ('PRINTED', 'REPRINTED')
+            """, (payment_id, self.school_id))
+            event_type = 'REPRINTED' if self.cursor.fetchone()['print_count'] else 'PRINTED'
+            self.cursor.execute("""
+                INSERT INTO fee_receipt_lifecycle_events
+                    (school_id, payment_id, event_type, status_after, actor_user_id, correlation_id, snapshot_json)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (
+                self.school_id, payment_id, event_type, 'COMPLETED', user_id, str(uuid.uuid4()),
+                json.dumps({'rendered_for_print': True}, sort_keys=True),
+            ))
+            self.connection.commit()
+            return event_type
+        except Exception as exc:
+            self.connection.rollback()
+            if isinstance(exc, FeesError):
+                raise
+            raise FeesError(f'Receipt print tracking failed: {str(exc)}')
 
     def archive_receipt(self, payment_id: int, reason: str, user_id: int) -> None:
         """Append an archive event without deleting or changing the underlying payment."""
         reason = (reason or '').strip()
         if not reason:
             raise FeesError('An archive reason is required.')
-        self.cursor.execute(
-            "SELECT id FROM fee_payments WHERE id = %s AND school_id = %s",
-            (payment_id, self.school_id),
-        )
-        if not self.cursor.fetchone():
-            raise FeesError('Receipt not found.')
-        self.cursor.execute("""
-            SELECT id FROM fee_receipt_lifecycle_events
-            WHERE payment_id = %s AND school_id = %s AND event_type = 'ARCHIVED'
-            LIMIT 1
-        """, (payment_id, self.school_id))
-        if self.cursor.fetchone():
-            raise FeesError('Receipt is already archived.')
-        self.cursor.execute("""
-            INSERT INTO fee_receipt_lifecycle_events
-                (school_id, payment_id, event_type, status_after, reason, actor_user_id, correlation_id, snapshot_json)
-            VALUES (%s, %s, 'ARCHIVED', 'ARCHIVED', %s, %s, %s, %s)
-        """, (
-            self.school_id, payment_id, reason, user_id, str(uuid.uuid4()),
-            json.dumps({'archived': True}, sort_keys=True),
-        ))
-        self.connection.commit()
+        try:
+            self.connection.begin()
+            self.cursor.execute(
+                "SELECT id FROM fee_payments WHERE id = %s AND school_id = %s FOR UPDATE",
+                (payment_id, self.school_id),
+            )
+            if not self.cursor.fetchone():
+                raise FeesError('Receipt not found.')
+            self.cursor.execute("""
+                SELECT id FROM fee_receipt_lifecycle_events
+                WHERE payment_id = %s AND school_id = %s AND event_type = 'ARCHIVED'
+                LIMIT 1
+            """, (payment_id, self.school_id))
+            if self.cursor.fetchone():
+                raise FeesError('Receipt is already archived.')
+            self.cursor.execute("""
+                INSERT INTO fee_receipt_lifecycle_events
+                    (school_id, payment_id, event_type, status_after, reason, actor_user_id, correlation_id, snapshot_json)
+                VALUES (%s, %s, 'ARCHIVED', 'ARCHIVED', %s, %s, %s, %s)
+            """, (
+                self.school_id, payment_id, reason, user_id, str(uuid.uuid4()),
+                json.dumps({'archived': True}, sort_keys=True),
+            ))
+            self.connection.commit()
+        except Exception as exc:
+            self.connection.rollback()
+            if isinstance(exc, FeesError):
+                raise
+            raise FeesError(f'Receipt archival failed: {str(exc)}')
 
     def get_receipt_details(self, payment_id: int) -> Optional[Dict]:
         """Fetch full details of a receipt including allocations."""
@@ -1885,21 +1960,27 @@ class FeesService:
             
         return receipt
 
+    @audit_log('update_fee_receipt_metadata')
     def update_payment_details(self, payment_id: int, mode: str, reference: str, bank: str, date: str, user_id: int) -> bool:
-        """Update non-amount fields of a payment."""
+        """Update supplementary receipt metadata without altering posted financial fields."""
         try:
             fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
             self.connection.begin()
             
-            # Check if payment exists and isn't voided
+            # Lock the receipt while confirming immutable posting fields.
             if fee_payments_has_school_id:
-                self.cursor.execute("SELECT ledger_id, status FROM fee_payments WHERE id = %s AND school_id = %s", (payment_id, self.school_id))
+                self.cursor.execute("""
+                    SELECT ledger_id, status, payment_mode, reference_number, payment_date
+                    FROM fee_payments
+                    WHERE id = %s AND school_id = %s FOR UPDATE
+                """, (payment_id, self.school_id))
             else:
                 self.cursor.execute("""
-                    SELECT fp.ledger_id, fp.status
+                    SELECT fp.ledger_id, fp.status, fp.payment_mode, fp.reference_number, fp.payment_date
                     FROM fee_payments fp
                     JOIN fee_ledger fl ON fp.ledger_id = fl.id
                     WHERE fp.id = %s AND fl.school_id = %s
+                    FOR UPDATE
                 """, (payment_id, self.school_id))
             payment = self.cursor.fetchone()
             if not payment:
@@ -1907,26 +1988,33 @@ class FeesService:
             if payment['status'] in ['CANCELLED', 'REVERSED']:
                 raise FeesError("Cannot edit a voided/reversed receipt.")
 
-            # Update fee_payments
+            requested_mode = (mode or '').strip().upper()
+            requested_reference = (reference or '').strip()
+            requested_date = str(date or '').strip()
+            original_date = payment['payment_date'].isoformat() if hasattr(payment['payment_date'], 'isoformat') else str(payment['payment_date'])
+            if (
+                requested_mode != payment['payment_mode']
+                or requested_reference != payment['reference_number']
+                or requested_date != original_date
+            ):
+                raise FeesError(
+                    'Payment mode, reference, and value date are immutable after posting. '
+                    'Void and repost the receipt to correct them.'
+                )
+
+            # Only non-financial supplementary metadata may be amended in place.
             if fee_payments_has_school_id:
                 self.cursor.execute("""
                     UPDATE fee_payments 
-                    SET payment_mode = %s, reference_number = %s, bank_name = %s, payment_date = %s
+                    SET bank_name = %s
                     WHERE id = %s AND school_id = %s
-                """, (mode, reference, bank, date, payment_id, self.school_id))
+                """, ((bank or '').strip(), payment_id, self.school_id))
             else:
                 self.cursor.execute("""
                     UPDATE fee_payments 
-                    SET payment_mode = %s, reference_number = %s, bank_name = %s, payment_date = %s
+                    SET bank_name = %s
                     WHERE id = %s
-                """, (mode, reference, bank, date, payment_id))
-            
-            # Update fee_ledger description and reference
-            self.cursor.execute("""
-                UPDATE fee_ledger 
-                SET description = %s, reference_no = %s, transaction_date = %s
-                WHERE id = %s AND school_id = %s
-            """, (f"Payment via {mode}", reference, date, payment['ledger_id'], self.school_id))
+                """, ((bank or '').strip(), payment_id))
             
             self.connection.commit()
             return True
@@ -1943,13 +2031,14 @@ class FeesService:
             
             # 1. Fetch original payment
             if fee_payments_has_school_id:
-                self.cursor.execute("SELECT * FROM fee_payments WHERE id = %s AND school_id = %s", (payment_id, self.school_id))
+                self.cursor.execute("SELECT * FROM fee_payments WHERE id = %s AND school_id = %s FOR UPDATE", (payment_id, self.school_id))
             else:
                 self.cursor.execute("""
                     SELECT fp.*
                     FROM fee_payments fp
                     JOIN fee_ledger fl ON fp.ledger_id = fl.id
                     WHERE fp.id = %s AND fl.school_id = %s
+                    FOR UPDATE
                 """, (payment_id, self.school_id))
             payment = self.cursor.fetchone()
             if not payment:

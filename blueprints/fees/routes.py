@@ -326,8 +326,12 @@ def api_import_mpesa():
         return jsonify({'success': True, 'summary': summary})
     except FeesError as e:
         return jsonify({'success': False, 'message': str(e)}), 400
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
+    except Exception:
+        current_app.logger.exception('Failed to import M-PESA statement')
+        return jsonify({
+            'success': False,
+            'message': 'Unable to import the M-PESA statement. Please try again later.',
+        }), 500
     finally:
         connection.close()
 
@@ -778,10 +782,14 @@ def collect_fees():
             if is_ajax:
                 return jsonify({'success': False, 'message': str(e)}), 400
             flash(str(e), "error")
-        except Exception as e:
+        except Exception:
+            current_app.logger.exception('Failed to post fee payment')
             if is_ajax:
-                return jsonify({'success': False, 'message': str(e)}), 500
-            flash(str(e), "error")
+                return jsonify({
+                    'success': False,
+                    'message': 'Unable to post the payment. Please try again later.',
+                }), 500
+            flash('Unable to post the payment. Please try again later.', 'error')
 
     try:
         years = class_service.get_all_academic_years()
@@ -1126,8 +1134,12 @@ def api_fees_student_context():
         student_context['projected_balance'] = remaining
         
         return jsonify(student_context)
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
+    except Exception:
+        current_app.logger.exception('Failed to load bursar student context for admission number %s', admno)
+        return jsonify({
+            'success': False,
+            'message': 'Unable to load the student financial context. Please try again later.',
+        }), 500
     finally:
         connection.close()
 

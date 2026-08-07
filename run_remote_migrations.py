@@ -130,6 +130,60 @@ def _preflight_foreign_keys(cursor, file_path, statement, database_name):
                     f"foreign key collation mismatch for {table_name}.{local_column} ({table_collation}) -> {ref_table}.{ref_column} ({live_reference['COLLATION_NAME']})"
                 )
 
+
+def _preflight_fee_payment_reference_uniqueness(cursor, file_path):
+    """Ensure migration 041 can add its tenant-scoped receipt-reference key."""
+    if os.path.basename(file_path) != '041_tenant_scoped_fee_payment_references.sql':
+        return
+
+    cursor.execute("""
+        SELECT school_id, payment_mode, reference_number, COUNT(*) AS duplicate_count
+        FROM fee_payments
+        WHERE reference_number IS NOT NULL AND TRIM(reference_number) <> ''
+        GROUP BY school_id, payment_mode, reference_number
+        HAVING COUNT(*) > 1
+        LIMIT 5
+    """)
+    duplicates = cursor.fetchall()
+    if not duplicates:
+        return
+
+    examples = ', '.join(
+        f"school {row['school_id']} / {row['payment_mode']} / {row['reference_number']} ({row['duplicate_count']})"
+        for row in duplicates
+    )
+    raise RuntimeError(
+        'duplicate fee payment references block migration 041: '
+        f'{examples}'
+    )
+
+
+def _preflight_cashier_session_open_uniqueness(cursor, file_path):
+    """Ensure migration 043 can add its single-open-session guard."""
+    if os.path.basename(file_path) != '043_cashier_session_open_guard.sql':
+        return
+
+    cursor.execute("""
+        SELECT school_id, cashier_user_id, COUNT(*) AS duplicate_count
+        FROM cashier_sessions
+        WHERE status = 'OPEN'
+        GROUP BY school_id, cashier_user_id
+        HAVING COUNT(*) > 1
+        LIMIT 5
+    """)
+    duplicates = cursor.fetchall()
+    if not duplicates:
+        return
+
+    examples = ', '.join(
+        f"school {row['school_id']} / cashier {row['cashier_user_id']} ({row['duplicate_count']})"
+        for row in duplicates
+    )
+    raise RuntimeError(
+        'duplicate open cashier sessions block migration 043: '
+        f'{examples}'
+    )
+
 def run_migrations(preflight_only=False):
     # Connection details: prefer environment variables, then central config
     DB_HOST = os.environ.get('DB_HOST', getattr(config, 'DB_HOST', 'localhost'))
@@ -177,6 +231,8 @@ def run_migrations(preflight_only=False):
             
             for stmt in statements:
                 try:
+                    _preflight_fee_payment_reference_uniqueness(cursor, file_path)
+                    _preflight_cashier_session_open_uniqueness(cursor, file_path)
                     _preflight_foreign_keys(cursor, file_path, stmt, DB_NAME)
                     if preflight_only:
                         continue
