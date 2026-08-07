@@ -2300,6 +2300,34 @@ def test_fee_receipts_register_route_rejects_invalid_admno_filter(client, db_ses
         assert session.get("_flashes")[-1] == ("error", "admno must be a valid integer.")
 
 
+def test_fee_receipts_register_route_hides_unexpected_error_and_closes_connection(client, db_session, monkeypatch):
+    class TrackingConnection(DummyConnection):
+        closed = False
+
+        def close(self):
+            self.closed = True
+
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    connection = TrackingConnection()
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: connection)
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(
+        FeesServiceStub,
+        "get_receipts_register",
+        lambda _self, *_args: (_ for _ in ()).throw(RuntimeError("database password exposed")),
+    )
+    monkeypatch.setattr(fees_routes, "render_template", lambda template, **context: f"{template}:{len(context['records'])}")
+
+    response = client.get("/admin/fees/receipts")
+
+    assert response.status_code == 200
+    assert response.data == b"fee_receipts_register.html:0"
+    assert connection.closed is True
+    with client.session_transaction() as session:
+        assert session.get("_flashes")[-1] == ("error", "Receipt register could not be loaded. Please try again later.")
+
+
 def test_receipt_lifecycle_route_loads_receipt_and_events(client, db_session, monkeypatch):
     school = _create_school(db_session)
     _login_admin(client, school.id)

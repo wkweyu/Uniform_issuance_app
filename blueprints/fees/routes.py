@@ -1187,7 +1187,12 @@ def fee_receipts_register():
     except ValueError as e:
         flash(str(e), 'error')
         records = []
-    connection.close()
+    except Exception:
+        current_app.logger.exception('Failed to load fee receipts register')
+        flash('Receipt register could not be loaded. Please try again later.', 'error')
+        records = []
+    finally:
+        connection.close()
     return render_template('fee_receipts_register.html', records=records, filters=request.args)
 
 @fees_bp.route('/admin/fees/receipt/<int:payment_id>/edit', methods=['GET', 'POST'])
