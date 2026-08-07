@@ -222,6 +222,65 @@ def test_finance_service_rejects_duplicate_open_cashier_session_without_commit()
     assert connection.rollback_calls == 1
 
 
+def test_finance_service_approves_cashier_session_variance_atomically():
+    connection = RecordingConnection(responses=[('one', {'cashier_user_id': 8})])
+    service = FinanceService(connection, school_id=18)
+
+    service.approve_cashier_session_variance(session_id=7, approved_by=9)
+
+    assert connection.begin_calls == 1
+    assert connection.commit_calls == 1
+    assert connection.rollback_calls == 0
+    session_query, session_params = connection.cursor_obj.executed[0]
+    update_query, update_params = connection.cursor_obj.executed[1]
+    assert session_params == (7, 18)
+    assert "status = 'pending_approval'" in session_query.lower()
+    assert 'for update' in session_query.lower()
+    assert update_params == (9, 7, 18)
+    assert "set status = 'closed'" in update_query.lower()
+
+
+@pytest.mark.parametrize(
+    ('session_record', 'approved_by', 'message'),
+    [
+        (None, 9, 'awaiting approval was not found'),
+        ({'cashier_user_id': 8}, 8, 'cannot approve their own'),
+    ],
+)
+def test_finance_service_rejects_invalid_cashier_session_variance_approval(session_record, approved_by, message):
+    connection = RecordingConnection(responses=[('one', session_record)])
+    service = FinanceService(connection, school_id=18)
+
+    with pytest.raises(FinanceError, match=message):
+        service.approve_cashier_session_variance(session_id=7, approved_by=approved_by)
+
+    assert connection.begin_calls == 1
+    assert connection.commit_calls == 0
+    assert connection.rollback_calls == 1
+    assert len(connection.cursor_obj.executed) == 1
+
+
+def test_finance_service_rolls_back_failed_cashier_session_variance_approval():
+    connection = RecordingConnection(responses=[('one', {'cashier_user_id': 8})])
+    original_execute = connection.cursor_obj.execute
+
+    def fail_approval_update(query, params=None):
+        if 'UPDATE cashier_sessions' in query:
+            raise pymysql.MySQLError('write failed')
+        original_execute(query, params)
+
+    connection.cursor_obj.execute = fail_approval_update
+    service = FinanceService(connection, school_id=18)
+
+    with pytest.raises(FinanceError, match='Unable to approve cashier session variance'):
+        service.approve_cashier_session_variance(session_id=7, approved_by=9)
+
+    assert connection.begin_calls == 1
+    assert connection.commit_calls == 0
+    assert connection.rollback_calls == 1
+    assert len(connection.cursor_obj.executed) == 1
+
+
 def test_finance_service_cashier_session_register_scopes_completed_cash_receipts():
     connection = RecordingConnection(responses=[('all', [])])
     service = FinanceService(connection, school_id=18)

@@ -294,22 +294,29 @@ class FinanceService:
 
     def approve_cashier_session_variance(self, session_id: int, approved_by: int) -> None:
         """Approve a non-zero cash variance; cashier and approver must be distinct users."""
-        self.cursor.execute("""
-            SELECT cashier_user_id FROM cashier_sessions
-            WHERE id = %s AND school_id = %s AND status = 'PENDING_APPROVAL'
-            FOR UPDATE
-        """, (session_id, self.school_id))
-        session_record = self.cursor.fetchone()
-        if not session_record:
-            raise FinanceError('Cashier session awaiting approval was not found.')
-        if session_record['cashier_user_id'] == approved_by:
-            raise FinanceError('A cashier cannot approve their own session variance.')
-        self.cursor.execute("""
-            UPDATE cashier_sessions
-            SET status = 'CLOSED', approved_by = %s, approved_at = NOW()
-            WHERE id = %s AND school_id = %s
-        """, (approved_by, session_id, self.school_id))
-        self.connection.commit()
+        try:
+            self.connection.begin()
+            self.cursor.execute("""
+                SELECT cashier_user_id FROM cashier_sessions
+                WHERE id = %s AND school_id = %s AND status = 'PENDING_APPROVAL'
+                FOR UPDATE
+            """, (session_id, self.school_id))
+            session_record = self.cursor.fetchone()
+            if not session_record:
+                raise FinanceError('Cashier session awaiting approval was not found.')
+            if session_record['cashier_user_id'] == approved_by:
+                raise FinanceError('A cashier cannot approve their own session variance.')
+            self.cursor.execute("""
+                UPDATE cashier_sessions
+                SET status = 'CLOSED', approved_by = %s, approved_at = NOW()
+                WHERE id = %s AND school_id = %s
+            """, (approved_by, session_id, self.school_id))
+            self.connection.commit()
+        except Exception as exc:
+            self.connection.rollback()
+            if isinstance(exc, FinanceError):
+                raise
+            raise FinanceError(f'Unable to approve cashier session variance: {str(exc)}')
 
     # =========================================================================
     # 2. GENERAL LEDGER TRANSACTIONS
