@@ -2341,6 +2341,25 @@ def test_print_fee_receipt_route_records_lifecycle_event(client, db_session, mon
     assert FeesServiceStub.last_instance.calls == [("get_receipt_details", 77), ("record_receipt_print", 77, 10)]
 
 
+def test_print_fee_receipt_route_hides_unexpected_rendering_error(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(
+        FeesServiceStub,
+        "get_receipt_details",
+        lambda _self, _payment_id: (_ for _ in ()).throw(RuntimeError("database password exposed")),
+    )
+
+    response = client.get("/admin/fees/receipt/77")
+
+    assert response.status_code == 302
+    assert b"database password exposed" not in response.data
+    with client.session_transaction() as session:
+        assert session.get("_flashes")[-1] == ("error", "Receipt could not be rendered. Please try again later.")
+
+
 def test_archive_fee_receipt_route_records_reason(client, db_session, monkeypatch):
     school = _create_school(db_session)
     _login_admin(client, school.id)

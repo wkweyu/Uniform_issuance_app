@@ -1167,9 +1167,9 @@ def print_fee_receipt(payment_id):
             allocations=receipt.get('allocations', []),
             now=datetime.now(),
         )
-    except Exception as e:
+    except Exception:
         current_app.logger.exception("Failed to render fee receipt %s", payment_id)
-        flash(f"Receipt rendering failed: {str(e)}", "error")
+        flash("Receipt could not be rendered. Please try again later.", "error")
         return redirect(url_for('fees.fees_dashboard'))
     finally: connection.close()
 
