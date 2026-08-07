@@ -208,11 +208,15 @@ def run_migrations(preflight_only=False):
     DB_NAME = connection_settings['database']
 
     ssl_config = None
-    ca_path = connection_settings['ssl_ca'] or os.path.join(os.getcwd(), 'globalsignrootca.pem')
-    if os.path.exists(ca_path):
+    configured_ca_path = connection_settings['ssl_ca']
+    default_skysql_ca_path = os.path.join(os.getcwd(), 'globalsignrootca.pem')
+    ca_path = configured_ca_path or (default_skysql_ca_path if 'skysql.com' in DB_HOST.lower() else None)
+    if ca_path and os.path.exists(ca_path):
         ssl_config = {'ca': ca_path, 'check_hostname': False}
         print(f"DEBUG: Using SSL certificate at {ca_path}")
-    else:
+    elif configured_ca_path:
+        print(f"WARNING: configured DB_SSL_CA was not found at {configured_ca_path}.")
+    elif 'skysql.com' in DB_HOST.lower():
         print("WARNING: globalsignrootca.pem not found, SSL might fail.")
 
     try:
