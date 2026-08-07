@@ -160,10 +160,26 @@ def _preflight_fee_payment_reference_uniqueness(cursor, file_path):
     )
 
 
-def _preflight_cashier_session_open_uniqueness(cursor, file_path):
+def _table_exists(cursor, table_name, database_name):
+    cursor.execute(
+        """
+        SELECT 1
+        FROM information_schema.TABLES
+        WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s
+        """,
+        (database_name, table_name),
+    )
+    return bool(cursor.fetchone())
+
+
+def _preflight_cashier_session_open_uniqueness(cursor, file_path, database_name, planned_tables=None):
     """Ensure migration 043 can add its single-open-session guard."""
     if os.path.basename(file_path) != '043_cashier_session_open_guard.sql':
         return
+    if not _table_exists(cursor, 'cashier_sessions', database_name):
+        if 'cashier_sessions' in (planned_tables or {}):
+            return
+        raise RuntimeError('cashier_sessions does not exist and is not created by an earlier migration.')
 
     cursor.execute("""
         SELECT school_id, cashier_user_id, COUNT(*) AS duplicate_count
@@ -250,14 +266,23 @@ def run_migrations(preflight_only=False):
                 sql_content = f.read()
             
             statements = _split_sql_statements(sql_content)
+            try:
+                _preflight_fee_payment_reference_uniqueness(cursor, file_path)
+                _preflight_cashier_session_open_uniqueness(cursor, file_path, DB_NAME, planned_tables)
+            except RuntimeError as e:
+                print(f"  PRECHECK FAILED in {file_path}: {e}")
+                connection.close()
+                return False
+            except Exception as e:
+                print(f"  CRITICAL PRECHECK ERROR in {file_path}: {e}")
+                connection.close()
+                return False
             
             for stmt in statements:
                 try:
                     table_name, column_types, _ = _parse_create_table_statement(stmt)
                     if table_name:
                         planned_tables[table_name] = column_types
-                    _preflight_fee_payment_reference_uniqueness(cursor, file_path)
-                    _preflight_cashier_session_open_uniqueness(cursor, file_path)
                     _preflight_foreign_keys(cursor, file_path, stmt, DB_NAME, planned_tables)
                     if preflight_only:
                         continue

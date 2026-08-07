@@ -170,12 +170,30 @@ def test_cashier_session_preflight_rejects_duplicate_open_sessions():
         _preflight_cashier_session_open_uniqueness(
             cursor,
             'migrations/043_cashier_session_open_guard.sql',
+            'schoolmngt',
         )
     except RuntimeError as error:
         assert 'duplicate open cashier sessions block migration 043' in str(error)
         assert 'school 7 / cashier 19 (2)' in str(error)
     else:
         raise AssertionError('Expected duplicate open sessions to block migration 043')
+
+
+def test_cashier_session_preflight_skips_unapplied_table_created_by_earlier_migration():
+    class MissingTableCursor(FakeCursor):
+        def fetchone(self):
+            return None
+
+    cursor = MissingTableCursor([])
+
+    _preflight_cashier_session_open_uniqueness(
+        cursor,
+        'migrations/043_cashier_session_open_guard.sql',
+        'schoolmngt',
+        {'cashier_sessions': {'id': 'INT'}},
+    )
+
+    assert len(cursor.executed) == 1
 
 
 def test_parse_args_supports_preflight_only(monkeypatch):
