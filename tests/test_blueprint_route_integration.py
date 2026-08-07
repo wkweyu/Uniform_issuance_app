@@ -1031,6 +1031,19 @@ def test_collect_fees_template_reports_unexpected_post_response_safely():
     assert 'The server returned an unexpected response (${res.status}). Please try again later.' in template
 
 
+def test_fees_workspaces_link_to_cashier_setup_controls():
+    template_root = Path(__file__).resolve().parents[1] / 'templates'
+    endpoint_references = (
+        "url_for('finance.manage_payment_mode_receiving_accounts')",
+        "url_for('finance.manage_cashier_sessions')",
+    )
+
+    for template_name in ('collect_fees.html', 'fees_dashboard.html'):
+        template = (template_root / template_name).read_text(encoding='utf-8')
+        for endpoint_reference in endpoint_references:
+            assert endpoint_reference in template
+
+
 def test_receipt_lifecycle_report_includes_audit_correlation_and_replacement_links():
     template = (Path(__file__).resolve().parents[1] / 'templates' / 'receipt_lifecycle_report.html').read_text(encoding='utf-8')
 
