@@ -758,6 +758,20 @@ def test_finance_cashier_sessions_route_opens_current_cashier_session(client, db
     assert FinanceServiceStub.last_instance.calls == [("open_cashier_session", 10, 10)]
 
 
+def test_finance_cashier_sessions_page_shows_open_action_when_no_session_exists(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(finance_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(finance_routes, "FinanceService", FinanceServiceStub)
+
+    response = client.get("/admin/finance/cashier-sessions")
+
+    assert response.status_code == 200
+    assert b"No cashier session is open" in response.data
+    assert b"Open cashier session" in response.data
+    assert b'name="action" value="open"' in response.data
+
+
 def test_finance_cashier_session_report_forwards_filters(client, db_session, monkeypatch):
     school = _create_school(db_session)
     _login_admin(client, school.id)
