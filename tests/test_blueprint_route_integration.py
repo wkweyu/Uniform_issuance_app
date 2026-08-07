@@ -1,6 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 import io
+from pathlib import Path
 import uuid
 
 import pytest
@@ -984,6 +985,18 @@ def test_fees_collect_route_rejects_invalid_amount_before_service_call(client, d
     assert all(call[0] != "record_payment" for call in FeesServiceStub.last_instance.calls)
     with client.session_transaction() as session:
         assert session.get("_flashes")[-1] == ("error", "amount must be a valid number.")
+
+
+def test_collect_fees_template_declares_accessible_cashier_shortcuts():
+    template = (Path(__file__).resolve().parents[1] / 'templates' / 'collect_fees.html').read_text(encoding='utf-8')
+
+    assert 'aria-keyshortcuts="Control+K"' in template
+    assert 'aria-keyshortcuts="F9 Control+P"' in template
+    assert 'aria-keyshortcuts="Control+Shift+P"' in template
+    assert 'aria-keyshortcuts="Control+N"' in template
+    assert 'aria-keyshortcuts="Escape"' in template
+    assert "event.key.toLowerCase() === 'p' && event.shiftKey" in template
+    assert "event.key.toLowerCase() === 'p' && !event.shiftKey" in template
 
 
 def test_fees_collect_route_forwards_manual_allocations_for_ajax_post(client, db_session, monkeypatch):

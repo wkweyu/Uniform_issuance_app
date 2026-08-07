@@ -53,7 +53,7 @@
                                 <span class="absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400">
                                     <i class="fas fa-search text-xs"></i>
                                 </span>
-                                <input type="text" id="studentSearch" autocomplete="off" placeholder="Type name or Admission ID..." 
+                                <input type="text" id="studentSearch" autocomplete="off" placeholder="Type name or Admission ID..." aria-label="Student lookup" aria-keyshortcuts="Control+K"
                                     class="w-full bg-slate-50 border border-slate-100 rounded-2xl pl-10 pr-5 py-3 text-sm font-bold focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition shadow-inner">
                                 <div id="searchResults" class="absolute z-50 w-full mt-2 bg-white border border-slate-200 rounded-2xl shadow-2xl hidden max-h-64 overflow-y-auto overflow-x-hidden divide-y divide-slate-50"></div>
                             </div>
@@ -66,7 +66,7 @@
                                 <h3 id="studentNameDisplay" class="text-sm font-black mt-1"></h3>
                                 <p id="studentClassDisplay" class="text-[10px] font-bold text-indigo-400 mt-0.5"></p>
                             </div>
-                            <button type="button" id="clearStudent" class="absolute top-4 right-4 text-slate-500 hover:text-white transition">
+                            <button type="button" id="clearStudent" title="Clear selected student (Escape)" aria-label="Clear selected student" aria-keyshortcuts="Escape" class="absolute top-4 right-4 text-slate-500 hover:text-white transition">
                                 <i class="fas fa-times-circle text-lg"></i>
                             </button>
                             <i class="fas fa-user-graduate absolute -right-2 -bottom-2 text-6xl opacity-10 group-hover:scale-110 transition duration-500"></i>
@@ -193,15 +193,15 @@
 
                         <!-- Posting Controls Stack -->
                         <div class="grid grid-cols-2 gap-3 pt-2">
-                            <button type="button" id="postBtn" disabled 
+                                <button type="button" id="postBtn" disabled title="Post payment (F9 or Ctrl+P)" aria-keyshortcuts="F9 Control+P"
                                     class="col-span-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-black py-3.5 rounded-2xl shadow-md transition duration-300 uppercase tracking-widest text-[10px] flex items-center justify-center gap-2">
                                 <i class="fas fa-check-double"></i> Post Payment (F9)
                             </button>
-                            <button type="button" id="postPrintBtn" disabled 
+                                <button type="button" id="postPrintBtn" disabled title="Post and print (Ctrl+Shift+P)" aria-keyshortcuts="Control+Shift+P"
                                     class="bg-slate-950 hover:bg-black disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-black py-3 rounded-xl transition uppercase tracking-widest text-[9px] flex items-center justify-center gap-1.5">
                                 <i class="fas fa-print"></i> Post & Print
                             </button>
-                            <button type="button" id="postNewBtn" disabled 
+                                <button type="button" id="postNewBtn" disabled title="Post and start a new receipt (Ctrl+N)" aria-keyshortcuts="Control+N"
                                     class="bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed font-black py-3 rounded-xl transition uppercase tracking-widest text-[9px] flex items-center justify-center gap-1.5">
                                 <i class="fas fa-file-plus"></i> Post & New
                             </button>
@@ -1133,13 +1133,21 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
+        if (event.key === 'Escape' && !isTyping) {
+            event.preventDefault();
+            document.getElementById('clearStudent').click();
+            return;
+        }
+
         if (!event.ctrlKey || event.altKey || event.metaKey) return;
 
         if (event.key.toLowerCase() === 'k') {
             event.preventDefault();
-            searchInput.classList.remove('hidden');
             searchInput.focus();
-        } else if (event.key.toLowerCase() === 'p' && !active_post_btn.disabled && !isTyping) {
+        } else if (event.key.toLowerCase() === 'p' && event.shiftKey && !p_print_btn.disabled && !isTyping) {
+            event.preventDefault();
+            p_print_btn.click();
+        } else if (event.key.toLowerCase() === 'p' && !event.shiftKey && !active_post_btn.disabled && !isTyping) {
             event.preventDefault();
             active_post_btn.click();
         } else if (event.key.toLowerCase() === 'n' && !p_new_btn.disabled && !isTyping) {
