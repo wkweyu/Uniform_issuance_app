@@ -13,7 +13,7 @@
         </div>
     </form>
     <div class="flex gap-3">
-        <a href="{{ url_for('create_yearly_fee_structure_route') }}" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-md transition flex items-center gap-2">
+        <a href="{{ url_for('fees.create_yearly_fee_structure_route') }}" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-md transition flex items-center gap-2">
             <i class="fas fa-magic"></i> Setup Wizard
         </a>
         <button onclick="window.print()" class="bg-gray-800 hover:bg-black text-white px-5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-md transition flex items-center gap-2">
@@ -63,7 +63,7 @@
                         {{ year_total.sum | currency }}
                     </td>
                     <td class="px-4 py-4 text-center no-print border-l border-gray-200">
-                        <a href="{{ url_for('fee_structure_card', year_id=year_id, group_code=group_code, class_id=class_id or '', category=category) }}" 
+                        <a href="{{ url_for('fees.fee_structure_card', year_id=year_id, group_code=group_code, class_id=class_id or '', category=category) }}"
                            class="text-blue-600 hover:text-blue-800 font-black uppercase text-[9px] tracking-widest underline decoration-2 underline-offset-4">
                            Full Card
                         </a>

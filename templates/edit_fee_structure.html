@@ -8,7 +8,7 @@
         <div>
             <nav class="flex mb-1" aria-label="Breadcrumb">
                 <ol class="inline-flex items-center space-x-2 text-[10px] font-black uppercase tracking-widest text-gray-400">
-                    <li><a href="{{ url_for('manage_fee_structures') }}" class="hover:text-blue-600">Structures</a></li>
+                    <li><a href="{{ url_for('fees.manage_fee_structures') }}" class="hover:text-blue-600">Structures</a></li>
                     <li><i class="fas fa-chevron-right opacity-40 mx-1"></i></li>
                     <li class="text-blue-600">Edit Mode</li>
                 </ol>
@@ -27,7 +27,7 @@
             </p>
         </div>
         <div class="flex gap-2">
-            <a href="{{ url_for('fee_structure_card', year_id=s.academic_year_id, group_code=s.class_group_code, class_id=s.class_id or '', category=s.student_category) }}" class="bg-blue-600 text-white px-6 py-2 rounded-xl text-sm font-black shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition flex items-center">
+            <a href="{{ url_for('fees.fee_structure_card', year_id=s.academic_year_id, group_code=s.class_group_code, class_id=s.class_id or '', category=s.student_category) }}" class="bg-blue-600 text-white px-6 py-2 rounded-xl text-sm font-black shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition flex items-center">
                 <i class="fas fa-print mr-2"></i> Print Full Yearly Structure
             </a>
         </div>
@@ -50,7 +50,7 @@
     </div>
     {% endif %}
 
-    <form action="{{ url_for('edit_fee_structure', structure_id=s.id) }}" method="POST" class="max-w-4xl">
+    <form action="{{ url_for('fees.edit_fee_structure', structure_id=s.id) }}" method="POST" class="max-w-4xl">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         
         <div class="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden">
@@ -93,7 +93,7 @@
         </div>
 
         <div class="mt-8 flex justify-between items-center">
-            <a href="{{ url_for('manage_fee_structures') }}" class="text-xs font-black text-gray-400 hover:text-gray-600 uppercase tracking-widest">
+            <a href="{{ url_for('fees.manage_fee_structures') }}" class="text-xs font-black text-gray-400 hover:text-gray-600 uppercase tracking-widest">
                 Cancel & Discard
             </a>
             <div class="flex gap-4">

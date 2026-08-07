@@ -1198,7 +1198,14 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             body: JSON.stringify(payload)
         })
-        .then(res => res.json())
+        .then(async res => {
+            const responseText = await res.text();
+            try {
+                return JSON.parse(responseText);
+            } catch (_error) {
+                throw new Error(`The server returned an unexpected response (${res.status}). Please try again later.`);
+            }
+        })
         .then(data => {
             active_post_btn.disabled = false;
             active_post_btn.innerHTML = '<i class="fas fa-check-double"></i> Post Payment (F9)';

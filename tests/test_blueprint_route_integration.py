@@ -999,6 +999,34 @@ def test_collect_fees_template_declares_accessible_cashier_shortcuts():
     assert "event.key.toLowerCase() === 'p' && !event.shiftKey" in template
 
 
+def test_fee_structure_templates_use_blueprint_qualified_endpoints():
+    template_root = Path(__file__).resolve().parents[1] / 'templates'
+    template_names = (
+        'manage_fee_structures.html',
+        'fee_structure_overview.html',
+        'create_yearly_fee_structure.html',
+        'edit_fee_structure.html',
+        'fee_structure_card.html',
+    )
+    unqualified_endpoints = (
+        'fees_dashboard', 'manage_fee_structures', 'fee_structures_overview',
+        'create_yearly_fee_structure_route', 'fee_structure_card',
+        'edit_fee_structure', 'copy_fee_structure',
+    )
+
+    for template_name in template_names:
+        template = (template_root / template_name).read_text(encoding='utf-8')
+        for endpoint in unqualified_endpoints:
+            assert f"url_for('{endpoint}'" not in template
+
+
+def test_collect_fees_template_reports_unexpected_post_response_safely():
+    template = (Path(__file__).resolve().parents[1] / 'templates' / 'collect_fees.html').read_text(encoding='utf-8')
+
+    assert 'const responseText = await res.text();' in template
+    assert 'The server returned an unexpected response (${res.status}). Please try again later.' in template
+
+
 def test_receipt_lifecycle_report_includes_audit_correlation_and_replacement_links():
     template = (Path(__file__).resolve().parents[1] / 'templates' / 'receipt_lifecycle_report.html').read_text(encoding='utf-8')
 
