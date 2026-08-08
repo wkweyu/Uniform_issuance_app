@@ -44,6 +44,13 @@ def _parse_decimal(value, field_name, default=None):
         raise ValueError(f"{field_name} must be a valid number.")
 
 
+def _required_id_list(values, field_name):
+    parsed_values = [_required_int(value, field_name) for value in values]
+    if not parsed_values:
+        raise ValueError(f"Select at least one {field_name}.")
+    return parsed_values
+
+
 def _build_fee_structure_items(votehead_ids, amounts):
     items = []
     for index, (votehead_id, amount) in enumerate(zip(votehead_ids, amounts), start=1):
@@ -53,6 +60,51 @@ def _build_fee_structure_items(votehead_ids, amounts):
         if parsed_amount > 0:
             items.append({'votehead_id': _required_int(votehead_id, f'votehead_id[{index}]'), 'amount': float(parsed_amount)})
     return items
+
+
+def _build_fee_structure_card_context(service, class_service, year_id, group_code, class_id, category):
+    if not year_id:
+        academic_year = class_service.get_current_academic_year()
+        year_id = academic_year['id'] if academic_year else None
+
+    class_id = _optional_int(class_id, 'class_id')
+    terms = service.get_terms_for_academic_year(year_id)
+    voteheads = service.get_voteheads()
+    data = {votehead['id']: {'name': votehead['name'], 'terms': {term['id']: 0 for term in terms}, 'yearly': 0} for votehead in voteheads}
+
+    is_locked = False
+    items = service.get_structure_card_items(year_id, category, class_id=class_id, group_code=group_code)
+    for item in items:
+        if item['votehead_id'] in data:
+            data[item['votehead_id']]['terms'][item['term_id']] = item['amount']
+            data[item['votehead_id']]['yearly'] += item['amount']
+            is_locked = is_locked or bool(item.get('is_locked'))
+
+    all_classes = class_service.get_active_classes()
+    selected_label = group_code
+    if class_id:
+        selected_class = next((item for item in all_classes if str(item['classID']) == str(class_id)), None)
+        selected_label = selected_class['display_name'] if selected_class else 'Class'
+
+    return {
+        'data': {votehead_id: votehead for votehead_id, votehead in data.items() if votehead['yearly'] > 0},
+        'terms': terms,
+        'years': class_service.get_all_academic_years(),
+        'class_groups': class_service.get_class_groups(),
+        'all_classes': all_classes,
+        'year_id': year_id,
+        'group_code': group_code,
+        'class_id': class_id,
+        'category': category,
+        'selected_label': selected_label,
+        'is_locked': is_locked,
+    }
+
+
+def _render_fee_structure_pdf(html, base_url):
+    from weasyprint import HTML
+    return HTML(string=html, base_url=base_url).write_pdf()
+
 
 def get_db_connection():
     from core.db import get_db_connection
@@ -583,44 +635,43 @@ def fee_structure_card():
     connection = get_db_connection()
     service = FeesService(connection)
     class_service = ClassManagementService(connection, school_id=service.school_id)
-
-    if not year_id:
-        ay = class_service.get_current_academic_year()
-        year_id = ay['id'] if ay else None
-
-    terms = service.get_terms_for_academic_year(year_id)
-
-    voteheads = service.get_voteheads()
-    data = {v['id']: {'name': v['name'], 'terms': {t['id']: 0 for t in terms}, 'yearly': 0} for v in voteheads}
-
-    is_locked = False
-    items = service.get_structure_card_items(year_id, category, class_id=int(class_id) if class_id else None, group_code=group_code)
-    for item in items:
-        if item['votehead_id'] in data:
-            data[item['votehead_id']]['terms'][item['term_id']] = item['amount']
-            data[item['votehead_id']]['yearly'] += item['amount']
-            if item.get('is_locked'):
-                is_locked = True
-
-    filtered_data = {k: v for k, v in data.items() if v['yearly'] > 0}
-    all_classes = class_service.get_active_classes()
-    selected_label = group_code
-    if class_id:
-        sel_c = next((c for c in all_classes if str(c['classID']) == str(class_id)), None)
-        selected_label = sel_c['display_name'] if sel_c else "Class"
-
-    connection.close()
-    return render_template('fee_structure_card.html',
-                         data=filtered_data, terms=terms, years=class_service.get_all_academic_years(),
-                         class_groups=class_service.get_class_groups(), all_classes=all_classes,
-                         year_id=year_id, group_code=group_code, class_id=class_id, category=category,
-                         selected_label=selected_label, is_locked=is_locked)
+    try:
+        return render_template(
+            'fee_structure_card.html',
+            **_build_fee_structure_card_context(service, class_service, year_id, group_code, class_id, category),
+        )
+    finally:
+        connection.close()
 
 @fees_bp.route('/admin/fees/structures/download')
 @login_required
 def fee_structure_download():
-    # Similar to card, but for PDF generation. Keep logic here but call a helper if possible.
-    return "PDF generation placeholder"
+    year_id = request.args.get('year_id')
+    group_code = request.args.get('group_code')
+    class_id = request.args.get('class_id')
+    category = request.args.get('category', 'Day')
+    connection = get_db_connection()
+    service = FeesService(connection)
+    class_service = ClassManagementService(connection, school_id=service.school_id)
+    try:
+        context = _build_fee_structure_card_context(service, class_service, year_id, group_code, class_id, category)
+        pdf = _render_fee_structure_pdf(
+            render_template('fee_structure_card.html', **context, is_pdf=True),
+            request.url_root,
+        )
+        response = make_response(pdf)
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = f"attachment; filename=fee-structure-{context['year_id']}.pdf"
+        return response
+    except Exception:
+        current_app.logger.exception('Failed to export fee structure card')
+        flash('Unable to export the fee structure card. Please try again later.', 'error')
+        return redirect(url_for(
+            'fees.fee_structure_card', year_id=year_id, group_code=group_code,
+            class_id=class_id, category=category,
+        ))
+    finally:
+        connection.close()
 
 @fees_bp.route('/admin/fees/structures/overview')
 @login_required
@@ -861,7 +912,7 @@ def bulk_debit_term():
     if request.method == 'POST':
         try:
             count = service.bulk_invoice_classes(
-                [_required_int(cid, 'class_ids') for cid in request.form.getlist('class_ids')],
+                _required_id_list(request.form.getlist('class_ids'), 'class'),
                 _required_int(request.form.get('year_id'), 'year_id'),
                 _required_int(request.form.get('term_id'), 'term_id'),
                 session['userNo'],
@@ -1340,14 +1391,17 @@ def bulk_invoice():
     class_service = ClassManagementService(connection, school_id=service.school_id)
     if request.method == 'POST':
         try:
-            vh = request.form.get('specific_votehead_id'); amt = request.form.get('specific_amount')
+            votehead_id = request.form.get('specific_votehead_id')
+            amount = request.form.get('specific_amount')
+            if bool(votehead_id) != bool(amount):
+                raise ValueError('Select both a votehead and amount for votehead-specific invoicing.')
             count = service.bulk_invoice_classes(
-                [_required_int(cid, 'class_ids') for cid in request.form.getlist('class_ids')],
+                _required_id_list(request.form.getlist('class_ids'), 'class'),
                 _required_int(request.form.get('year_id'), 'year_id'),
                 _required_int(request.form.get('term_id'), 'term_id'),
                 session['userNo'],
-                specific_votehead_id=_optional_int(vh, 'specific_votehead_id'),
-                specific_amount=_parse_decimal(amt, 'specific_amount') if amt else None,
+                specific_votehead_id=_optional_int(votehead_id, 'specific_votehead_id'),
+                specific_amount=_parse_decimal(amount, 'specific_amount') if amount else None,
             )
             flash(f"Bulk invoicing complete. {count} students invoiced.", "success")
         except (ValueError, FeesError) as e: flash(str(e), "error")

@@ -266,6 +266,10 @@ class FeesServiceStub:
         self.calls.append(("get_voteheads",))
         return [{"id": 4, "name": "Tuition"}]
 
+    def bulk_invoice_classes(self, class_ids, year_id, term_id, user_id, specific_votehead_id=None, specific_amount=None):
+        self.calls.append(("bulk_invoice_classes", class_ids, year_id, term_id, user_id, specific_votehead_id, specific_amount))
+        return 2
+
     def create_account_adjustment(self, admno, adjustment_type, votehead_id, amount, year_id, term_id, effective_date, reason, supporting_reference, user_id):
         self.calls.append(("create_account_adjustment", admno, adjustment_type, votehead_id, amount, year_id, term_id, effective_date, reason, supporting_reference, user_id))
         return 31
@@ -1110,6 +1114,84 @@ def test_fees_workspaces_link_to_cashier_setup_controls():
         template = (template_root / template_name).read_text(encoding='utf-8')
         for endpoint_reference in endpoint_references:
             assert endpoint_reference in template
+
+
+def test_fee_structure_download_returns_pdf_attachment(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+    monkeypatch.setattr(
+        fees_routes,
+        "_build_fee_structure_card_context",
+        lambda *_args: {"year_id": 2026, "data": {}, "terms": [], "years": [], "class_groups": {}, "all_classes": [],
+                        "group_code": "Grade 7-9", "class_id": None, "category": "Day", "selected_label": "Grade 7-9", "is_locked": False},
+    )
+    monkeypatch.setattr(fees_routes, "render_template", lambda template, **context: f"{template}:{context['is_pdf']}")
+    monkeypatch.setattr(fees_routes, "_render_fee_structure_pdf", lambda html, base_url: b"%PDF-test")
+
+    response = client.get('/admin/fees/structures/download?year_id=2026&group_code=Grade%207-9&category=Day')
+
+    assert response.status_code == 200
+    assert response.data == b"%PDF-test"
+    assert response.headers['Content-Type'] == 'application/pdf'
+    assert response.headers['Content-Disposition'] == 'attachment; filename=fee-structure-2026.pdf'
+
+
+def test_bulk_invoice_forwards_standard_and_votehead_specific_requests(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+
+    standard_response = client.post('/admin/fees/invoice', data={
+        'class_ids': ['14', '15'], 'year_id': '2026', 'term_id': '3',
+    })
+    standard_call = next(call for call in FeesServiceStub.last_instance.calls if call[0] == 'bulk_invoice_classes')
+
+    assert standard_response.status_code == 200
+    assert standard_call == ('bulk_invoice_classes', [14, 15], 2026, 3, 10, None, None)
+
+    specific_response = client.post('/admin/fees/invoice', data={
+        'class_ids': ['14'], 'year_id': '2026', 'term_id': '3',
+        'specific_votehead_id': '4', 'specific_amount': '1250.50',
+    })
+    specific_call = next(call for call in FeesServiceStub.last_instance.calls if call[0] == 'bulk_invoice_classes')
+
+    assert specific_response.status_code == 200
+    assert specific_call == ('bulk_invoice_classes', [14], 2026, 3, 10, 4, Decimal('1250.50'))
+
+
+def test_bulk_invoice_rejects_incomplete_votehead_selection_without_posting(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+
+    response = client.post('/admin/fees/invoice', data={
+        'class_ids': ['14'], 'year_id': '2026', 'term_id': '3', 'specific_votehead_id': '4',
+    })
+
+    assert response.status_code == 200
+    assert not any(call[0] == 'bulk_invoice_classes' for call in FeesServiceStub.last_instance.calls)
+    assert b'Select both a votehead and amount for votehead-specific invoicing.' in response.data
+
+
+def test_bulk_debit_requires_classes_before_posting(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+
+    response = client.post('/admin/fees/bulk_debit', data={'year_id': '2026', 'term_id': '3'}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert not any(call[0] == 'bulk_invoice_classes' for call in FeesServiceStub.last_instance.calls)
+    assert b'Select at least one class.' in response.data
 
 
 def test_receipt_lifecycle_report_includes_audit_correlation_and_replacement_links():
