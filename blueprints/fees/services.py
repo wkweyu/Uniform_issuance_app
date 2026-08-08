@@ -647,6 +647,7 @@ class FeesService:
                 "UPDATE fee_adjustments SET ledger_id = %s WHERE id = %s AND school_id = %s",
                 (ledger_id, adjustment_id, self.school_id),
             )
+            self._recalculate_student_ledger_balances(admno)
             self.connection.commit()
             return adjustment_id
         except Exception as exc:
@@ -1436,7 +1437,9 @@ class FeesService:
             entry_type = row['type']
             description = row.get('description') or ''
             if entry_type in ('CHARGE', 'DEBIT', 'REFUND') or (
-                entry_type == 'ADJUSTMENT' and description.startswith('VOID RECEIPT:')
+                entry_type == 'ADJUSTMENT' and (
+                    description.startswith('VOID RECEIPT:') or description.startswith('DEBIT NOTE:')
+                )
             ):
                 running_balance += amount
             else:

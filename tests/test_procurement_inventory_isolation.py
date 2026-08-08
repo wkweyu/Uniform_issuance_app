@@ -1284,6 +1284,10 @@ def test_fees_service_posts_credit_note_with_linked_adjustment_ledger_entry():
             ('one', {'id': 3}),
             ('all', [{'id': 4}]),
             ('one', {'balance_after': Decimal('2000.00')}),
+            ('all', [
+                {'id': 10, 'type': 'CHARGE', 'amount': Decimal('2000.00'), 'description': 'Term fee'},
+                {'id': 31, 'type': 'ADJUSTMENT', 'amount': Decimal('250.00'), 'description': 'CREDIT NOTE: Approved overcharge correction'},
+            ]),
         ]
     )
     connection.cursor_obj.lastrowid = 31
@@ -1306,6 +1310,29 @@ def test_fees_service_posts_credit_note_with_linked_adjustment_ledger_entry():
     assert ledger_params[5] == Decimal('1750.00')
     assert ledger_params[6] == 'CREDIT NOTE: Approved overcharge correction'
     assert ledger_params[7] == 'CRE-31'
+    balance_updates = [(query, params) for query, params in connection.cursor_obj.executed if 'update fee_ledger set balance_after' in query.lower()]
+    assert [params for _, params in balance_updates] == [
+        (Decimal('2000.00'), 10, 55),
+        (Decimal('1750.00'), 31, 55),
+    ]
+
+
+def test_fees_service_recalculates_debit_note_as_a_balance_increase():
+    connection = RecordingConnection(responses=[
+        ('all', [
+            {'id': 10, 'type': 'CHARGE', 'amount': Decimal('2000.00'), 'description': 'Term fee'},
+            {'id': 31, 'type': 'ADJUSTMENT', 'amount': Decimal('250.00'), 'description': 'DEBIT NOTE: Omitted charge'},
+        ]),
+    ])
+    service = FeesService(connection, school_id=55)
+
+    service._recalculate_student_ledger_balances(1001)
+
+    balance_updates = [(query, params) for query, params in connection.cursor_obj.executed if 'update fee_ledger set balance_after' in query.lower()]
+    assert [params for _, params in balance_updates] == [
+        (Decimal('2000.00'), 10, 55),
+        (Decimal('2250.00'), 31, 55),
+    ]
 
 
 def test_fees_service_receipts_register_scopes_search_and_lifecycle_filters():
