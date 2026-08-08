@@ -53,6 +53,10 @@
                     <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Lifecycle Status</label>
                     <select name="status" class="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-indigo-500"><option value="">All statuses</option>{% for value in ['COMPLETED', 'CANCELLED', 'REVERSED'] %}<option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ value.title() }}</option>{% endfor %}</select>
                 </div>
+                <div>
+                    <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Lifecycle Event</label>
+                    <select name="lifecycle_event" class="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-indigo-500"><option value="">All events</option>{% for value in ['POSTED', 'PRINTED', 'REPRINTED', 'CANCELLED', 'TRANSFERRED', 'REPOSTED', 'ARCHIVED'] %}<option value="{{ value }}" {% if filters.lifecycle_event == value %}selected{% endif %}>{{ value.title() }}</option>{% endfor %}</select>
+                </div>
                 <div class="flex gap-2">
                     <button type="submit" class="flex-1 bg-gray-900 text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:bg-gray-800 transition">
                         Apply Filters

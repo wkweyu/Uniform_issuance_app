@@ -328,8 +328,8 @@ class FeesServiceStub:
         self.calls.append(("get_student_statement", admno, year_id))
         return [{"admno": admno, "year_id": year_id, "balance": Decimal("0.00")}]
 
-    def get_receipts_register(self, start_date, end_date, admno, mode, query_text=None, status=None):
-        self.calls.append(("get_receipts_register", start_date, end_date, admno, mode, query_text, status))
+    def get_receipts_register(self, start_date, end_date, admno, mode, query_text=None, status=None, lifecycle_event=None):
+        self.calls.append(("get_receipts_register", start_date, end_date, admno, mode, query_text, status, lifecycle_event))
         return [{"receipt_no": "RCP-1", "admno": admno, "mode": mode}]
 
 
@@ -2566,6 +2566,21 @@ def test_fee_receipts_register_route_rejects_invalid_admno_filter(client, db_ses
     assert FeesServiceStub.last_instance.calls == []
     with client.session_transaction() as session:
         assert session.get("_flashes")[-1] == ("error", "admno must be a valid integer.")
+
+
+def test_fee_receipts_register_forwards_lifecycle_event_filter(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "render_template", lambda template, **context: f"{template}:{len(context['records'])}")
+
+    response = client.get("/admin/fees/receipts?status=COMPLETED&lifecycle_event=ARCHIVED")
+
+    assert response.status_code == 200
+    assert FeesServiceStub.last_instance.calls == [
+        ("get_receipts_register", None, None, None, None, None, "COMPLETED", "ARCHIVED"),
+    ]
 
 
 def test_fee_receipts_register_route_hides_unexpected_error_and_closes_connection(client, db_session, monkeypatch):
