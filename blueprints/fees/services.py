@@ -2128,21 +2128,26 @@ class FeesService:
     # 4. REPORTING
     # =========================================================================
 
-    def get_collection_summary(self, start_date: str, end_date: str) -> Dict:
+    def get_collection_summary(self, start_date: str, end_date: str, payment_mode: Optional[str] = None) -> Dict:
         """Daily/Weekly/Monthly collection summary."""
         fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
+        mode_filter = ' AND payment_mode = %s' if payment_mode else ''
+        params = (start_date, end_date, self.school_id)
+        if payment_mode:
+            params += (payment_mode,)
         if fee_payments_has_school_id:
-            self.cursor.execute("""
+            self.cursor.execute(f"""
                 SELECT 
                     payment_mode, 
                     SUM(amount) as total_amount,
                     COUNT(*) as count
                 FROM fee_payments
-                WHERE payment_date BETWEEN %s AND %s AND status = 'COMPLETED' AND school_id = %s
+                WHERE payment_date BETWEEN %s AND %s AND status = 'COMPLETED' AND school_id = %s{mode_filter}
                 GROUP BY payment_mode
-            """, (start_date, end_date, self.school_id))
+            """, params)
         else:
-            self.cursor.execute("""
+            mode_filter = ' AND fp.payment_mode = %s' if payment_mode else ''
+            self.cursor.execute(f"""
                 SELECT 
                     fp.payment_mode,
                     SUM(fp.amount) as total_amount,
@@ -2151,60 +2156,69 @@ class FeesService:
                 JOIN fee_ledger fl ON fp.ledger_id = fl.id
                 WHERE fp.payment_date BETWEEN %s AND %s
                   AND fp.status = 'COMPLETED'
-                  AND fl.school_id = %s
+                  AND fl.school_id = %s{mode_filter}
                 GROUP BY fp.payment_mode
-            """, (start_date, end_date, self.school_id))
+            """, params)
         return self.cursor.fetchall()
 
-    def get_collection_status_summary(self, start_date: str, end_date: str) -> List[Dict]:
+    def get_collection_status_summary(self, start_date: str, end_date: str, payment_mode: Optional[str] = None) -> List[Dict]:
         """Summarize the current status of receipts posted within a reporting window."""
         fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
+        mode_filter = ' AND payment_mode = %s' if payment_mode else ''
+        params = (start_date, end_date, self.school_id)
+        if payment_mode:
+            params += (payment_mode,)
         if fee_payments_has_school_id:
-            self.cursor.execute("""
+            self.cursor.execute(f"""
                 SELECT status, payment_mode, SUM(amount) AS total_amount, COUNT(*) AS count
                 FROM fee_payments
-                WHERE payment_date BETWEEN %s AND %s AND school_id = %s
+                WHERE payment_date BETWEEN %s AND %s AND school_id = %s{mode_filter}
                 GROUP BY status, payment_mode
                 ORDER BY status ASC, payment_mode ASC
-            """, (start_date, end_date, self.school_id))
+            """, params)
         else:
-            self.cursor.execute("""
+            mode_filter = ' AND fp.payment_mode = %s' if payment_mode else ''
+            self.cursor.execute(f"""
                 SELECT fp.status, fp.payment_mode, SUM(fp.amount) AS total_amount, COUNT(*) AS count
                 FROM fee_payments fp
                 JOIN fee_ledger fl ON fp.ledger_id = fl.id
-                WHERE fp.payment_date BETWEEN %s AND %s AND fl.school_id = %s
+                WHERE fp.payment_date BETWEEN %s AND %s AND fl.school_id = %s{mode_filter}
                 GROUP BY fp.status, fp.payment_mode
                 ORDER BY fp.status ASC, fp.payment_mode ASC
-            """, (start_date, end_date, self.school_id))
+            """, params)
         return self.cursor.fetchall()
 
-    def get_collection_category_summary(self, start_date: str, end_date: str) -> List[Dict]:
+    def get_collection_category_summary(self, start_date: str, end_date: str, payment_mode: Optional[str] = None) -> List[Dict]:
         """Summarize completed collections by the student's current category."""
         fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
+        mode_filter = ' AND payments.payment_mode = %s' if payment_mode else ''
+        params = (start_date, end_date, self.school_id)
+        if payment_mode:
+            params += (payment_mode,)
         if fee_payments_has_school_id:
-            self.cursor.execute("""
+            self.cursor.execute(f"""
                 SELECT COALESCE(students.category, 'Unclassified') AS category,
                        SUM(payments.amount) AS total_amount, COUNT(*) AS count
                 FROM fee_payments payments
                 JOIN studentinfo students
                   ON payments.admno = students.AdmNo AND payments.school_id = students.school_id
                 WHERE payments.payment_date BETWEEN %s AND %s
-                  AND payments.status = 'COMPLETED' AND payments.school_id = %s
+                  AND payments.status = 'COMPLETED' AND payments.school_id = %s{mode_filter}
                 GROUP BY students.category
                 ORDER BY total_amount DESC, category ASC
-            """, (start_date, end_date, self.school_id))
+            """, params)
         else:
-            self.cursor.execute("""
+            self.cursor.execute(f"""
                 SELECT COALESCE(students.category, 'Unclassified') AS category,
                        SUM(payments.amount) AS total_amount, COUNT(*) AS count
                 FROM fee_payments payments
                 JOIN fee_ledger ledger ON payments.ledger_id = ledger.id
                 JOIN studentinfo students ON payments.admno = students.AdmNo AND ledger.school_id = students.school_id
                 WHERE payments.payment_date BETWEEN %s AND %s
-                  AND payments.status = 'COMPLETED' AND ledger.school_id = %s
+                                    AND payments.status = 'COMPLETED' AND ledger.school_id = %s{mode_filter}
                 GROUP BY students.category
                 ORDER BY total_amount DESC, category ASC
-            """, (start_date, end_date, self.school_id))
+                        """, params)
         return self.cursor.fetchall()
 
     def get_arrears_report(self, class_id: Optional[int] = None) -> List[Dict]:
@@ -3039,81 +3053,89 @@ def _get_invoice_replacement_register(self, start_date: Optional[str] = None,
 FeesService.get_invoice_replacement_register = _get_invoice_replacement_register
 
 
-def _get_collection_class_summary(self, start_date: str, end_date: str) -> List[Dict]:
-        """Summarize completed collections by each student's current class and stream."""
-        fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
-        if fee_payments_has_school_id:
-                self.cursor.execute("""
-                        SELECT COALESCE(classes.display_name, 'Unassigned') AS class_name,
-                                     COALESCE(classes.stream_code, '-') AS stream_code,
-                                     SUM(payments.amount) AS total_amount, COUNT(*) AS count
-                        FROM fee_payments payments
-                        LEFT JOIN class_allocation allocations
-                            ON payments.admno = allocations.student_id AND payments.school_id = allocations.school_id
-                            AND allocations.is_current = TRUE
-                        LEFT JOIN classes ON allocations.class_id = classes.classID
-                            AND allocations.school_id = classes.school_id
-                        WHERE payments.payment_date BETWEEN %s AND %s
-                            AND payments.status = 'COMPLETED' AND payments.school_id = %s
-                        GROUP BY classes.display_name, classes.stream_code
-                        ORDER BY total_amount DESC, class_name ASC
-                """, (start_date, end_date, self.school_id))
-        else:
-                self.cursor.execute("""
-                        SELECT COALESCE(classes.display_name, 'Unassigned') AS class_name,
-                                     COALESCE(classes.stream_code, '-') AS stream_code,
-                                     SUM(payments.amount) AS total_amount, COUNT(*) AS count
-                        FROM fee_payments payments
-                        JOIN fee_ledger ledger ON payments.ledger_id = ledger.id
-                        LEFT JOIN class_allocation allocations
-                            ON payments.admno = allocations.student_id AND ledger.school_id = allocations.school_id
-                            AND allocations.is_current = TRUE
-                        LEFT JOIN classes ON allocations.class_id = classes.classID
-                            AND allocations.school_id = classes.school_id
-                        WHERE payments.payment_date BETWEEN %s AND %s
-                            AND payments.status = 'COMPLETED' AND ledger.school_id = %s
-                        GROUP BY classes.display_name, classes.stream_code
-                        ORDER BY total_amount DESC, class_name ASC
-                """, (start_date, end_date, self.school_id))
-        return self.cursor.fetchall()
+def _get_collection_class_summary(self, start_date: str, end_date: str, payment_mode: Optional[str] = None) -> List[Dict]:
+    """Summarize completed collections by each student's current class and stream."""
+    fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
+    mode_filter = ' AND payments.payment_mode = %s' if payment_mode else ''
+    params = (start_date, end_date, self.school_id)
+    if payment_mode:
+        params += (payment_mode,)
+    if fee_payments_has_school_id:
+        self.cursor.execute(f"""
+            SELECT COALESCE(classes.display_name, 'Unassigned') AS class_name,
+                   COALESCE(classes.stream_code, '-') AS stream_code,
+                   SUM(payments.amount) AS total_amount, COUNT(*) AS count
+            FROM fee_payments payments
+            LEFT JOIN class_allocation allocations
+                ON payments.admno = allocations.student_id AND payments.school_id = allocations.school_id
+                AND allocations.is_current = TRUE
+            LEFT JOIN classes ON allocations.class_id = classes.classID
+                AND allocations.school_id = classes.school_id
+            WHERE payments.payment_date BETWEEN %s AND %s
+                AND payments.status = 'COMPLETED' AND payments.school_id = %s{mode_filter}
+            GROUP BY classes.display_name, classes.stream_code
+            ORDER BY total_amount DESC, class_name ASC
+        """, params)
+    else:
+        self.cursor.execute(f"""
+            SELECT COALESCE(classes.display_name, 'Unassigned') AS class_name,
+                   COALESCE(classes.stream_code, '-') AS stream_code,
+                   SUM(payments.amount) AS total_amount, COUNT(*) AS count
+            FROM fee_payments payments
+            JOIN fee_ledger ledger ON payments.ledger_id = ledger.id
+            LEFT JOIN class_allocation allocations
+                ON payments.admno = allocations.student_id AND ledger.school_id = allocations.school_id
+                AND allocations.is_current = TRUE
+            LEFT JOIN classes ON allocations.class_id = classes.classID
+                AND allocations.school_id = classes.school_id
+            WHERE payments.payment_date BETWEEN %s AND %s
+                AND payments.status = 'COMPLETED' AND ledger.school_id = %s{mode_filter}
+            GROUP BY classes.display_name, classes.stream_code
+            ORDER BY total_amount DESC, class_name ASC
+        """, params)
+    return self.cursor.fetchall()
 
 
 FeesService.get_collection_class_summary = _get_collection_class_summary
 
 
-def _get_collection_votehead_summary(self, start_date: str, end_date: str) -> List[Dict]:
-        """Summarize completed payment allocations by votehead."""
-        allocations_has_school_id = self._table_has_column('fee_payment_allocations', 'school_id')
-        payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
-        if allocations_has_school_id and payments_has_school_id:
-                self.cursor.execute("""
-                        SELECT voteheads.name AS votehead_name, SUM(allocations.amount) AS total_amount,
-                                     COUNT(DISTINCT payments.id) AS receipt_count
-                        FROM fee_payment_allocations allocations
-                        JOIN fee_payments payments
-                            ON allocations.payment_id = payments.id AND allocations.school_id = payments.school_id
-                        JOIN fee_voteheads voteheads
-                            ON allocations.votehead_id = voteheads.id AND allocations.school_id = voteheads.school_id
-                        WHERE payments.payment_date BETWEEN %s AND %s
-                            AND payments.status = 'COMPLETED' AND payments.school_id = %s
-                        GROUP BY voteheads.id, voteheads.name
-                        ORDER BY total_amount DESC, votehead_name ASC
-                """, (start_date, end_date, self.school_id))
-        else:
-                self.cursor.execute("""
-                        SELECT voteheads.name AS votehead_name, SUM(allocations.amount) AS total_amount,
-                                     COUNT(DISTINCT payments.id) AS receipt_count
-                        FROM fee_payment_allocations allocations
-                        JOIN fee_payments payments ON allocations.payment_id = payments.id
-                        JOIN fee_ledger ledger ON payments.ledger_id = ledger.id
-                        JOIN fee_voteheads voteheads
-                            ON allocations.votehead_id = voteheads.id AND voteheads.school_id = ledger.school_id
-                        WHERE payments.payment_date BETWEEN %s AND %s
-                            AND payments.status = 'COMPLETED' AND ledger.school_id = %s
-                        GROUP BY voteheads.id, voteheads.name
-                        ORDER BY total_amount DESC, votehead_name ASC
-                """, (start_date, end_date, self.school_id))
-        return self.cursor.fetchall()
+def _get_collection_votehead_summary(self, start_date: str, end_date: str, payment_mode: Optional[str] = None) -> List[Dict]:
+    """Summarize completed payment allocations by votehead."""
+    allocations_has_school_id = self._table_has_column('fee_payment_allocations', 'school_id')
+    payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
+    mode_filter = ' AND payments.payment_mode = %s' if payment_mode else ''
+    params = (start_date, end_date, self.school_id)
+    if payment_mode:
+        params += (payment_mode,)
+    if allocations_has_school_id and payments_has_school_id:
+        self.cursor.execute(f"""
+            SELECT voteheads.name AS votehead_name, SUM(allocations.amount) AS total_amount,
+                   COUNT(DISTINCT payments.id) AS receipt_count
+            FROM fee_payment_allocations allocations
+            JOIN fee_payments payments
+                ON allocations.payment_id = payments.id AND allocations.school_id = payments.school_id
+            JOIN fee_voteheads voteheads
+                ON allocations.votehead_id = voteheads.id AND allocations.school_id = voteheads.school_id
+            WHERE payments.payment_date BETWEEN %s AND %s
+                AND payments.status = 'COMPLETED' AND payments.school_id = %s{mode_filter}
+            GROUP BY voteheads.id, voteheads.name
+            ORDER BY total_amount DESC, votehead_name ASC
+        """, params)
+    else:
+        self.cursor.execute(f"""
+            SELECT voteheads.name AS votehead_name, SUM(allocations.amount) AS total_amount,
+                   COUNT(DISTINCT payments.id) AS receipt_count
+            FROM fee_payment_allocations allocations
+            JOIN fee_payments payments ON allocations.payment_id = payments.id
+            JOIN fee_ledger ledger ON payments.ledger_id = ledger.id
+            JOIN fee_voteheads voteheads
+                ON allocations.votehead_id = voteheads.id AND voteheads.school_id = ledger.school_id
+            WHERE payments.payment_date BETWEEN %s AND %s
+                AND payments.status = 'COMPLETED' AND ledger.school_id = %s{mode_filter}
+            GROUP BY voteheads.id, voteheads.name
+            ORDER BY total_amount DESC, votehead_name ASC
+        """, params)
+    return self.cursor.fetchall()
 
 
 FeesService.get_collection_votehead_summary = _get_collection_votehead_summary

@@ -13,6 +13,13 @@
       <label class="block text-xs font-bold text-gray-500 uppercase mb-1">To</label>
       <input type="date" name="end_date" value="{{ end_date }}" class="border rounded px-3 py-1.5 text-sm">
     </div>
+    <div>
+      <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Payment mode</label>
+      <select name="payment_mode" class="border rounded px-3 py-1.5 text-sm">
+        <option value="">All modes</option>
+        {% for mode in payment_modes %}<option value="{{ mode }}" {% if payment_mode == mode %}selected{% endif %}>{{ mode.replace('_', ' ') }}</option>{% endfor %}
+      </select>
+    </div>
     <button type="submit" class="bg-blue-600 text-white px-4 py-1.5 rounded text-sm font-bold">Filter</button>
   </form>
   <button onclick="window.print()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-6 py-2 rounded-xl font-bold transition">Print Report</button>

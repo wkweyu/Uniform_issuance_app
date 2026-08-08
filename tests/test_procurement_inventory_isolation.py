@@ -1440,6 +1440,30 @@ def test_fees_service_collection_votehead_summary_scopes_allocations_and_complet
     assert 'sum(allocations.amount)' in query.lower()
 
 
+def test_fees_service_collection_summaries_filter_selected_payment_mode_consistently():
+    summary_methods = (
+        ('get_collection_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_status_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_category_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_class_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_votehead_summary', {
+            'fee_payments': {'school_id'},
+            'fee_payment_allocations': {'school_id'},
+        }),
+    )
+
+    for method_name, table_columns in summary_methods:
+        connection = RecordingConnection(responses=[('all', [])])
+        service = FeesService(connection, school_id=55)
+        service._table_columns_cache = table_columns
+
+        assert getattr(service, method_name)('2026-07-01', '2026-07-31', 'MPESA') == []
+
+        query, params = connection.cursor_obj.executed[0]
+        assert params == ('2026-07-01', '2026-07-31', 55, 'MPESA')
+        assert 'payment_mode = %s' in query.lower()
+
+
 def test_fees_service_revenue_analysis_scopes_ledger_and_completed_allocations():
     connection = RecordingConnection(
         responses=[

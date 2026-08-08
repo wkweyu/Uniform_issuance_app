@@ -161,24 +161,24 @@ class FeesServiceStub:
         self.calls.append(("get_reallocation_register", start_date, end_date))
         return []
 
-    def get_collection_summary(self, start_date, end_date):
-        self.calls.append(("get_collection_summary", start_date, end_date))
+    def get_collection_summary(self, start_date, end_date, payment_mode=None):
+        self.calls.append(("get_collection_summary", start_date, end_date, payment_mode))
         return []
 
-    def get_collection_status_summary(self, start_date, end_date):
-        self.calls.append(("get_collection_status_summary", start_date, end_date))
+    def get_collection_status_summary(self, start_date, end_date, payment_mode=None):
+        self.calls.append(("get_collection_status_summary", start_date, end_date, payment_mode))
         return []
 
-    def get_collection_category_summary(self, start_date, end_date):
-        self.calls.append(("get_collection_category_summary", start_date, end_date))
+    def get_collection_category_summary(self, start_date, end_date, payment_mode=None):
+        self.calls.append(("get_collection_category_summary", start_date, end_date, payment_mode))
         return []
 
-    def get_collection_class_summary(self, start_date, end_date):
-        self.calls.append(("get_collection_class_summary", start_date, end_date))
+    def get_collection_class_summary(self, start_date, end_date, payment_mode=None):
+        self.calls.append(("get_collection_class_summary", start_date, end_date, payment_mode))
         return []
 
-    def get_collection_votehead_summary(self, start_date, end_date):
-        self.calls.append(("get_collection_votehead_summary", start_date, end_date))
+    def get_collection_votehead_summary(self, start_date, end_date, payment_mode=None):
+        self.calls.append(("get_collection_votehead_summary", start_date, end_date, payment_mode))
         return []
 
     def get_fee_revenue_analysis(self, start_date, end_date):
@@ -2542,12 +2542,39 @@ def test_collection_report_loads_completed_and_status_summaries(client, db_sessi
     assert response.status_code == 200
     assert b"fees_collection_report.html:0" in response.data
     assert FeesServiceStub.last_instance.calls == [
-        ("get_collection_summary", "2026-07-01", "2026-07-31"),
-        ("get_collection_status_summary", "2026-07-01", "2026-07-31"),
-        ("get_collection_category_summary", "2026-07-01", "2026-07-31"),
-        ("get_collection_class_summary", "2026-07-01", "2026-07-31"),
-        ("get_collection_votehead_summary", "2026-07-01", "2026-07-31"),
+        ("get_collection_summary", "2026-07-01", "2026-07-31", None),
+        ("get_collection_status_summary", "2026-07-01", "2026-07-31", None),
+        ("get_collection_category_summary", "2026-07-01", "2026-07-31", None),
+        ("get_collection_class_summary", "2026-07-01", "2026-07-31", None),
+        ("get_collection_votehead_summary", "2026-07-01", "2026-07-31", None),
     ]
+
+
+def test_collection_report_forwards_selected_payment_mode_to_every_summary(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "render_template", lambda template, **context: f"{template}:{context['payment_mode']}")
+
+    response = client.get("/admin/fees/reports/collection?start_date=2026-07-01&end_date=2026-07-31&payment_mode=mpesa")
+
+    assert response.status_code == 200
+    assert response.data == b"fees_collection_report.html:MPESA"
+    assert FeesServiceStub.last_instance.calls == [
+        ("get_collection_summary", "2026-07-01", "2026-07-31", "MPESA"),
+        ("get_collection_status_summary", "2026-07-01", "2026-07-31", "MPESA"),
+        ("get_collection_category_summary", "2026-07-01", "2026-07-31", "MPESA"),
+        ("get_collection_class_summary", "2026-07-01", "2026-07-31", "MPESA"),
+        ("get_collection_votehead_summary", "2026-07-01", "2026-07-31", "MPESA"),
+    ]
+
+
+def test_collection_report_template_preserves_selected_payment_mode():
+    template = (Path(__file__).resolve().parents[1] / 'templates' / 'fees_collection_report.html').read_text(encoding='utf-8')
+
+    assert 'name="payment_mode"' in template
+    assert '{% if payment_mode == mode %}selected{% endif %}' in template
 
 
 def test_replace_category_invoice_route_forwards_audited_request(client, db_session, monkeypatch):

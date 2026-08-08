@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, g, jsonify, make_response, current_app
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, g, jsonify, make_response, current_app, abort
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from core.permissions import admin_required, login_required
@@ -133,18 +133,22 @@ def fees_dashboard():
 def fees_collection_report():
     start_date = request.args.get('start_date', datetime.now().strftime('%Y-%m-01'))
     end_date = request.args.get('end_date', datetime.now().strftime('%Y-%m-%d'))
+    payment_mode = (request.args.get('payment_mode') or '').strip().upper() or None
+    payment_modes = ('CASH', 'MPESA', 'BANK_TRANSFER', 'CHEQUE')
+    if payment_mode and payment_mode not in payment_modes:
+        abort(400)
     connection = get_db_connection()
     service = FeesService(connection)
     try:
-        data = service.get_collection_summary(start_date, end_date)
-        status_data = service.get_collection_status_summary(start_date, end_date)
-        category_data = service.get_collection_category_summary(start_date, end_date)
-        class_data = service.get_collection_class_summary(start_date, end_date)
-        votehead_data = service.get_collection_votehead_summary(start_date, end_date)
+        data = service.get_collection_summary(start_date, end_date, payment_mode)
+        status_data = service.get_collection_status_summary(start_date, end_date, payment_mode)
+        category_data = service.get_collection_category_summary(start_date, end_date, payment_mode)
+        class_data = service.get_collection_class_summary(start_date, end_date, payment_mode)
+        votehead_data = service.get_collection_votehead_summary(start_date, end_date, payment_mode)
         return render_template(
             'fees_collection_report.html', data=data, status_data=status_data, category_data=category_data,
             class_data=class_data, votehead_data=votehead_data,
-            start_date=start_date, end_date=end_date,
+            start_date=start_date, end_date=end_date, payment_mode=payment_mode or '', payment_modes=payment_modes,
         )
     finally:
         connection.close()
