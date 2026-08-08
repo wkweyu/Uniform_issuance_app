@@ -2661,6 +2661,35 @@ def test_receipt_lifecycle_route_loads_receipt_and_events(client, db_session, mo
     assert FeesServiceStub.last_instance.calls == [("get_receipt_details", 77), ("get_receipt_lifecycle", 77)]
 
 
+def test_receipt_lifecycle_route_exposes_transfer_students_from_immutable_snapshot(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(
+        FeesServiceStub,
+        "get_receipt_lifecycle",
+        lambda _self, _payment_id: [{"event_type": "TRANSFERRED", "snapshot_json": '{"from_admno": 101, "to_admno": 202}'}],
+    )
+    captured_context = {}
+    monkeypatch.setattr(
+        fees_routes,
+        "render_template",
+        lambda _template, **context: captured_context.update(context) or "ok",
+    )
+
+    response = client.get("/admin/fees/receipt/77/lifecycle")
+
+    assert response.status_code == 200
+    assert captured_context["events"][0]["transfer"] == {"from_admno": 101, "to_admno": 202}
+
+
+def test_receipt_lifecycle_template_shows_transfer_source_and_destination():
+    template = (Path(__file__).resolve().parents[1] / 'templates' / 'fee_receipt_lifecycle.html').read_text(encoding='utf-8')
+
+    assert 'Transferred from admission #{{ event.transfer.from_admno }} to admission #{{ event.transfer.to_admno }}' in template
+
+
 def test_repost_fee_receipt_route_posts_new_reference(client, db_session, monkeypatch):
     school = _create_school(db_session)
     _login_admin(client, school.id)

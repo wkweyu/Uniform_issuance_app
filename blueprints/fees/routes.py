@@ -6,6 +6,7 @@ from blueprints.fees.services import FeesService, FeesError
 from blueprints.classes.services import ClassManagementService
 import csv
 import io
+import json
 
 fees_bp = Blueprint('fees', __name__)
 
@@ -1290,10 +1291,23 @@ def receipt_lifecycle(payment_id):
         if not receipt:
             flash('Receipt not found.', 'error')
             return redirect(url_for('fees.fee_receipts_register'))
+        events = service.get_receipt_lifecycle(payment_id)
+        for event in events:
+            if event.get('event_type') != 'TRANSFERRED':
+                continue
+            try:
+                snapshot = json.loads(event.get('snapshot_json') or '{}')
+            except (TypeError, json.JSONDecodeError):
+                snapshot = {}
+            if isinstance(snapshot, dict) and snapshot.get('from_admno') and snapshot.get('to_admno'):
+                event['transfer'] = {
+                    'from_admno': snapshot['from_admno'],
+                    'to_admno': snapshot['to_admno'],
+                }
         return render_template(
             'fee_receipt_lifecycle.html',
             receipt=receipt,
-            events=service.get_receipt_lifecycle(payment_id),
+            events=events,
             now=datetime.now(),
         )
     except Exception:

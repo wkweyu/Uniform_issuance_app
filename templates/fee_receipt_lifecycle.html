@@ -17,7 +17,7 @@
             {% for event in events %}
             <li class="p-5 grid grid-cols-1 md:grid-cols-[10rem_1fr_auto] gap-3 items-start">
                 <div><span class="inline-flex px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-bold">{{ event.event_type }}</span><p class="mt-2 text-xs text-gray-500">{{ event.occurred_at }}</p></div>
-                <div><p class="font-semibold text-gray-900">{{ event.status_after.replace('_', ' ') }}</p>{% if event.reason %}<p class="mt-1 text-sm text-gray-600">{{ event.reason }}</p>{% endif %}{% if event.replacement_payment_id %}<p class="mt-1 text-xs text-gray-500">Replacement payment #{{ event.replacement_payment_id }}</p>{% endif %}</div>
+                <div><p class="font-semibold text-gray-900">{{ event.status_after.replace('_', ' ') }}</p>{% if event.transfer %}<p class="mt-1 text-sm text-gray-600">Transferred from admission #{{ event.transfer.from_admno }} to admission #{{ event.transfer.to_admno }}</p>{% endif %}{% if event.reason %}<p class="mt-1 text-sm text-gray-600">{{ event.reason }}</p>{% endif %}{% if event.replacement_payment_id %}<p class="mt-1 text-xs text-gray-500">Replacement payment #{{ event.replacement_payment_id }}</p>{% endif %}</div>
                 <div class="text-xs text-gray-500 text-left md:text-right"><p>{{ event.actor_name or event.actor_user_id }}</p><p class="font-mono mt-1">{{ event.correlation_id }}</p></div>
             </li>
             {% else %}
