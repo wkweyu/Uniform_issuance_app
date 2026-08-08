@@ -1382,7 +1382,9 @@ function renderDoubleEntryStatement(admno) {
             let running = 0.0;
             data.forEach(entry => {
                 const row = document.createElement('tr');
-                const isCredit = entry.type === 'PAYMENT';
+                const isCredit = entry.type === 'PAYMENT' || entry.type === 'CREDIT' || (
+                    entry.type === 'ADJUSTMENT' && (entry.description || '').startsWith('CREDIT NOTE:')
+                );
                 const amount = parseFloat(entry.amount);
                 running = parseFloat(entry.balance_after);
 
