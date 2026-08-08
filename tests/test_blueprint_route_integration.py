@@ -772,6 +772,44 @@ def test_finance_cashier_sessions_page_shows_open_action_when_no_session_exists(
     assert b'name="action" value="open"' in response.data
 
 
+def test_finance_cashier_sessions_page_shows_close_action_for_open_session(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(finance_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(finance_routes, "FinanceService", FinanceServiceStub)
+    monkeypatch.setattr(
+        FinanceServiceStub,
+        "get_open_cashier_session",
+        lambda self, _cashier_user_id: {"id": 7, "opened_at": "2026-08-08 08:00:00"},
+    )
+
+    response = client.get("/admin/finance/cashier-sessions")
+
+    assert response.status_code == 200
+    assert b"Actual cash counted" in response.data
+    assert b'name="action" value="close"' in response.data
+    assert b'name="session_id" value="7"' in response.data
+    assert b"Close session" in response.data
+
+
+def test_finance_cashier_sessions_route_closes_current_cashier_session(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(finance_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(finance_routes, "FinanceService", FinanceServiceStub)
+
+    response = client.post(
+        "/admin/finance/cashier-sessions",
+        data={"action": "close", "session_id": "7", "actual_cash": "15000.00", "notes": "End of day count"},
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/finance/cashier-sessions")
+    assert FinanceServiceStub.last_instance.calls == [
+        ("close_cashier_session", 7, 10, Decimal("15000.00"), 10, "End of day count"),
+    ]
+
+
 def test_finance_cashier_session_report_forwards_filters(client, db_session, monkeypatch):
     school = _create_school(db_session)
     _login_admin(client, school.id)
