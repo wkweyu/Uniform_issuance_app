@@ -1,6 +1,6 @@
 import os
 import pymysql
-from flask import Flask, render_template, jsonify, session, g, flash
+from flask import Flask, render_template, jsonify, session, g, flash, current_app
 from datetime import datetime
 import pymysql
 from extensions import db, migrate, csrf
@@ -226,22 +226,28 @@ def setup_tenant():
 
 @app.route('/health')
 def health_check():
+    connection = None
     try:
         connection = get_db_connection()
         with connection.cursor() as cursor:
             cursor.execute("SELECT 1 AS ok")
             cursor.fetchone()
-        connection.close()
         return jsonify({
             "status": "healthy",
             "timestamp": datetime.now().isoformat()
         }), 200
-    except pymysql.MySQLError as error:
+    except Exception:
+        current_app.logger.exception('Health check database dependency failed')
         return jsonify({
             "status": "unhealthy",
             "timestamp": datetime.now().isoformat(),
-            "error": str(error)
         }), 503
+    finally:
+        if connection is not None:
+            try:
+                connection.close()
+            except Exception:
+                current_app.logger.warning('Health check database connection could not be closed')
 
 
 @app.route('/')

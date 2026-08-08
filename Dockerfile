@@ -31,5 +31,8 @@ COPY . /app
 
 EXPOSE 5000
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD curl --fail --silent http://127.0.0.1:5000/health || exit 1
+
 # Use gunicorn with the factory `create_app()` function
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:create_app()", "--workers", "3"]
