@@ -10,7 +10,9 @@ Automated evidence was executed on 2026-08-08:
 .\.venv\Scripts\python.exe -m pytest tests/test_blueprint_route_integration.py tests/test_procurement_inventory_isolation.py tests/test_migration_preflight.py
 ```
 
-Result: `338 passed in 66.10s`.
+Result: `366 passed in 68.11s`.
+
+The formal RC1 checklist, certification matrix, release notes, and deferred operational work are recorded in `FINANCE_PHASE1_RELEASE_CHECKLIST.md`, `FINANCE_CERTIFICATION_MATRIX.md`, `RELEASE_NOTES_FINANCE_v1.0.md`, and `TECHNICAL_DEBT.md`.
 
 ## Automated Certification
 
