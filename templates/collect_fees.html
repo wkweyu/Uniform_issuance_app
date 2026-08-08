@@ -184,6 +184,7 @@
                                 <option value="">Apply saved allocation template</option>
                             </select>
                             <div id="manualAllocationList" class="space-y-2"></div>
+                            <p id="manualAllocationError" class="hidden rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-800" role="alert"></p>
                             {% if session.get('is_admin') %}
                             <div class="grid grid-cols-[1fr_auto] gap-2 border-t border-amber-100 pt-3">
                                 <input id="allocationTemplateName" type="text" maxlength="100" placeholder="Template name" class="min-w-0 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 focus:border-amber-500 focus:ring-amber-500">
@@ -680,6 +681,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const duplicateReferenceAlert = document.getElementById('duplicateReferenceAlert');
     const manualAllocationDeck = document.getElementById('manualAllocationDeck');
     const manualAllocationList = document.getElementById('manualAllocationList');
+    const manualAllocationError = document.getElementById('manualAllocationError');
     
     // Cached context variables
     let activeStudentContext = null;
@@ -771,6 +773,8 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('quickAllocationDeck').classList.add('hidden');
         manualAllocationDeck.classList.add('hidden');
         manualAllocationList.innerHTML = '';
+        manualAllocationError.classList.add('hidden');
+        manualAllocationError.textContent = '';
         hideDuplicateReferenceAlert();
         
         resetDoubleEntryLedger();
@@ -1070,12 +1074,37 @@ document.addEventListener('DOMContentLoaded', function() {
             .filter(allocation => allocation.amount > 0);
     }
 
+    function getManualAllocationError(receiptAmount) {
+        if (allocationMode.value !== 'MANUAL') return '';
+
+        const allocations = getManualAllocations();
+        const outstandingByVotehead = new Map(
+            (activeStudentContext.outstanding_voteheads || []).map(item => [Number(item.votehead_id), Number(item.amount || 0)])
+        );
+        const overpaidVotehead = allocations.find(allocation => allocation.amount > (outstandingByVotehead.get(allocation.votehead_id) || 0));
+        if (overpaidVotehead) {
+            return 'A manual allocation cannot exceed that votehead outstanding balance.';
+        }
+        if (allocations.reduce((total, allocation) => total + allocation.amount, 0) > receiptAmount) {
+            return 'Manual allocations cannot exceed the receipt amount.';
+        }
+        return '';
+    }
+
+    function showManualAllocationError(receiptAmount) {
+        const message = getManualAllocationError(receiptAmount);
+        manualAllocationError.textContent = message;
+        manualAllocationError.classList.toggle('hidden', !message);
+        return message;
+    }
+
             loadAllocationTemplates();
 
     function refreshProjectedPreview() {
         const val = parseFloat(input_amount.value) || 0.0;
         const currentBal = activeStudentContext.outstanding_balance;
         const proj = currentBal - val;
+        showManualAllocationError(val);
         proj_bal_label.textContent = 'KES ' + proj.toLocaleString('en-US', {minimumFractionDigits: 2});
         
         if (proj > 0) {
@@ -1199,6 +1228,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         if (!payload.reference) {
             alert("Reference id or transaction slip index is required!");
+            return;
+        }
+        const manualAllocationMessage = showManualAllocationError(payload.amount);
+        if (manualAllocationMessage) {
             return;
         }
         if (await checkDuplicateReference()) {

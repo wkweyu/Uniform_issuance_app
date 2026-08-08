@@ -1109,6 +1109,16 @@ def test_collect_fees_template_previews_manual_allocations_before_priority_remai
     assert "addEventListener('input', refreshProjectedPreview)" in template
 
 
+def test_collect_fees_template_validates_manual_allocation_limits_before_posting():
+    template = (Path(__file__).resolve().parents[1] / 'templates' / 'collect_fees.html').read_text(encoding='utf-8')
+
+    assert 'id="manualAllocationError"' in template
+    assert "function getManualAllocationError(receiptAmount)" in template
+    assert "return 'A manual allocation cannot exceed that votehead outstanding balance.';" in template
+    assert "return 'Manual allocations cannot exceed the receipt amount.';" in template
+    assert "const manualAllocationMessage = showManualAllocationError(payload.amount);" in template
+
+
 def test_collect_fees_template_shows_posted_allocations_in_receipt_preview():
     template = (Path(__file__).resolve().parents[1] / 'templates' / 'collect_fees.html').read_text(encoding='utf-8')
 
