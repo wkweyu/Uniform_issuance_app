@@ -31,6 +31,7 @@ Release scope: Existing tenant-scoped Finance Phase 1 capabilities only. No feat
 | Check | Status | Evidence |
 | --- | --- | --- |
 | Finance regression suite | PASS | `366 passed` on 2026-08-08: `tests/test_blueprint_route_integration.py`, `tests/test_procurement_inventory_isolation.py`, and `tests/test_migration_preflight.py`. |
+| Full repository suite | NON-FINANCE FAILURES RECORDED | With the duplicate local workspace excluded, `507 passed, 18 failed`; failures are attendance/tenancy tests that require local MySQL plus stale platform-route UI assertions. See TD-005. |
 | Tenant isolation | PASS | Service and route tests verify school-scoped joins, selectors, foreign-record rejection, and report filters. |
 | Audit and correlation identity | PASS | Lifecycle, reallocation, archive/repost, cashier-session, and payment-account event coverage passes. |
 | Diff hygiene | PASS | `git diff --check` passed for the Finance Phase 1 release batch. |

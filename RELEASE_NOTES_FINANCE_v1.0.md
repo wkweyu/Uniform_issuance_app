@@ -49,6 +49,7 @@ Date: 2026-08-08
 
 - Physical receipt printing and supported-browser/tablet validation are pending target-environment UAT.
 - Production data-volume response-time acceptance thresholds have not yet been recorded.
+- The unrelated root-suite attendance/tenancy fixture and platform UI assertion failures are recorded as TD-005; they do not affect the Finance RC1 regression result.
 
 ## Breaking Changes
 

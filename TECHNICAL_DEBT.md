@@ -39,3 +39,13 @@ Priority: Medium
 Impact: The release suite validates correctness but does not establish production-size performance acceptance criteria.
 
 Target Version: v2 / Quality operations
+
+## TD-005
+
+Description: Repair non-Finance root-suite isolation: attendance and tenancy route tests must provide a MySQL-backed or fully mocked entitlement fixture, and platform-route assertions must be synchronized with the current rendered UI.
+
+Priority: Medium
+
+Impact: The root suite, executed with the duplicate local workspace excluded, produced `507 passed, 18 failed`. The failures do not exercise Finance RC1, whose dedicated regression suite passes, but they prevent a clean all-domain local regression run.
+
+Target Version: v2 / Platform and attendance quality
