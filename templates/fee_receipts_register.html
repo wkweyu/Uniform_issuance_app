@@ -38,6 +38,20 @@
                     <input type="date" name="end_date" value="{{ filters.end_date }}" class="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-indigo-500">
                 </div>
                 <div>
+                    <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Academic Year</label>
+                    <select name="academic_year_id" class="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-indigo-500">
+                        <option value="">All years</option>
+                        {% for year in academic_years %}<option value="{{ year.id }}" {% if academic_year_id == year.id %}selected{% endif %}>{{ year.year or year.name }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Term</label>
+                    <select name="term_id" {% if not academic_year_id %}disabled{% endif %} class="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-indigo-500">
+                        <option value="">All terms</option>
+                        {% for term in terms %}<option value="{{ term.id }}" {% if term_id == term.id %}selected{% endif %}>Term {{ term.term_number }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div>
                     <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Adm No</label>
                     <input type="number" name="admno" value="{{ filters.admno }}" placeholder="Search ID..." class="w-full bg-gray-50 border-gray-100 rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-indigo-500">
                 </div>
@@ -64,6 +78,9 @@
                 <div class="flex gap-2">
                     <button type="submit" class="flex-1 bg-gray-900 text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:bg-gray-800 transition">
                         Apply Filters
+                    </button>
+                    <button type="submit" name="export" value="csv" class="bg-emerald-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm hover:bg-emerald-800 transition">
+                        Export CSV
                     </button>
                     <a href="{{ url_for('fees.fee_receipts_register') }}" class="bg-gray-100 text-gray-500 px-4 py-2.5 rounded-xl hover:bg-gray-200 transition">
                         <i class="fas fa-sync-alt"></i>

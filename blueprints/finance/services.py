@@ -13,6 +13,7 @@ Features:
 """
 
 import pymysql
+import json
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Dict, List, Optional, Tuple
@@ -131,46 +132,190 @@ class FinanceService:
             raise FinanceError(f"Failed to create account: {str(e)}")
 
     def get_payment_mode_receiving_accounts(self) -> List[Dict]:
-        """Return configured fee-receiving accounts for the active school."""
-        self.cursor.execute("""
-            SELECT config.id, config.payment_mode, config.account_id, config.is_active,
-                   config.configured_at, account.code AS account_code, account.name AS account_name
+        """Return configured tenant payment-mode account chains."""
+        query = '''
+            SELECT config.id, config.payment_mode, config.account_id, config.settlement_account_id,
+                         config.clearing_account_id, config.default_gl_account_id, config.is_active, config.configured_at,
+                         receiving.code AS account_code, receiving.name AS account_name,
+                         settlement.code AS settlement_account_code, settlement.name AS settlement_account_name,
+                         clearing.code AS clearing_account_code, clearing.name AS clearing_account_name,
+                         default_gl.code AS default_gl_account_code, default_gl.name AS default_gl_account_name
             FROM payment_mode_receiving_accounts config
-            JOIN finance_accounts account
-              ON account.id = config.account_id AND account.school_id = config.school_id
+            JOIN finance_accounts receiving
+                ON receiving.id = config.account_id AND receiving.school_id = config.school_id
+            LEFT JOIN finance_accounts settlement
+                ON settlement.id = config.settlement_account_id AND settlement.school_id = config.school_id
+            LEFT JOIN finance_accounts clearing
+                ON clearing.id = config.clearing_account_id AND clearing.school_id = config.school_id
+            LEFT JOIN finance_accounts default_gl
+                ON default_gl.id = config.default_gl_account_id AND default_gl.school_id = config.school_id
             WHERE config.school_id = %s
             ORDER BY config.payment_mode ASC
-        """, (self.school_id,))
+        '''
+        self.cursor.execute(query, (self.school_id,))
         return self.cursor.fetchall()
 
+    def get_fee_settlement_reconciliation(self, start_date: Optional[str] = None,
+                                          end_date: Optional[str] = None) -> List[Dict]:
+        """Compare completed fee receipts with GL movement across configured account chains."""
+        receipt_conditions = ["payments.status = 'COMPLETED'", "payments.school_id = %s"]
+        receipt_params = [self.school_id]
+        if start_date:
+            receipt_conditions.append("payments.payment_date >= %s")
+            receipt_params.append(start_date)
+        if end_date:
+            receipt_conditions.append("payments.payment_date <= %s")
+            receipt_params.append(end_date)
+
+        gl_conditions = ["entries.school_id = %s"]
+        gl_params = [self.school_id]
+        if start_date:
+            gl_conditions.append("transactions.transaction_date >= %s")
+            gl_params.append(start_date)
+        if end_date:
+            gl_conditions.append("transactions.transaction_date <= %s")
+            gl_params.append(end_date)
+
+        receipt_where = " AND ".join(receipt_conditions)
+        gl_where = " AND ".join(gl_conditions)
+        self.cursor.execute(f"""
+                        SELECT config.payment_mode,
+                                     receiving.code AS receiving_account_code,
+                                     receiving.name AS receiving_account_name,
+                                     settlement.code AS settlement_account_code,
+                                     settlement.name AS settlement_account_name,
+                                     clearing.code AS clearing_account_code,
+                                     clearing.name AS clearing_account_name,
+                                     COALESCE(receipts.receipt_total, 0) AS receipt_total,
+                                     COALESCE(receiving_gl.net_movement, 0) AS receiving_gl_movement,
+                                     COALESCE(settlement_gl.net_movement, 0) AS settlement_gl_movement,
+                                     COALESCE(clearing_gl.net_movement, 0) AS clearing_gl_movement
+                        FROM payment_mode_receiving_accounts config
+                        JOIN finance_accounts receiving
+                            ON receiving.id = config.account_id AND receiving.school_id = config.school_id
+                        LEFT JOIN finance_accounts settlement
+                            ON settlement.id = config.settlement_account_id AND settlement.school_id = config.school_id
+                        LEFT JOIN finance_accounts clearing
+                            ON clearing.id = config.clearing_account_id AND clearing.school_id = config.school_id
+                        LEFT JOIN (
+                                SELECT payments.payment_mode, payments.receiving_account_id,
+                                             SUM(payments.amount) AS receipt_total
+                                FROM fee_payments payments
+                                JOIN fee_ledger fee_entries
+                                    ON payments.ledger_id = fee_entries.id
+                                 AND payments.school_id = fee_entries.school_id
+                                WHERE {receipt_where}
+                                    AND fee_entries.type = 'PAYMENT'
+                                GROUP BY payments.payment_mode, payments.receiving_account_id
+                        ) receipts
+                            ON receipts.payment_mode = config.payment_mode
+                         AND receipts.receiving_account_id = config.account_id
+                        LEFT JOIN (
+                                SELECT entries.account_id, SUM(entries.debit - entries.credit) AS net_movement
+                                FROM finance_ledger_entries entries
+                                JOIN finance_transactions transactions
+                                    ON entries.transaction_id = transactions.id
+                                 AND entries.school_id = transactions.school_id
+                                WHERE {gl_where}
+                                GROUP BY entries.account_id
+                        ) receiving_gl ON receiving_gl.account_id = config.account_id
+                        LEFT JOIN (
+                                SELECT entries.account_id, SUM(entries.debit - entries.credit) AS net_movement
+                                FROM finance_ledger_entries entries
+                                JOIN finance_transactions transactions
+                                    ON entries.transaction_id = transactions.id
+                                 AND entries.school_id = transactions.school_id
+                                WHERE {gl_where}
+                                GROUP BY entries.account_id
+                        ) settlement_gl ON settlement_gl.account_id = config.settlement_account_id
+                        LEFT JOIN (
+                                SELECT entries.account_id, SUM(entries.debit - entries.credit) AS net_movement
+                                FROM finance_ledger_entries entries
+                                JOIN finance_transactions transactions
+                                    ON entries.transaction_id = transactions.id
+                                 AND entries.school_id = transactions.school_id
+                                WHERE {gl_where}
+                                GROUP BY entries.account_id
+                        ) clearing_gl ON clearing_gl.account_id = config.clearing_account_id
+                        WHERE config.school_id = %s AND config.is_active = TRUE
+                        ORDER BY config.payment_mode ASC
+        """, tuple(receipt_params + gl_params + gl_params + gl_params + [self.school_id]))
+        rows = self.cursor.fetchall()
+        for row in rows:
+            row['unreconciled_amount'] = (
+                Decimal(str(row['receipt_total'] or 0))
+                - Decimal(str(row['receiving_gl_movement'] or 0))
+            )
+        return rows
+
     def configure_payment_mode_receiving_account(
-        self, payment_mode: str, account_id: int, configured_by: int, is_active: bool = True
+        self, payment_mode: str, account_id: int, configured_by: int, is_active: bool = True,
+        settlement_account_id: Optional[int] = None, clearing_account_id: Optional[int] = None,
+        default_gl_account_id: Optional[int] = None,
     ) -> None:
-        """Set the single receiving account assigned to a fee payment mode."""
+        """Set the active tenant-owned accounting chain assigned to a fee payment mode."""
         mode = (payment_mode or '').strip().upper()
         if not mode:
             raise FinanceError("Payment mode is required.")
         self._assert_account_belongs_to_school(account_id)
-        self.cursor.execute("""
-            INSERT INTO payment_mode_receiving_accounts
-                (school_id, payment_mode, account_id, is_active, configured_by)
-            VALUES (%s, %s, %s, %s, %s)
+        for optional_account_id in (settlement_account_id, clearing_account_id, default_gl_account_id):
+            if optional_account_id is not None:
+                self._assert_account_belongs_to_school(optional_account_id)
+        self.connection.begin()
+        try:
+            self.cursor.execute("""
+                INSERT INTO payment_mode_receiving_accounts
+                    (school_id, payment_mode, account_id, settlement_account_id, clearing_account_id,
+                     default_gl_account_id, is_active, configured_by)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
                 account_id = VALUES(account_id),
+                settlement_account_id = VALUES(settlement_account_id),
+                clearing_account_id = VALUES(clearing_account_id),
+                default_gl_account_id = VALUES(default_gl_account_id),
                 is_active = VALUES(is_active),
                 configured_by = VALUES(configured_by)
-        """, (self.school_id, mode, account_id, is_active, configured_by))
-        self.connection.commit()
+            """, (self.school_id, mode, account_id, settlement_account_id, clearing_account_id,
+                  default_gl_account_id, is_active, configured_by))
+            self.cursor.execute("""
+                INSERT INTO payment_mode_account_events
+                    (school_id, payment_mode, event_type, receiving_account_id, settlement_account_id,
+                     clearing_account_id, default_gl_account_id, is_active, actor_user_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (self.school_id, mode, 'CONFIGURED' if is_active else 'DEACTIVATED', account_id,
+                  settlement_account_id, clearing_account_id, default_gl_account_id, is_active, configured_by))
+            self.connection.commit()
+        except Exception as exc:
+            self.connection.rollback()
+            if isinstance(exc, FinanceError):
+                raise
+            raise FinanceError(f'Unable to configure payment-mode account chain: {str(exc)}')
 
     def get_open_cashier_session(self, cashier_user_id: int, lock_for_update: bool = False) -> Optional[Dict]:
         """Return the cashier's single open session for the active school."""
-        query = """
-            SELECT id, cashier_user_id, opened_at
-            FROM cashier_sessions
-            WHERE school_id = %s AND cashier_user_id = %s AND status = 'OPEN'
-            ORDER BY id DESC
-            LIMIT 1
-        """
+        if lock_for_update:
+            query = """
+                SELECT id, cashier_user_id, opened_at
+                FROM cashier_sessions
+                WHERE school_id = %s AND cashier_user_id = %s AND status = 'OPEN'
+                ORDER BY id DESC
+                LIMIT 1
+            """
+        else:
+            query = """
+                SELECT sessions.id, sessions.cashier_user_id, sessions.opened_at, sessions.opening_float,
+                       sessions.variance_approval_threshold,
+                       COALESCE(SUM(payments.amount), 0) AS posted_cash,
+                       sessions.opening_float + COALESCE(SUM(payments.amount), 0) AS expected_cash
+                FROM cashier_sessions sessions
+                LEFT JOIN fee_payments payments
+                  ON sessions.id = payments.cashier_session_id AND sessions.school_id = payments.school_id
+                  AND payments.payment_mode = 'CASH' AND payments.status = 'COMPLETED'
+                WHERE sessions.school_id = %s AND sessions.cashier_user_id = %s AND sessions.status = 'OPEN'
+                GROUP BY sessions.id
+                ORDER BY sessions.id DESC
+                LIMIT 1
+            """
         if lock_for_update:
             query += ' FOR UPDATE'
         self.cursor.execute(query, (self.school_id, cashier_user_id))
@@ -229,9 +374,54 @@ class FinanceService:
         self.cursor.execute(query, tuple(params))
         return self.cursor.fetchall()
 
-    def open_cashier_session(self, cashier_user_id: int, opened_by: int) -> int:
+    def get_cashier_session_variance_threshold(self) -> Decimal:
+        """Return the active school's approval threshold, defaulting to zero."""
+        self.cursor.execute("""
+            SELECT variance_approval_threshold
+            FROM cashier_session_settings
+            WHERE school_id = %s
+        """, (self.school_id,))
+        policy = self.cursor.fetchone()
+        return Decimal(str(policy['variance_approval_threshold'])) if policy else Decimal('0.00')
+
+    def configure_cashier_session_variance_threshold(self, threshold: Decimal, updated_by: int) -> None:
+        """Set the maximum absolute cash variance that can close without approval."""
+        try:
+            threshold = Decimal(str(threshold))
+        except (InvalidOperation, TypeError, ValueError):
+            raise FinanceError('Variance approval threshold must be a valid number.')
+        if threshold < 0:
+            raise FinanceError('Variance approval threshold cannot be negative.')
+        self.cursor.execute("""
+            INSERT INTO cashier_session_settings (school_id, variance_approval_threshold, updated_by)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                variance_approval_threshold = VALUES(variance_approval_threshold),
+                updated_by = VALUES(updated_by)
+        """, (self.school_id, threshold, updated_by))
+        self.connection.commit()
+
+    def _record_cashier_session_event(self, session_id: int, event_type: str, actor_user_id: int,
+                                      reason: Optional[str] = None, snapshot: Optional[Dict] = None) -> None:
+        self.cursor.execute("""
+            INSERT INTO cashier_session_events
+                (school_id, cashier_session_id, event_type, actor_user_id, reason, snapshot_json)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (
+            self.school_id, session_id, event_type, actor_user_id, reason or None,
+            json.dumps(snapshot) if snapshot is not None else None,
+        ))
+
+    def open_cashier_session(self, cashier_user_id: int, opened_by: int,
+                             opening_float: Decimal = Decimal('0.00')) -> int:
         """Open one cash-accountability session per cashier and school."""
         try:
+            try:
+                opening_float = Decimal(str(opening_float))
+            except (InvalidOperation, TypeError, ValueError):
+                raise FinanceError('Opening float must be a valid number.')
+            if opening_float < 0:
+                raise FinanceError('Opening float cannot be negative.')
             self.connection.begin()
             self.cursor.execute("""
                 SELECT id FROM cashier_sessions
@@ -240,12 +430,19 @@ class FinanceService:
             """, (self.school_id, cashier_user_id))
             if self.cursor.fetchone():
                 raise FinanceError('This cashier already has an open session.')
+            variance_approval_threshold = self.get_cashier_session_variance_threshold()
             self.cursor.execute("""
-                INSERT INTO cashier_sessions (school_id, cashier_user_id, opened_by, open_session_marker)
-                VALUES (%s, %s, %s, 'OPEN')
-            """, (self.school_id, cashier_user_id, opened_by))
+                INSERT INTO cashier_sessions
+                    (school_id, cashier_user_id, opened_by, opening_float, variance_approval_threshold, open_session_marker)
+                VALUES (%s, %s, %s, %s, %s, 'OPEN')
+            """, (self.school_id, cashier_user_id, opened_by, opening_float, variance_approval_threshold))
+            session_id = self.cursor.lastrowid
+            self._record_cashier_session_event(
+                session_id, 'OPENED', opened_by,
+                snapshot={'opening_float': str(opening_float), 'variance_approval_threshold': str(variance_approval_threshold)},
+            )
             self.connection.commit()
-            return self.cursor.lastrowid
+            return session_id
         except Exception as exc:
             self.connection.rollback()
             if isinstance(exc, FinanceError):
@@ -253,7 +450,8 @@ class FinanceService:
             raise FinanceError(f'Unable to open cashier session: {str(exc)}')
 
     def close_cashier_session(
-        self, session_id: int, cashier_user_id: int, actual_cash: Decimal, closed_by: int, notes: str = ''
+        self, session_id: int, cashier_user_id: int, actual_cash: Decimal, closed_by: int, notes: str = '',
+        variance_reason: str = '',
     ) -> Dict:
         """Close a session, requiring approval later when its cash variance is non-zero."""
         try:
@@ -265,11 +463,12 @@ class FinanceService:
                 raise FinanceError('Actual cash cannot be negative.')
             self.connection.begin()
             self.cursor.execute("""
-                SELECT id FROM cashier_sessions
+                SELECT id, opening_float, variance_approval_threshold FROM cashier_sessions
                 WHERE id = %s AND school_id = %s AND cashier_user_id = %s AND status = 'OPEN'
                 FOR UPDATE
             """, (session_id, self.school_id, cashier_user_id))
-            if not self.cursor.fetchone():
+            session_record = self.cursor.fetchone()
+            if not session_record:
                 raise FinanceError('Open cashier session not found.')
 
             self.cursor.execute("""
@@ -278,15 +477,26 @@ class FinanceService:
                 WHERE cashier_session_id = %s AND school_id = %s
                   AND payment_mode = 'CASH' AND status = 'COMPLETED'
             """, (session_id, self.school_id))
-            expected_cash = Decimal(str(self.cursor.fetchone()['expected_cash']))
+            posted_cash = Decimal(str(self.cursor.fetchone()['expected_cash']))
+            expected_cash = Decimal(str(session_record['opening_float'])) + posted_cash
             variance = actual_cash - expected_cash
-            status = 'CLOSED' if variance == 0 else 'PENDING_APPROVAL'
+            variance_reason = (variance_reason or notes or '').strip()
+            if variance != 0 and not variance_reason:
+                raise FinanceError('A variance reason is required when counted cash differs from expected cash.')
+            threshold = Decimal(str(session_record['variance_approval_threshold']))
+            status = 'PENDING_APPROVAL' if abs(variance) > threshold else 'CLOSED'
             self.cursor.execute("""
                 UPDATE cashier_sessions
                 SET status = %s, open_session_marker = NULL, closed_at = NOW(), closed_by = %s, expected_cash = %s,
-                    actual_cash = %s, variance = %s, closure_notes = %s
+                    actual_cash = %s, variance = %s, closure_notes = %s, variance_reason = %s
                 WHERE id = %s AND school_id = %s
-            """, (status, closed_by, expected_cash, actual_cash, variance, notes.strip() or None, session_id, self.school_id))
+            """, (status, closed_by, expected_cash, actual_cash, variance, notes.strip() or None,
+                  variance_reason or None, session_id, self.school_id))
+            self._record_cashier_session_event(
+                session_id, 'CLOSED', closed_by, variance_reason,
+                snapshot={'expected_cash': str(expected_cash), 'actual_cash': str(actual_cash),
+                          'variance': str(variance), 'variance_approval_threshold': str(threshold), 'status': status},
+            )
             self.connection.commit()
             return {'expected_cash': expected_cash, 'actual_cash': actual_cash, 'variance': variance, 'status': status}
         except Exception as exc:
@@ -314,12 +524,49 @@ class FinanceService:
                 SET status = 'CLOSED', approved_by = %s, approved_at = NOW()
                 WHERE id = %s AND school_id = %s
             """, (approved_by, session_id, self.school_id))
+            self._record_cashier_session_event(session_id, 'VARIANCE_APPROVED', approved_by)
             self.connection.commit()
         except Exception as exc:
             self.connection.rollback()
             if isinstance(exc, FinanceError):
                 raise
             raise FinanceError(f'Unable to approve cashier session variance: {str(exc)}')
+
+    def reopen_cashier_session(self, session_id: int, reopened_by: int, reason: str) -> None:
+        """Reopen a closed session under an explicit, immutable audit reason."""
+        reason = (reason or '').strip()
+        if not reason:
+            raise FinanceError('A reopen reason is required.')
+        try:
+            self.connection.begin()
+            self.cursor.execute("""
+                SELECT id, cashier_user_id FROM cashier_sessions
+                WHERE id = %s AND school_id = %s AND status = 'CLOSED'
+                FOR UPDATE
+            """, (session_id, self.school_id))
+            session_record = self.cursor.fetchone()
+            if not session_record:
+                raise FinanceError('Closed cashier session not found.')
+            self.cursor.execute("""
+                SELECT id FROM cashier_sessions
+                WHERE school_id = %s AND cashier_user_id = %s AND status = 'OPEN'
+                FOR UPDATE
+            """, (self.school_id, session_record['cashier_user_id']))
+            if self.cursor.fetchone():
+                raise FinanceError('This cashier already has an open session.')
+            self.cursor.execute("""
+                UPDATE cashier_sessions
+                SET status = 'OPEN', open_session_marker = 'OPEN', reopened_at = NOW(), reopened_by = %s,
+                    reopen_reason = %s, closed_at = NULL, closed_by = NULL, approved_by = NULL, approved_at = NULL
+                WHERE id = %s AND school_id = %s
+            """, (reopened_by, reason, session_id, self.school_id))
+            self._record_cashier_session_event(session_id, 'REOPENED', reopened_by, reason)
+            self.connection.commit()
+        except Exception as exc:
+            self.connection.rollback()
+            if isinstance(exc, FinanceError):
+                raise
+            raise FinanceError(f'Unable to reopen cashier session: {str(exc)}')
 
     # =========================================================================
     # 2. GENERAL LEDGER TRANSACTIONS

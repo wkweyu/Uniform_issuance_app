@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, g, jsonify, make_response, current_app, abort
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from werkzeug.exceptions import HTTPException
 from core.permissions import admin_required, login_required
 from blueprints.fees.services import FeesService, FeesError
 from blueprints.classes.services import ClassManagementService
@@ -58,6 +59,22 @@ def _attach_transfer_snapshot_details(events):
                 'from_admno': snapshot['from_admno'],
                 'to_admno': snapshot['to_admno'],
             }
+
+
+def _csv_attachment(filename, sections):
+    output = io.StringIO(newline='')
+    writer = csv.writer(output)
+    for title, headers, rows in sections:
+        writer.writerow([title])
+        writer.writerow(headers)
+        for row in rows:
+            writer.writerow([row.get(field, '') for field in headers])
+        writer.writerow([])
+
+    response = make_response(output.getvalue())
+    response.headers['Content-Type'] = 'text/csv; charset=utf-8'
+    response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
 
 
 def _required_id_list(values, field_name):
@@ -149,21 +166,97 @@ def fees_collection_report():
     start_date = request.args.get('start_date', datetime.now().strftime('%Y-%m-01'))
     end_date = request.args.get('end_date', datetime.now().strftime('%Y-%m-%d'))
     payment_mode = (request.args.get('payment_mode') or '').strip().upper() or None
+    try:
+        class_id = _optional_int(request.args.get('class_id'), 'class_id')
+        cashier_user_id = _optional_int(request.args.get('cashier_user_id'), 'cashier_user_id')
+        votehead_id = _optional_int(request.args.get('votehead_id'), 'votehead_id')
+        academic_year_id = _optional_int(request.args.get('academic_year_id'), 'academic_year_id')
+        term_id = _optional_int(request.args.get('term_id'), 'term_id')
+    except ValueError:
+        abort(400)
+    stream = (request.args.get('stream') or '').strip().upper() or None
+    category = (request.args.get('category') or '').strip() or None
+    payment_status = (request.args.get('payment_status') or '').strip().upper() or None
+    export_format = request.args.get('export')
     payment_modes = ('CASH', 'MPESA', 'BANK_TRANSFER', 'CHEQUE')
+    payment_statuses = ('COMPLETED', 'CANCELLED')
     if payment_mode and payment_mode not in payment_modes:
+        abort(400)
+    if payment_status and payment_status not in payment_statuses:
+        abort(400)
+    if export_format and export_format != 'csv':
+        abort(400)
+    if term_id and not academic_year_id:
         abort(400)
     connection = get_db_connection()
     service = FeesService(connection)
+    class_service = ClassManagementService(connection, school_id=service.school_id)
     try:
-        data = service.get_collection_summary(start_date, end_date, payment_mode)
-        status_data = service.get_collection_status_summary(start_date, end_date, payment_mode)
-        category_data = service.get_collection_category_summary(start_date, end_date, payment_mode)
-        class_data = service.get_collection_class_summary(start_date, end_date, payment_mode)
-        votehead_data = service.get_collection_votehead_summary(start_date, end_date, payment_mode)
+        classes = class_service.get_active_classes()
+        academic_years = class_service.get_all_academic_years()
+        academic_year_ids = {item['id'] for item in academic_years}
+        class_ids = {item['classID'] for item in classes}
+        streams = sorted({item.get('stream_code') for item in classes if item.get('stream_code')})
+        cashiers = service.get_collection_cashiers()
+        cashier_ids = {item['userNo'] for item in cashiers}
+        categories = service.get_collection_categories()
+        voteheads = service.get_collection_voteheads()
+        votehead_ids = {item['id'] for item in voteheads}
+        if class_id and class_id not in class_ids:
+            abort(400)
+        if stream and stream not in streams:
+            abort(400)
+        if cashier_user_id and cashier_user_id not in cashier_ids:
+            abort(400)
+        if category and category not in categories:
+            abort(400)
+        if votehead_id and votehead_id not in votehead_ids:
+            abort(400)
+        if academic_year_id and academic_year_id not in academic_year_ids:
+            abort(400)
+        terms = service.get_terms_for_academic_year(academic_year_id) if academic_year_id else []
+        term_ids = {item['id'] for item in terms}
+        if term_id and term_id not in term_ids:
+            abort(400)
+        filters = {
+            key: value for key, value in {
+                'class_id': class_id,
+                'stream': stream,
+                'cashier_user_id': cashier_user_id,
+                'category': category,
+                'votehead_id': votehead_id,
+                'payment_status': payment_status,
+                'academic_year_id': academic_year_id,
+                'term_id': term_id,
+            }.items() if value is not None
+        }
+        data = service.get_collection_summary(start_date, end_date, payment_mode, **filters)
+        status_data = service.get_collection_status_summary(start_date, end_date, payment_mode, **filters)
+        category_data = service.get_collection_category_summary(start_date, end_date, payment_mode, **filters)
+        class_data = service.get_collection_class_summary(start_date, end_date, payment_mode, **filters)
+        votehead_data = service.get_collection_votehead_summary(start_date, end_date, payment_mode, **filters)
+        if export_format == 'csv':
+            return _csv_attachment(
+                f'fee-collections-{start_date}-to-{end_date}.csv',
+                [
+                    ('Collections by Payment Mode', ('payment_mode', 'count', 'total_amount'), data),
+                    ('Collections by Status', ('payment_status', 'payment_mode', 'count', 'total_amount'), status_data),
+                    ('Collections by Category', ('category', 'count', 'total_amount'), category_data),
+                    ('Collections by Class', ('class_name', 'stream_code', 'count', 'total_amount'), class_data),
+                    ('Collections by Votehead', ('votehead_name', 'count', 'total_amount'), votehead_data),
+                ],
+            )
         return render_template(
             'fees_collection_report.html', data=data, status_data=status_data, category_data=category_data,
             class_data=class_data, votehead_data=votehead_data,
             start_date=start_date, end_date=end_date, payment_mode=payment_mode or '', payment_modes=payment_modes,
+            class_id=class_id, stream=stream or '', classes=classes, streams=streams,
+            cashier_user_id=cashier_user_id, cashiers=cashiers,
+            category=category or '', categories=categories,
+            votehead_id=votehead_id, voteheads=voteheads,
+            payment_status=payment_status or '', payment_statuses=payment_statuses,
+            academic_year_id=academic_year_id, academic_years=academic_years,
+            term_id=term_id, terms=terms,
         )
     finally:
         connection.close()
@@ -175,13 +268,37 @@ def fees_collection_report():
 def fee_revenue_analysis_report():
     start_date = request.args.get('start_date', datetime.now().strftime('%Y-%m-01'))
     end_date = request.args.get('end_date', datetime.now().strftime('%Y-%m-%d'))
+    export_format = request.args.get('export')
+    try:
+        academic_year_id = _optional_int(request.args.get('academic_year_id'), 'academic_year_id')
+        term_id = _optional_int(request.args.get('term_id'), 'term_id')
+    except ValueError:
+        abort(400)
+    if term_id and not academic_year_id:
+        abort(400)
+    if export_format and export_format != 'csv':
+        abort(400)
     connection = get_db_connection()
     service = FeesService(connection)
+    class_service = ClassManagementService(connection, school_id=service.school_id)
     try:
-        records = service.get_fee_revenue_analysis(start_date, end_date)
+        academic_years = class_service.get_all_academic_years()
+        if academic_year_id and academic_year_id not in {item['id'] for item in academic_years}:
+            abort(400)
+        terms = service.get_terms_for_academic_year(academic_year_id) if academic_year_id else []
+        if term_id and term_id not in {item['id'] for item in terms}:
+            abort(400)
+        records = service.get_fee_revenue_analysis(start_date, end_date, academic_year_id, term_id)
+        if export_format == 'csv':
+            return _csv_attachment(
+                f'fee-revenue-analysis-{start_date}-to-{end_date}.csv',
+                [('Fee Revenue Analysis', ('votehead_name', 'invoiced_amount', 'debit_note_amount', 'credit_note_amount', 'waiver_amount', 'collected_amount'), records)],
+            )
         return render_template(
             'fee_revenue_analysis_report.html', records=records,
             start_date=start_date, end_date=end_date,
+            academic_year_id=academic_year_id, academic_years=academic_years,
+            term_id=term_id, terms=terms,
         )
     finally:
         connection.close()
@@ -193,13 +310,37 @@ def fee_revenue_analysis_report():
 def fee_ledger_summary_report():
     start_date = request.args.get('start_date', datetime.now().strftime('%Y-%m-01'))
     end_date = request.args.get('end_date', datetime.now().strftime('%Y-%m-%d'))
+    export_format = request.args.get('export')
+    try:
+        academic_year_id = _optional_int(request.args.get('academic_year_id'), 'academic_year_id')
+        term_id = _optional_int(request.args.get('term_id'), 'term_id')
+    except ValueError:
+        abort(400)
+    if term_id and not academic_year_id:
+        abort(400)
+    if export_format and export_format != 'csv':
+        abort(400)
     connection = get_db_connection()
     service = FeesService(connection)
+    class_service = ClassManagementService(connection, school_id=service.school_id)
     try:
-        records = service.get_fee_ledger_summary(start_date, end_date)
+        academic_years = class_service.get_all_academic_years()
+        if academic_year_id and academic_year_id not in {item['id'] for item in academic_years}:
+            abort(400)
+        terms = service.get_terms_for_academic_year(academic_year_id) if academic_year_id else []
+        if term_id and term_id not in {item['id'] for item in terms}:
+            abort(400)
+        records = service.get_fee_ledger_summary(start_date, end_date, academic_year_id, term_id)
+        if export_format == 'csv':
+            return _csv_attachment(
+                f'fee-ledger-summary-{start_date}-to-{end_date}.csv',
+                [('Fee Ledger Summary', ('academic_year', 'term_number', 'charges', 'debits', 'payments', 'credits', 'waivers', 'refunds', 'void_reversals', 'net_movement'), records)],
+            )
         return render_template(
             'fee_ledger_summary_report.html', records=records,
             start_date=start_date, end_date=end_date,
+            academic_year_id=academic_year_id, academic_years=academic_years,
+            term_id=term_id, terms=terms,
         )
     finally:
         connection.close()
@@ -211,11 +352,42 @@ def receipt_lifecycle_report():
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     event_type = request.args.get('event_type')
+    export_format = request.args.get('export')
+    try:
+        academic_year_id = _optional_int(request.args.get('academic_year_id'), 'academic_year_id')
+        term_id = _optional_int(request.args.get('term_id'), 'term_id')
+    except ValueError:
+        abort(400)
+    if term_id and not academic_year_id:
+        abort(400)
+    if export_format and export_format != 'csv':
+        abort(400)
     connection = get_db_connection()
     service = FeesService(connection)
+    class_service = ClassManagementService(connection, school_id=service.school_id)
     try:
-        records = service.get_receipt_lifecycle_register(start_date, end_date, event_type)
+        academic_years = class_service.get_all_academic_years()
+        if academic_year_id and academic_year_id not in {item['id'] for item in academic_years}:
+            abort(400)
+        terms = service.get_terms_for_academic_year(academic_year_id) if academic_year_id else []
+        if term_id and term_id not in {item['id'] for item in terms}:
+            abort(400)
+        records = service.get_receipt_lifecycle_register(
+            start_date, end_date, event_type, academic_year_id, term_id,
+        )
         _attach_transfer_snapshot_details(records)
+        if export_format == 'csv':
+            export_records = []
+            for record in records:
+                export_record = dict(record)
+                transfer = export_record.get('transfer') or {}
+                export_record['transfer_source_admno'] = transfer.get('from_admno', '')
+                export_record['transfer_destination_admno'] = transfer.get('to_admno', '')
+                export_records.append(export_record)
+            return _csv_attachment(
+                f'receipt-lifecycle-{start_date or "all"}-to-{end_date or "all"}.csv',
+                [('Receipt Lifecycle Audit Register', ('occurred_at', 'receipt_no', 'reference_number', 'admno', 'FName', 'SName', 'transfer_source_admno', 'transfer_destination_admno', 'event_type', 'status_after', 'reason', 'replacement_receipt_no', 'replacement_reference_number', 'correlation_id', 'actor_name'), export_records)],
+            )
         return render_template(
             'receipt_lifecycle_report.html',
             records=records,
@@ -223,6 +395,8 @@ def receipt_lifecycle_report():
             end_date=end_date or '',
             event_type=event_type or '',
             event_types=('POSTED', 'PRINTED', 'REPRINTED', 'CANCELLED', 'TRANSFERRED', 'REPOSTED', 'ARCHIVED'),
+            academic_year_id=academic_year_id, academic_years=academic_years,
+            term_id=term_id, terms=terms,
         )
     finally:
         connection.close()
@@ -233,15 +407,39 @@ def receipt_lifecycle_report():
 def fee_reallocation_report():
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
+    export_format = request.args.get('export')
+    try:
+        academic_year_id = _optional_int(request.args.get('academic_year_id'), 'academic_year_id')
+        term_id = _optional_int(request.args.get('term_id'), 'term_id')
+    except ValueError:
+        abort(400)
+    if term_id and not academic_year_id:
+        abort(400)
+    if export_format and export_format != 'csv':
+        abort(400)
     connection = get_db_connection()
     service = FeesService(connection)
+    class_service = ClassManagementService(connection, school_id=service.school_id)
     try:
-        records = service.get_reallocation_register(start_date, end_date)
+        academic_years = class_service.get_all_academic_years()
+        if academic_year_id and academic_year_id not in {item['id'] for item in academic_years}:
+            abort(400)
+        terms = service.get_terms_for_academic_year(academic_year_id) if academic_year_id else []
+        if term_id and term_id not in {item['id'] for item in terms}:
+            abort(400)
+        records = service.get_reallocation_register(start_date, end_date, academic_year_id, term_id)
+        if export_format == 'csv':
+            return _csv_attachment(
+                f'payment-reallocations-{start_date or "all"}-to-{end_date or "all"}.csv',
+                [('Fee Payment Reallocation Register', ('reallocated_at', 'receipt_no', 'reference_no', 'original_admno', 'source_first_name', 'source_last_name', 'new_admno', 'destination_first_name', 'destination_last_name', 'amount', 'reason', 'reallocated_by_name', 'correlation_id'), records)],
+            )
         return render_template(
             'fee_reallocation_report.html',
             records=records,
             start_date=start_date or '',
             end_date=end_date or '',
+            academic_year_id=academic_year_id, academic_years=academic_years,
+            term_id=term_id, terms=terms,
         )
     finally:
         connection.close()
@@ -252,13 +450,37 @@ def fee_reallocation_report():
 def invoice_replacement_report():
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
+    export_format = request.args.get('export')
+    try:
+        academic_year_id = _optional_int(request.args.get('academic_year_id'), 'academic_year_id')
+        term_id = _optional_int(request.args.get('term_id'), 'term_id')
+    except ValueError:
+        abort(400)
+    if term_id and not academic_year_id:
+        abort(400)
+    if export_format and export_format != 'csv':
+        abort(400)
     connection = get_db_connection()
     service = FeesService(connection)
+    class_service = ClassManagementService(connection, school_id=service.school_id)
     try:
-        records = service.get_invoice_replacement_register(start_date, end_date)
+        academic_years = class_service.get_all_academic_years()
+        if academic_year_id and academic_year_id not in {item['id'] for item in academic_years}:
+            abort(400)
+        terms = service.get_terms_for_academic_year(academic_year_id) if academic_year_id else []
+        if term_id and term_id not in {item['id'] for item in terms}:
+            abort(400)
+        records = service.get_invoice_replacement_register(start_date, end_date, academic_year_id, term_id)
+        if export_format == 'csv':
+            return _csv_attachment(
+                f'invoice-replacements-{start_date or "all"}-to-{end_date or "all"}.csv',
+                [('Category Invoice Replacement Register', ('created_at', 'admno', 'FName', 'SName', 'academic_year', 'term_number', 'previous_category', 'new_category', 'previous_group_name', 'new_group_name', 'original_invoice_reference', 'reversal_reference', 'replacement_invoice_reference', 'reason', 'changed_by_name'), records)],
+            )
         return render_template(
             'fee_invoice_replacement_report.html', records=records,
             start_date=start_date or '', end_date=end_date or '',
+            academic_year_id=academic_year_id, academic_years=academic_years,
+            term_id=term_id, terms=terms,
         )
     finally:
         connection.close()
@@ -267,29 +489,36 @@ def invoice_replacement_report():
 @login_required
 @admin_required
 def fee_balances_report():
-    academic_year_id = request.args.get('academic_year_id')
-    class_id = request.args.get('class_id')
-    stream = request.args.get('stream')
+    try:
+        academic_year_id = _optional_int(request.args.get('academic_year_id'), 'academic_year_id')
+        class_id = _optional_int(request.args.get('class_id'), 'class_id')
+    except ValueError:
+        abort(400)
+    stream = (request.args.get('stream') or '').strip().upper() or None
 
     connection = get_db_connection()
     service = FeesService(connection)
     class_service = ClassManagementService(connection, school_id=service.school_id)
 
     try:
-        data = service.get_fee_balances_report(
-            academic_year_id=int(academic_year_id) if academic_year_id else None,
-            class_id=int(class_id) if class_id else None,
-            stream=stream if stream else None
-        )
-
         years = class_service.get_all_academic_years()
         classes = class_service.get_active_classes()
         streams = service.get_distinct_stream_codes()
+        if academic_year_id and academic_year_id not in {item['id'] for item in years}:
+            abort(400)
+        if class_id and class_id not in {item['classID'] for item in classes}:
+            abort(400)
+        if stream and stream not in streams:
+            abort(400)
+        data = service.get_fee_balances_report(
+            academic_year_id=academic_year_id,
+            class_id=class_id,
+            stream=stream,
+        )
 
         return render_template('report_fee_balances.html',
                              data=data, years=years, classes=classes, streams=streams,
-                             academic_year_id=int(academic_year_id) if academic_year_id else None,
-                             class_id=int(class_id) if class_id else None, stream=stream)
+                             academic_year_id=academic_year_id, class_id=class_id, stream=stream)
     finally:
         connection.close()
 
@@ -436,13 +665,37 @@ def fee_waiver_report():
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     status = request.args.get('status')
+    export_format = request.args.get('export')
+    try:
+        academic_year_id = _optional_int(request.args.get('academic_year_id'), 'academic_year_id')
+        term_id = _optional_int(request.args.get('term_id'), 'term_id')
+    except ValueError:
+        abort(400)
+    if term_id and not academic_year_id:
+        abort(400)
+    if export_format and export_format != 'csv':
+        abort(400)
     connection = get_db_connection()
     service = FeesService(connection)
+    class_service = ClassManagementService(connection, school_id=service.school_id)
     try:
-        records = service.get_waiver_register(start_date, end_date, status)
+        academic_years = class_service.get_all_academic_years()
+        if academic_year_id and academic_year_id not in {item['id'] for item in academic_years}:
+            abort(400)
+        terms = service.get_terms_for_academic_year(academic_year_id) if academic_year_id else []
+        if term_id and term_id not in {item['id'] for item in terms}:
+            abort(400)
+        records = service.get_waiver_register(start_date, end_date, status, academic_year_id, term_id)
+        if export_format == 'csv':
+            return _csv_attachment(
+                f'fee-waivers-{start_date or "all"}-to-{end_date or "all"}.csv',
+                [('Fee Waiver Register', ('created_at', 'admno', 'FName', 'SName', 'category_name', 'academic_year', 'term_number', 'allocation_mode', 'allocation_count', 'waiver_amount', 'status', 'revoked_at', 'revocation_reason'), records)],
+            )
         return render_template(
             'fee_waiver_report.html', records=records, start_date=start_date or '',
             end_date=end_date or '', status=status or '',
+            academic_year_id=academic_year_id, academic_years=academic_years,
+            term_id=term_id, terms=terms,
         )
     finally:
         connection.close()
@@ -532,6 +785,40 @@ def manage_fee_adjustments():
     except (ValueError, FeesError) as exc:
         flash(str(exc), 'error')
         return redirect(url_for('fees.manage_fee_adjustments'))
+    finally:
+        connection.close()
+
+@fees_bp.route('/admin/fees/refunds', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def manage_fee_refunds():
+    connection = get_db_connection()
+    service = FeesService(connection)
+    class_service = ClassManagementService(connection, school_id=service.school_id)
+    try:
+        if request.method == 'POST':
+            refund_id = service.create_fee_refund(
+                admno=_required_int(request.form.get('admno'), 'admno'),
+                votehead_id=_required_int(request.form.get('votehead_id'), 'votehead_id'),
+                amount=_parse_decimal(request.form.get('amount'), 'amount'),
+                year_id=_required_int(request.form.get('year_id'), 'year_id'),
+                term_id=_required_int(request.form.get('term_id'), 'term_id'),
+                effective_date=_required_text(request.form.get('effective_date'), 'effective_date'),
+                refund_method=_required_text(request.form.get('refund_method'), 'refund_method'),
+                refund_reference=_required_text(request.form.get('refund_reference'), 'refund_reference'),
+                reason=_required_text(request.form.get('reason'), 'reason'),
+                user_id=session['userNo'],
+            )
+            flash(f'Fee refund RFD-{refund_id} posted.', 'success')
+            return redirect(url_for('fees.manage_fee_refunds'))
+        return render_template(
+            'manage_fee_refunds.html',
+            voteheads=service.get_voteheads(), years=class_service.get_all_academic_years(),
+            terms=service.get_recent_terms(), now=datetime.now(),
+        )
+    except (ValueError, FeesError) as exc:
+        flash(str(exc), 'error')
+        return redirect(url_for('fees.manage_fee_refunds'))
     finally:
         connection.close()
 
@@ -950,6 +1237,38 @@ def bulk_debit_term():
     connection.close()
     return render_template('bulk_debit_term.html', **context)
 
+@fees_bp.route('/admin/fees/student/<int:admno>/invoice', methods=['POST'])
+@login_required
+@admin_required
+def invoice_individual_student(admno):
+    connection = get_db_connection()
+    service = FeesService(connection)
+    try:
+        year_id = _required_int(request.form.get('year_id'), 'year_id')
+        term_id = _required_int(request.form.get('term_id'), 'term_id')
+        invoice_mode = _required_text(request.form.get('invoice_mode'), 'invoice_mode').upper()
+        if invoice_mode == 'STANDARD':
+            structure_items = service.get_student_fee_structure(admno, term_id)
+            if not structure_items or not structure_items[0].get('structure_id'):
+                raise FeesError('No fee structure is available for this student and term.')
+            ledger_ids = service.invoice_student(
+                admno, year_id, term_id, structure_items[0]['structure_id'], session['userNo'],
+            )
+        elif invoice_mode == 'MANUAL':
+            ledger_ids = service.invoice_student(
+                admno, year_id, term_id, 0, session['userNo'], custom_items=[{
+                    'votehead_id': _required_int(request.form.get('votehead_id'), 'votehead_id'),
+                    'amount': _parse_decimal(request.form.get('amount'), 'amount'),
+                }],
+            )
+        else:
+            raise ValueError('invoice_mode must be STANDARD or MANUAL.')
+        return jsonify({'success': True, 'ledger_ids': ledger_ids})
+    except (ValueError, FeesError) as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    finally:
+        connection.close()
+
 @fees_bp.route('/api/fees/recent_payments')
 @login_required
 def api_recent_payments():
@@ -988,6 +1307,23 @@ def api_statement_summary():
     finally:
         connection.close()
 
+@fees_bp.route('/api/fees/timeline')
+@login_required
+def api_finance_timeline():
+    try:
+        admno = _required_int(request.args.get('admno'), 'admno')
+        limit = _optional_int(request.args.get('limit'), 'limit') or 100
+    except ValueError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    connection = get_db_connection()
+    service = FeesService(connection)
+    try:
+        return jsonify(service.get_student_finance_timeline(admno, limit))
+    except FeesError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    finally:
+        connection.close()
+
 @fees_bp.route('/api/fees/category-change-preflight')
 @login_required
 @admin_required
@@ -1020,6 +1356,7 @@ def replace_category_invoice(admno):
             term_id=_required_int(request.form.get('term_id'), 'term_id'),
             new_category=_required_text(request.form.get('category'), 'category'),
             new_student_group_id=_optional_int(request.form.get('student_group_id'), 'student_group_id'),
+            new_class_id=_optional_int(request.form.get('new_class_id'), 'new_class_id'),
             reason=_required_text(request.form.get('reason'), 'reason'),
             user_id=session['userNo'],
         )
@@ -1157,9 +1494,16 @@ def api_fees_student_context():
             'home_address': student.get('home_address', 'N/A'),
             'residency': student.get('residency', 'N/A'),
             'class_name': class_info.get('class_name') if class_info else 'Not Assigned',
+            'class_id': class_info.get('classID') if class_info else None,
             'class_group': class_info.get('class_group') if class_info else 'N/A',
             'stream': (class_info or {}).get('stream') or student.get('stream') or 'N/A',
+            'available_classes': class_service.get_active_classes(),
             'student_group': student.get('student_group_name') or 'Not Assigned',
+            'student_group_id': student.get('student_group_id'),
+            'available_student_groups': [
+                {'id': group['id'], 'name': group['name']}
+                for group in fees_service.get_student_groups(active_only=True)
+            ],
             'outstanding_balance': balance_value,
             'recent_receipts': recent_receipts,
             'financial_alerts': financial_alerts,
@@ -1250,23 +1594,56 @@ def print_fee_receipt(payment_id):
 @admin_required
 def fee_receipts_register():
     connection = get_db_connection(); service = FeesService(connection)
+    academic_year_id = None
+    academic_years = []
+    term_id = None
+    terms = []
     try:
+        export_format = request.args.get('export')
+        if export_format and export_format != 'csv':
+            abort(400)
+        admno = _optional_int(request.args.get('admno'), 'admno')
+        cashier_user_id = _optional_int(request.args.get('cashier_user_id'), 'cashier_user_id')
+        academic_year_id = _optional_int(request.args.get('academic_year_id'), 'academic_year_id')
+        term_id = _optional_int(request.args.get('term_id'), 'term_id')
+        if term_id and not academic_year_id:
+            abort(400)
+        class_service = ClassManagementService(connection, school_id=service.school_id)
+        academic_years = class_service.get_all_academic_years()
+        academic_year_ids = {item['id'] for item in academic_years}
+        if academic_year_id and academic_year_id not in academic_year_ids:
+            abort(400)
+        terms = service.get_terms_for_academic_year(academic_year_id) if academic_year_id else []
+        if term_id and term_id not in {item['id'] for item in terms}:
+            abort(400)
         records = service.get_receipts_register(
             request.args.get('start_date'), request.args.get('end_date'),
-            _optional_int(request.args.get('admno'), 'admno'), request.args.get('mode'),
+            admno, request.args.get('mode'),
             request.args.get('q'), request.args.get('status'), request.args.get('lifecycle_event'),
-            _optional_int(request.args.get('cashier_user_id'), 'cashier_user_id'),
+            cashier_user_id,
+            academic_year_id, term_id,
         )
+        if export_format == 'csv':
+            return _csv_attachment(
+                f'fee-receipts-{request.args.get("start_date") or "all"}-to-{request.args.get("end_date") or "all"}.csv',
+                [('Fee Receipts Register', ('receipt_no', 'payment_date', 'admno', 'FName', 'SName', 'year_name', 'term_number', 'payment_mode', 'reference_number', 'amount', 'status', 'received_by_name'), records)],
+            )
     except ValueError as e:
         flash(str(e), 'error')
         records = []
+    except HTTPException:
+        raise
     except Exception:
         current_app.logger.exception('Failed to load fee receipts register')
         flash('Receipt register could not be loaded. Please try again later.', 'error')
         records = []
     finally:
         connection.close()
-    return render_template('fee_receipts_register.html', records=records, filters=request.args)
+    return render_template(
+        'fee_receipts_register.html', records=records, filters=request.args,
+        academic_year_id=academic_year_id, academic_years=academic_years,
+        term_id=term_id, terms=terms,
+    )
 
 @fees_bp.route('/admin/fees/receipt/<int:payment_id>/edit', methods=['GET', 'POST'])
 @login_required

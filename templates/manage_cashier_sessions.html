@@ -7,13 +7,22 @@
         <div class="flex gap-4"><a href="{{ url_for('finance.cashier_session_report') }}" class="text-sm font-semibold text-blue-700 hover:text-blue-900">Session report</a><a href="{{ url_for('finance.finance_dashboard') }}" class="text-sm font-semibold text-blue-700 hover:text-blue-900">Finance dashboard</a></div>
     </div>
 
+    <form method="post" class="mb-6 flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="configure_threshold">
+        <label class="block text-sm font-semibold text-gray-700">Variance approval threshold
+            <input name="variance_approval_threshold" type="number" min="0" step="0.01" value="{{ variance_approval_threshold }}" required class="mt-1 block w-52 rounded-md px-3 py-2" style="background-color: #ffffff; border: 1px solid #9ca3af; color: #111827;">
+        </label>
+        <button type="submit" class="rounded-md bg-slate-700 px-4 py-2 text-sm font-semibold text-white">Save threshold</button>
+    </form>
+
     {% if open_session %}
     <form method="post" class="bg-white border border-amber-200 p-5 rounded-lg shadow-sm mb-8">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="close">
         <input type="hidden" name="session_id" value="{{ open_session.id }}">
         <div class="flex items-center justify-between mb-5">
-            <div><h2 class="font-bold text-gray-900">Open session #{{ open_session.id }}</h2><p class="text-sm text-gray-500">Opened {{ open_session.opened_at }}</p></div>
+            <div><h2 class="font-bold text-gray-900">Open session #{{ open_session.id }}</h2><p class="text-sm text-gray-500">Opened {{ open_session.opened_at }}</p><p class="mt-1 text-sm font-semibold text-emerald-700">Expected cash: {{ open_session.expected_cash|default(0, true)|currency }} <span class="font-normal text-gray-500">(opening float {{ open_session.opening_float|default(0, true)|currency }} + posted cash {{ open_session.posted_cash|default(0, true)|currency }})</span></p></div>
             <span class="text-xs font-bold px-3 py-1 rounded-full" style="background-color: #fef3c7; color: #92400e;">OPEN</span>
         </div>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
@@ -22,6 +31,9 @@
             </label>
             <label class="block text-sm font-semibold text-gray-700">Closing notes
                 <input name="notes" maxlength="500" placeholder="Optional notes" class="mt-1 block w-full rounded-md px-3 py-2" style="background-color: #ffffff; border: 1px solid #9ca3af; color: #111827;">
+            </label>
+            <label class="block text-sm font-semibold text-gray-700">Variance reason
+                <input name="variance_reason" maxlength="500" placeholder="Required when the count differs" class="mt-1 block w-full rounded-md px-3 py-2" style="background-color: #ffffff; border: 1px solid #9ca3af; color: #111827;">
             </label>
             <button type="submit" class="font-semibold px-5 py-3 rounded-md" style="background-color: #b45309; color: #ffffff;">
                 <i class="fas fa-lock"></i> Close session
@@ -37,6 +49,9 @@
                 <h2 class="font-bold text-gray-900">No cashier session is open</h2>
                 <p class="text-sm text-gray-500">Open a session before posting cash receipts.</p>
             </div>
+            <label class="block text-sm font-semibold text-gray-700">Opening float
+                <input name="opening_float" type="number" min="0" step="0.01" value="0.00" required class="mt-1 block w-44 rounded-md px-3 py-2" style="background-color: #ffffff; border: 1px solid #9ca3af; color: #111827;">
+            </label>
             <button type="submit" class="font-semibold px-5 py-3 rounded-md" style="background-color: #047857; color: #ffffff;">
                 <i class="fas fa-cash-register"></i> Open cashier session
             </button>
@@ -44,6 +59,6 @@
     </form>
     {% endif %}
 
-    <div class="bg-white border border-gray-200 rounded-lg overflow-hidden"><table class="w-full text-left text-sm"><thead class="bg-gray-50 text-gray-500 uppercase text-xs"><tr><th class="px-5 py-3">Session</th><th class="px-5 py-3">Cashier</th><th class="px-5 py-3">Expected</th><th class="px-5 py-3">Actual</th><th class="px-5 py-3">Variance</th><th class="px-5 py-3">Status</th><th class="px-5 py-3"></th></tr></thead><tbody class="divide-y divide-gray-100">{% for item in sessions %}<tr><td class="px-5 py-3">#{{ item.id }}</td><td class="px-5 py-3">{{ item.opened_by_name or item.cashier_user_id }}</td><td class="px-5 py-3">{{ item.expected_cash|currency if item.expected_cash is not none else '-' }}</td><td class="px-5 py-3">{{ item.actual_cash|currency if item.actual_cash is not none else '-' }}</td><td class="px-5 py-3">{{ item.variance|currency if item.variance is not none else '-' }}</td><td class="px-5 py-3">{{ item.status.replace('_', ' ') }}</td><td class="px-5 py-3">{% if item.status == 'PENDING_APPROVAL' %}<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="approve"><input type="hidden" name="session_id" value="{{ item.id }}"><button type="submit" class="text-blue-700 font-semibold">Approve variance</button></form>{% endif %}</td></tr>{% else %}<tr><td colspan="7" class="px-5 py-8 text-center text-gray-500">No cashier sessions recorded.</td></tr>{% endfor %}</tbody></table></div>
+    <div class="bg-white border border-gray-200 rounded-lg overflow-hidden"><table class="w-full text-left text-sm"><thead class="bg-gray-50 text-gray-500 uppercase text-xs"><tr><th class="px-5 py-3">Session</th><th class="px-5 py-3">Cashier</th><th class="px-5 py-3">Expected</th><th class="px-5 py-3">Actual</th><th class="px-5 py-3">Variance</th><th class="px-5 py-3">Status</th><th class="px-5 py-3"></th></tr></thead><tbody class="divide-y divide-gray-100">{% for item in sessions %}<tr><td class="px-5 py-3">#{{ item.id }}</td><td class="px-5 py-3">{{ item.opened_by_name or item.cashier_user_id }}</td><td class="px-5 py-3">{{ item.expected_cash|currency if item.expected_cash is not none else '-' }}</td><td class="px-5 py-3">{{ item.actual_cash|currency if item.actual_cash is not none else '-' }}</td><td class="px-5 py-3">{{ item.variance|currency if item.variance is not none else '-' }}</td><td class="px-5 py-3">{{ item.status.replace('_', ' ') }}</td><td class="px-5 py-3">{% if item.status == 'PENDING_APPROVAL' %}<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="approve"><input type="hidden" name="session_id" value="{{ item.id }}"><button type="submit" class="text-blue-700 font-semibold">Approve variance</button></form>{% elif item.status == 'CLOSED' %}<form method="post" class="flex gap-2"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="reopen"><input type="hidden" name="session_id" value="{{ item.id }}"><input name="reopen_reason" maxlength="500" required placeholder="Reopen reason" class="w-40 rounded border border-gray-300 px-2 py-1 text-xs"><button type="submit" class="text-blue-700 font-semibold">Reopen</button></form>{% endif %}</td></tr>{% else %}<tr><td colspan="7" class="px-5 py-8 text-center text-gray-500">No cashier sessions recorded.</td></tr>{% endfor %}</tbody></table></div>
 </div>
 {% endblock %}

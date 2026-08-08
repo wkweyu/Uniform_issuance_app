@@ -20,7 +20,64 @@
         {% for mode in payment_modes %}<option value="{{ mode }}" {% if payment_mode == mode %}selected{% endif %}>{{ mode.replace('_', ' ') }}</option>{% endfor %}
       </select>
     </div>
+    <div>
+      <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Academic year</label>
+      <select name="academic_year_id" class="border rounded px-3 py-1.5 text-sm">
+        <option value="">All years</option>
+        {% for year in academic_years %}<option value="{{ year.id }}" {% if academic_year_id == year.id %}selected{% endif %}>{{ year.year or year.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Term</label>
+      <select name="term_id" class="border rounded px-3 py-1.5 text-sm" {% if not academic_year_id %}disabled{% endif %}>
+        <option value="">All terms</option>
+        {% for term in terms %}<option value="{{ term.id }}" {% if term_id == term.id %}selected{% endif %}>Term {{ term.term_number }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Current class</label>
+      <select name="class_id" class="border rounded px-3 py-1.5 text-sm">
+        <option value="">All classes</option>
+        {% for item in classes %}<option value="{{ item.classID }}" {% if class_id == item.classID %}selected{% endif %}>{{ item.display_name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Current stream</label>
+      <select name="stream" class="border rounded px-3 py-1.5 text-sm">
+        <option value="">All streams</option>
+        {% for code in streams %}<option value="{{ code }}" {% if stream == code %}selected{% endif %}>{{ code }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Cashier</label>
+      <select name="cashier_user_id" class="border rounded px-3 py-1.5 text-sm">
+        <option value="">All cashiers</option>
+        {% for cashier in cashiers %}<option value="{{ cashier.userNo }}" {% if cashier_user_id == cashier.userNo %}selected{% endif %}>{{ cashier.username }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Current category</label>
+      <select name="category" class="border rounded px-3 py-1.5 text-sm">
+        <option value="">All categories</option>
+        {% for value in categories %}<option value="{{ value }}" {% if category == value %}selected{% endif %}>{{ value }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Votehead</label>
+      <select name="votehead_id" class="border rounded px-3 py-1.5 text-sm">
+        <option value="">All voteheads</option>
+        {% for votehead in voteheads %}<option value="{{ votehead.id }}" {% if votehead_id == votehead.id %}selected{% endif %}>{{ votehead.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Payment status</label>
+      <select name="payment_status" class="border rounded px-3 py-1.5 text-sm">
+        <option value="">Completed collections</option>
+        {% for value in payment_statuses %}<option value="{{ value }}" {% if payment_status == value %}selected{% endif %}>{{ value.title() }}</option>{% endfor %}
+      </select>
+    </div>
     <button type="submit" class="bg-blue-600 text-white px-4 py-1.5 rounded text-sm font-bold">Filter</button>
+    <button type="submit" name="export" value="csv" class="bg-emerald-700 text-white px-4 py-1.5 rounded text-sm font-bold">Export CSV</button>
   </form>
   <button onclick="window.print()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-6 py-2 rounded-xl font-bold transition">Print Report</button>
 </div>

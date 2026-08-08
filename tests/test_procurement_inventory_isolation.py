@@ -119,12 +119,38 @@ def test_finance_service_configures_tenant_payment_mode_receiving_accounts():
     mappings_query, mappings_params = connection.cursor_obj.executed[0]
     account_query, account_params = connection.cursor_obj.executed[1]
     upsert_query, upsert_params = connection.cursor_obj.executed[2]
+    event_query, event_params = connection.cursor_obj.executed[3]
     assert mappings_params == (18,)
     assert 'config.school_id = %s' in mappings_query.lower()
     assert account_params == (17, 18)
     assert 'finance_accounts where id = %s and school_id = %s' in account_query.lower()
-    assert upsert_params == (18, 'MPESA', 17, True, 8)
+    assert upsert_params == (18, 'MPESA', 17, None, None, None, True, 8)
     assert 'on duplicate key update' in upsert_query.lower()
+    assert 'insert into payment_mode_account_events' in event_query.lower()
+    assert event_params == (18, 'MPESA', 'CONFIGURED', 17, None, None, None, True, 8)
+
+
+def test_finance_service_reconciles_fee_receipts_against_configured_account_chain():
+    connection = RecordingConnection(
+        responses=[
+            ('all', [{
+                'payment_mode': 'MPESA', 'receipt_total': Decimal('1500.00'),
+                'receiving_gl_movement': Decimal('1200.00'),
+                'settlement_gl_movement': Decimal('800.00'),
+                'clearing_gl_movement': Decimal('400.00'),
+            }]),
+        ]
+    )
+    service = FinanceService(connection, school_id=18)
+
+    rows = service.get_fee_settlement_reconciliation('2026-07-01', '2026-07-31')
+
+    assert rows[0]['unreconciled_amount'] == Decimal('300.00')
+    query, params = connection.cursor_obj.executed[0]
+    assert params == (18, '2026-07-01', '2026-07-31', 18, '2026-07-01', '2026-07-31', 18, '2026-07-01', '2026-07-31', 18, '2026-07-01', '2026-07-31', 18)
+    assert 'payments.school_id = fee_entries.school_id' in query.lower()
+    assert 'entries.school_id = transactions.school_id' in query.lower()
+    assert 'where config.school_id = %s and config.is_active = true' in query.lower()
 
 
 def test_finance_service_rejects_payment_mode_account_from_another_school():
@@ -140,7 +166,7 @@ def test_finance_service_rejects_payment_mode_account_from_another_school():
 def test_finance_service_closes_cashier_session_with_cash_variance():
     connection = RecordingConnection(
         responses=[
-            ('one', {'id': 7}),
+            ('one', {'id': 7, 'opening_float': Decimal('0.00'), 'variance_approval_threshold': Decimal('0.00')}),
             ('one', {'expected_cash': Decimal('1500.00')}),
         ]
     )
@@ -159,13 +185,82 @@ def test_finance_service_closes_cashier_session_with_cash_variance():
     session_query, session_params = connection.cursor_obj.executed[0]
     total_query, total_params = connection.cursor_obj.executed[1]
     update_query, update_params = connection.cursor_obj.executed[2]
+    event_query, event_params = connection.cursor_obj.executed[3]
     assert session_params == (7, 18, 8)
     assert "status = 'open'" in session_query.lower()
     assert total_params == (7, 18)
     assert "payment_mode = 'cash'" in total_query.lower()
-    assert update_params == ('PENDING_APPROVAL', 8, Decimal('1500.00'), Decimal('1450.00'), Decimal('-50.00'), 'Short cash', 7, 18)
+    assert update_params == ('PENDING_APPROVAL', 8, Decimal('1500.00'), Decimal('1450.00'), Decimal('-50.00'), 'Short cash', 'Short cash', 7, 18)
     assert 'update cashier_sessions' in update_query.lower()
     assert 'open_session_marker = null' in update_query.lower()
+    assert 'insert into cashier_session_events' in event_query.lower()
+    assert event_params[:5] == (18, 7, 'CLOSED', 8, 'Short cash')
+
+
+def test_finance_service_includes_opening_float_and_threshold_when_closing_cashier_session():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {'id': 7, 'opening_float': Decimal('500.00'), 'variance_approval_threshold': Decimal('100.00')}),
+            ('one', {'expected_cash': Decimal('1500.00')}),
+        ]
+    )
+    service = FinanceService(connection, school_id=18)
+
+    result = service.close_cashier_session(
+        7, cashier_user_id=8, actual_cash=Decimal('1950.00'), closed_by=8,
+        variance_reason='Counted cash is short.',
+    )
+
+    assert result == {
+        'expected_cash': Decimal('2000.00'),
+        'actual_cash': Decimal('1950.00'),
+        'variance': Decimal('-50.00'),
+        'status': 'CLOSED',
+    }
+    update_query, update_params = connection.cursor_obj.executed[2]
+    assert 'update cashier_sessions' in update_query.lower()
+    assert update_params == (
+        'CLOSED', 8, Decimal('2000.00'), Decimal('1950.00'), Decimal('-50.00'), None,
+        'Counted cash is short.', 7, 18,
+    )
+
+
+def test_finance_service_requires_reason_for_any_cashier_session_variance():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {'id': 7, 'opening_float': Decimal('0.00'), 'variance_approval_threshold': Decimal('100.00')}),
+            ('one', {'expected_cash': Decimal('1500.00')}),
+        ]
+    )
+    service = FinanceService(connection, school_id=18)
+
+    with pytest.raises(FinanceError, match='variance reason is required'):
+        service.close_cashier_session(7, cashier_user_id=8, actual_cash=Decimal('1499.00'), closed_by=8)
+
+    assert connection.commit_calls == 0
+    assert connection.rollback_calls == 1
+
+
+def test_finance_service_reopens_closed_cashier_session_with_audited_reason():
+    connection = RecordingConnection(responses=[('one', {'id': 7, 'cashier_user_id': 8}), ('one', None)])
+    service = FinanceService(connection, school_id=18)
+
+    service.reopen_cashier_session(7, reopened_by=9, reason='Supervisor recount required.')
+
+    assert connection.begin_calls == 1
+    assert connection.commit_calls == 1
+    session_query, session_params = connection.cursor_obj.executed[0]
+    open_query, open_params = connection.cursor_obj.executed[1]
+    update_query, update_params = connection.cursor_obj.executed[2]
+    event_query, event_params = connection.cursor_obj.executed[3]
+    assert "status = 'closed'" in session_query.lower()
+    assert session_params == (7, 18)
+    assert "status = 'open'" in open_query.lower()
+    assert open_params == (18, 8)
+    assert "set status = 'open'" in update_query.lower()
+    assert update_params == (9, 'Supervisor recount required.', 7, 18)
+    assert 'insert into cashier_session_events' in event_query.lower()
+    assert event_params[:5] == (18, 7, 'REOPENED', 9, 'Supervisor recount required.')
 
 
 @pytest.mark.parametrize(
@@ -194,7 +289,7 @@ def test_finance_service_rejects_invalid_cashier_close_count_before_transaction(
 
 
 def test_finance_service_opens_single_cashier_session_atomically():
-    connection = RecordingConnection(responses=[('one', None)])
+    connection = RecordingConnection(responses=[('one', None), ('one', None)])
     connection.cursor_obj.lastrowid = 7
     service = FinanceService(connection, school_id=18)
 
@@ -203,11 +298,17 @@ def test_finance_service_opens_single_cashier_session_atomically():
     assert connection.begin_calls == 1
     assert connection.commit_calls == 1
     lock_query, lock_params = connection.cursor_obj.executed[0]
-    insert_query, insert_params = connection.cursor_obj.executed[1]
+    policy_query, policy_params = connection.cursor_obj.executed[1]
+    insert_query, insert_params = connection.cursor_obj.executed[2]
+    event_query, event_params = connection.cursor_obj.executed[3]
     assert 'for update' in lock_query.lower()
     assert lock_params == (18, 8)
+    assert 'from cashier_session_settings' in policy_query.lower()
+    assert policy_params == (18,)
     assert 'open_session_marker' in insert_query.lower()
-    assert insert_params == (18, 8, 9)
+    assert insert_params == (18, 8, 9, Decimal('0.00'), Decimal('0.00'))
+    assert 'insert into cashier_session_events' in event_query.lower()
+    assert event_params[:5] == (18, 7, 'OPENED', 9, None)
 
 
 def test_finance_service_rejects_duplicate_open_cashier_session_without_commit():
@@ -306,6 +407,20 @@ def test_finance_service_cashier_session_register_filters_cashier_within_school(
     assert params == (18, 14)
     assert 'sessions.school_id = %s' in query.lower()
     assert 'sessions.cashier_user_id = %s' in query.lower()
+
+
+def test_finance_service_open_cashier_session_summary_includes_opening_float_and_completed_cash():
+    connection = RecordingConnection(responses=[('one', {'id': 7})])
+    service = FinanceService(connection, school_id=18)
+
+    assert service.get_open_cashier_session(8) == {'id': 7}
+
+    query, params = connection.cursor_obj.executed[0]
+    assert params == (18, 8)
+    assert 'sessions.opening_float + coalesce(sum(payments.amount), 0) as expected_cash' in query.lower()
+    assert 'sessions.school_id = payments.school_id' in query.lower()
+    assert "payments.payment_mode = 'cash'" in query.lower()
+    assert "payments.status = 'completed'" in query.lower()
 
 
 def test_dashboard_service_scopes_summary_reads_to_school():
@@ -856,7 +971,7 @@ def test_fees_service_rejects_payment_with_unmapped_receiving_account_before_tra
         'fee_receipts': {'school_id'},
     }
 
-    with pytest.raises(FeesError, match="No active receiving account is configured for payment mode 'MPESA'"):
+    with pytest.raises(FeesError, match="No complete active account chain is configured for payment mode 'MPESA'"):
         FeesService.record_payment.__wrapped__(
             service,
             admno=1001,
@@ -871,6 +986,32 @@ def test_fees_service_rejects_payment_with_unmapped_receiving_account_before_tra
         )
 
     assert connection.begin_calls == 0
+
+
+def test_fees_service_resolves_complete_active_tenant_payment_account_chain():
+    connection = RecordingConnection(responses=[('one', {
+        'receiving_account_id': 17,
+        'settlement_account_id': 18,
+        'clearing_account_id': 19,
+        'default_gl_account_id': 20,
+    })])
+    service = FeesService(connection, school_id=55)
+
+    chain = service.get_payment_mode_account_chain('mpesa')
+
+    assert chain == {
+        'receiving_account_id': 17,
+        'settlement_account_id': 18,
+        'clearing_account_id': 19,
+        'default_gl_account_id': 20,
+    }
+    query, params = connection.cursor_obj.executed[0]
+    assert params == (55, 'MPESA')
+    assert 'receiving.is_active = true' in query.lower()
+    assert 'settlement.is_active = true' in query.lower()
+    assert 'clearing.is_active = true' in query.lower()
+    assert 'default_gl.is_active = true' in query.lower()
+    assert 'config.school_id = %s' in query.lower()
     assert all('insert into fee_ledger' not in query.lower() for query, _ in connection.cursor_obj.executed)
 
 
@@ -1329,6 +1470,65 @@ def test_fees_service_posts_credit_note_with_linked_adjustment_ledger_entry():
     ]
 
 
+def test_fees_service_posts_credit_limited_refund_with_immutable_audit_record():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {'AdmNo': 1001}),
+            ('one', {'id': 2026}),
+            ('one', {'id': 3}),
+            ('all', [{'id': 4}]),
+            ('one', {'balance_after': Decimal('-500.00')}),
+            ('all', [
+                {'id': 10, 'type': 'PAYMENT', 'amount': Decimal('500.00'), 'description': 'Overpayment'},
+                {'id': 41, 'type': 'REFUND', 'amount': Decimal('300.00'), 'description': 'REFUND: Parent request'},
+            ]),
+        ]
+    )
+    connection.cursor_obj.lastrowid = 41
+    service = FeesService(connection, school_id=55)
+
+    refund_id = service.create_fee_refund(
+        admno=1001, votehead_id=4, amount=Decimal('300.00'), year_id=2026, term_id=3,
+        effective_date='2026-07-31', refund_method='MPESA', refund_reference='MPS-REF-42',
+        reason='Parent request', user_id=9,
+    )
+
+    assert refund_id == 41
+    assert connection.begin_calls == 1
+    assert connection.commit_calls == 1
+    refund_query, refund_params = connection.cursor_obj.executed[5]
+    assert 'insert into fee_refunds' in refund_query.lower()
+    assert refund_params == (55, 1001, 2026, 3, 4, Decimal('300.00'), 'MPESA', 'MPS-REF-42', 'Parent request', '2026-07-31', 9)
+    ledger_query, ledger_params = connection.cursor_obj.executed[6]
+    assert "'refund'" in ledger_query.lower()
+    assert ledger_params[5] == Decimal('-200.00')
+    assert ledger_params[6] == 'REFUND: Parent request (MPESA Ref: MPS-REF-42)'
+    assert ledger_params[7] == 'RFD-41'
+
+
+def test_fees_service_rejects_refund_larger_than_available_credit():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {'AdmNo': 1001}),
+            ('one', {'id': 2026}),
+            ('one', {'id': 3}),
+            ('all', [{'id': 4}]),
+            ('one', {'balance_after': Decimal('-100.00')}),
+        ]
+    )
+    service = FeesService(connection, school_id=55)
+
+    with pytest.raises(FeesError, match='available student credit of 100.00'):
+        service.create_fee_refund(
+            admno=1001, votehead_id=4, amount=Decimal('100.01'), year_id=2026, term_id=3,
+            effective_date='2026-07-31', refund_method='CASH', refund_reference='REF-42',
+            reason='Approved correction', user_id=9,
+        )
+
+    assert not any('insert into fee_refunds' in query.lower() for query, _ in connection.cursor_obj.executed)
+    assert connection.rollback_calls == 1
+
+
 def test_fees_service_recalculates_debit_note_as_a_balance_increase():
     connection = RecordingConnection(responses=[
         ('all', [
@@ -1378,31 +1578,56 @@ def test_fees_service_receipts_register_filters_cashier_within_school():
     assert 'fp.received_by = %s' in query.lower()
 
 
+def test_fees_service_receipts_register_filters_tenant_ledger_period():
+    connection = RecordingConnection(responses=[('all', [])])
+    service = FeesService(connection, school_id=55)
+    service._table_columns_cache = {'fee_payments': {'school_id'}, 'fee_receipts': {'school_id'}}
+
+    assert service.get_receipts_register(academic_year_id=2026, term_id=3) == []
+
+    query, params = connection.cursor_obj.executed[0]
+    assert params == [55, 2026, 3]
+    assert 'fl.academic_year_id = %s' in query.lower()
+    assert 'fl.term_id = %s' in query.lower()
+    assert 'fp.school_id = fl.school_id' in query.lower()
+
+
 def test_fees_service_lifecycle_register_scopes_events_and_filters():
     connection = RecordingConnection(responses=[('all', [])])
     service = FeesService(connection, school_id=55)
 
-    assert service.get_receipt_lifecycle_register('2026-07-01', '2026-07-31', 'CANCELLED') == []
+    assert service.get_receipt_lifecycle_register('2026-07-01', '2026-07-31', 'CANCELLED', 2026, 3) == []
 
     query, params = connection.cursor_obj.executed[0]
-    assert params == [55, '2026-07-01', '2026-07-31', 'CANCELLED']
+    assert params == [55, '2026-07-01', '2026-07-31', 'CANCELLED', 2026, 3]
     assert 'events.school_id = %s' in query.lower()
     assert 'events.event_type = %s' in query.lower()
+    assert 'ledger.academic_year_id = %s' in query.lower()
+    assert 'ledger.term_id = %s' in query.lower()
+    assert 'payments.ledger_id = ledger.id' in query.lower()
     assert 'payments.school_id = receipts.school_id' in query.lower()
+    assert 'events.replacement_payment_id = replacement_payments.id' in query.lower()
+    assert 'events.school_id = replacement_payments.school_id' in query.lower()
+    assert 'replacement_payments.id = replacement_receipts.payment_id' in query.lower()
+    assert 'replacement_payments.school_id = replacement_receipts.school_id' in query.lower()
 
 
 def test_fees_service_reallocation_register_scopes_source_and_destination_students():
     connection = RecordingConnection(responses=[('all', [])])
     service = FeesService(connection, school_id=55)
 
-    assert service.get_reallocation_register('2026-07-01', '2026-07-31') == []
+    assert service.get_reallocation_register('2026-07-01', '2026-07-31', 2026, 3) == []
 
     query, params = connection.cursor_obj.executed[0]
-    assert params == [55, '2026-07-01', '2026-07-31']
+    assert params == [55, '2026-07-01', '2026-07-31', 2026, 3]
     assert 'reallocations.school_id = %s' in query.lower()
     assert 'reallocations.school_id = source.school_id' in query.lower()
     assert 'reallocations.school_id = destination.school_id' in query.lower()
     assert 'reallocations.school_id = receipts.school_id' in query.lower()
+    assert 'reallocations.payment_id = payments.id' in query.lower()
+    assert 'payments.ledger_id = ledger.id' in query.lower()
+    assert 'ledger.academic_year_id = %s' in query.lower()
+    assert 'ledger.term_id = %s' in query.lower()
 
 
 def test_fees_service_collection_status_summary_scopes_receipt_statuses_to_school():
@@ -1414,8 +1639,8 @@ def test_fees_service_collection_status_summary_scopes_receipt_statuses_to_schoo
 
     query, params = connection.cursor_obj.executed[0]
     assert params == ('2026-07-01', '2026-07-31', 55)
-    assert 'where payment_date between %s and %s and school_id = %s' in query.lower()
-    assert 'group by status, payment_mode' in query.lower()
+    assert 'where payments.payment_date between %s and %s and payments.school_id = %s' in query.lower()
+    assert 'group by payments.status, payments.payment_mode' in query.lower()
 
 
 def test_fees_service_collection_category_summary_scopes_student_join_and_completed_status():
@@ -1489,6 +1714,205 @@ def test_fees_service_collection_summaries_filter_selected_payment_mode_consiste
         assert 'payment_mode = %s' in query.lower()
 
 
+def test_fees_service_collection_summaries_filter_current_class_and_stream_with_tenant_joins():
+    summary_methods = (
+        ('get_collection_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_status_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_category_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_class_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_votehead_summary', {
+            'fee_payments': {'school_id'},
+            'fee_payment_allocations': {'school_id'},
+        }),
+    )
+
+    for method_name, table_columns in summary_methods:
+        connection = RecordingConnection(responses=[('all', [])])
+        service = FeesService(connection, school_id=55)
+        service._table_columns_cache = table_columns
+
+        assert getattr(service, method_name)('2026-07-01', '2026-07-31', class_id=17, stream='A') == []
+
+        query, params = connection.cursor_obj.executed[0]
+        assert params == ('2026-07-01', '2026-07-31', 55, 17, 'A')
+        assert 'allocations.is_current = true' in query.lower() or 'class_allocations.is_current = true' in query.lower()
+        assert 'classes.stream_code = %s' in query.lower()
+
+
+def test_fees_service_collection_summaries_filter_cashier_with_tenant_scope():
+    summary_methods = (
+        ('get_collection_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_status_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_category_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_class_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_votehead_summary', {
+            'fee_payments': {'school_id'},
+            'fee_payment_allocations': {'school_id'},
+        }),
+    )
+
+    for method_name, table_columns in summary_methods:
+        connection = RecordingConnection(responses=[('all', [])])
+        service = FeesService(connection, school_id=55)
+        service._table_columns_cache = table_columns
+
+        assert getattr(service, method_name)('2026-07-01', '2026-07-31', cashier_user_id=24) == []
+
+        query, params = connection.cursor_obj.executed[0]
+        assert params == ('2026-07-01', '2026-07-31', 55, 24)
+        assert 'received_by = %s' in query.lower()
+
+
+def test_fees_service_collection_cashiers_uses_tenant_scoped_payment_users():
+    connection = RecordingConnection(responses=[('all', [])])
+    service = FeesService(connection, school_id=55)
+    service._table_columns_cache = {'fee_payments': {'school_id'}}
+
+    assert service.get_collection_cashiers() == []
+
+    query, params = connection.cursor_obj.executed[0]
+    assert params == (55,)
+    assert 'payments.school_id = users.school_id' in query.lower()
+    assert 'where payments.school_id = %s' in query.lower()
+
+
+def test_fees_service_collection_summaries_filter_current_category_with_tenant_student_joins():
+    summary_methods = (
+        ('get_collection_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_status_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_category_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_class_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_votehead_summary', {
+            'fee_payments': {'school_id'},
+            'fee_payment_allocations': {'school_id'},
+        }),
+    )
+
+    for method_name, table_columns in summary_methods:
+        connection = RecordingConnection(responses=[('all', [])])
+        service = FeesService(connection, school_id=55)
+        service._table_columns_cache = table_columns
+
+        assert getattr(service, method_name)('2026-07-01', '2026-07-31', category='Boarding') == []
+
+        query, params = connection.cursor_obj.executed[0]
+        assert params == ('2026-07-01', '2026-07-31', 55, 'Boarding')
+        assert 'students.category = %s' in query.lower()
+        assert 'school_id = students.school_id' in query.lower()
+
+
+def test_fees_service_collection_categories_are_limited_to_the_active_school():
+    connection = RecordingConnection(responses=[('all', [])])
+    service = FeesService(connection, school_id=55)
+
+    assert service.get_collection_categories() == []
+
+    query, params = connection.cursor_obj.executed[0]
+    assert params == (55,)
+    assert 'from studentinfo' in query.lower()
+    assert 'where school_id = %s' in query.lower()
+
+
+def test_fees_service_collection_summaries_filter_votehead_without_duplicate_payment_joins():
+    summary_methods = (
+        ('get_collection_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_status_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_category_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_class_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_votehead_summary', {
+            'fee_payments': {'school_id'},
+            'fee_payment_allocations': {'school_id'},
+        }),
+    )
+
+    for method_name, table_columns in summary_methods:
+        connection = RecordingConnection(responses=[('all', [])])
+        service = FeesService(connection, school_id=55)
+        service._table_columns_cache = table_columns
+
+        assert getattr(service, method_name)('2026-07-01', '2026-07-31', votehead_id=4) == []
+
+        query, params = connection.cursor_obj.executed[0]
+        assert params == ('2026-07-01', '2026-07-31', 55, 4)
+        assert 'votehead_id = %s' in query.lower()
+        if method_name != 'get_collection_votehead_summary':
+            assert 'and exists (' in query.lower()
+
+
+def test_fees_service_collection_summaries_filter_selected_payment_status():
+    summary_methods = (
+        ('get_collection_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_status_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_category_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_class_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_votehead_summary', {
+            'fee_payments': {'school_id'},
+            'fee_payment_allocations': {'school_id'},
+        }),
+    )
+
+    for method_name, table_columns in summary_methods:
+        connection = RecordingConnection(responses=[('all', [])])
+        service = FeesService(connection, school_id=55)
+        service._table_columns_cache = table_columns
+
+        assert getattr(service, method_name)('2026-07-01', '2026-07-31', payment_status='CANCELLED') == []
+
+        query, params = connection.cursor_obj.executed[0]
+        assert params == ('2026-07-01', '2026-07-31', 55, 'CANCELLED')
+        assert 'payments.status = %s' in query.lower()
+
+
+def test_fees_service_collection_summaries_filter_academic_year_through_tenant_ledger_rows():
+    summary_methods = (
+        ('get_collection_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_status_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_category_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_class_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_votehead_summary', {
+            'fee_payments': {'school_id'},
+            'fee_payment_allocations': {'school_id'},
+        }),
+    )
+
+    for method_name, table_columns in summary_methods:
+        connection = RecordingConnection(responses=[('all', [])])
+        service = FeesService(connection, school_id=55)
+        service._table_columns_cache = table_columns
+
+        assert getattr(service, method_name)('2026-07-01', '2026-07-31', academic_year_id=2026) == []
+
+        query, params = connection.cursor_obj.executed[0]
+        assert params == ('2026-07-01', '2026-07-31', 55, 2026)
+        assert 'ledger.academic_year_id = %s' in query.lower()
+        assert 'school_id = ledger.school_id' in query.lower()
+
+
+def test_fees_service_collection_summaries_filter_term_through_tenant_ledger_rows():
+    summary_methods = (
+        ('get_collection_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_status_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_category_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_class_summary', {'fee_payments': {'school_id'}}),
+        ('get_collection_votehead_summary', {
+            'fee_payments': {'school_id'},
+            'fee_payment_allocations': {'school_id'},
+        }),
+    )
+
+    for method_name, table_columns in summary_methods:
+        connection = RecordingConnection(responses=[('all', [])])
+        service = FeesService(connection, school_id=55)
+        service._table_columns_cache = table_columns
+
+        assert getattr(service, method_name)('2026-07-01', '2026-07-31', academic_year_id=2026, term_id=3) == []
+
+        query, params = connection.cursor_obj.executed[0]
+        assert params == ('2026-07-01', '2026-07-31', 55, 2026, 3)
+        assert 'ledger.academic_year_id = %s' in query.lower()
+        assert 'ledger.term_id = %s' in query.lower()
+
+
 def test_fees_service_revenue_analysis_scopes_ledger_and_completed_allocations():
     connection = RecordingConnection(
         responses=[
@@ -1504,7 +1928,7 @@ def test_fees_service_revenue_analysis_scopes_ledger_and_completed_allocations()
         'fee_payments': {'school_id'},
     }
 
-    assert service.get_fee_revenue_analysis('2026-07-01', '2026-07-31') == [{
+    assert service.get_fee_revenue_analysis('2026-07-01', '2026-07-31', 2026, 3) == [{
         'votehead_id': 7, 'votehead_name': 'Tuition', 'invoiced_amount': Decimal('1000.00'),
         'debit_note_amount': Decimal('0.00'), 'credit_note_amount': Decimal('0.00'),
         'waiver_amount': Decimal('100.00'), 'collected_amount': Decimal('800.00'),
@@ -1512,10 +1936,15 @@ def test_fees_service_revenue_analysis_scopes_ledger_and_completed_allocations()
 
     ledger_query, ledger_params = connection.cursor_obj.executed[0]
     allocations_query, allocations_params = connection.cursor_obj.executed[1]
-    assert ledger_params == ('2026-07-01', '2026-07-31', 55)
+    assert ledger_params == ['2026-07-01', '2026-07-31', 55, 2026, 3]
     assert 'ledger.school_id = voteheads.school_id' in ledger_query.lower()
-    assert allocations_params == ('2026-07-01', '2026-07-31', 55)
+    assert 'ledger.academic_year_id = %s' in ledger_query.lower()
+    assert 'ledger.term_id = %s' in ledger_query.lower()
+    assert allocations_params == ['2026-07-01', '2026-07-31', 55, 2026, 3]
     assert 'allocations.school_id = payments.school_id' in allocations_query.lower()
+    assert 'payments.ledger_id = ledger.id' in allocations_query.lower()
+    assert 'ledger.academic_year_id = %s' in allocations_query.lower()
+    assert 'ledger.term_id = %s' in allocations_query.lower()
     assert "payments.status = 'completed'" in allocations_query.lower()
 
 
@@ -1530,13 +1959,15 @@ def test_fees_service_ledger_summary_scopes_terms_and_calculates_net_movement():
     )
     service = FeesService(connection, school_id=55)
 
-    records = service.get_fee_ledger_summary('2026-07-01', '2026-07-31')
+    records = service.get_fee_ledger_summary('2026-07-01', '2026-07-31', 2026, 3)
 
     assert records[0]['net_movement'] == Decimal('170.00')
     query, params = connection.cursor_obj.executed[0]
-    assert params == ('2026-07-01', '2026-07-31', 55)
+    assert params == ['2026-07-01', '2026-07-31', 55, 2026, 3]
     assert 'ledger.school_id = years.school_id' in query.lower()
     assert 'ledger.school_id = terms.school_id' in query.lower()
+    assert 'ledger.academic_year_id = %s' in query.lower()
+    assert 'ledger.term_id = %s' in query.lower()
     assert "ledger.description like 'void receipt:%%'" in query.lower()
 
 
@@ -1571,6 +2002,23 @@ def test_fees_service_category_change_preflight_blocks_paid_term_allocations():
     assert 'allocations.school_id = payments.school_id' in allocation_query.lower()
 
 
+def test_fees_service_finance_timeline_scopes_all_audit_sources_to_active_school():
+    connection = RecordingConnection(responses=[
+        ('one', {'AdmNo': 1001}),
+        ('all', []),
+    ])
+    service = FeesService(connection, school_id=55)
+
+    assert service.get_student_finance_timeline(1001, limit=25) == []
+
+    timeline_query, timeline_params = connection.cursor_obj.executed[1]
+    assert timeline_params == (1001, 55, 1001, 55, 1001, 1001, 1001, 55, 1001, 55, 25)
+    assert 'ledger.school_id = %s' in timeline_query.lower()
+    assert 'lifecycle.school_id = %s' in timeline_query.lower()
+    assert 'reallocations.school_id = %s' in timeline_query.lower()
+    assert 'replacements.school_id = %s' in timeline_query.lower()
+
+
 def test_fees_service_category_invoice_replacement_stops_before_writes_when_paid():
     connection = RecordingConnection(responses=[
         ('one', {'AdmNo': 1001}), ('one', {'id': 4}), ('one', {'id': 3}),
@@ -1586,18 +2034,87 @@ def test_fees_service_category_invoice_replacement_stops_before_writes_when_paid
     assert all('insert into fee_ledger' not in query.lower() for query, _ in connection.cursor_obj.executed)
 
 
+def test_fees_service_class_correction_replaces_invoice_and_updates_both_allocations():
+    connection = RecordingConnection(responses=[
+        ('one', {'id': 7}), ('one', {'AdmNo': 1001}), ('one', {'id': 4}), ('one', {'id': 3}),
+        ('all', [{'reference_no': 'INV-1001-4-3'}]), ('one', {'allocation_count': 0}), ('one', {'locked_count': 0}),
+        ('one', {'category': 'Day', 'student_group_id': 3}),
+        ('one', {'allocation_id': 41, 'classID': 17, 'class_group_code': 'Grade 7-9', 'stream_code': 'A'}),
+        ('one', {'classID': 18, 'class_group_code': 'Grade 7-9', 'stream_code': 'B'}),
+        ('one', {'id': 81, 'is_locked': 0}),
+        ('all', [{'id': 101, 'votehead_id': 4, 'amount': Decimal('1000.00')}]),
+        ('all', [{'votehead_id': 4, 'amount': Decimal('1200.00')}]),
+        ('one', {'allocationID': 71}),
+        ('all', [
+            {'id': 101, 'type': 'CHARGE', 'amount': Decimal('1000.00'), 'description': 'Original invoice'},
+            {'id': 102, 'type': 'CREDIT', 'amount': Decimal('1000.00'), 'description': 'INVOICE REVERSAL'},
+            {'id': 103, 'type': 'CHARGE', 'amount': Decimal('1200.00'), 'description': 'CATEGORY REPLACEMENT INVOICE'},
+        ]),
+    ])
+    service = FeesService(connection, school_id=55)
+
+    result = service.replace_category_invoice(
+        1001, 4, 3, 'Boarding', 7, 'Corrected class stream', user_id=9, new_class_id=18,
+    )
+
+    assert result['previous_class_id'] == 17
+    assert result['new_class_id'] == 18
+    assert connection.begin_calls == 1
+    assert connection.commit_calls == 1
+    update_student_query, update_student_params = next(
+        (query, params) for query, params in connection.cursor_obj.executed
+        if 'update studentinfo set category' in query.lower()
+    )
+    assert update_student_params == ('Boarding', 7, 'B', 1001, 55)
+    assert any(
+        'update class_allocation set class_id' in query.lower() and params == (18, 41, 55)
+        for query, params in connection.cursor_obj.executed
+    )
+    assert any(
+        'update classallocation set classid' in query.lower() and params == (18, 71, 55)
+        for query, params in connection.cursor_obj.executed
+    )
+    audit_query, audit_params = next(
+        (query, params) for query, params in connection.cursor_obj.executed
+        if 'insert into fee_invoice_replacements' in query.lower()
+    )
+    assert 'previous_class_id, new_class_id' in audit_query.lower()
+    assert audit_params[11:15] == (17, 18, 'A', 'B')
+
+
+def test_fees_service_rejects_class_correction_target_outside_active_school():
+    connection = RecordingConnection(responses=[
+        ('one', {'AdmNo': 1001}), ('one', {'id': 4}), ('one', {'id': 3}),
+        ('all', [{'reference_no': 'INV-1001-4-3'}]), ('one', {'allocation_count': 0}), ('one', {'locked_count': 0}),
+        ('one', {'category': 'Day', 'student_group_id': 3}),
+        ('one', {'allocation_id': 41, 'classID': 17, 'class_group_code': 'Grade 7-9', 'stream_code': 'A'}),
+        ('one', None),
+    ])
+    service = FeesService(connection, school_id=55)
+
+    with pytest.raises(FeesError, match='Target class not found for the active school'):
+        service.replace_category_invoice(
+            1001, 4, 3, 'Day', None, 'Correcting class allocation', user_id=9, new_class_id=999,
+        )
+
+    assert connection.begin_calls == 0
+    assert all('insert into fee_ledger' not in query.lower() for query, _ in connection.cursor_obj.executed)
+
+
 def test_fees_service_invoice_replacement_register_scopes_all_audit_joins():
     connection = RecordingConnection(responses=[('all', [])])
     service = FeesService(connection, school_id=55)
 
-    assert service.get_invoice_replacement_register('2026-07-01', '2026-07-31') == []
+    assert service.get_invoice_replacement_register('2026-07-01', '2026-07-31', 2026, 3) == []
 
     query, params = connection.cursor_obj.executed[0]
-    assert params == [55, '2026-07-01', '2026-07-31']
+    assert params == [55, '2026-07-01', '2026-07-31', 2026, 3]
     assert 'replacements.school_id = %s' in query.lower()
     assert 'replacements.school_id = students.school_id' in query.lower()
     assert 'replacements.school_id = years.school_id' in query.lower()
     assert 'replacements.school_id = terms.school_id' in query.lower()
+    assert 'replacements.academic_year_id = %s' in query.lower()
+    assert 'replacements.term_id = %s' in query.lower()
 
 
 def test_fees_service_records_reprint_event_after_prior_print():
@@ -1955,14 +2472,16 @@ def test_fees_service_waiver_register_scopes_allocations_and_filters():
     service = FeesService(connection, school_id=55)
     service._table_columns_cache = {'student_waivers': {'allocation_mode'}}
 
-    assert service.get_waiver_register('2026-07-01', '2026-07-31', 'ACTIVE') == []
+    assert service.get_waiver_register('2026-07-01', '2026-07-31', 'ACTIVE', 2026, 3) == []
 
     query, params = connection.cursor_obj.executed[0]
-    assert params == (55, '2026-07-01', '2026-07-31', 'ACTIVE')
+    assert params == (55, '2026-07-01', '2026-07-31', 'ACTIVE', 2026, 3)
     assert 'waivers.school_id = students.school_id' in query.lower()
     assert 'waivers.school_id = allocations.school_id' in query.lower()
     assert 'date(waivers.created_at) >= %s' in query.lower()
     assert 'waivers.status = %s' in query.lower()
+    assert 'waivers.academic_year_id = %s' in query.lower()
+    assert 'waivers.term_id = %s' in query.lower()
     assert 'group by waivers.id' in query.lower()
 
 

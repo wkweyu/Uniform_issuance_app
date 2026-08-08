@@ -214,6 +214,41 @@ class FeesService:
         )
         return [row['stream_code'] for row in self.cursor.fetchall()]
 
+    def get_collection_cashiers(self) -> List[Dict]:
+        """Return tenant-scoped users who have posted fee payments."""
+        if self._table_has_column('fee_payments', 'school_id'):
+            self.cursor.execute("""
+                SELECT DISTINCT users.userNo, users.username
+                FROM fee_payments payments
+                JOIN users ON payments.received_by = users.userNo AND payments.school_id = users.school_id
+                WHERE payments.school_id = %s
+                ORDER BY users.username ASC
+            """, (self.school_id,))
+        else:
+            self.cursor.execute("""
+                SELECT DISTINCT users.userNo, users.username
+                FROM fee_payments payments
+                JOIN fee_ledger ledger ON payments.ledger_id = ledger.id
+                JOIN users ON payments.received_by = users.userNo AND ledger.school_id = users.school_id
+                WHERE ledger.school_id = %s
+                ORDER BY users.username ASC
+            """, (self.school_id,))
+        return self.cursor.fetchall()
+
+    def get_collection_categories(self) -> List[str]:
+        """Return current student categories configured in the active school."""
+        self.cursor.execute("""
+            SELECT DISTINCT category
+            FROM studentinfo
+            WHERE school_id = %s AND category IS NOT NULL AND category != ''
+            ORDER BY category ASC
+        """, (self.school_id,))
+        return [row['category'] for row in self.cursor.fetchall()]
+
+    def get_collection_voteheads(self) -> List[Dict]:
+        """Return active tenant voteheads available for collection reporting."""
+        return self.get_voteheads(active_only=True)
+
     def get_recent_terms(self, limit: Optional[int] = None) -> List[Dict]:
         query = "SELECT * FROM uniform_term_dates WHERE school_id = %s ORDER BY year DESC, term_number DESC"
         params: List = [self.school_id]
@@ -656,6 +691,81 @@ class FeesService:
                 raise
             raise FeesError(f'Adjustment posting failed: {str(exc)}')
 
+    def create_fee_refund(
+        self, admno: int, votehead_id: int, amount: Decimal, year_id: int, term_id: int,
+        effective_date: str, refund_method: str, refund_reference: str, reason: str,
+        user_id: int,
+    ) -> int:
+        """Refund an available student credit through an immutable ledger-backed record."""
+        amount = Decimal(str(amount))
+        refund_method = (refund_method or '').strip().upper()
+        refund_reference = (refund_reference or '').strip()
+        reason = (reason or '').strip()
+        if amount <= 0:
+            raise FeesError('Refund amount must be greater than zero.')
+        if not refund_method:
+            raise FeesError('A refund method is required.')
+        if not refund_reference:
+            raise FeesError('A refund reference is required.')
+        if not reason:
+            raise FeesError('A refund reason is required.')
+        try:
+            self._assert_student_belongs_to_school(admno)
+            self._assert_academic_year_belongs_to_school(year_id)
+            self._assert_term_belongs_to_school(term_id, year_id)
+            self._assert_voteheads_belong_to_school([votehead_id])
+            self.connection.begin()
+            self.cursor.execute("""
+                SELECT balance_after
+                FROM fee_ledger
+                WHERE admno = %s AND school_id = %s
+                ORDER BY id DESC
+                LIMIT 1
+                FOR UPDATE
+            """, (admno, self.school_id))
+            balance_row = self.cursor.fetchone()
+            current_balance = Decimal(str(balance_row['balance_after'])) if balance_row else Decimal('0.00')
+            available_credit = max(Decimal('0.00'), -current_balance)
+            if amount > available_credit:
+                raise FeesError(
+                    f'Refund exceeds the available student credit of {available_credit:.2f}.'
+                )
+
+            self.cursor.execute("""
+                INSERT INTO fee_refunds
+                    (school_id, admno, academic_year_id, term_id, votehead_id, amount,
+                     refund_method, refund_reference, reason, effective_date, refunded_by)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                self.school_id, admno, year_id, term_id, votehead_id, amount,
+                refund_method, refund_reference, reason, effective_date, user_id,
+            ))
+            refund_id = self.cursor.lastrowid
+            ledger_reference = f'RFD-{refund_id}'
+            self.cursor.execute("""
+                INSERT INTO fee_ledger
+                    (admno, academic_year_id, term_id, type, votehead_id, amount, balance_after,
+                     description, reference_no, transaction_date, created_by, school_id)
+                VALUES (%s, %s, %s, 'REFUND', %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                admno, year_id, term_id, votehead_id, amount, current_balance + amount,
+                f'REFUND: {reason} ({refund_method} Ref: {refund_reference})', ledger_reference,
+                effective_date, user_id, self.school_id,
+            ))
+            ledger_id = self.cursor.lastrowid
+            self.cursor.execute(
+                'UPDATE fee_refunds SET ledger_id = %s WHERE id = %s AND school_id = %s',
+                (ledger_id, refund_id, self.school_id),
+            )
+            self._recalculate_student_ledger_balances(admno)
+            self.connection.commit()
+            return refund_id
+        except Exception as exc:
+            self.connection.rollback()
+            if isinstance(exc, FeesError):
+                raise
+            raise FeesError(f'Refund posting failed: {str(exc)}')
+
     def get_student_term_summary(self, admno: int, term_id: int) -> Dict:
         """Summarize current-term ledger movements for a student."""
         self.cursor.execute("""
@@ -751,8 +861,9 @@ class FeesService:
 
     def replace_category_invoice(self, admno: int, year_id: int, term_id: int,
                                  new_category: str, new_student_group_id: Optional[int],
-                                 reason: str, user_id: int) -> Dict:
-        """Replace an unpaid current-term invoice after a tenant-scoped category correction."""
+                                 reason: str, user_id: int,
+                                 new_class_id: Optional[int] = None) -> Dict:
+        """Replace an unpaid current-term invoice after a classification correction."""
         category = (new_category or '').strip()
         reason = (reason or '').strip()
         if not category or not reason:
@@ -778,7 +889,7 @@ class FeesService:
         target_group_id = new_student_group_id if new_student_group_id is not None else previous_group_id
 
         self.cursor.execute("""
-            SELECT c.classID, c.class_group_code
+            SELECT allocation.id AS allocation_id, c.classID, c.class_group_code, c.stream_code
             FROM class_allocation allocation
             JOIN classes c ON allocation.class_id = c.classID AND allocation.school_id = c.school_id
             WHERE allocation.student_id = %s AND allocation.is_current = TRUE AND allocation.school_id = %s
@@ -788,12 +899,23 @@ class FeesService:
         if not class_info:
             raise FeesError('Student has no current class assignment for fee structure resolution.')
 
+        target_class_info = class_info
+        if new_class_id is not None and new_class_id != class_info['classID']:
+            self.cursor.execute("""
+                SELECT classID, class_group_code, stream_code
+                FROM classes
+                WHERE classID = %s AND academic_year_id = %s AND school_id = %s
+            """, (new_class_id, year_id, self.school_id))
+            target_class_info = self.cursor.fetchone()
+            if not target_class_info:
+                raise FeesError('Target class not found for the active school and academic year.')
+
         self.cursor.execute("""
             SELECT id, is_locked FROM fee_structures
             WHERE academic_year_id = %s AND term_id = %s AND class_id = %s
               AND student_category = %s AND school_id = %s
             LIMIT 1
-        """, (year_id, term_id, class_info['classID'], category, self.school_id))
+        """, (year_id, term_id, target_class_info['classID'], category, self.school_id))
         structure = self.cursor.fetchone()
         if not structure:
             self.cursor.execute("""
@@ -801,7 +923,7 @@ class FeesService:
                 WHERE academic_year_id = %s AND term_id = %s AND class_group_code = %s
                   AND student_category = %s AND (class_id IS NULL OR class_id = 0) AND school_id = %s
                 LIMIT 1
-            """, (year_id, term_id, class_info['class_group_code'], category, self.school_id))
+                        """, (year_id, term_id, target_class_info['class_group_code'], category, self.school_id))
             structure = self.cursor.fetchone()
         if not structure or structure['is_locked']:
             raise FeesError('No unlocked fee structure exists for the corrected category.')
@@ -843,22 +965,45 @@ class FeesService:
                 """, (admno, year_id, term_id, item['votehead_id'], item['amount'],
                       f'CATEGORY REPLACEMENT INVOICE: {category}', replacement_reference, user_id, self.school_id))
             self.cursor.execute("""
-                UPDATE studentinfo SET category = %s, student_group_id = %s
+                UPDATE studentinfo SET category = %s, student_group_id = %s, stream = %s
                 WHERE AdmNo = %s AND school_id = %s
-            """, (category, target_group_id, admno, self.school_id))
+            """, (category, target_group_id, target_class_info.get('stream_code'), admno, self.school_id))
+            if target_class_info['classID'] != class_info['classID']:
+                self.cursor.execute("""
+                    UPDATE class_allocation SET class_id = %s
+                    WHERE id = %s AND school_id = %s
+                """, (target_class_info['classID'], class_info['allocation_id'], self.school_id))
+                self.cursor.execute("""
+                    SELECT allocationID FROM classallocation
+                    WHERE AdmNo = %s AND thisYear = %s AND school_id = %s FOR UPDATE
+                """, (admno, year_id, self.school_id))
+                legacy_allocation = self.cursor.fetchone()
+                if legacy_allocation:
+                    self.cursor.execute("""
+                        UPDATE classallocation SET classID = %s
+                        WHERE allocationID = %s AND school_id = %s
+                    """, (target_class_info['classID'], legacy_allocation['allocationID'], self.school_id))
+                else:
+                    self.cursor.execute("""
+                        INSERT INTO classallocation (AdmNo, classID, thisYear, AllcDate, school_id)
+                        VALUES (%s, %s, %s, NOW(), %s)
+                    """, (admno, target_class_info['classID'], year_id, self.school_id))
             self.cursor.execute("""
                 INSERT INTO fee_invoice_replacements
                     (school_id, admno, academic_year_id, term_id, original_invoice_reference,
                      reversal_reference, replacement_invoice_reference, previous_category, new_category,
-                     previous_student_group_id, new_student_group_id, reason, changed_by)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     previous_student_group_id, new_student_group_id, previous_class_id, new_class_id,
+                     previous_stream_code, new_stream_code, reason, changed_by)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (self.school_id, admno, year_id, term_id, original_reference, reversal_reference,
                   replacement_reference, student.get('category') or '', category, previous_group_id,
-                  target_group_id, reason, user_id))
+                  target_group_id, class_info['classID'], target_class_info['classID'],
+                  class_info.get('stream_code'), target_class_info.get('stream_code'), reason, user_id))
             self._recalculate_student_ledger_balances(admno)
             self.connection.commit()
             return {'original_reference': original_reference, 'reversal_reference': reversal_reference,
-                    'replacement_reference': replacement_reference}
+                    'replacement_reference': replacement_reference,
+                    'previous_class_id': class_info['classID'], 'new_class_id': target_class_info['classID']}
         except Exception as exc:
             self.connection.rollback()
             if isinstance(exc, FeesError):
@@ -1080,26 +1225,42 @@ class FeesService:
 
     def get_payment_mode_receiving_account(self, mode: str) -> int:
         """Return the active Finance receiving account for a fee payment mode."""
+        return self.get_payment_mode_account_chain(mode)['receiving_account_id']
+
+    def get_payment_mode_account_chain(self, mode: str) -> Dict:
+        """Resolve an active tenant-owned payment account chain before receipt posting."""
         payment_mode = (mode or '').strip().upper()
         if not payment_mode:
             raise FeesError('Payment mode is required.')
         self.cursor.execute("""
-            SELECT config.account_id
+            SELECT config.account_id AS receiving_account_id, config.settlement_account_id,
+                   config.clearing_account_id, config.default_gl_account_id
             FROM payment_mode_receiving_accounts config
-            JOIN finance_accounts account
-              ON account.id = config.account_id AND account.school_id = config.school_id
+            JOIN finance_accounts receiving
+              ON receiving.id = config.account_id AND receiving.school_id = config.school_id
+             AND receiving.is_active = TRUE
+            LEFT JOIN finance_accounts settlement
+              ON settlement.id = config.settlement_account_id AND settlement.school_id = config.school_id
+            LEFT JOIN finance_accounts clearing
+              ON clearing.id = config.clearing_account_id AND clearing.school_id = config.school_id
+            LEFT JOIN finance_accounts default_gl
+              ON default_gl.id = config.default_gl_account_id AND default_gl.school_id = config.school_id
             WHERE config.school_id = %s
               AND config.payment_mode = %s
               AND config.is_active = TRUE
-              AND account.is_active = TRUE
+              AND (config.settlement_account_id IS NULL OR settlement.is_active = TRUE)
+              AND (config.clearing_account_id IS NULL OR clearing.is_active = TRUE)
+              AND (config.default_gl_account_id IS NULL OR default_gl.is_active = TRUE)
             LIMIT 1
         """, (self.school_id, payment_mode))
-        account = self.cursor.fetchone()
-        if not account:
+        account_chain = self.cursor.fetchone()
+        if not account_chain:
             raise FeesError(
-                f"No active receiving account is configured for payment mode '{payment_mode}'."
+                f"No complete active account chain is configured for payment mode '{payment_mode}'."
             )
-        return account['account_id']
+        if 'receiving_account_id' not in account_chain and 'account_id' in account_chain:
+            account_chain['receiving_account_id'] = account_chain['account_id']
+        return account_chain
 
     def get_payment_mode_receiving_account_labels(self) -> Dict[str, str]:
         """Return active configured account labels for the bursar payment form."""
@@ -1600,6 +1761,76 @@ class FeesService:
         self.cursor.execute(query, params)
         return self.cursor.fetchall()
 
+    def get_student_finance_timeline(self, admno: int, limit: int = 100) -> List[Dict]:
+        """Return a tenant-scoped, read-only chronology of finance events for a student."""
+        self._assert_student_belongs_to_school(admno)
+        try:
+            limit = max(1, min(int(limit), 250))
+        except (TypeError, ValueError):
+            raise FeesError('Timeline limit must be a valid integer.')
+        self.cursor.execute("""
+            SELECT * FROM (
+                SELECT ledger.created_at AS event_at, 'LEDGER' AS source,
+                       CASE
+                           WHEN ledger.type = 'PAYMENT' THEN 'Payment received'
+                           WHEN ledger.type = 'REFUND' THEN 'Refund posted'
+                           WHEN ledger.reference_no LIKE 'WVR-%%' THEN 'Waiver applied'
+                           WHEN ledger.description LIKE 'INVOICE REVERSAL:%%' THEN 'Invoice reversed'
+                           WHEN ledger.type = 'CHARGE' THEN 'Invoice charge posted'
+                           ELSE CONCAT('Ledger ', ledger.type)
+                       END AS event_title,
+                       ledger.description AS details, ledger.reference_no AS reference_no,
+                       ledger.amount, users.username AS actor_name, ledger.id AS source_id
+                FROM fee_ledger ledger
+                LEFT JOIN users ON ledger.created_by = users.userNo AND ledger.school_id = users.school_id
+                WHERE ledger.admno = %s AND ledger.school_id = %s
+
+                UNION ALL
+
+                SELECT lifecycle.occurred_at AS event_at, 'RECEIPT_LIFECYCLE' AS source,
+                       CONCAT('Receipt ', lifecycle.event_type) AS event_title,
+                       lifecycle.reason AS details, payments.reference_number AS reference_no,
+                       payments.amount, users.username AS actor_name, lifecycle.id AS source_id
+                FROM fee_receipt_lifecycle_events lifecycle
+                JOIN fee_payments payments ON lifecycle.payment_id = payments.id
+                JOIN fee_ledger payment_ledger ON payments.ledger_id = payment_ledger.id
+                    AND lifecycle.school_id = payment_ledger.school_id
+                LEFT JOIN users ON lifecycle.actor_user_id = users.userNo AND lifecycle.school_id = users.school_id
+                WHERE payment_ledger.admno = %s AND lifecycle.school_id = %s
+
+                UNION ALL
+
+                SELECT reallocations.reallocated_at AS event_at, 'TRANSFER' AS source,
+                       CASE WHEN reallocations.original_admno = %s
+                            THEN 'Payment transferred away' ELSE 'Payment transferred in' END AS event_title,
+                       reallocations.reason AS details, reallocations.reference_no,
+                       reallocations.amount, users.username AS actor_name, reallocations.id AS source_id
+                FROM fee_reallocation_log reallocations
+                LEFT JOIN users ON reallocations.reallocated_by = users.userNo AND reallocations.school_id = users.school_id
+                WHERE (reallocations.original_admno = %s OR reallocations.new_admno = %s)
+                  AND reallocations.school_id = %s
+
+                UNION ALL
+
+                SELECT replacements.created_at AS event_at, 'INVOICE_REPLACEMENT' AS source,
+                       'Invoice replaced after classification correction' AS event_title,
+                       replacements.reason AS details, replacements.replacement_invoice_reference AS reference_no,
+                       NULL AS amount, users.username AS actor_name, replacements.id AS source_id
+                FROM fee_invoice_replacements replacements
+                LEFT JOIN users ON replacements.changed_by = users.userNo AND replacements.school_id = users.school_id
+                WHERE replacements.admno = %s AND replacements.school_id = %s
+            ) timeline
+            ORDER BY event_at DESC, source_id DESC
+            LIMIT %s
+        """, (
+            admno, self.school_id,
+            admno, self.school_id,
+            admno, admno, admno, self.school_id,
+            admno, self.school_id,
+            limit,
+        ))
+        return self.cursor.fetchall()
+
     def get_recent_payments(self, admno: int, limit: int = 5) -> List[Dict]:
         """Fetch most recent payments for a student."""
         fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
@@ -1637,7 +1868,9 @@ class FeesService:
                               admno: Optional[int] = None, mode: Optional[str] = None,
                               query_text: Optional[str] = None, status: Optional[str] = None,
                               lifecycle_event: Optional[str] = None,
-                              cashier_user_id: Optional[int] = None) -> List[Dict]:
+                              cashier_user_id: Optional[int] = None,
+                              academic_year_id: Optional[int] = None,
+                              term_id: Optional[int] = None) -> List[Dict]:
         """Fetch list of receipts with filtering."""
         fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
         receipts_has_school_id = self._table_has_column('fee_receipts', 'school_id')
@@ -1699,6 +1932,12 @@ class FeesService:
         if cashier_user_id is not None:
             query += " AND fp.received_by = %s"
             params.append(cashier_user_id)
+        if academic_year_id is not None:
+            query += " AND fl.academic_year_id = %s"
+            params.append(academic_year_id)
+        if term_id is not None:
+            query += " AND fl.term_id = %s"
+            params.append(term_id)
         if query_text:
             search_term = f"%{query_text.strip()}%"
             query += " AND (fr.receipt_no LIKE %s OR fp.reference_number LIKE %s OR CONCAT_WS(' ', si.FName, si.MName, si.SName) LIKE %s)"
@@ -1721,16 +1960,27 @@ class FeesService:
 
     def get_receipt_lifecycle_register(self, start_date: Optional[str] = None,
                                        end_date: Optional[str] = None,
-                                       event_type: Optional[str] = None) -> List[Dict]:
+                                       event_type: Optional[str] = None,
+                                       academic_year_id: Optional[int] = None,
+                                       term_id: Optional[int] = None) -> List[Dict]:
         """Return immutable receipt lifecycle events for audit and reconciliation."""
         query = """
-            SELECT events.*, receipts.receipt_no, payments.reference_number, payments.amount,
+                 SELECT events.*, receipts.receipt_no, payments.reference_number, payments.amount,
                    payments.payment_mode, payments.status AS payment_status,
                    students.AdmNo AS admno, students.FName, students.SName,
-                   users.username AS actor_name
+                     users.username AS actor_name,
+                     replacement_receipts.receipt_no AS replacement_receipt_no,
+                     replacement_payments.reference_number AS replacement_reference_number
             FROM fee_receipt_lifecycle_events events
             JOIN fee_payments payments ON events.payment_id = payments.id AND events.school_id = payments.school_id
+            JOIN fee_ledger ledger ON payments.ledger_id = ledger.id AND payments.school_id = ledger.school_id
             LEFT JOIN fee_receipts receipts ON payments.id = receipts.payment_id AND payments.school_id = receipts.school_id
+                 LEFT JOIN fee_payments replacement_payments
+                ON events.replacement_payment_id = replacement_payments.id
+                  AND events.school_id = replacement_payments.school_id
+                 LEFT JOIN fee_receipts replacement_receipts
+                ON replacement_payments.id = replacement_receipts.payment_id
+                  AND replacement_payments.school_id = replacement_receipts.school_id
             LEFT JOIN studentinfo students ON payments.admno = students.AdmNo AND payments.school_id = students.school_id
             LEFT JOIN users ON events.actor_user_id = users.userNo AND events.school_id = users.school_id
             WHERE events.school_id = %s
@@ -1745,12 +1995,20 @@ class FeesService:
         if event_type:
             query += " AND events.event_type = %s"
             params.append(event_type)
+        if academic_year_id is not None:
+            query += " AND ledger.academic_year_id = %s"
+            params.append(academic_year_id)
+        if term_id is not None:
+            query += " AND ledger.term_id = %s"
+            params.append(term_id)
         query += " ORDER BY events.id DESC"
         self.cursor.execute(query, params)
         return self.cursor.fetchall()
 
     def get_reallocation_register(self, start_date: Optional[str] = None,
-                                  end_date: Optional[str] = None) -> List[Dict]:
+                                  end_date: Optional[str] = None,
+                                  academic_year_id: Optional[int] = None,
+                                  term_id: Optional[int] = None) -> List[Dict]:
         """Return immutable payment-reallocation audit records for the active school."""
         query = """
             SELECT reallocations.*, source.FName AS source_first_name, source.SName AS source_last_name,
@@ -1764,6 +2022,10 @@ class FeesService:
             LEFT JOIN users ON reallocations.reallocated_by = users.userNo AND reallocations.school_id = users.school_id
             LEFT JOIN fee_receipts receipts
               ON reallocations.payment_id = receipts.payment_id AND reallocations.school_id = receipts.school_id
+                        JOIN fee_payments payments
+                            ON reallocations.payment_id = payments.id AND reallocations.school_id = payments.school_id
+                        JOIN fee_ledger ledger
+                            ON payments.ledger_id = ledger.id AND payments.school_id = ledger.school_id
             WHERE reallocations.school_id = %s
         """
         params = [self.school_id]
@@ -1773,6 +2035,12 @@ class FeesService:
         if end_date:
             query += " AND DATE(reallocations.reallocated_at) <= %s"
             params.append(end_date)
+        if academic_year_id is not None:
+            query += " AND ledger.academic_year_id = %s"
+            params.append(academic_year_id)
+        if term_id is not None:
+            query += " AND ledger.term_id = %s"
+            params.append(term_id)
         query += " ORDER BY reallocations.id DESC"
         self.cursor.execute(query, params)
         return self.cursor.fetchall()
@@ -2132,22 +2400,68 @@ class FeesService:
     # 4. REPORTING
     # =========================================================================
 
-    def get_collection_summary(self, start_date: str, end_date: str, payment_mode: Optional[str] = None) -> Dict:
+    def get_collection_summary(self, start_date: str, end_date: str, payment_mode: Optional[str] = None,
+                               class_id: Optional[int] = None, stream: Optional[str] = None,
+                               cashier_user_id: Optional[int] = None, category: Optional[str] = None,
+                               votehead_id: Optional[int] = None, payment_status: Optional[str] = None,
+                               academic_year_id: Optional[int] = None, term_id: Optional[int] = None) -> Dict:
         """Daily/Weekly/Monthly collection summary."""
         fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
         mode_filter = ' AND payment_mode = %s' if payment_mode else ''
         params = (start_date, end_date, self.school_id)
         if payment_mode:
             params += (payment_mode,)
+        class_filter = ' AND allocations.class_id = %s' if class_id else ''
+        stream_filter = ' AND classes.stream_code = %s' if stream else ''
+        cashier_filter = ' AND payments.received_by = %s' if cashier_user_id else ''
+        category_filter = ' AND students.category = %s' if category else ''
+        votehead_filter = """
+            AND EXISTS (
+                SELECT 1 FROM fee_payment_allocations allocation_filter
+                JOIN fee_voteheads filter_votehead
+                    ON allocation_filter.votehead_id = filter_votehead.id
+                WHERE allocation_filter.payment_id = payments.id
+                  AND allocation_filter.votehead_id = %s
+                  AND filter_votehead.school_id = payments.school_id
+            )
+        """ if votehead_id else ''
+        status_filter = ' AND payments.status = %s' if payment_status else " AND payments.status = 'COMPLETED'"
+        academic_year_filter = ' AND ledger.academic_year_id = %s' if academic_year_id else ''
+        term_filter = ' AND ledger.term_id = %s' if term_id else ''
+        if class_id:
+            params += (class_id,)
+        if stream:
+            params += (stream,)
+        if cashier_user_id:
+            params += (cashier_user_id,)
+        if category:
+            params += (category,)
+        if votehead_id:
+            params += (votehead_id,)
+        if payment_status:
+            params += (payment_status,)
+        if academic_year_id:
+            params += (academic_year_id,)
+        if term_id:
+            params += (term_id,)
         if fee_payments_has_school_id:
             self.cursor.execute(f"""
                 SELECT 
-                    payment_mode, 
-                    SUM(amount) as total_amount,
+                    payments.payment_mode,
+                    SUM(payments.amount) as total_amount,
                     COUNT(*) as count
-                FROM fee_payments
-                WHERE payment_date BETWEEN %s AND %s AND status = 'COMPLETED' AND school_id = %s{mode_filter}
-                GROUP BY payment_mode
+                FROM fee_payments payments
+                JOIN fee_ledger ledger ON payments.ledger_id = ledger.id AND payments.school_id = ledger.school_id
+                JOIN studentinfo students
+                    ON payments.admno = students.AdmNo AND payments.school_id = students.school_id
+                LEFT JOIN class_allocation allocations
+                    ON payments.admno = allocations.student_id AND payments.school_id = allocations.school_id
+                    AND allocations.is_current = TRUE
+                LEFT JOIN classes ON allocations.class_id = classes.classID
+                    AND allocations.school_id = classes.school_id
+                WHERE payments.payment_date BETWEEN %s AND %s AND payments.school_id = %s{mode_filter}
+                    {class_filter}{stream_filter}{cashier_filter}{category_filter}{votehead_filter}{status_filter}{academic_year_filter}{term_filter}
+                GROUP BY payments.payment_mode
             """, params)
         else:
             mode_filter = ' AND fp.payment_mode = %s' if payment_mode else ''
@@ -2158,27 +2472,79 @@ class FeesService:
                     COUNT(*) as count
                 FROM fee_payments fp
                 JOIN fee_ledger fl ON fp.ledger_id = fl.id
+                JOIN studentinfo students ON fp.admno = students.AdmNo AND fl.school_id = students.school_id
+                                LEFT JOIN class_allocation allocations
+                                        ON fp.admno = allocations.student_id AND fl.school_id = allocations.school_id
+                                        AND allocations.is_current = TRUE
+                                LEFT JOIN classes ON allocations.class_id = classes.classID
+                                        AND allocations.school_id = classes.school_id
                 WHERE fp.payment_date BETWEEN %s AND %s
-                  AND fp.status = 'COMPLETED'
                   AND fl.school_id = %s{mode_filter}
+                  {class_filter}{stream_filter}{cashier_filter.replace('payments.', 'fp.')}{category_filter}{votehead_filter.replace('payments.school_id', 'fl.school_id')}{status_filter.replace('payments.', 'fp.')}{academic_year_filter.replace('ledger.', 'fl.')}{term_filter.replace('ledger.', 'fl.')}
                 GROUP BY fp.payment_mode
             """, params)
         return self.cursor.fetchall()
 
-    def get_collection_status_summary(self, start_date: str, end_date: str, payment_mode: Optional[str] = None) -> List[Dict]:
+    def get_collection_status_summary(self, start_date: str, end_date: str, payment_mode: Optional[str] = None,
+                                      class_id: Optional[int] = None, stream: Optional[str] = None,
+                                      cashier_user_id: Optional[int] = None, category: Optional[str] = None,
+                                      votehead_id: Optional[int] = None, payment_status: Optional[str] = None,
+                                      academic_year_id: Optional[int] = None, term_id: Optional[int] = None) -> List[Dict]:
         """Summarize the current status of receipts posted within a reporting window."""
         fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
         mode_filter = ' AND payment_mode = %s' if payment_mode else ''
         params = (start_date, end_date, self.school_id)
         if payment_mode:
             params += (payment_mode,)
+        class_filter = ' AND allocations.class_id = %s' if class_id else ''
+        stream_filter = ' AND classes.stream_code = %s' if stream else ''
+        cashier_filter = ' AND payments.received_by = %s' if cashier_user_id else ''
+        category_filter = ' AND students.category = %s' if category else ''
+        votehead_filter = """
+            AND EXISTS (
+                SELECT 1 FROM fee_payment_allocations allocation_filter
+                JOIN fee_voteheads filter_votehead
+                    ON allocation_filter.votehead_id = filter_votehead.id
+                WHERE allocation_filter.payment_id = payments.id
+                  AND allocation_filter.votehead_id = %s
+                  AND filter_votehead.school_id = payments.school_id
+            )
+        """ if votehead_id else ''
+        status_filter = ' AND payments.status = %s' if payment_status else ''
+        academic_year_filter = ' AND ledger.academic_year_id = %s' if academic_year_id else ''
+        term_filter = ' AND ledger.term_id = %s' if term_id else ''
+        if class_id:
+            params += (class_id,)
+        if stream:
+            params += (stream,)
+        if cashier_user_id:
+            params += (cashier_user_id,)
+        if category:
+            params += (category,)
+        if votehead_id:
+            params += (votehead_id,)
+        if payment_status:
+            params += (payment_status,)
+        if academic_year_id:
+            params += (academic_year_id,)
+        if term_id:
+            params += (term_id,)
         if fee_payments_has_school_id:
             self.cursor.execute(f"""
-                SELECT status, payment_mode, SUM(amount) AS total_amount, COUNT(*) AS count
-                FROM fee_payments
-                WHERE payment_date BETWEEN %s AND %s AND school_id = %s{mode_filter}
-                GROUP BY status, payment_mode
-                ORDER BY status ASC, payment_mode ASC
+                SELECT payments.status, payments.payment_mode, SUM(payments.amount) AS total_amount, COUNT(*) AS count
+                FROM fee_payments payments
+                JOIN fee_ledger ledger ON payments.ledger_id = ledger.id AND payments.school_id = ledger.school_id
+                JOIN studentinfo students
+                    ON payments.admno = students.AdmNo AND payments.school_id = students.school_id
+                LEFT JOIN class_allocation allocations
+                    ON payments.admno = allocations.student_id AND payments.school_id = allocations.school_id
+                    AND allocations.is_current = TRUE
+                LEFT JOIN classes ON allocations.class_id = classes.classID
+                    AND allocations.school_id = classes.school_id
+                WHERE payments.payment_date BETWEEN %s AND %s AND payments.school_id = %s{mode_filter}
+                    {class_filter}{stream_filter}{cashier_filter}{category_filter}{votehead_filter}{status_filter}{academic_year_filter}{term_filter}
+                GROUP BY payments.status, payments.payment_mode
+                ORDER BY payments.status ASC, payments.payment_mode ASC
             """, params)
         else:
             mode_filter = ' AND fp.payment_mode = %s' if payment_mode else ''
@@ -2186,28 +2552,79 @@ class FeesService:
                 SELECT fp.status, fp.payment_mode, SUM(fp.amount) AS total_amount, COUNT(*) AS count
                 FROM fee_payments fp
                 JOIN fee_ledger fl ON fp.ledger_id = fl.id
+                JOIN studentinfo students ON fp.admno = students.AdmNo AND fl.school_id = students.school_id
+                LEFT JOIN class_allocation allocations
+                    ON fp.admno = allocations.student_id AND fl.school_id = allocations.school_id
+                    AND allocations.is_current = TRUE
+                LEFT JOIN classes ON allocations.class_id = classes.classID
+                    AND allocations.school_id = classes.school_id
                 WHERE fp.payment_date BETWEEN %s AND %s AND fl.school_id = %s{mode_filter}
+                    {class_filter}{stream_filter}{cashier_filter.replace('payments.', 'fp.')}{category_filter}{votehead_filter.replace('payments.school_id', 'fl.school_id')}{status_filter.replace('payments.', 'fp.')}{academic_year_filter.replace('ledger.', 'fl.')}{term_filter.replace('ledger.', 'fl.')}
                 GROUP BY fp.status, fp.payment_mode
                 ORDER BY fp.status ASC, fp.payment_mode ASC
             """, params)
         return self.cursor.fetchall()
 
-    def get_collection_category_summary(self, start_date: str, end_date: str, payment_mode: Optional[str] = None) -> List[Dict]:
+    def get_collection_category_summary(self, start_date: str, end_date: str, payment_mode: Optional[str] = None,
+                                        class_id: Optional[int] = None, stream: Optional[str] = None,
+                                        cashier_user_id: Optional[int] = None, category: Optional[str] = None,
+                                        votehead_id: Optional[int] = None, payment_status: Optional[str] = None,
+                                        academic_year_id: Optional[int] = None, term_id: Optional[int] = None) -> List[Dict]:
         """Summarize completed collections by the student's current category."""
         fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
         mode_filter = ' AND payments.payment_mode = %s' if payment_mode else ''
         params = (start_date, end_date, self.school_id)
         if payment_mode:
             params += (payment_mode,)
+        class_filter = ' AND allocations.class_id = %s' if class_id else ''
+        stream_filter = ' AND classes.stream_code = %s' if stream else ''
+        cashier_filter = ' AND payments.received_by = %s' if cashier_user_id else ''
+        category_filter = ' AND students.category = %s' if category else ''
+        votehead_filter = """
+            AND EXISTS (
+                SELECT 1 FROM fee_payment_allocations allocation_filter
+                JOIN fee_voteheads filter_votehead
+                    ON allocation_filter.votehead_id = filter_votehead.id
+                WHERE allocation_filter.payment_id = payments.id
+                  AND allocation_filter.votehead_id = %s
+                  AND filter_votehead.school_id = payments.school_id
+            )
+        """ if votehead_id else ''
+        status_filter = ' AND payments.status = %s' if payment_status else " AND payments.status = 'COMPLETED'"
+        academic_year_filter = ' AND ledger.academic_year_id = %s' if academic_year_id else ''
+        term_filter = ' AND ledger.term_id = %s' if term_id else ''
+        if class_id:
+            params += (class_id,)
+        if stream:
+            params += (stream,)
+        if cashier_user_id:
+            params += (cashier_user_id,)
+        if category:
+            params += (category,)
+        if votehead_id:
+            params += (votehead_id,)
+        if payment_status:
+            params += (payment_status,)
+        if academic_year_id:
+            params += (academic_year_id,)
+        if term_id:
+            params += (term_id,)
         if fee_payments_has_school_id:
             self.cursor.execute(f"""
                 SELECT COALESCE(students.category, 'Unclassified') AS category,
                        SUM(payments.amount) AS total_amount, COUNT(*) AS count
                 FROM fee_payments payments
+                JOIN fee_ledger ledger ON payments.ledger_id = ledger.id AND payments.school_id = ledger.school_id
                 JOIN studentinfo students
                   ON payments.admno = students.AdmNo AND payments.school_id = students.school_id
+                                LEFT JOIN class_allocation allocations
+                                        ON payments.admno = allocations.student_id AND payments.school_id = allocations.school_id
+                                        AND allocations.is_current = TRUE
+                                LEFT JOIN classes ON allocations.class_id = classes.classID
+                                        AND allocations.school_id = classes.school_id
                 WHERE payments.payment_date BETWEEN %s AND %s
-                  AND payments.status = 'COMPLETED' AND payments.school_id = %s{mode_filter}
+                  AND payments.school_id = %s{mode_filter}
+                  {class_filter}{stream_filter}{cashier_filter}{category_filter}{votehead_filter}{status_filter}{academic_year_filter}{term_filter}
                 GROUP BY students.category
                 ORDER BY total_amount DESC, category ASC
             """, params)
@@ -2218,8 +2635,14 @@ class FeesService:
                 FROM fee_payments payments
                 JOIN fee_ledger ledger ON payments.ledger_id = ledger.id
                 JOIN studentinfo students ON payments.admno = students.AdmNo AND ledger.school_id = students.school_id
+                LEFT JOIN class_allocation allocations
+                    ON payments.admno = allocations.student_id AND ledger.school_id = allocations.school_id
+                    AND allocations.is_current = TRUE
+                LEFT JOIN classes ON allocations.class_id = classes.classID
+                    AND allocations.school_id = classes.school_id
                 WHERE payments.payment_date BETWEEN %s AND %s
-                                    AND payments.status = 'COMPLETED' AND ledger.school_id = %s{mode_filter}
+                                    AND ledger.school_id = %s{mode_filter}
+                                    {class_filter}{stream_filter}{cashier_filter}{category_filter}{votehead_filter.replace('payments.school_id', 'ledger.school_id')}{status_filter}{academic_year_filter}{term_filter}
                 GROUP BY students.category
                 ORDER BY total_amount DESC, category ASC
                         """, params)
@@ -2686,7 +3109,9 @@ class FeesService:
         return self.cursor.fetchall()
 
     def get_waiver_register(self, start_date: Optional[str] = None, end_date: Optional[str] = None,
-                            status: Optional[str] = None) -> List[Dict]:
+                            status: Optional[str] = None,
+                            academic_year_id: Optional[int] = None,
+                            term_id: Optional[int] = None) -> List[Dict]:
         """Return auditable waiver assignments for the active school."""
         has_allocation_mode = self._table_has_column('student_waivers', 'allocation_mode')
         if has_allocation_mode:
@@ -2732,6 +3157,12 @@ class FeesService:
         if status:
             filters.append('waivers.status = %s')
             params.append(status)
+        if academic_year_id is not None:
+            filters.append('waivers.academic_year_id = %s')
+            params.append(academic_year_id)
+        if term_id is not None:
+            filters.append('waivers.term_id = %s')
+            params.append(term_id)
         if filters:
             query += ' AND ' + ' AND '.join(filters)
         if has_allocation_mode:
@@ -2909,12 +3340,13 @@ class FeesService:
 
         # Get items for this structure
         self.cursor.execute("""
-            SELECT fsi.amount, fv.name as votehead_name, fv.id as votehead_id, fv.priority, fv.is_mandatory
+            SELECT fsi.amount, fv.name as votehead_name, fv.id as votehead_id, fv.priority, fv.is_mandatory,
+                   %s AS structure_id
             FROM fee_structure_items fsi
             JOIN fee_voteheads fv ON fsi.votehead_id = fv.id AND fsi.school_id = fv.school_id
             WHERE fsi.fee_structure_id = %s AND fsi.school_id = %s
             ORDER BY fv.priority ASC
-        """, (res['id'], self.school_id))
+        """, (res['id'], res['id'], self.school_id))
         return self.cursor.fetchall()
 
     def calculate_term_total(self, admno: int, term_id: int) -> Decimal:
@@ -3022,7 +3454,9 @@ class FeesService:
 
 
 def _get_invoice_replacement_register(self, start_date: Optional[str] = None,
-                                                                            end_date: Optional[str] = None) -> List[Dict]:
+                                      end_date: Optional[str] = None,
+                                      academic_year_id: Optional[int] = None,
+                                      term_id: Optional[int] = None) -> List[Dict]:
         """Return category-driven invoice replacement chains for the active school."""
         query = """
                 SELECT replacements.*, students.FName, students.SName, years.year AS academic_year,
@@ -3049,6 +3483,12 @@ def _get_invoice_replacement_register(self, start_date: Optional[str] = None,
         if end_date:
                 query += " AND DATE(replacements.created_at) <= %s"
                 params.append(end_date)
+        if academic_year_id is not None:
+            query += " AND replacements.academic_year_id = %s"
+            params.append(academic_year_id)
+        if term_id is not None:
+            query += " AND replacements.term_id = %s"
+            params.append(term_id)
         query += " ORDER BY replacements.id DESC"
         self.cursor.execute(query, params)
         return self.cursor.fetchall()
@@ -3057,26 +3497,67 @@ def _get_invoice_replacement_register(self, start_date: Optional[str] = None,
 FeesService.get_invoice_replacement_register = _get_invoice_replacement_register
 
 
-def _get_collection_class_summary(self, start_date: str, end_date: str, payment_mode: Optional[str] = None) -> List[Dict]:
+def _get_collection_class_summary(self, start_date: str, end_date: str, payment_mode: Optional[str] = None,
+                                  class_id: Optional[int] = None, stream: Optional[str] = None,
+                                  cashier_user_id: Optional[int] = None, category: Optional[str] = None,
+                                  votehead_id: Optional[int] = None, payment_status: Optional[str] = None,
+                                  academic_year_id: Optional[int] = None, term_id: Optional[int] = None) -> List[Dict]:
     """Summarize completed collections by each student's current class and stream."""
     fee_payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
     mode_filter = ' AND payments.payment_mode = %s' if payment_mode else ''
     params = (start_date, end_date, self.school_id)
     if payment_mode:
         params += (payment_mode,)
+    class_filter = ' AND allocations.class_id = %s' if class_id else ''
+    stream_filter = ' AND classes.stream_code = %s' if stream else ''
+    cashier_filter = ' AND payments.received_by = %s' if cashier_user_id else ''
+    category_filter = ' AND students.category = %s' if category else ''
+    votehead_filter = """
+        AND EXISTS (
+            SELECT 1 FROM fee_payment_allocations allocation_filter
+            JOIN fee_voteheads filter_votehead
+                ON allocation_filter.votehead_id = filter_votehead.id
+            WHERE allocation_filter.payment_id = payments.id
+              AND allocation_filter.votehead_id = %s
+              AND filter_votehead.school_id = payments.school_id
+        )
+    """ if votehead_id else ''
+    status_filter = ' AND payments.status = %s' if payment_status else " AND payments.status = 'COMPLETED'"
+    academic_year_filter = ' AND ledger.academic_year_id = %s' if academic_year_id else ''
+    term_filter = ' AND ledger.term_id = %s' if term_id else ''
+    if class_id:
+        params += (class_id,)
+    if stream:
+        params += (stream,)
+    if cashier_user_id:
+        params += (cashier_user_id,)
+    if category:
+        params += (category,)
+    if votehead_id:
+        params += (votehead_id,)
+    if payment_status:
+        params += (payment_status,)
+    if academic_year_id:
+        params += (academic_year_id,)
+    if term_id:
+        params += (term_id,)
     if fee_payments_has_school_id:
         self.cursor.execute(f"""
             SELECT COALESCE(classes.display_name, 'Unassigned') AS class_name,
                    COALESCE(classes.stream_code, '-') AS stream_code,
                    SUM(payments.amount) AS total_amount, COUNT(*) AS count
             FROM fee_payments payments
+            JOIN fee_ledger ledger ON payments.ledger_id = ledger.id AND payments.school_id = ledger.school_id
+            JOIN studentinfo students
+                ON payments.admno = students.AdmNo AND payments.school_id = students.school_id
             LEFT JOIN class_allocation allocations
                 ON payments.admno = allocations.student_id AND payments.school_id = allocations.school_id
                 AND allocations.is_current = TRUE
             LEFT JOIN classes ON allocations.class_id = classes.classID
                 AND allocations.school_id = classes.school_id
             WHERE payments.payment_date BETWEEN %s AND %s
-                AND payments.status = 'COMPLETED' AND payments.school_id = %s{mode_filter}
+                AND payments.school_id = %s{mode_filter}
+                {class_filter}{stream_filter}{cashier_filter}{category_filter}{votehead_filter}{status_filter}{academic_year_filter}{term_filter}
             GROUP BY classes.display_name, classes.stream_code
             ORDER BY total_amount DESC, class_name ASC
         """, params)
@@ -3087,13 +3568,15 @@ def _get_collection_class_summary(self, start_date: str, end_date: str, payment_
                    SUM(payments.amount) AS total_amount, COUNT(*) AS count
             FROM fee_payments payments
             JOIN fee_ledger ledger ON payments.ledger_id = ledger.id
+            JOIN studentinfo students ON payments.admno = students.AdmNo AND ledger.school_id = students.school_id
             LEFT JOIN class_allocation allocations
                 ON payments.admno = allocations.student_id AND ledger.school_id = allocations.school_id
                 AND allocations.is_current = TRUE
             LEFT JOIN classes ON allocations.class_id = classes.classID
                 AND allocations.school_id = classes.school_id
             WHERE payments.payment_date BETWEEN %s AND %s
-                AND payments.status = 'COMPLETED' AND ledger.school_id = %s{mode_filter}
+                AND ledger.school_id = %s{mode_filter}
+                {class_filter}{stream_filter}{cashier_filter}{category_filter}{votehead_filter.replace('payments.school_id', 'ledger.school_id')}{status_filter}{academic_year_filter}{term_filter}
             GROUP BY classes.display_name, classes.stream_code
             ORDER BY total_amount DESC, class_name ASC
         """, params)
@@ -3103,7 +3586,11 @@ def _get_collection_class_summary(self, start_date: str, end_date: str, payment_
 FeesService.get_collection_class_summary = _get_collection_class_summary
 
 
-def _get_collection_votehead_summary(self, start_date: str, end_date: str, payment_mode: Optional[str] = None) -> List[Dict]:
+def _get_collection_votehead_summary(self, start_date: str, end_date: str, payment_mode: Optional[str] = None,
+                                     class_id: Optional[int] = None, stream: Optional[str] = None,
+                                     cashier_user_id: Optional[int] = None, category: Optional[str] = None,
+                                     votehead_id: Optional[int] = None, payment_status: Optional[str] = None,
+                                     academic_year_id: Optional[int] = None, term_id: Optional[int] = None) -> List[Dict]:
     """Summarize completed payment allocations by votehead."""
     allocations_has_school_id = self._table_has_column('fee_payment_allocations', 'school_id')
     payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
@@ -3111,6 +3598,30 @@ def _get_collection_votehead_summary(self, start_date: str, end_date: str, payme
     params = (start_date, end_date, self.school_id)
     if payment_mode:
         params += (payment_mode,)
+    class_filter = ' AND class_allocations.class_id = %s' if class_id else ''
+    stream_filter = ' AND classes.stream_code = %s' if stream else ''
+    cashier_filter = ' AND payments.received_by = %s' if cashier_user_id else ''
+    category_filter = ' AND students.category = %s' if category else ''
+    votehead_filter = ' AND allocations.votehead_id = %s' if votehead_id else ''
+    status_filter = ' AND payments.status = %s' if payment_status else " AND payments.status = 'COMPLETED'"
+    academic_year_filter = ' AND ledger.academic_year_id = %s' if academic_year_id else ''
+    term_filter = ' AND ledger.term_id = %s' if term_id else ''
+    if class_id:
+        params += (class_id,)
+    if stream:
+        params += (stream,)
+    if cashier_user_id:
+        params += (cashier_user_id,)
+    if category:
+        params += (category,)
+    if votehead_id:
+        params += (votehead_id,)
+    if payment_status:
+        params += (payment_status,)
+    if academic_year_id:
+        params += (academic_year_id,)
+    if term_id:
+        params += (term_id,)
     if allocations_has_school_id and payments_has_school_id:
         self.cursor.execute(f"""
             SELECT voteheads.name AS votehead_name, SUM(allocations.amount) AS total_amount,
@@ -3118,10 +3629,19 @@ def _get_collection_votehead_summary(self, start_date: str, end_date: str, payme
             FROM fee_payment_allocations allocations
             JOIN fee_payments payments
                 ON allocations.payment_id = payments.id AND allocations.school_id = payments.school_id
+            JOIN fee_ledger ledger ON payments.ledger_id = ledger.id AND payments.school_id = ledger.school_id
+            JOIN studentinfo students
+                ON payments.admno = students.AdmNo AND payments.school_id = students.school_id
             JOIN fee_voteheads voteheads
                 ON allocations.votehead_id = voteheads.id AND allocations.school_id = voteheads.school_id
+            LEFT JOIN class_allocation class_allocations
+                ON payments.admno = class_allocations.student_id AND payments.school_id = class_allocations.school_id
+                AND class_allocations.is_current = TRUE
+            LEFT JOIN classes ON class_allocations.class_id = classes.classID
+                AND class_allocations.school_id = classes.school_id
             WHERE payments.payment_date BETWEEN %s AND %s
-                AND payments.status = 'COMPLETED' AND payments.school_id = %s{mode_filter}
+                AND payments.school_id = %s{mode_filter}
+                {class_filter}{stream_filter}{cashier_filter}{category_filter}{votehead_filter}{status_filter}{academic_year_filter}{term_filter}
             GROUP BY voteheads.id, voteheads.name
             ORDER BY total_amount DESC, votehead_name ASC
         """, params)
@@ -3132,10 +3652,17 @@ def _get_collection_votehead_summary(self, start_date: str, end_date: str, payme
             FROM fee_payment_allocations allocations
             JOIN fee_payments payments ON allocations.payment_id = payments.id
             JOIN fee_ledger ledger ON payments.ledger_id = ledger.id
+            JOIN studentinfo students ON payments.admno = students.AdmNo AND ledger.school_id = students.school_id
             JOIN fee_voteheads voteheads
                 ON allocations.votehead_id = voteheads.id AND voteheads.school_id = ledger.school_id
+            LEFT JOIN class_allocation class_allocations
+                ON payments.admno = class_allocations.student_id AND ledger.school_id = class_allocations.school_id
+                AND class_allocations.is_current = TRUE
+            LEFT JOIN classes ON class_allocations.class_id = classes.classID
+                AND class_allocations.school_id = classes.school_id
             WHERE payments.payment_date BETWEEN %s AND %s
-                AND payments.status = 'COMPLETED' AND ledger.school_id = %s{mode_filter}
+                AND ledger.school_id = %s{mode_filter}
+                {class_filter}{stream_filter}{cashier_filter}{category_filter}{votehead_filter}{status_filter}{academic_year_filter}{term_filter}
             GROUP BY voteheads.id, voteheads.name
             ORDER BY total_amount DESC, votehead_name ASC
         """, params)
@@ -3145,9 +3672,11 @@ def _get_collection_votehead_summary(self, start_date: str, end_date: str, payme
 FeesService.get_collection_votehead_summary = _get_collection_votehead_summary
 
 
-def _get_fee_revenue_analysis(self, start_date: str, end_date: str) -> List[Dict]:
+def _get_fee_revenue_analysis(self, start_date: str, end_date: str,
+                              academic_year_id: Optional[int] = None,
+                              term_id: Optional[int] = None) -> List[Dict]:
     """Keep invoiced movements and completed allocated collections distinct by votehead."""
-    self.cursor.execute("""
+    ledger_query = """
         SELECT voteheads.id AS votehead_id, voteheads.name AS votehead_name,
                SUM(CASE WHEN ledger.type = 'CHARGE' THEN ledger.amount ELSE 0 END) AS invoiced_amount,
                SUM(CASE WHEN ledger.type = 'ADJUSTMENT' AND ledger.description LIKE 'DEBIT NOTE:%%' THEN ledger.amount ELSE 0 END) AS debit_note_amount,
@@ -3157,8 +3686,16 @@ def _get_fee_revenue_analysis(self, start_date: str, end_date: str) -> List[Dict
         JOIN fee_voteheads voteheads
           ON ledger.votehead_id = voteheads.id AND ledger.school_id = voteheads.school_id
         WHERE ledger.transaction_date BETWEEN %s AND %s AND ledger.school_id = %s
-        GROUP BY voteheads.id, voteheads.name
-    """, (start_date, end_date, self.school_id))
+    """
+    ledger_params = [start_date, end_date, self.school_id]
+    if academic_year_id is not None:
+        ledger_query += " AND ledger.academic_year_id = %s"
+        ledger_params.append(academic_year_id)
+    if term_id is not None:
+        ledger_query += " AND ledger.term_id = %s"
+        ledger_params.append(term_id)
+    ledger_query += " GROUP BY voteheads.id, voteheads.name"
+    self.cursor.execute(ledger_query, ledger_params)
     movements = {
         row['votehead_id']: row
         for row in self.cursor.fetchall()
@@ -3166,26 +3703,35 @@ def _get_fee_revenue_analysis(self, start_date: str, end_date: str) -> List[Dict
 
     allocations_has_school_id = self._table_has_column('fee_payment_allocations', 'school_id')
     payments_has_school_id = self._table_has_column('fee_payments', 'school_id')
+    collection_params = [start_date, end_date, self.school_id]
     if allocations_has_school_id and payments_has_school_id:
-        self.cursor.execute("""
+        collection_query = """
             SELECT allocations.votehead_id, SUM(allocations.amount) AS collected_amount
             FROM fee_payment_allocations allocations
             JOIN fee_payments payments
               ON allocations.payment_id = payments.id AND allocations.school_id = payments.school_id
+            JOIN fee_ledger ledger
+              ON payments.ledger_id = ledger.id AND payments.school_id = ledger.school_id
             WHERE payments.payment_date BETWEEN %s AND %s
-              AND payments.status = 'COMPLETED' AND payments.school_id = %s
-            GROUP BY allocations.votehead_id
-        """, (start_date, end_date, self.school_id))
+              AND payments.status = 'COMPLETED' AND ledger.school_id = %s
+        """
     else:
-        self.cursor.execute("""
+        collection_query = """
             SELECT allocations.votehead_id, SUM(allocations.amount) AS collected_amount
             FROM fee_payment_allocations allocations
             JOIN fee_payments payments ON allocations.payment_id = payments.id
             JOIN fee_ledger ledger ON payments.ledger_id = ledger.id
             WHERE payments.payment_date BETWEEN %s AND %s
               AND payments.status = 'COMPLETED' AND ledger.school_id = %s
-            GROUP BY allocations.votehead_id
-        """, (start_date, end_date, self.school_id))
+        """
+    if academic_year_id is not None:
+        collection_query += " AND ledger.academic_year_id = %s"
+        collection_params.append(academic_year_id)
+    if term_id is not None:
+        collection_query += " AND ledger.term_id = %s"
+        collection_params.append(term_id)
+    collection_query += " GROUP BY allocations.votehead_id"
+    self.cursor.execute(collection_query, collection_params)
     for collection in self.cursor.fetchall():
         row = movements.setdefault(collection['votehead_id'], {
             'votehead_id': collection['votehead_id'], 'votehead_name': 'Unclassified votehead',
@@ -3201,42 +3747,54 @@ def _get_fee_revenue_analysis(self, start_date: str, end_date: str) -> List[Dict
 FeesService.get_fee_revenue_analysis = _get_fee_revenue_analysis
 
 
-def _get_fee_ledger_summary(self, start_date: str, end_date: str) -> List[Dict]:
-        """Summarize fee-ledger activity by term without summing student running balances."""
-        self.cursor.execute("""
-                SELECT years.year AS academic_year, terms.term_number,
-                             COALESCE(SUM(CASE WHEN ledger.type = 'CHARGE' THEN ledger.amount ELSE 0 END), 0) AS charges,
-                             COALESCE(SUM(CASE WHEN ledger.type = 'DEBIT'
-                                        OR (ledger.type = 'ADJUSTMENT' AND ledger.description LIKE 'DEBIT NOTE:%%')
-                                        THEN ledger.amount ELSE 0 END), 0) AS debits,
-                             COALESCE(SUM(CASE WHEN ledger.type = 'PAYMENT' THEN ledger.amount ELSE 0 END), 0) AS payments,
-                             COALESCE(SUM(CASE WHEN ledger.type = 'CREDIT' AND ledger.reference_no LIKE 'WVR-%%'
-                                        THEN ledger.amount ELSE 0 END), 0) AS waivers,
-                             COALESCE(SUM(CASE WHEN (ledger.type = 'CREDIT' AND (ledger.reference_no IS NULL OR ledger.reference_no NOT LIKE 'WVR-%%'))
-                                        OR (ledger.type = 'ADJUSTMENT' AND ledger.description LIKE 'CREDIT NOTE:%%')
-                                        THEN ledger.amount ELSE 0 END), 0) AS credits,
-                             COALESCE(SUM(CASE WHEN ledger.type = 'REFUND' THEN ledger.amount ELSE 0 END), 0) AS refunds,
-                             COALESCE(SUM(CASE WHEN ledger.type = 'ADJUSTMENT' AND ledger.description LIKE 'VOID RECEIPT:%%'
-                                        THEN ledger.amount ELSE 0 END), 0) AS void_reversals,
-                             COUNT(*) AS transaction_count
-                FROM fee_ledger ledger
-                JOIN academic_years years
-                    ON ledger.academic_year_id = years.id AND ledger.school_id = years.school_id
-                JOIN uniform_term_dates terms
-                    ON ledger.term_id = terms.id AND ledger.school_id = terms.school_id
-                WHERE ledger.transaction_date BETWEEN %s AND %s AND ledger.school_id = %s
-                GROUP BY ledger.academic_year_id, years.year, ledger.term_id, terms.term_number
-                ORDER BY years.year DESC, terms.term_number DESC
-        """, (start_date, end_date, self.school_id))
-        records = self.cursor.fetchall()
-        for record in records:
-                record['net_movement'] = (
-                        Decimal(str(record['charges'])) + Decimal(str(record['debits']))
-                        + Decimal(str(record['refunds'])) + Decimal(str(record['void_reversals']))
-                        - Decimal(str(record['payments'])) - Decimal(str(record['credits']))
-                        - Decimal(str(record['waivers']))
-                )
-        return records
+def _get_fee_ledger_summary(self, start_date: str, end_date: str,
+                            academic_year_id: Optional[int] = None,
+                            term_id: Optional[int] = None) -> List[Dict]:
+    """Summarize fee-ledger activity by term without summing student running balances."""
+    query = """
+        SELECT years.year AS academic_year, terms.term_number,
+               COALESCE(SUM(CASE WHEN ledger.type = 'CHARGE' THEN ledger.amount ELSE 0 END), 0) AS charges,
+               COALESCE(SUM(CASE WHEN ledger.type = 'DEBIT'
+                          OR (ledger.type = 'ADJUSTMENT' AND ledger.description LIKE 'DEBIT NOTE:%%')
+                          THEN ledger.amount ELSE 0 END), 0) AS debits,
+               COALESCE(SUM(CASE WHEN ledger.type = 'PAYMENT' THEN ledger.amount ELSE 0 END), 0) AS payments,
+               COALESCE(SUM(CASE WHEN ledger.type = 'CREDIT' AND ledger.reference_no LIKE 'WVR-%%'
+                          THEN ledger.amount ELSE 0 END), 0) AS waivers,
+               COALESCE(SUM(CASE WHEN (ledger.type = 'CREDIT' AND (ledger.reference_no IS NULL OR ledger.reference_no NOT LIKE 'WVR-%%'))
+                          OR (ledger.type = 'ADJUSTMENT' AND ledger.description LIKE 'CREDIT NOTE:%%')
+                          THEN ledger.amount ELSE 0 END), 0) AS credits,
+               COALESCE(SUM(CASE WHEN ledger.type = 'REFUND' THEN ledger.amount ELSE 0 END), 0) AS refunds,
+               COALESCE(SUM(CASE WHEN ledger.type = 'ADJUSTMENT' AND ledger.description LIKE 'VOID RECEIPT:%%'
+                          THEN ledger.amount ELSE 0 END), 0) AS void_reversals,
+               COUNT(*) AS transaction_count
+        FROM fee_ledger ledger
+        JOIN academic_years years
+          ON ledger.academic_year_id = years.id AND ledger.school_id = years.school_id
+        JOIN uniform_term_dates terms
+          ON ledger.term_id = terms.id AND ledger.school_id = terms.school_id
+        WHERE ledger.transaction_date BETWEEN %s AND %s AND ledger.school_id = %s
+    """
+    params = [start_date, end_date, self.school_id]
+    if academic_year_id is not None:
+        query += " AND ledger.academic_year_id = %s"
+        params.append(academic_year_id)
+    if term_id is not None:
+        query += " AND ledger.term_id = %s"
+        params.append(term_id)
+    query += """
+        GROUP BY ledger.academic_year_id, years.year, ledger.term_id, terms.term_number
+        ORDER BY years.year DESC, terms.term_number DESC
+    """
+    self.cursor.execute(query, params)
+    records = self.cursor.fetchall()
+    for record in records:
+        record['net_movement'] = (
+            Decimal(str(record['charges'])) + Decimal(str(record['debits']))
+            + Decimal(str(record['refunds'])) + Decimal(str(record['void_reversals']))
+            - Decimal(str(record['payments'])) - Decimal(str(record['credits']))
+            - Decimal(str(record['waivers']))
+        )
+    return records
 
 
 FeesService.get_fee_ledger_summary = _get_fee_ledger_summary

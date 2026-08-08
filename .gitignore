@@ -1,5 +1,7 @@
 node_modules/
 .env
+.env.production
+.env.staging
 app_run.log
 dist/
 venv/
@@ -14,3 +16,4 @@ __pycache__/
 
 # Static build outputs
 /static/
+/Uniform_issuance_app-main/

@@ -177,8 +177,11 @@ def manage_payment_mode_receiving_accounts():
                 account_id=_parse_required_int(request.form.get('account_id'), 'account_id'),
                 configured_by=session['userNo'],
                 is_active=request.form.get('is_active') == 'on',
+                settlement_account_id=_parse_optional_int(request.form.get('settlement_account_id'), 'settlement_account_id'),
+                clearing_account_id=_parse_optional_int(request.form.get('clearing_account_id'), 'clearing_account_id'),
+                default_gl_account_id=_parse_optional_int(request.form.get('default_gl_account_id'), 'default_gl_account_id'),
             )
-            flash('Receiving account configuration saved.', 'success')
+            flash('Payment-mode account chain saved.', 'success')
 
         return render_template(
             'manage_payment_mode_receiving_accounts.html',
@@ -189,6 +192,28 @@ def manage_payment_mode_receiving_accounts():
     except (ValueError, FinanceError) as e:
         flash(str(e), 'error')
         return redirect(url_for('finance.manage_payment_mode_receiving_accounts'))
+    finally:
+        connection.close()
+
+
+@finance_bp.route('/admin/finance/fee-settlement-reconciliation')
+@login_required
+@admin_required
+def fee_settlement_reconciliation_report():
+    start_date = request.args.get('start_date') or None
+    end_date = request.args.get('end_date') or None
+    if start_date and end_date and start_date > end_date:
+        flash('Start date cannot be after end date.', 'error')
+        return redirect(url_for('finance.fee_settlement_reconciliation_report'))
+
+    connection = get_db_connection()
+    service = FinanceService(connection)
+    try:
+        rows = service.get_fee_settlement_reconciliation(start_date, end_date)
+        return render_template(
+            'fee_settlement_reconciliation.html', rows=rows,
+            start_date=start_date or '', end_date=end_date or '',
+        )
     finally:
         connection.close()
 
@@ -204,8 +229,17 @@ def manage_cashier_sessions():
             action = request.form.get('action')
             cashier_user_id = session['userNo']
             if action == 'open':
-                service.open_cashier_session(cashier_user_id, opened_by=session['userNo'])
+                service.open_cashier_session(
+                    cashier_user_id, opened_by=session['userNo'],
+                    opening_float=_parse_decimal(request.form.get('opening_float'), 'opening_float'),
+                )
                 flash('Cashier session opened.', 'success')
+            elif action == 'configure_threshold':
+                service.configure_cashier_session_variance_threshold(
+                    _parse_decimal(request.form.get('variance_approval_threshold'), 'variance_approval_threshold'),
+                    updated_by=session['userNo'],
+                )
+                flash('Cashier-session variance threshold saved.', 'success')
             elif action == 'close':
                 result = service.close_cashier_session(
                     session_id=_parse_required_int(request.form.get('session_id'), 'session_id'),
@@ -213,6 +247,7 @@ def manage_cashier_sessions():
                     actual_cash=_parse_decimal(request.form.get('actual_cash'), 'actual_cash'),
                     closed_by=session['userNo'],
                     notes=request.form.get('notes', ''),
+                    variance_reason=request.form.get('variance_reason', ''),
                 )
                 message = f"Session closed. Expected: {result['expected_cash']:.2f}; variance: {result['variance']:.2f}."
                 if result['status'] == 'PENDING_APPROVAL':
@@ -223,6 +258,12 @@ def manage_cashier_sessions():
                     _parse_required_int(request.form.get('session_id'), 'session_id'), session['userNo']
                 )
                 flash('Cashier-session variance approved.', 'success')
+            elif action == 'reopen':
+                service.reopen_cashier_session(
+                    _parse_required_int(request.form.get('session_id'), 'session_id'), session['userNo'],
+                    request.form.get('reopen_reason', ''),
+                )
+                flash('Cashier session reopened.', 'success')
             else:
                 raise ValueError('Unknown cashier-session action.')
             return redirect(url_for('finance.manage_cashier_sessions'))
@@ -231,6 +272,7 @@ def manage_cashier_sessions():
             'manage_cashier_sessions.html',
             open_session=service.get_open_cashier_session(session['userNo']),
             sessions=service.get_cashier_sessions(),
+            variance_approval_threshold=service.get_cashier_session_variance_threshold(),
         )
     except (ValueError, FinanceError) as e:
         flash(str(e), 'error')

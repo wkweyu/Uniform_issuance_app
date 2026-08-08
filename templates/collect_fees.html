@@ -332,6 +332,14 @@
                             <div id="recentReceiptsList" class="divide-y divide-slate-100"></div>
                         </div>
 
+                        <div id="financeTimelineCard" class="hidden bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div class="px-8 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                                <h2 class="text-xs font-black text-slate-900 uppercase tracking-widest">Finance Event Timeline</h2>
+                                <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Audit History</span>
+                            </div>
+                            <div id="financeTimelineList" class="divide-y divide-slate-100"></div>
+                        </div>
+
                         <!-- Statement Listing Grid -->
                         <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
                             <div class="px-8 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
@@ -459,18 +467,18 @@
                                 </div>
                             </div>
 
-                            <!-- Card C: Manual Billing Adjustments / Debit Notes -->
+                            <!-- Card C: Individual & Manual Invoicing -->
                             <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 flex flex-col justify-between">
                                 <div>
                                     <div class="w-10 h-10 bg-slate-50 text-slate-700 rounded-xl flex items-center justify-center text-sm mb-4 border">
                                         <i class="fas fa-file-invoice"></i>
                                     </div>
-                                    <h3 class="text-sm font-black text-slate-900 uppercase tracking-wide">Manual Billing Charge</h3>
-                                    <p class="text-xs text-slate-400 mt-1">Directly generate custom ledger debits (custom exam charges, locker damages, or late penalties).</p>
+                                    <h3 class="text-sm font-black text-slate-900 uppercase tracking-wide">Individual &amp; Manual Invoice</h3>
+                                    <p class="text-xs text-slate-400 mt-1">Issue the selected student's standard term invoice or a validated single votehead charge.</p>
                                 </div>
                                 <div class="mt-6">
-                                    <button onclick="openDirectDebitModal()" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-[10px] uppercase tracking-widest py-3 rounded-xl transition flex items-center justify-center gap-2">
-                                        <i class="fas fa-plus"></i> Issue Credit/Debit Note
+                                    <button id="openIndividualInvoice" type="button" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-[10px] uppercase tracking-widest py-3 rounded-xl transition flex items-center justify-center gap-2">
+                                        <i class="fas fa-plus"></i> Issue Invoice
                                     </button>
                                 </div>
                             </div>
@@ -488,6 +496,36 @@
                                     <a href="{{ url_for('fees.fees_waiver_management') }}" class="w-full bg-slate-900 hover:bg-black text-white font-black text-[10px] uppercase tracking-widest py-3 rounded-xl transition flex items-center justify-center gap-2 text-center">
                                         <i class="fas fa-shield-heart"></i> Manage Term Waivers
                                     </a>
+                                </div>
+                            </div>
+
+                            <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 flex flex-col justify-between">
+                                <div>
+                                    <div class="w-10 h-10 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center text-sm mb-4 border border-rose-100">
+                                        <i class="fas fa-money-bill-wave"></i>
+                                    </div>
+                                    <h3 class="text-sm font-black text-slate-900 uppercase tracking-wide">Student Credit Refund</h3>
+                                    <p class="text-xs text-slate-400 mt-1">Return a verified student credit with a payment method, reference, and approval reason.</p>
+                                </div>
+                                <div class="mt-6">
+                                    <a href="{{ url_for('fees.manage_fee_refunds') }}" class="w-full bg-rose-600 hover:bg-rose-700 text-white font-black text-[10px] uppercase tracking-widest py-3 rounded-xl transition flex items-center justify-center gap-2 text-center">
+                                        <i class="fas fa-arrow-right"></i> Post Refund
+                                    </a>
+                                </div>
+                            </div>
+
+                            <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 flex flex-col justify-between">
+                                <div>
+                                    <div class="w-10 h-10 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center text-sm mb-4 border border-amber-100">
+                                        <i class="fas fa-user-pen"></i>
+                                    </div>
+                                    <h3 class="text-sm font-black text-slate-900 uppercase tracking-wide">Category &amp; Group Correction</h3>
+                                    <p class="text-xs text-slate-400 mt-1">Replace one unpaid current-term invoice after a verified Day, Boarding, Transport, or student-group correction.</p>
+                                </div>
+                                <div class="mt-6">
+                                    <button id="openCategoryCorrection" type="button" class="w-full bg-amber-600 hover:bg-amber-700 text-white font-black text-[10px] uppercase tracking-widest py-3 rounded-xl transition flex items-center justify-center gap-2">
+                                        <i class="fas fa-file-pen"></i> Correct Classification
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -633,22 +671,59 @@
     </div>
 </div>
 
-<!-- ============================================== -->
-<!-- INTERACTIVE DIRECT CHARGE (DEBIT NOTE) MODAL -->
-<!-- ============================================== -->
-<div id="debitModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 hidden flex items-center justify-center p-4">
+<div id="individualInvoiceModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 hidden flex items-center justify-center p-4">
     <div class="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
         <div class="px-8 py-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-            <h3 class="text-xs font-black text-slate-800 uppercase tracking-widest">Manual Billing / Debit Note</h3>
-            <button onclick="closeDebitModal()" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times-circle text-lg"></i></button>
+            <h3 class="text-xs font-black text-slate-800 uppercase tracking-widest">Individual Student Invoice</h3>
+            <button id="closeIndividualInvoice" type="button" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times-circle text-lg"></i></button>
         </div>
-        <div class="p-8 space-y-4">
-            <div class="text-[10px] font-bold text-slate-400 uppercase">Feature Redirecting</div>
-            <p class="text-xs text-slate-400">Direct invoicing and debit structures are handled globally to preserve allocation schema invariants. You can perform mass or customized single student billing under the standard invoicing node:</p>
-            <a href="{{ url_for('fees.bulk_invoice') }}" class="block w-full text-center bg-slate-900 hover:bg-black text-white font-black text-[9px] uppercase tracking-widest py-3 rounded-xl transition">
-                Navigate to Invoicing Hub
-            </a>
+        <form id="individualInvoiceForm" class="p-8 space-y-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <p id="individualInvoiceStudent" class="text-xs font-bold text-slate-600"></p>
+            <div class="grid grid-cols-2 gap-3 text-xs font-bold text-slate-700">
+                <label class="flex items-center gap-2 rounded-xl border border-slate-200 p-3"><input type="radio" name="invoice_mode" value="STANDARD" checked> Standard term</label>
+                <label class="flex items-center gap-2 rounded-xl border border-slate-200 p-3"><input type="radio" name="invoice_mode" value="MANUAL"> Manual votehead</label>
+            </div>
+            <div id="manualInvoiceFields" class="hidden space-y-4">
+                <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest">Votehead
+                    <select id="individualInvoiceVotehead" name="votehead_id" class="mt-1.5 w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-xs font-bold"></select>
+                </label>
+                <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest">Amount
+                    <input id="individualInvoiceAmount" name="amount" type="number" min="0.01" step="0.01" class="mt-1.5 w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-xs font-bold">
+                </label>
+            </div>
+            <p id="individualInvoiceMessage" class="hidden rounded-xl border px-3 py-2 text-xs font-bold"></p>
+            <button id="submitIndividualInvoice" type="submit" class="w-full bg-slate-900 hover:bg-black text-white font-black text-[10px] uppercase tracking-widest py-3.5 rounded-xl transition">Post Invoice</button>
+        </form>
+    </div>
+</div>
+
+<div id="categoryCorrectionModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
+        <div class="px-8 py-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+            <h3 class="text-xs font-black text-slate-800 uppercase tracking-widest">Replace Current-Term Invoice</h3>
+            <button id="closeCategoryCorrection" type="button" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times-circle text-lg"></i></button>
         </div>
+        <form id="categoryCorrectionForm" class="p-8 space-y-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <p id="categoryCorrectionStudent" class="text-xs font-bold text-slate-600"></p>
+            <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest">Corrected category
+                <select id="categoryCorrectionCategory" name="category" required class="mt-1.5 w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-xs font-bold">
+                    <option value="Day">Day</option><option value="Boarding">Boarding</option><option value="Transport">Transport</option>
+                </select>
+            </label>
+            <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest">Corrected class and stream
+                <select id="categoryCorrectionClass" name="new_class_id" class="mt-1.5 w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-xs font-bold"><option value="">Keep current class and stream</option></select>
+            </label>
+            <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest">Student group
+                <select id="categoryCorrectionGroup" name="student_group_id" class="mt-1.5 w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-xs font-bold"><option value="">Keep current group</option></select>
+            </label>
+            <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest">Audit reason
+                <textarea id="categoryCorrectionReason" name="reason" required maxlength="500" class="mt-1.5 w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-xs font-bold min-h-[88px]"></textarea>
+            </label>
+            <p id="categoryCorrectionMessage" class="hidden rounded-xl border px-3 py-2 text-xs font-bold"></p>
+            <button id="submitCategoryCorrection" type="submit" class="w-full bg-amber-600 hover:bg-amber-700 text-white font-black text-[10px] uppercase tracking-widest py-3.5 rounded-xl transition">Validate &amp; Replace Invoice</button>
+        </form>
     </div>
 </div>
 
@@ -666,6 +741,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const financialAlerts = document.getElementById('financialAlerts');
     const recentReceiptsCard = document.getElementById('recentReceiptsCard');
     const recentReceiptsList = document.getElementById('recentReceiptsList');
+    const financeTimelineCard = document.getElementById('financeTimelineCard');
+    const financeTimelineList = document.getElementById('financeTimelineList');
     const active_post_btn = document.getElementById('postBtn');
     const p_print_btn = document.getElementById('postPrintBtn');
     const p_new_btn = document.getElementById('postNewBtn');
@@ -682,6 +759,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const manualAllocationDeck = document.getElementById('manualAllocationDeck');
     const manualAllocationList = document.getElementById('manualAllocationList');
     const manualAllocationError = document.getElementById('manualAllocationError');
+    const categoryCorrectionModal = document.getElementById('categoryCorrectionModal');
+    const categoryCorrectionMessage = document.getElementById('categoryCorrectionMessage');
+    const individualInvoiceModal = document.getElementById('individualInvoiceModal');
+    const individualInvoiceMessage = document.getElementById('individualInvoiceMessage');
     
     // Cached context variables
     let activeStudentContext = null;
@@ -695,6 +776,118 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     updateReceivingAccount();
+
+    function showCategoryCorrectionMessage(message, isError = true) {
+        categoryCorrectionMessage.textContent = message;
+        categoryCorrectionMessage.className = `rounded-xl border px-3 py-2 text-xs font-bold ${isError ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`;
+    }
+
+    document.getElementById('openCategoryCorrection').addEventListener('click', () => {
+        if (!activeStudentContext || !activeStudentContext.term_id) {
+            alert('Select a student with an active term before correcting classification.');
+            return;
+        }
+        document.getElementById('categoryCorrectionStudent').textContent = `${activeStudentContext.full_name} (#${activeStudentContext.admno})`;
+        document.getElementById('categoryCorrectionCategory').value = activeStudentContext.category || 'Day';
+        const classSelect = document.getElementById('categoryCorrectionClass');
+        const selectedYearId = Number(document.getElementById('yearId').value);
+        classSelect.innerHTML = '<option value="">Keep current class and stream</option>';
+        (activeStudentContext.available_classes || [])
+            .filter(classInfo => Number(classInfo.academic_year_id) === selectedYearId && Number(classInfo.classID) !== Number(activeStudentContext.class_id))
+            .forEach(classInfo => classSelect.add(new Option(`${classInfo.display_name} - Stream ${classInfo.stream_code || '-'}`, classInfo.classID)));
+        const groupSelect = document.getElementById('categoryCorrectionGroup');
+        groupSelect.innerHTML = '<option value="">Keep current group</option>';
+        (activeStudentContext.available_student_groups || []).forEach(group => {
+            const option = new Option(group.name, group.id, false, Number(group.id) === Number(activeStudentContext.student_group_id));
+            groupSelect.add(option);
+        });
+        document.getElementById('categoryCorrectionReason').value = '';
+        categoryCorrectionMessage.classList.add('hidden');
+        categoryCorrectionModal.classList.remove('hidden');
+    });
+
+    document.getElementById('closeCategoryCorrection').addEventListener('click', () => categoryCorrectionModal.classList.add('hidden'));
+    document.getElementById('categoryCorrectionForm').addEventListener('submit', async event => {
+        event.preventDefault();
+        if (!activeStudentContext || !activeStudentContext.term_id) return;
+        const submitButton = document.getElementById('submitCategoryCorrection');
+        const form = event.currentTarget;
+        const preflightUrl = `/api/fees/category-change-preflight?admno=${encodeURIComponent(activeStudentContext.admno)}&year_id=${encodeURIComponent(document.getElementById('yearId').value)}&term_id=${encodeURIComponent(activeStudentContext.term_id)}`;
+        submitButton.disabled = true;
+        try {
+            const preflight = await (await fetch(preflightUrl)).json();
+            if (!preflight.success || !preflight.eligible) {
+                showCategoryCorrectionMessage(preflight.message || (preflight.blockers || []).join(' '));
+                return;
+            }
+            const response = await fetch(`/admin/fees/student/${activeStudentContext.admno}/replace-category-invoice`, {
+                method: 'POST', body: new URLSearchParams(new FormData(form)),
+            });
+            const result = await response.json();
+            if (!result.success) {
+                showCategoryCorrectionMessage(result.message || 'Unable to replace the invoice.');
+                return;
+            }
+            showCategoryCorrectionMessage(`Replacement invoice ${result.replacement_reference} posted.`, false);
+            loadBursarStudentProfile(activeStudentContext.admno);
+        } catch (_error) {
+            showCategoryCorrectionMessage('Unable to validate the classification change. Please try again.');
+        } finally {
+            submitButton.disabled = false;
+        }
+    });
+
+    function showIndividualInvoiceMessage(message, isError = true) {
+        individualInvoiceMessage.textContent = message;
+        individualInvoiceMessage.className = `rounded-xl border px-3 py-2 text-xs font-bold ${isError ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`;
+    }
+
+    document.getElementById('openIndividualInvoice').addEventListener('click', () => {
+        if (!activeStudentContext || !activeStudentContext.term_id) {
+            alert('Select a student with an active term before invoicing.');
+            return;
+        }
+        document.getElementById('individualInvoiceStudent').textContent = `${activeStudentContext.full_name} (#${activeStudentContext.admno})`;
+        const voteheadSelect = document.getElementById('individualInvoiceVotehead');
+        voteheadSelect.innerHTML = '';
+        (activeStudentContext.structure_items || []).forEach(item => voteheadSelect.add(new Option(item.votehead_name, item.votehead_id)));
+        document.querySelector('#individualInvoiceForm input[value="STANDARD"]').checked = true;
+        document.getElementById('manualInvoiceFields').classList.add('hidden');
+        document.getElementById('individualInvoiceAmount').value = '';
+        individualInvoiceMessage.classList.add('hidden');
+        individualInvoiceModal.classList.remove('hidden');
+    });
+
+    document.getElementById('closeIndividualInvoice').addEventListener('click', () => individualInvoiceModal.classList.add('hidden'));
+    document.querySelectorAll('#individualInvoiceForm input[name="invoice_mode"]').forEach(input => input.addEventListener('change', event => {
+        document.getElementById('manualInvoiceFields').classList.toggle('hidden', event.target.value !== 'MANUAL');
+    }));
+    document.getElementById('individualInvoiceForm').addEventListener('submit', async event => {
+        event.preventDefault();
+        if (!activeStudentContext || !activeStudentContext.term_id) return;
+        const submitButton = document.getElementById('submitIndividualInvoice');
+        const form = event.currentTarget;
+        submitButton.disabled = true;
+        try {
+            const formData = new FormData(form);
+            formData.append('year_id', document.getElementById('yearId').value);
+            formData.append('term_id', activeStudentContext.term_id);
+            const response = await fetch(`/admin/fees/student/${activeStudentContext.admno}/invoice`, {
+                method: 'POST', body: new URLSearchParams(formData),
+            });
+            const result = await response.json();
+            if (!result.success) {
+                showIndividualInvoiceMessage(result.message || 'Unable to post invoice.');
+                return;
+            }
+            showIndividualInvoiceMessage('Invoice posted.', false);
+            loadBursarStudentProfile(activeStudentContext.admno);
+        } catch (_error) {
+            showIndividualInvoiceMessage('Unable to post invoice. Please try again.');
+        } finally {
+            submitButton.disabled = false;
+        }
+    });
 
     // Search Box Listener
     searchInput.addEventListener('input', function() {
@@ -765,6 +958,8 @@ document.addEventListener('DOMContentLoaded', function() {
         financialAlerts.innerHTML = '';
         recentReceiptsCard.classList.add('hidden');
         recentReceiptsList.innerHTML = '';
+        financeTimelineCard.classList.add('hidden');
+        financeTimelineList.innerHTML = '';
         
         // Reset dynamic fields
         activeStudentContext = null;
@@ -831,6 +1026,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 renderFinancialAlerts(data.financial_alerts || []);
                 renderRecentReceipts(data.recent_receipts || []);
+                renderFinanceTimeline(data.admno);
 
                 // Push ledger statements in Tab
                 renderDoubleEntryStatement(data.admno);
@@ -933,6 +1129,46 @@ document.addEventListener('DOMContentLoaded', function() {
             `;
             recentReceiptsList.appendChild(row);
         });
+    }
+
+    function renderFinanceTimeline(admno) {
+        financeTimelineCard.classList.remove('hidden');
+        financeTimelineList.innerHTML = '<p class="px-8 py-6 text-xs font-bold text-slate-400">Loading finance history...</p>';
+        fetch(`/api/fees/timeline?admno=${encodeURIComponent(admno)}&limit=50`)
+            .then(response => response.json())
+            .then(events => {
+                financeTimelineList.innerHTML = '';
+                if (!Array.isArray(events) || !events.length) {
+                    financeTimelineList.innerHTML = '<p class="px-8 py-6 text-xs font-bold text-slate-400">No finance events recorded for this student.</p>';
+                    return;
+                }
+                events.forEach(event => {
+                    const row = document.createElement('div');
+                    row.className = 'px-8 py-4 flex flex-wrap items-start justify-between gap-3';
+                    const detail = document.createElement('div');
+                    const title = document.createElement('p');
+                    title.className = 'text-xs font-black text-slate-900';
+                    title.textContent = event.event_title || 'Finance event';
+                    const metadata = document.createElement('p');
+                    metadata.className = 'mt-0.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest';
+                    metadata.textContent = [event.event_at, event.reference_no, event.actor_name].filter(Boolean).join(' | ');
+                    detail.append(title, metadata);
+                    if (event.details) {
+                        const description = document.createElement('p');
+                        description.className = 'mt-1 text-xs text-slate-500';
+                        description.textContent = event.details;
+                        detail.appendChild(description);
+                    }
+                    const amount = document.createElement('span');
+                    amount.className = 'text-xs font-black text-slate-700';
+                    amount.textContent = event.amount === null || event.amount === undefined ? '' : `KES ${Number(event.amount).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+                    row.append(detail, amount);
+                    financeTimelineList.appendChild(row);
+                });
+            })
+            .catch(() => {
+                financeTimelineList.innerHTML = '<p class="px-8 py-6 text-xs font-bold text-rose-600">Finance history is temporarily unavailable.</p>';
+            });
     }
 
     // Refresh dynamic running state calculations

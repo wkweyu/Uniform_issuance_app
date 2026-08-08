@@ -7,7 +7,10 @@
   <form class="flex flex-wrap items-end gap-3">
     <label class="text-xs font-bold text-gray-600">From<input type="date" name="start_date" value="{{ start_date }}" class="mt-1 block border rounded px-3 py-1.5 text-sm"></label>
     <label class="text-xs font-bold text-gray-600">To<input type="date" name="end_date" value="{{ end_date }}" class="mt-1 block border rounded px-3 py-1.5 text-sm"></label>
+    <label class="text-xs font-bold text-gray-600">Academic year<select name="academic_year_id" class="mt-1 block border rounded px-3 py-1.5 text-sm"><option value="">All years</option>{% for year in academic_years %}<option value="{{ year.id }}" {% if academic_year_id == year.id %}selected{% endif %}>{{ year.year or year.name }}</option>{% endfor %}</select></label>
+    <label class="text-xs font-bold text-gray-600">Term<select name="term_id" {% if not academic_year_id %}disabled{% endif %} class="mt-1 block border rounded px-3 py-1.5 text-sm"><option value="">All terms</option>{% for term in terms %}<option value="{{ term.id }}" {% if term_id == term.id %}selected{% endif %}>Term {{ term.term_number }}</option>{% endfor %}</select></label>
     <button type="submit" class="bg-blue-700 text-white px-4 py-1.5 rounded text-sm font-bold">Filter</button>
+    <button type="submit" name="export" value="csv" class="bg-emerald-700 text-white px-4 py-1.5 rounded text-sm font-bold">Export CSV</button>
   </form>
   <button onclick="window.print()" class="bg-gray-100 text-gray-700 px-4 py-1.5 rounded text-sm font-bold">Print</button>
 </div>

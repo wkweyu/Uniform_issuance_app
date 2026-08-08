@@ -79,12 +79,19 @@ class FinanceServiceStub:
         self.calls.append(("get_payment_mode_receiving_accounts",))
         return [{"payment_mode": "CASH", "account_id": 1, "account_code": "1000", "account_name": "Cash on Hand", "is_active": True}]
 
+    def get_fee_settlement_reconciliation(self, start_date=None, end_date=None):
+        self.calls.append(("get_fee_settlement_reconciliation", start_date, end_date))
+        return [{"payment_mode": "MPESA", "receipt_total": Decimal("1500.00"), "unreconciled_amount": Decimal("0.00")}]
+
     def get_payment_mode_receiving_account_labels(self):
         self.calls.append(("get_payment_mode_receiving_account_labels",))
         return {"CASH": "1000 - Cash on Hand"}
 
-    def configure_payment_mode_receiving_account(self, payment_mode, account_id, configured_by, is_active=True):
-        self.calls.append(("configure_payment_mode_receiving_account", payment_mode, account_id, configured_by, is_active))
+    def configure_payment_mode_receiving_account(self, payment_mode, account_id, configured_by, is_active=True,
+                                                 settlement_account_id=None, clearing_account_id=None,
+                                                 default_gl_account_id=None):
+        self.calls.append(("configure_payment_mode_receiving_account", payment_mode, account_id, configured_by,
+                           is_active, settlement_account_id, clearing_account_id, default_gl_account_id))
 
     def get_open_cashier_session(self, cashier_user_id):
         self.calls.append(("get_open_cashier_session", cashier_user_id))
@@ -94,20 +101,30 @@ class FinanceServiceStub:
         self.calls.append(("get_cashier_sessions",))
         return []
 
+    def get_cashier_session_variance_threshold(self):
+        self.calls.append(("get_cashier_session_variance_threshold",))
+        return Decimal("0.00")
+
     def get_cashier_session_register(self, start_date, end_date, status, cashier_user_id=None):
         self.calls.append(("get_cashier_session_register", start_date, end_date, status, cashier_user_id))
         return []
 
-    def open_cashier_session(self, cashier_user_id, opened_by):
-        self.calls.append(("open_cashier_session", cashier_user_id, opened_by))
+    def open_cashier_session(self, cashier_user_id, opened_by, opening_float=Decimal("0.00")):
+        self.calls.append(("open_cashier_session", cashier_user_id, opened_by, opening_float))
         return 1
 
-    def close_cashier_session(self, session_id, cashier_user_id, actual_cash, closed_by, notes=''):
-        self.calls.append(("close_cashier_session", session_id, cashier_user_id, actual_cash, closed_by, notes))
+    def close_cashier_session(self, session_id, cashier_user_id, actual_cash, closed_by, notes='', variance_reason=''):
+        self.calls.append(("close_cashier_session", session_id, cashier_user_id, actual_cash, closed_by, notes, variance_reason))
         return {"expected_cash": Decimal("0.00"), "actual_cash": actual_cash, "variance": actual_cash, "status": "CLOSED"}
 
     def approve_cashier_session_variance(self, session_id, approved_by):
         self.calls.append(("approve_cashier_session_variance", session_id, approved_by))
+
+    def configure_cashier_session_variance_threshold(self, threshold, updated_by):
+        self.calls.append(("configure_cashier_session_variance_threshold", threshold, updated_by))
+
+    def reopen_cashier_session(self, session_id, reopened_by, reason):
+        self.calls.append(("reopen_cashier_session", session_id, reopened_by, reason))
 
     def get_pending_purchase_orders(self):
         self.calls.append(("get_pending_purchase_orders",))
@@ -153,40 +170,71 @@ class FeesServiceStub:
         self.calls.append(("get_receipt_lifecycle", payment_id))
         return [{"event_type": "CANCELLED", "status_after": "CANCELLED", "reason": "Wrong student", "actor_user_id": 10, "correlation_id": "correlation", "occurred_at": "2026-07-31"}]
 
-    def get_receipt_lifecycle_register(self, start_date=None, end_date=None, event_type=None):
-        self.calls.append(("get_receipt_lifecycle_register", start_date, end_date, event_type))
+    def get_receipt_lifecycle_register(self, start_date=None, end_date=None, event_type=None, academic_year_id=None, term_id=None):
+        self.calls.append(("get_receipt_lifecycle_register", start_date, end_date, event_type, academic_year_id, term_id))
         return []
 
-    def get_reallocation_register(self, start_date=None, end_date=None):
-        self.calls.append(("get_reallocation_register", start_date, end_date))
+    def get_reallocation_register(self, start_date=None, end_date=None, academic_year_id=None, term_id=None):
+        self.calls.append(("get_reallocation_register", start_date, end_date, academic_year_id, term_id))
         return []
 
-    def get_collection_summary(self, start_date, end_date, payment_mode=None):
-        self.calls.append(("get_collection_summary", start_date, end_date, payment_mode))
+    def get_collection_cashiers(self):
+        return [{"userNo": 24, "username": "Cashier One"}]
+
+    def get_collection_categories(self):
+        return ["Boarding", "Day"]
+
+    def get_collection_voteheads(self):
+        return [{"id": 4, "name": "Tuition"}]
+
+    def get_distinct_stream_codes(self):
+        self.calls.append(("get_distinct_stream_codes",))
+        return ["A"]
+
+    def get_fee_balances_report(self, academic_year_id=None, class_id=None, stream=None):
+        self.calls.append(("get_fee_balances_report", academic_year_id, class_id, stream))
         return []
 
-    def get_collection_status_summary(self, start_date, end_date, payment_mode=None):
-        self.calls.append(("get_collection_status_summary", start_date, end_date, payment_mode))
+    def get_terms_for_academic_year(self, academic_year_id):
+        self.calls.append(("get_terms_for_academic_year", academic_year_id))
+        return [{"id": 3, "term_number": 1}]
+
+    def get_collection_summary(self, start_date, end_date, payment_mode=None, class_id=None, stream=None, cashier_user_id=None, category=None, votehead_id=None, payment_status=None):
+        call = ("get_collection_summary", start_date, end_date, payment_mode)
+        filters = (class_id, stream) if class_id or stream else ()
+        self.calls.append(call + filters + ((cashier_user_id,) if cashier_user_id else ()) + ((category,) if category else ()) + ((votehead_id,) if votehead_id else ()) + ((payment_status,) if payment_status else ()))
         return []
 
-    def get_collection_category_summary(self, start_date, end_date, payment_mode=None):
-        self.calls.append(("get_collection_category_summary", start_date, end_date, payment_mode))
+    def get_collection_status_summary(self, start_date, end_date, payment_mode=None, class_id=None, stream=None, cashier_user_id=None, category=None, votehead_id=None, payment_status=None):
+        call = ("get_collection_status_summary", start_date, end_date, payment_mode)
+        filters = (class_id, stream) if class_id or stream else ()
+        self.calls.append(call + filters + ((cashier_user_id,) if cashier_user_id else ()) + ((category,) if category else ()) + ((votehead_id,) if votehead_id else ()) + ((payment_status,) if payment_status else ()))
         return []
 
-    def get_collection_class_summary(self, start_date, end_date, payment_mode=None):
-        self.calls.append(("get_collection_class_summary", start_date, end_date, payment_mode))
+    def get_collection_category_summary(self, start_date, end_date, payment_mode=None, class_id=None, stream=None, cashier_user_id=None, category=None, votehead_id=None, payment_status=None):
+        call = ("get_collection_category_summary", start_date, end_date, payment_mode)
+        filters = (class_id, stream) if class_id or stream else ()
+        self.calls.append(call + filters + ((cashier_user_id,) if cashier_user_id else ()) + ((category,) if category else ()) + ((votehead_id,) if votehead_id else ()) + ((payment_status,) if payment_status else ()))
         return []
 
-    def get_collection_votehead_summary(self, start_date, end_date, payment_mode=None):
-        self.calls.append(("get_collection_votehead_summary", start_date, end_date, payment_mode))
+    def get_collection_class_summary(self, start_date, end_date, payment_mode=None, class_id=None, stream=None, cashier_user_id=None, category=None, votehead_id=None, payment_status=None):
+        call = ("get_collection_class_summary", start_date, end_date, payment_mode)
+        filters = (class_id, stream) if class_id or stream else ()
+        self.calls.append(call + filters + ((cashier_user_id,) if cashier_user_id else ()) + ((category,) if category else ()) + ((votehead_id,) if votehead_id else ()) + ((payment_status,) if payment_status else ()))
         return []
 
-    def get_fee_revenue_analysis(self, start_date, end_date):
-        self.calls.append(("get_fee_revenue_analysis", start_date, end_date))
+    def get_collection_votehead_summary(self, start_date, end_date, payment_mode=None, class_id=None, stream=None, cashier_user_id=None, category=None, votehead_id=None, payment_status=None):
+        call = ("get_collection_votehead_summary", start_date, end_date, payment_mode)
+        filters = (class_id, stream) if class_id or stream else ()
+        self.calls.append(call + filters + ((cashier_user_id,) if cashier_user_id else ()) + ((category,) if category else ()) + ((votehead_id,) if votehead_id else ()) + ((payment_status,) if payment_status else ()))
         return []
 
-    def get_fee_ledger_summary(self, start_date, end_date):
-        self.calls.append(("get_fee_ledger_summary", start_date, end_date))
+    def get_fee_revenue_analysis(self, start_date, end_date, academic_year_id=None, term_id=None):
+        self.calls.append(("get_fee_revenue_analysis", start_date, end_date, academic_year_id, term_id))
+        return []
+
+    def get_fee_ledger_summary(self, start_date, end_date, academic_year_id=None, term_id=None):
+        self.calls.append(("get_fee_ledger_summary", start_date, end_date, academic_year_id, term_id))
         return []
 
     def get_arrears_aging_report(self):
@@ -197,8 +245,8 @@ class FeesServiceStub:
         self.calls.append(("get_receivables_class_summary",))
         return []
 
-    def get_waiver_register(self, start_date, end_date, status):
-        self.calls.append(("get_waiver_register", start_date, end_date, status))
+    def get_waiver_register(self, start_date, end_date, status, academic_year_id=None, term_id=None):
+        self.calls.append(("get_waiver_register", start_date, end_date, status, academic_year_id, term_id))
         return []
 
     def assign_waiver_to_student_group(self, student_group_id, category_id, year_id, term_id, user_id, votehead_ids):
@@ -213,8 +261,8 @@ class FeesServiceStub:
         self.calls.append(("replace_category_invoice", kwargs))
         return {"replacement_reference": "INV-REP-test"}
 
-    def get_invoice_replacement_register(self, start_date=None, end_date=None):
-        self.calls.append(("get_invoice_replacement_register", start_date, end_date))
+    def get_invoice_replacement_register(self, start_date=None, end_date=None, academic_year_id=None, term_id=None):
+        self.calls.append(("get_invoice_replacement_register", start_date, end_date, academic_year_id, term_id))
         return []
 
     def record_receipt_print(self, payment_id, user_id):
@@ -266,13 +314,25 @@ class FeesServiceStub:
         self.calls.append(("get_voteheads",))
         return [{"id": 4, "name": "Tuition"}]
 
+    def get_student_groups(self, active_only=True):
+        self.calls.append(("get_student_groups", active_only))
+        return [{"id": 3, "name": "Scholarship"}, {"id": 7, "name": "Boarding Support"}]
+
     def bulk_invoice_classes(self, class_ids, year_id, term_id, user_id, specific_votehead_id=None, specific_amount=None):
         self.calls.append(("bulk_invoice_classes", class_ids, year_id, term_id, user_id, specific_votehead_id, specific_amount))
         return 2
 
+    def invoice_student(self, admno, year_id, term_id, structure_id, user_id, custom_items=None):
+        self.calls.append(("invoice_student", admno, year_id, term_id, structure_id, user_id, custom_items))
+        return [91]
+
     def create_account_adjustment(self, admno, adjustment_type, votehead_id, amount, year_id, term_id, effective_date, reason, supporting_reference, user_id):
         self.calls.append(("create_account_adjustment", admno, adjustment_type, votehead_id, amount, year_id, term_id, effective_date, reason, supporting_reference, user_id))
         return 31
+
+    def create_fee_refund(self, admno, votehead_id, amount, year_id, term_id, effective_date, refund_method, refund_reference, reason, user_id):
+        self.calls.append(("create_fee_refund", admno, votehead_id, amount, year_id, term_id, effective_date, refund_method, refund_reference, reason, user_id))
+        return 41
 
     def get_current_term_id(self):
         self.calls.append(("get_current_term_id",))
@@ -292,7 +352,7 @@ class FeesServiceStub:
 
     def get_student_fee_structure(self, admno, term_id=None):
         self.calls.append(("get_student_fee_structure", admno, term_id))
-        return [{"votehead_id": 4, "votehead_name": "Tuition", "amount": Decimal("1500.00"), "priority": 1}]
+        return [{"structure_id": 81, "votehead_id": 4, "votehead_name": "Tuition", "amount": Decimal("1500.00"), "priority": 1}]
 
     def get_student_term_summary(self, admno, term_id):
         self.calls.append(("get_student_term_summary", admno, term_id))
@@ -312,6 +372,10 @@ class FeesServiceStub:
         self.calls.append(("get_student_statement_summary", admno, year_id))
         return [{"academic_year": 2026, "term_number": 1, "closing_balance": Decimal("850.00")}]
 
+    def get_student_finance_timeline(self, admno, limit=100):
+        self.calls.append(("get_student_finance_timeline", admno, limit))
+        return [{"event_title": "Payment received", "reference_no": "MPS-42"}]
+
     def find_duplicate_payment(self, mode, reference):
         self.calls.append(("find_duplicate_payment", mode, reference))
         return self.duplicate_payment
@@ -328,8 +392,8 @@ class FeesServiceStub:
         self.calls.append(("get_student_statement", admno, year_id))
         return [{"admno": admno, "year_id": year_id, "balance": Decimal("0.00")}]
 
-    def get_receipts_register(self, start_date, end_date, admno, mode, query_text=None, status=None, lifecycle_event=None, cashier_user_id=None):
-        self.calls.append(("get_receipts_register", start_date, end_date, admno, mode, query_text, status, lifecycle_event, cashier_user_id))
+    def get_receipts_register(self, start_date, end_date, admno, mode, query_text=None, status=None, lifecycle_event=None, cashier_user_id=None, academic_year_id=None, term_id=None):
+        self.calls.append(("get_receipts_register", start_date, end_date, admno, mode, query_text, status, lifecycle_event, cashier_user_id, academic_year_id, term_id))
         return [{"receipt_no": "RCP-1", "admno": admno, "mode": mode}]
 
 
@@ -438,7 +502,7 @@ class StudentServiceStub:
 
     def get_student_by_admno(self, admno):
         self.calls.append(("get_student_by_admno", admno))
-        return {"AdmNo": admno, "FName": "Ada", "MName": "", "SName": "Lovelace", "Sex": "F", "category": "Day", "student_group_name": "Scholarship"}
+        return {"AdmNo": admno, "FName": "Ada", "MName": "", "SName": "Lovelace", "Sex": "F", "category": "Day", "student_group_id": 3, "student_group_name": "Scholarship"}
 
     def search_students(self, query):
         self.calls.append(("search_students", query))
@@ -446,7 +510,7 @@ class StudentServiceStub:
 
     def get_student_class_info(self, admno):
         self.calls.append(("get_student_class_info", admno))
-        return {"class_name": "Grade 7 A", "class_group": "Grade 7-9", "stream": "A"}
+        return {"class_name": "Grade 7 A", "classID": 17, "class_group": "Grade 7-9", "stream": "A"}
 
     def clear_student_subject_enrollments(self, allocation_id):
         self.calls.append(("clear", allocation_id))
@@ -476,6 +540,10 @@ class ClassServiceStub:
     def get_class_academic_year_id(self, class_id):
         self.calls.append(("get_class_academic_year_id", class_id))
         return 2026
+
+    def get_active_classes(self):
+        self.calls.append(("get_active_classes",))
+        return [{"classID": 14, "display_name": "Grade 7 A", "stream_code": "A"}]
 
     def allocate_subjects_to_class(self, class_id, subject_ids, compulsory=True):
         self.calls.append(("allocate_subjects_to_class", class_id, subject_ids, compulsory))
@@ -517,7 +585,7 @@ class ClassServiceStub:
 
     def get_active_classes(self):
         self.calls.append(("get_active_classes",))
-        return [{"classID": 14, "display_name": "Grade 7 A"}]
+        return [{"classID": 14, "display_name": "Grade 7 A", "stream_code": "A"}]
 
     def get_class_groups(self):
         self.calls.append(("get_class_groups",))
@@ -787,9 +855,52 @@ def test_finance_payment_mode_receiving_accounts_route_configures_mapping(client
     assert response.status_code == 200
     assert b"manage_payment_mode_receiving_accounts.html:1:1:CASH,MPESA,BANK_TRANSFER,CHEQUE" in response.data
     assert FinanceServiceStub.last_instance.calls == [
-        ("configure_payment_mode_receiving_account", "MPESA", 1, 10, True),
+        ("configure_payment_mode_receiving_account", "MPESA", 1, 10, True, None, None, None),
         ("get_payment_mode_receiving_accounts",),
         ("get_accounts",),
+    ]
+
+
+def test_finance_payment_mode_accounts_route_forwards_account_chain(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(finance_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(finance_routes, "FinanceService", FinanceServiceStub)
+    monkeypatch.setattr(finance_routes, "render_template", lambda _template, **_context: "ok")
+
+    response = client.post(
+        "/admin/finance/payment-mode-accounts",
+        data={
+            "payment_mode": "MPESA", "account_id": "1", "settlement_account_id": "2",
+            "clearing_account_id": "3", "default_gl_account_id": "4", "is_active": "on",
+        },
+    )
+
+    assert response.status_code == 200
+    assert FinanceServiceStub.last_instance.calls == [
+        ("configure_payment_mode_receiving_account", "MPESA", 1, 10, True, 2, 3, 4),
+        ("get_payment_mode_receiving_accounts",),
+        ("get_accounts",),
+    ]
+
+
+def test_fee_settlement_reconciliation_route_forwards_date_range(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(finance_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(finance_routes, "FinanceService", FinanceServiceStub)
+    monkeypatch.setattr(
+        finance_routes,
+        "render_template",
+        lambda template, **context: f"{template}:{context['start_date']}:{len(context['rows'])}",
+    )
+
+    response = client.get('/admin/finance/fee-settlement-reconciliation?start_date=2026-07-01&end_date=2026-07-31')
+
+    assert response.status_code == 200
+    assert response.data == b'fee_settlement_reconciliation.html:2026-07-01:1'
+    assert FinanceServiceStub.last_instance.calls == [
+        ('get_fee_settlement_reconciliation', '2026-07-01', '2026-07-31'),
     ]
 
 
@@ -803,7 +914,7 @@ def test_finance_cashier_sessions_route_opens_current_cashier_session(client, db
 
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/admin/finance/cashier-sessions")
-    assert FinanceServiceStub.last_instance.calls == [("open_cashier_session", 10, 10)]
+    assert FinanceServiceStub.last_instance.calls == [("open_cashier_session", 10, 10, Decimal("0"))]
 
 
 def test_finance_cashier_sessions_page_shows_open_action_when_no_session_exists(client, db_session, monkeypatch):
@@ -854,7 +965,41 @@ def test_finance_cashier_sessions_route_closes_current_cashier_session(client, d
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/admin/finance/cashier-sessions")
     assert FinanceServiceStub.last_instance.calls == [
-        ("close_cashier_session", 7, 10, Decimal("15000.00"), 10, "End of day count"),
+        ("close_cashier_session", 7, 10, Decimal("15000.00"), 10, "End of day count", ""),
+    ]
+
+
+def test_finance_cashier_sessions_route_configures_variance_threshold(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(finance_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(finance_routes, "FinanceService", FinanceServiceStub)
+
+    response = client.post(
+        "/admin/finance/cashier-sessions",
+        data={"action": "configure_threshold", "variance_approval_threshold": "250.00"},
+    )
+
+    assert response.status_code == 302
+    assert FinanceServiceStub.last_instance.calls == [
+        ("configure_cashier_session_variance_threshold", Decimal("250.00"), 10),
+    ]
+
+
+def test_finance_cashier_sessions_route_reopens_with_reason(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(finance_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(finance_routes, "FinanceService", FinanceServiceStub)
+
+    response = client.post(
+        "/admin/finance/cashier-sessions",
+        data={"action": "reopen", "session_id": "7", "reopen_reason": "Supervisor recount required."},
+    )
+
+    assert response.status_code == 302
+    assert FinanceServiceStub.last_instance.calls == [
+        ("reopen_cashier_session", 7, 10, "Supervisor recount required."),
     ]
 
 
@@ -1170,6 +1315,51 @@ def test_collect_fees_term_summary_shows_auditable_movement_categories():
         assert f'formatCurrency({field})' in template
 
 
+def test_fee_refund_templates_expose_required_audit_fields_and_entry_points():
+    template_root = Path(__file__).resolve().parents[1] / 'templates'
+    refund_template = (template_root / 'manage_fee_refunds.html').read_text(encoding='utf-8')
+    dashboard_template = (template_root / 'fees_dashboard.html').read_text(encoding='utf-8')
+    collect_template = (template_root / 'collect_fees.html').read_text(encoding='utf-8')
+
+    for field in ('admno', 'votehead_id', 'amount', 'refund_method', 'refund_reference', 'reason'):
+        assert f'name="{field}"' in refund_template
+    assert "url_for('fees.manage_fee_refunds')" in dashboard_template
+    assert "url_for('fees.manage_fee_refunds')" in collect_template
+
+
+def test_collect_fees_template_uses_category_replacement_preflight_before_posting():
+    template = (Path(__file__).resolve().parents[1] / 'templates' / 'collect_fees.html').read_text(encoding='utf-8')
+
+    assert 'id="openCategoryCorrection"' in template
+    assert 'id="categoryCorrectionModal"' in template
+    assert 'id="categoryCorrectionClass"' in template
+    assert '/api/fees/category-change-preflight?admno=${encodeURIComponent(activeStudentContext.admno)}' in template
+    assert "document.getElementById('yearId').value" in template
+    assert 'classInfo.academic_year_id' in template
+    assert '/replace-category-invoice' in template
+    assert 'new URLSearchParams(new FormData(form))' in template
+
+
+def test_collect_fees_template_posts_individual_standard_and_manual_invoices():
+    template = (Path(__file__).resolve().parents[1] / 'templates' / 'collect_fees.html').read_text(encoding='utf-8')
+
+    assert 'id="openIndividualInvoice"' in template
+    assert 'id="individualInvoiceModal"' in template
+    assert 'name="invoice_mode" value="STANDARD"' in template
+    assert 'name="invoice_mode" value="MANUAL"' in template
+    assert 'id="individualInvoiceVotehead"' in template
+    assert '/admin/fees/student/${activeStudentContext.admno}/invoice' in template
+
+
+def test_collect_fees_template_renders_selected_student_finance_timeline():
+    template = (Path(__file__).resolve().parents[1] / 'templates' / 'collect_fees.html').read_text(encoding='utf-8')
+
+    assert 'id="financeTimelineCard"' in template
+    assert 'id="financeTimelineList"' in template
+    assert 'function renderFinanceTimeline(admno)' in template
+    assert '/api/fees/timeline?admno=${encodeURIComponent(admno)}&limit=50' in template
+
+
 def test_fee_structure_templates_use_blueprint_qualified_endpoints():
     template_root = Path(__file__).resolve().parents[1] / 'templates'
     template_names = (
@@ -1305,6 +1495,32 @@ def test_bulk_invoice_rejects_incomplete_votehead_selection_without_posting(clie
     assert b'Select both a votehead and amount for votehead-specific invoicing.' in response.data
 
 
+def test_individual_invoice_route_posts_standard_and_manual_modes(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+
+    standard_response = client.post('/admin/fees/student/1001/invoice', data={
+        'year_id': '2026', 'term_id': '3', 'invoice_mode': 'STANDARD',
+    })
+    assert standard_response.status_code == 200
+    assert standard_response.json == {'success': True, 'ledger_ids': [91]}
+    assert FeesServiceStub.last_instance.calls == [
+        ('get_student_fee_structure', 1001, 3),
+        ('invoice_student', 1001, 2026, 3, 81, 10, None),
+    ]
+
+    manual_response = client.post('/admin/fees/student/1001/invoice', data={
+        'year_id': '2026', 'term_id': '3', 'invoice_mode': 'MANUAL',
+        'votehead_id': '4', 'amount': '1250.50',
+    })
+    assert manual_response.status_code == 200
+    assert FeesServiceStub.last_instance.calls == [
+        ('invoice_student', 1001, 2026, 3, 0, 10, [{'votehead_id': 4, 'amount': Decimal('1250.50')}]),
+    ]
+
+
 def test_bulk_debit_requires_classes_before_posting(client, db_session, monkeypatch):
     school = _create_school(db_session)
     _login_admin(client, school.id)
@@ -1323,12 +1539,56 @@ def test_receipt_lifecycle_report_includes_audit_correlation_and_replacement_lin
     template = (Path(__file__).resolve().parents[1] / 'templates' / 'receipt_lifecycle_report.html').read_text(encoding='utf-8')
 
     assert 'record.replacement_payment_id' in template
+    assert 'record.replacement_receipt_no' in template
+    assert 'record.replacement_reference_number' in template
     assert 'record.correlation_id' in template
     assert 'Transfer Source' in template
     assert 'Transfer Destination' in template
     assert 'record.transfer.from_admno if record.transfer else' in template
     assert 'record.transfer.to_admno if record.transfer else' in template
     assert 'colspan="11"' in template
+    assert 'name="academic_year_id"' in template
+    assert 'name="term_id"' in template
+
+
+def test_reallocation_report_includes_period_selectors():
+    template = (Path(__file__).resolve().parents[1] / 'templates' / 'fee_reallocation_report.html').read_text(encoding='utf-8')
+
+    assert 'name="academic_year_id"' in template
+    assert 'name="term_id"' in template
+    assert '{% if not academic_year_id %}disabled{% endif %}' in template
+
+
+def test_invoice_replacement_report_includes_period_selectors():
+    template = (Path(__file__).resolve().parents[1] / 'templates' / 'fee_invoice_replacement_report.html').read_text(encoding='utf-8')
+
+    assert 'name="academic_year_id"' in template
+    assert 'name="term_id"' in template
+    assert '{% if not academic_year_id %}disabled{% endif %}' in template
+
+
+def test_fee_ledger_summary_report_includes_period_selectors():
+    template = (Path(__file__).resolve().parents[1] / 'templates' / 'fee_ledger_summary_report.html').read_text(encoding='utf-8')
+
+    assert 'name="academic_year_id"' in template
+    assert 'name="term_id"' in template
+    assert '{% if not academic_year_id %}disabled{% endif %}' in template
+
+
+def test_fee_revenue_analysis_report_includes_period_selectors():
+    template = (Path(__file__).resolve().parents[1] / 'templates' / 'fee_revenue_analysis_report.html').read_text(encoding='utf-8')
+
+    assert 'name="academic_year_id"' in template
+    assert 'name="term_id"' in template
+    assert '{% if not academic_year_id %}disabled{% endif %}' in template
+
+
+def test_fee_waiver_report_includes_period_selectors():
+    template = (Path(__file__).resolve().parents[1] / 'templates' / 'fee_waiver_report.html').read_text(encoding='utf-8')
+
+    assert 'name="academic_year_id"' in template
+    assert 'name="term_id"' in template
+    assert '{% if not academic_year_id %}disabled{% endif %}' in template
 
 
 def test_fees_collect_route_forwards_manual_allocations_for_ajax_post(client, db_session, monkeypatch):
@@ -1423,6 +1683,10 @@ def test_fees_student_context_returns_ledger_outstanding_voteheads(client, db_se
     monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
     monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
     monkeypatch.setattr(students_services, "StudentService", StudentServiceStub)
+    monkeypatch.setattr(ClassServiceStub, "get_active_classes", lambda _self: [
+        {"classID": 17, "display_name": "Grade 7 A", "academic_year_id": 2026, "stream_code": "A"},
+        {"classID": 18, "display_name": "Grade 7 B", "academic_year_id": 2026, "stream_code": "B"},
+    ])
 
     response = client.get("/api/fees/student-context?admno=1001")
 
@@ -1430,7 +1694,13 @@ def test_fees_student_context_returns_ledger_outstanding_voteheads(client, db_se
     assert response.json["success"] is True
     assert response.json["admno"] == 1001
     assert response.json["stream"] == "A"
+    assert response.json["class_id"] == 17
+    assert response.json["available_classes"][1]["classID"] == 18
     assert response.json["student_group"] == "Scholarship"
+    assert response.json["student_group_id"] == 3
+    assert response.json["available_student_groups"] == [
+        {"id": 3, "name": "Scholarship"}, {"id": 7, "name": "Boarding Support"}
+    ]
     assert response.json["outstanding_balance"] == 850.0
     assert response.json["structure_items"] == [
         {"votehead_id": 4, "votehead_name": "Tuition", "amount": 1500.0, "priority": 1}
@@ -2439,6 +2709,19 @@ def test_fees_statement_summary_route_returns_tenant_service_summary(client, db_
     assert FeesServiceStub.last_instance.calls == [("get_student_statement_summary", 1001, 4)]
 
 
+def test_finance_timeline_route_forwards_validated_request_to_tenant_service(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+
+    response = client.get("/api/fees/timeline?admno=1001&limit=25")
+
+    assert response.status_code == 200
+    assert response.json[0]["event_title"] == "Payment received"
+    assert FeesServiceStub.last_instance.calls == [("get_student_finance_timeline", 1001, 25)]
+
+
 def test_revoke_waiver_route_records_reason_with_current_user(client, db_session, monkeypatch):
     school = _create_school(db_session)
     _login_admin(client, school.id)
@@ -2456,18 +2739,51 @@ def test_fee_waiver_report_forwards_filters_to_service(client, db_session, monke
     _login_admin(client, school.id)
     monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
     monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
     monkeypatch.setattr(
         fees_routes, "render_template",
         lambda template, **context: f"{template}:{context['status']}",
     )
 
-    response = client.get('/admin/fees/reports/waivers?start_date=2026-07-01&end_date=2026-07-31&status=ACTIVE')
+    response = client.get('/admin/fees/reports/waivers?start_date=2026-07-01&end_date=2026-07-31&status=ACTIVE&academic_year_id=2026&term_id=3')
 
     assert response.status_code == 200
     assert response.data == b'fee_waiver_report.html:ACTIVE'
     assert FeesServiceStub.last_instance.calls == [
-        ('get_waiver_register', '2026-07-01', '2026-07-31', 'ACTIVE'),
+        ('get_terms_for_academic_year', 2026),
+        ('get_waiver_register', '2026-07-01', '2026-07-31', 'ACTIVE', 2026, 3),
     ]
+
+
+def test_fee_waiver_report_exports_csv(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+    monkeypatch.setattr(
+        FeesServiceStub,
+        "get_waiver_register",
+        lambda _self, *_args: [{"admno": 101, "status": "ACTIVE", "waiver_amount": "500"}],
+    )
+
+    response = client.get('/admin/fees/reports/waivers?export=csv')
+
+    assert response.status_code == 200
+    assert response.headers['Content-Type'].startswith('text/csv')
+    assert b'Fee Waiver Register' in response.data
+    assert b'101' in response.data
+
+
+def test_fee_waiver_report_rejects_term_without_academic_year(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+
+    response = client.get('/admin/fees/reports/waivers?term_id=3')
+
+    assert response.status_code == 400
 
 
 def test_fee_revenue_analysis_report_forwards_dates(client, db_session, monkeypatch):
@@ -2475,18 +2791,47 @@ def test_fee_revenue_analysis_report_forwards_dates(client, db_session, monkeypa
     _login_admin(client, school.id)
     monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
     monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
     monkeypatch.setattr(
         fees_routes, "render_template",
         lambda template, **context: f"{template}:{context['start_date']}",
     )
 
-    response = client.get('/admin/fees/reports/revenue-analysis?start_date=2026-07-01&end_date=2026-07-31')
+    response = client.get('/admin/fees/reports/revenue-analysis?start_date=2026-07-01&end_date=2026-07-31&academic_year_id=2026&term_id=3')
 
     assert response.status_code == 200
     assert response.data == b'fee_revenue_analysis_report.html:2026-07-01'
     assert FeesServiceStub.last_instance.calls == [
-        ('get_fee_revenue_analysis', '2026-07-01', '2026-07-31'),
+        ('get_terms_for_academic_year', 2026),
+        ('get_fee_revenue_analysis', '2026-07-01', '2026-07-31', 2026, 3),
     ]
+
+
+def test_fee_revenue_analysis_report_exports_csv(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+    monkeypatch.setattr(FeesServiceStub, "get_fee_revenue_analysis", lambda _self, *_args: [{"votehead_name": "Tuition", "invoiced_amount": "1000"}])
+
+    response = client.get('/admin/fees/reports/revenue-analysis?start_date=2026-07-01&end_date=2026-07-31&export=csv')
+
+    assert response.status_code == 200
+    assert response.headers['Content-Type'].startswith('text/csv')
+    assert b'Fee Revenue Analysis\r\nvotehead_name,invoiced_amount,debit_note_amount' in response.data
+    assert b'Tuition,1000' in response.data
+
+
+def test_fee_revenue_analysis_report_rejects_term_without_academic_year(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+
+    response = client.get('/admin/fees/reports/revenue-analysis?term_id=3')
+
+    assert response.status_code == 400
 
 
 def test_fee_ledger_summary_report_forwards_dates(client, db_session, monkeypatch):
@@ -2494,18 +2839,78 @@ def test_fee_ledger_summary_report_forwards_dates(client, db_session, monkeypatc
     _login_admin(client, school.id)
     monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
     monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
     monkeypatch.setattr(
         fees_routes, "render_template",
         lambda template, **context: f"{template}:{context['end_date']}",
     )
 
-    response = client.get('/admin/fees/reports/ledger-summary?start_date=2026-07-01&end_date=2026-07-31')
+    response = client.get('/admin/fees/reports/ledger-summary?start_date=2026-07-01&end_date=2026-07-31&academic_year_id=2026&term_id=3')
 
     assert response.status_code == 200
     assert response.data == b'fee_ledger_summary_report.html:2026-07-31'
     assert FeesServiceStub.last_instance.calls == [
-        ('get_fee_ledger_summary', '2026-07-01', '2026-07-31'),
+        ('get_terms_for_academic_year', 2026),
+        ('get_fee_ledger_summary', '2026-07-01', '2026-07-31', 2026, 3),
     ]
+
+
+def test_fee_ledger_summary_report_exports_csv(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+    monkeypatch.setattr(FeesServiceStub, "get_fee_ledger_summary", lambda _self, *_args: [{"academic_year": 2026, "term_number": 1, "net_movement": "200"}])
+
+    response = client.get('/admin/fees/reports/ledger-summary?start_date=2026-07-01&end_date=2026-07-31&export=csv')
+
+    assert response.status_code == 200
+    assert response.headers['Content-Type'].startswith('text/csv')
+    assert b'Fee Ledger Summary\r\nacademic_year,term_number,charges' in response.data
+    assert b'2026,1' in response.data
+
+
+def test_fee_balances_report_forwards_tenant_validated_filters(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+    monkeypatch.setattr(fees_routes, "render_template", lambda template, **context: f"{template}:{context['stream']}")
+
+    response = client.get('/admin/fees/reports/balances?academic_year_id=2026&class_id=14&stream=a')
+
+    assert response.status_code == 200
+    assert response.data == b'report_fee_balances.html:A'
+    assert FeesServiceStub.last_instance.calls == [
+        ('get_distinct_stream_codes',),
+        ('get_fee_balances_report', 2026, 14, 'A'),
+    ]
+
+
+def test_fee_balances_report_rejects_class_outside_tenant(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+
+    response = client.get('/admin/fees/reports/balances?class_id=999')
+
+    assert response.status_code == 400
+    assert FeesServiceStub.last_instance.calls == [('get_distinct_stream_codes',)]
+
+
+def test_fee_ledger_summary_report_rejects_term_without_academic_year(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+
+    response = client.get('/admin/fees/reports/ledger-summary?term_id=3')
+
+    assert response.status_code == 400
 
 
 def test_fee_arrears_aging_report_loads_receivables_class_summary(client, db_session, monkeypatch):
@@ -2532,13 +2937,45 @@ def test_receipt_lifecycle_report_passes_audit_filters_to_service(client, db_ses
     _login_admin(client, school.id)
     monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
     monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
     monkeypatch.setattr(fees_routes, "render_template", lambda template, **context: f"{template}:{context['event_type']}")
 
-    response = client.get("/admin/fees/reports/receipt-lifecycle?start_date=2026-07-01&end_date=2026-07-31&event_type=CANCELLED")
+    response = client.get("/admin/fees/reports/receipt-lifecycle?start_date=2026-07-01&end_date=2026-07-31&event_type=CANCELLED&academic_year_id=2026&term_id=3")
 
     assert response.status_code == 200
     assert b"receipt_lifecycle_report.html:CANCELLED" in response.data
-    assert FeesServiceStub.last_instance.calls == [("get_receipt_lifecycle_register", "2026-07-01", "2026-07-31", "CANCELLED")]
+    assert FeesServiceStub.last_instance.calls == [
+        ("get_terms_for_academic_year", 2026),
+        ("get_receipt_lifecycle_register", "2026-07-01", "2026-07-31", "CANCELLED", 2026, 3),
+    ]
+
+
+def test_receipt_lifecycle_report_exports_csv(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+    monkeypatch.setattr(FeesServiceStub, "get_receipt_lifecycle_register", lambda _self, *_args: [{"event_type": "TRANSFERRED", "receipt_no": "RCP-1", "snapshot_json": '{"from_admno": 101, "to_admno": 202}'}])
+
+    response = client.get('/admin/fees/reports/receipt-lifecycle?export=csv')
+
+    assert response.status_code == 200
+    assert response.headers['Content-Type'].startswith('text/csv')
+    assert b'Receipt Lifecycle Audit Register' in response.data
+    assert b'RCP-1' in response.data
+    assert b'101,202,TRANSFERRED' in response.data
+
+
+def test_receipt_lifecycle_report_rejects_term_without_academic_year(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+
+    response = client.get('/admin/fees/reports/receipt-lifecycle?term_id=3')
+
+    assert response.status_code == 400
 
 
 def test_receipt_lifecycle_report_exposes_transfer_students_from_immutable_snapshot(client, db_session, monkeypatch):
@@ -2546,6 +2983,7 @@ def test_receipt_lifecycle_report_exposes_transfer_students_from_immutable_snaps
     _login_admin(client, school.id)
     monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
     monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
     monkeypatch.setattr(
         FeesServiceStub,
         "get_receipt_lifecycle_register",
@@ -2569,13 +3007,44 @@ def test_reallocation_report_passes_period_filters_to_service(client, db_session
     _login_admin(client, school.id)
     monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
     monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
     monkeypatch.setattr(fees_routes, "render_template", lambda template, **context: f"{template}:{context['start_date']}")
 
-    response = client.get("/admin/fees/reports/reallocations?start_date=2026-07-01&end_date=2026-07-31")
+    response = client.get("/admin/fees/reports/reallocations?start_date=2026-07-01&end_date=2026-07-31&academic_year_id=2026&term_id=3")
 
     assert response.status_code == 200
     assert b"fee_reallocation_report.html:2026-07-01" in response.data
-    assert FeesServiceStub.last_instance.calls == [("get_reallocation_register", "2026-07-01", "2026-07-31")]
+    assert FeesServiceStub.last_instance.calls == [
+        ("get_terms_for_academic_year", 2026),
+        ("get_reallocation_register", "2026-07-01", "2026-07-31", 2026, 3),
+    ]
+
+
+def test_reallocation_report_exports_csv(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+    monkeypatch.setattr(FeesServiceStub, "get_reallocation_register", lambda _self, *_args: [{"receipt_no": "RCP-2", "original_admno": 101, "new_admno": 202}])
+
+    response = client.get('/admin/fees/reports/reallocations?export=csv')
+
+    assert response.status_code == 200
+    assert response.headers['Content-Type'].startswith('text/csv')
+    assert b'Fee Payment Reallocation Register' in response.data
+    assert b'RCP-2' in response.data
+
+
+def test_reallocation_report_rejects_term_without_academic_year(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+
+    response = client.get('/admin/fees/reports/reallocations?term_id=3')
+
+    assert response.status_code == 400
 
 
 def test_invoice_replacement_report_passes_period_filters_to_service(client, db_session, monkeypatch):
@@ -2583,13 +3052,48 @@ def test_invoice_replacement_report_passes_period_filters_to_service(client, db_
     _login_admin(client, school.id)
     monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
     monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
     monkeypatch.setattr(fees_routes, "render_template", lambda template, **context: f"{template}:{context['start_date']}")
 
-    response = client.get("/admin/fees/reports/invoice-replacements?start_date=2026-07-01&end_date=2026-07-31")
+    response = client.get("/admin/fees/reports/invoice-replacements?start_date=2026-07-01&end_date=2026-07-31&academic_year_id=2026&term_id=3")
 
     assert response.status_code == 200
     assert b"fee_invoice_replacement_report.html:2026-07-01" in response.data
-    assert FeesServiceStub.last_instance.calls == [("get_invoice_replacement_register", "2026-07-01", "2026-07-31")]
+    assert FeesServiceStub.last_instance.calls == [
+        ("get_terms_for_academic_year", 2026),
+        ("get_invoice_replacement_register", "2026-07-01", "2026-07-31", 2026, 3),
+    ]
+
+
+def test_invoice_replacement_report_exports_csv(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+    monkeypatch.setattr(
+        FeesServiceStub,
+        "get_invoice_replacement_register",
+        lambda _self, *_args: [{"admno": 101, "replacement_invoice_reference": "INV-REP-1"}],
+    )
+
+    response = client.get('/admin/fees/reports/invoice-replacements?export=csv')
+
+    assert response.status_code == 200
+    assert response.headers['Content-Type'].startswith('text/csv')
+    assert b'Category Invoice Replacement Register' in response.data
+    assert b'INV-REP-1' in response.data
+
+
+def test_invoice_replacement_report_rejects_term_without_academic_year(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+
+    response = client.get('/admin/fees/reports/invoice-replacements?term_id=3')
+
+    assert response.status_code == 400
 
 
 def test_collection_report_loads_completed_and_status_summaries(client, db_session, monkeypatch):
@@ -2597,6 +3101,7 @@ def test_collection_report_loads_completed_and_status_summaries(client, db_sessi
     _login_admin(client, school.id)
     monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
     monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
     monkeypatch.setattr(fees_routes, "render_template", lambda template, **context: f"{template}:{len(context['status_data'])}")
 
     response = client.get("/admin/fees/reports/collection?start_date=2026-07-01&end_date=2026-07-31")
@@ -2612,11 +3117,33 @@ def test_collection_report_loads_completed_and_status_summaries(client, db_sessi
     ]
 
 
+def test_collection_report_exports_filtered_csv(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+    monkeypatch.setattr(
+        FeesServiceStub,
+        "get_collection_summary",
+        lambda _self, *_args, **_kwargs: [{"payment_mode": "CASH", "count": 2, "total_amount": "1500.00"}],
+    )
+
+    response = client.get('/admin/fees/reports/collection?start_date=2026-07-01&end_date=2026-07-31&export=csv')
+
+    assert response.status_code == 200
+    assert response.headers['Content-Type'].startswith('text/csv')
+    assert 'attachment; filename="fee-collections-2026-07-01-to-2026-07-31.csv"' == response.headers['Content-Disposition']
+    assert b'Collections by Payment Mode\r\npayment_mode,count,total_amount\r\nCASH,2,1500.00' in response.data
+    assert b'Collections by Votehead' in response.data
+
+
 def test_collection_report_forwards_selected_payment_mode_to_every_summary(client, db_session, monkeypatch):
     school = _create_school(db_session)
     _login_admin(client, school.id)
     monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
     monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
     monkeypatch.setattr(fees_routes, "render_template", lambda template, **context: f"{template}:{context['payment_mode']}")
 
     response = client.get("/admin/fees/reports/collection?start_date=2026-07-01&end_date=2026-07-31&payment_mode=mpesa")
@@ -2632,11 +3159,186 @@ def test_collection_report_forwards_selected_payment_mode_to_every_summary(clien
     ]
 
 
+def test_collection_report_forwards_validated_current_class_and_stream_to_every_summary(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+    monkeypatch.setattr(fees_routes, "render_template", lambda template, **context: f"{template}:{context['class_id']}:{context['stream']}")
+
+    response = client.get("/admin/fees/reports/collection?start_date=2026-07-01&end_date=2026-07-31&class_id=14&stream=a")
+
+    assert response.status_code == 200
+    assert response.data == b"fees_collection_report.html:14:A"
+    assert FeesServiceStub.last_instance.calls == [
+        ("get_collection_summary", "2026-07-01", "2026-07-31", None, 14, "A"),
+        ("get_collection_status_summary", "2026-07-01", "2026-07-31", None, 14, "A"),
+        ("get_collection_category_summary", "2026-07-01", "2026-07-31", None, 14, "A"),
+        ("get_collection_class_summary", "2026-07-01", "2026-07-31", None, 14, "A"),
+        ("get_collection_votehead_summary", "2026-07-01", "2026-07-31", None, 14, "A"),
+    ]
+
+
+def test_collection_report_rejects_class_filter_outside_active_tenant(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+
+    response = client.get("/admin/fees/reports/collection?class_id=999")
+
+    assert response.status_code == 400
+    assert FeesServiceStub.last_instance.calls == []
+
+
+def test_collection_report_forwards_validated_cashier_to_every_summary(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+    monkeypatch.setattr(fees_routes, "render_template", lambda template, **context: f"{template}:{context['cashier_user_id']}")
+
+    response = client.get("/admin/fees/reports/collection?start_date=2026-07-01&end_date=2026-07-31&cashier_user_id=24")
+
+    assert response.status_code == 200
+    assert response.data == b"fees_collection_report.html:24"
+    assert FeesServiceStub.last_instance.calls == [
+        ("get_collection_summary", "2026-07-01", "2026-07-31", None, 24),
+        ("get_collection_status_summary", "2026-07-01", "2026-07-31", None, 24),
+        ("get_collection_category_summary", "2026-07-01", "2026-07-31", None, 24),
+        ("get_collection_class_summary", "2026-07-01", "2026-07-31", None, 24),
+        ("get_collection_votehead_summary", "2026-07-01", "2026-07-31", None, 24),
+    ]
+
+
+def test_collection_report_rejects_cashier_filter_outside_active_tenant(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+
+    response = client.get("/admin/fees/reports/collection?cashier_user_id=999")
+
+    assert response.status_code == 400
+    assert FeesServiceStub.last_instance.calls == []
+
+
+def test_collection_report_forwards_validated_category_to_every_summary(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+    monkeypatch.setattr(fees_routes, "render_template", lambda template, **context: f"{template}:{context['category']}")
+
+    response = client.get("/admin/fees/reports/collection?start_date=2026-07-01&end_date=2026-07-31&category=Boarding")
+
+    assert response.status_code == 200
+    assert response.data == b"fees_collection_report.html:Boarding"
+    assert FeesServiceStub.last_instance.calls == [
+        ("get_collection_summary", "2026-07-01", "2026-07-31", None, "Boarding"),
+        ("get_collection_status_summary", "2026-07-01", "2026-07-31", None, "Boarding"),
+        ("get_collection_category_summary", "2026-07-01", "2026-07-31", None, "Boarding"),
+        ("get_collection_class_summary", "2026-07-01", "2026-07-31", None, "Boarding"),
+        ("get_collection_votehead_summary", "2026-07-01", "2026-07-31", None, "Boarding"),
+    ]
+
+
+def test_collection_report_rejects_category_filter_outside_active_tenant(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+
+    response = client.get("/admin/fees/reports/collection?category=External")
+
+    assert response.status_code == 400
+    assert FeesServiceStub.last_instance.calls == []
+
+
+def test_collection_report_forwards_validated_votehead_to_every_summary(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+    monkeypatch.setattr(fees_routes, "render_template", lambda template, **context: f"{template}:{context['votehead_id']}")
+
+    response = client.get("/admin/fees/reports/collection?start_date=2026-07-01&end_date=2026-07-31&votehead_id=4")
+
+    assert response.status_code == 200
+    assert response.data == b"fees_collection_report.html:4"
+    assert FeesServiceStub.last_instance.calls == [
+        ("get_collection_summary", "2026-07-01", "2026-07-31", None, 4),
+        ("get_collection_status_summary", "2026-07-01", "2026-07-31", None, 4),
+        ("get_collection_category_summary", "2026-07-01", "2026-07-31", None, 4),
+        ("get_collection_class_summary", "2026-07-01", "2026-07-31", None, 4),
+        ("get_collection_votehead_summary", "2026-07-01", "2026-07-31", None, 4),
+    ]
+
+
+def test_collection_report_rejects_votehead_filter_outside_active_tenant(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+
+    response = client.get("/admin/fees/reports/collection?votehead_id=999")
+
+    assert response.status_code == 400
+    assert FeesServiceStub.last_instance.calls == []
+
+
+def test_collection_report_forwards_selected_payment_status_to_every_summary(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+    monkeypatch.setattr(fees_routes, "render_template", lambda template, **context: f"{template}:{context['payment_status']}")
+
+    response = client.get("/admin/fees/reports/collection?start_date=2026-07-01&end_date=2026-07-31&payment_status=cancelled")
+
+    assert response.status_code == 200
+    assert response.data == b"fees_collection_report.html:CANCELLED"
+    assert FeesServiceStub.last_instance.calls == [
+        ("get_collection_summary", "2026-07-01", "2026-07-31", None, "CANCELLED"),
+        ("get_collection_status_summary", "2026-07-01", "2026-07-31", None, "CANCELLED"),
+        ("get_collection_category_summary", "2026-07-01", "2026-07-31", None, "CANCELLED"),
+        ("get_collection_class_summary", "2026-07-01", "2026-07-31", None, "CANCELLED"),
+        ("get_collection_votehead_summary", "2026-07-01", "2026-07-31", None, "CANCELLED"),
+    ]
+
+
+def test_collection_report_rejects_unsupported_payment_status(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+
+    response = client.get("/admin/fees/reports/collection?payment_status=transferred")
+
+    assert response.status_code == 400
+
+
 def test_collection_report_template_preserves_selected_payment_mode():
     template = (Path(__file__).resolve().parents[1] / 'templates' / 'fees_collection_report.html').read_text(encoding='utf-8')
 
     assert 'name="payment_mode"' in template
     assert '{% if payment_mode == mode %}selected{% endif %}' in template
+    assert 'name="class_id"' in template
+    assert 'name="stream"' in template
+    assert 'name="cashier_user_id"' in template
+    assert 'name="category"' in template
+    assert 'name="votehead_id"' in template
+    assert 'name="payment_status"' in template
 
 
 def test_replace_category_invoice_route_forwards_audited_request(client, db_session, monkeypatch):
@@ -2647,6 +3349,7 @@ def test_replace_category_invoice_route_forwards_audited_request(client, db_sess
 
     response = client.post("/admin/fees/student/1001/replace-category-invoice", data={
         "year_id": "4", "term_id": "3", "category": "Boarding", "student_group_id": "7",
+        "new_class_id": "18",
         "reason": "Boarding correction",
     })
 
@@ -2654,7 +3357,7 @@ def test_replace_category_invoice_route_forwards_audited_request(client, db_sess
     assert response.json["replacement_reference"] == "INV-REP-test"
     assert FeesServiceStub.last_instance.calls == [("replace_category_invoice", {
         "admno": 1001, "year_id": 4, "term_id": 3, "new_category": "Boarding",
-        "new_student_group_id": 7, "reason": "Boarding correction", "user_id": 10,
+        "new_student_group_id": 7, "new_class_id": 18, "reason": "Boarding correction", "user_id": 10,
     })]
 
 
@@ -2679,14 +3382,35 @@ def test_fee_receipts_register_forwards_lifecycle_event_filter(client, db_sessio
     _login_admin(client, school.id)
     monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
     monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
     monkeypatch.setattr(fees_routes, "render_template", lambda template, **context: f"{template}:{len(context['records'])}")
 
     response = client.get("/admin/fees/receipts?status=COMPLETED&lifecycle_event=ARCHIVED")
 
     assert response.status_code == 200
     assert FeesServiceStub.last_instance.calls == [
-        ("get_receipts_register", None, None, None, None, None, "COMPLETED", "ARCHIVED", None),
+        ("get_receipts_register", None, None, None, None, None, "COMPLETED", "ARCHIVED", None, None, None),
     ]
+
+
+def test_fee_receipts_register_exports_filtered_csv(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+    monkeypatch.setattr(
+        FeesServiceStub,
+        "get_receipts_register",
+        lambda _self, *_args: [{"receipt_no": "RCP-1", "admno": 101, "amount": "500"}],
+    )
+
+    response = client.get('/admin/fees/receipts?status=COMPLETED&export=csv')
+
+    assert response.status_code == 200
+    assert response.headers['Content-Type'].startswith('text/csv')
+    assert b'Fee Receipts Register' in response.data
+    assert b'RCP-1' in response.data
 
 
 def test_fee_receipts_register_forwards_cashier_filter(client, db_session, monkeypatch):
@@ -2694,6 +3418,7 @@ def test_fee_receipts_register_forwards_cashier_filter(client, db_session, monke
     _login_admin(client, school.id)
     monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
     monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
     monkeypatch.setattr(fees_routes, "render_template", lambda template, **context: f"{template}:{context['filters']['cashier_user_id']}")
 
     response = client.get('/admin/fees/receipts?cashier_user_id=14')
@@ -2701,8 +3426,64 @@ def test_fee_receipts_register_forwards_cashier_filter(client, db_session, monke
     assert response.status_code == 200
     assert response.data == b'fee_receipts_register.html:14'
     assert FeesServiceStub.last_instance.calls == [
-        ("get_receipts_register", None, None, None, None, None, None, None, 14),
+        ("get_receipts_register", None, None, None, None, None, None, None, 14, None, None),
     ]
+
+
+def test_fee_receipts_register_forwards_ledger_period_filters(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+    monkeypatch.setattr(fees_routes, "render_template", lambda _template, **_context: "ok")
+
+    response = client.get('/admin/fees/receipts?academic_year_id=2026&term_id=3')
+
+    assert response.status_code == 200
+    assert FeesServiceStub.last_instance.calls == [
+        ("get_terms_for_academic_year", 2026),
+        ("get_receipts_register", None, None, None, None, None, None, None, None, 2026, 3),
+    ]
+
+
+def test_fee_receipts_register_rejects_term_without_tenant_year(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+
+    response = client.get('/admin/fees/receipts?term_id=3')
+
+    assert response.status_code == 400
+    assert FeesServiceStub.last_instance.calls == []
+
+
+def test_fee_receipts_register_rejects_academic_year_outside_tenant(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+
+    response = client.get('/admin/fees/receipts?academic_year_id=2025')
+
+    assert response.status_code == 400
+    assert FeesServiceStub.last_instance.calls == []
+
+
+def test_fee_receipts_register_rejects_term_outside_selected_year(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+    monkeypatch.setattr(FeesServiceStub, "get_terms_for_academic_year", lambda _self, _year_id: [])
+
+    response = client.get('/admin/fees/receipts?academic_year_id=2026&term_id=3')
+
+    assert response.status_code == 400
+    assert FeesServiceStub.last_instance.calls == []
 
 
 def test_fee_receipts_register_template_preserves_cashier_filter():
@@ -2710,6 +3491,9 @@ def test_fee_receipts_register_template_preserves_cashier_filter():
 
     assert 'name="cashier_user_id"' in template
     assert 'value="{{ filters.cashier_user_id }}"' in template
+    assert 'name="academic_year_id"' in template
+    assert 'name="term_id"' in template
+    assert '{% if not academic_year_id %}disabled{% endif %}' in template
 
 
 def test_fee_receipts_register_route_hides_unexpected_error_and_closes_connection(client, db_session, monkeypatch):
@@ -2724,6 +3508,7 @@ def test_fee_receipts_register_route_hides_unexpected_error_and_closes_connectio
     connection = TrackingConnection()
     monkeypatch.setattr(fees_routes, "get_db_connection", lambda: connection)
     monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
     monkeypatch.setattr(
         FeesServiceStub,
         "get_receipts_register",
@@ -2885,6 +3670,26 @@ def test_fee_adjustment_route_posts_typed_adjustment(client, db_session, monkeyp
     assert response.headers["Location"].endswith("/admin/fees/adjustments")
     assert FeesServiceStub.last_instance.calls == [
         ("create_account_adjustment", 1001, "CREDIT", 4, Decimal("250.00"), 2026, 3, "2026-07-31", "Approved correction", "CASE-42", 10),
+    ]
+
+
+def test_fee_refund_route_posts_audited_credit_limited_refund(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "ClassManagementService", ClassServiceStub)
+
+    response = client.post("/admin/fees/refunds", data={
+        "admno": "1001", "votehead_id": "4", "amount": "250.00", "year_id": "2026",
+        "term_id": "3", "effective_date": "2026-07-31", "refund_method": "MPESA",
+        "refund_reference": "MPS-REF-42", "reason": "Approved overpayment refund",
+    })
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/fees/refunds")
+    assert FeesServiceStub.last_instance.calls == [
+        ("create_fee_refund", 1001, 4, Decimal("250.00"), 2026, 3, "2026-07-31", "MPESA", "MPS-REF-42", "Approved overpayment refund", 10),
     ]
 
 
