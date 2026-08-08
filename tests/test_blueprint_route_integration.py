@@ -1168,6 +1168,16 @@ def test_fee_structure_templates_use_blueprint_qualified_endpoints():
             assert f"url_for('{endpoint}'" not in template
 
 
+def test_receipts_register_links_completed_receipts_to_audited_transfer_form():
+    register_template = (Path(__file__).resolve().parents[1] / 'templates' / 'fee_receipts_register.html').read_text(encoding='utf-8')
+    transfer_template = (Path(__file__).resolve().parents[1] / 'templates' / 'payment_reallocation.html').read_text(encoding='utf-8')
+
+    assert "url_for('fees.reallocate_fee_payment', reference_no=record.reference_number, from_admno=record.admno)" in register_template
+    assert 'title="Transfer receipt"' in register_template
+    assert "request.args.get('reference_no', '')" in transfer_template
+    assert "request.args.get('from_admno', '')" in transfer_template
+
+
 def test_collect_fees_template_reports_unexpected_post_response_safely():
     template = (Path(__file__).resolve().parents[1] / 'templates' / 'collect_fees.html').read_text(encoding='utf-8')
 

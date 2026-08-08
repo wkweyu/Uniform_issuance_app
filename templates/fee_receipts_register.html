@@ -126,6 +126,9 @@
                                     <a href="{{ url_for('fees.edit_fee_receipt', payment_id=record.id) }}" class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center hover:bg-amber-600 hover:text-white transition" title="Edit Meta">
                                         <i class="fas fa-edit text-xs"></i>
                                     </a>
+                                    <a href="{{ url_for('fees.reallocate_fee_payment', reference_no=record.reference_number, from_admno=record.admno) }}" class="w-8 h-8 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center hover:bg-sky-600 hover:text-white transition" title="Transfer receipt">
+                                        <i class="fas fa-right-left text-xs"></i>
+                                    </a>
                                     <button onclick="confirmVoid('{{ record.id }}', '{{ record.receipt_no }}')" class="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center hover:bg-rose-600 hover:text-white transition" title="Void Receipt">
                                         <i class="fas fa-trash-alt text-xs"></i>
                                     </button>

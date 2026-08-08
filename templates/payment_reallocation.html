@@ -20,14 +20,14 @@
                 
                 <div>
                     <label class="block text-sm font-bold text-gray-700 mb-1">Payment Reference (M-PESA/Slip No)</label>
-                    <input type="text" name="reference_no" required placeholder="e.g. QWE123RTY4" 
+                    <input type="text" name="reference_no" required value="{{ request.args.get('reference_no', '') }}" placeholder="e.g. QWE123RTY4"
                            class="w-full rounded-xl border-gray-200 focus:border-blue-500 bg-gray-50 p-3">
                 </div>
 
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-sm font-bold text-gray-700 mb-1">From AdmNo</label>
-                        <input type="text" name="from_admno" required placeholder="Current Student" 
+                        <input type="text" name="from_admno" required value="{{ request.args.get('from_admno', '') }}" placeholder="Current Student"
                                class="w-full rounded-xl border-gray-200 focus:border-blue-500 bg-gray-50 p-3">
                     </div>
                     <div>
