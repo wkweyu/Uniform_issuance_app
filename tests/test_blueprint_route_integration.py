@@ -328,8 +328,8 @@ class FeesServiceStub:
         self.calls.append(("get_student_statement", admno, year_id))
         return [{"admno": admno, "year_id": year_id, "balance": Decimal("0.00")}]
 
-    def get_receipts_register(self, start_date, end_date, admno, mode, query_text=None, status=None, lifecycle_event=None):
-        self.calls.append(("get_receipts_register", start_date, end_date, admno, mode, query_text, status, lifecycle_event))
+    def get_receipts_register(self, start_date, end_date, admno, mode, query_text=None, status=None, lifecycle_event=None, cashier_user_id=None):
+        self.calls.append(("get_receipts_register", start_date, end_date, admno, mode, query_text, status, lifecycle_event, cashier_user_id))
         return [{"receipt_no": "RCP-1", "admno": admno, "mode": mode}]
 
 
@@ -2685,8 +2685,31 @@ def test_fee_receipts_register_forwards_lifecycle_event_filter(client, db_sessio
 
     assert response.status_code == 200
     assert FeesServiceStub.last_instance.calls == [
-        ("get_receipts_register", None, None, None, None, None, "COMPLETED", "ARCHIVED"),
+        ("get_receipts_register", None, None, None, None, None, "COMPLETED", "ARCHIVED", None),
     ]
+
+
+def test_fee_receipts_register_forwards_cashier_filter(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(fees_routes, "render_template", lambda template, **context: f"{template}:{context['filters']['cashier_user_id']}")
+
+    response = client.get('/admin/fees/receipts?cashier_user_id=14')
+
+    assert response.status_code == 200
+    assert response.data == b'fee_receipts_register.html:14'
+    assert FeesServiceStub.last_instance.calls == [
+        ("get_receipts_register", None, None, None, None, None, None, None, 14),
+    ]
+
+
+def test_fee_receipts_register_template_preserves_cashier_filter():
+    template = (Path(__file__).resolve().parents[1] / 'templates' / 'fee_receipts_register.html').read_text(encoding='utf-8')
+
+    assert 'name="cashier_user_id"' in template
+    assert 'value="{{ filters.cashier_user_id }}"' in template
 
 
 def test_fee_receipts_register_route_hides_unexpected_error_and_closes_connection(client, db_session, monkeypatch):

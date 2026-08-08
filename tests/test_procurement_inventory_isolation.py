@@ -1365,6 +1365,19 @@ def test_fees_service_receipts_register_scopes_search_and_lifecycle_filters():
     assert 'fp.reference_number like %s' in query.lower()
 
 
+def test_fees_service_receipts_register_filters_cashier_within_school():
+    connection = RecordingConnection(responses=[('all', [])])
+    service = FeesService(connection, school_id=55)
+    service._table_columns_cache = {'fee_payments': {'school_id'}, 'fee_receipts': {'school_id'}}
+
+    assert service.get_receipts_register(cashier_user_id=14) == []
+
+    query, params = connection.cursor_obj.executed[0]
+    assert params == [55, 14]
+    assert 'fp.school_id = %s' in query.lower()
+    assert 'fp.received_by = %s' in query.lower()
+
+
 def test_fees_service_lifecycle_register_scopes_events_and_filters():
     connection = RecordingConnection(responses=[('all', [])])
     service = FeesService(connection, school_id=55)

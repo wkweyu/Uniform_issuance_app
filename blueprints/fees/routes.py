@@ -1255,6 +1255,7 @@ def fee_receipts_register():
             request.args.get('start_date'), request.args.get('end_date'),
             _optional_int(request.args.get('admno'), 'admno'), request.args.get('mode'),
             request.args.get('q'), request.args.get('status'), request.args.get('lifecycle_event'),
+            _optional_int(request.args.get('cashier_user_id'), 'cashier_user_id'),
         )
     except ValueError as e:
         flash(str(e), 'error')
