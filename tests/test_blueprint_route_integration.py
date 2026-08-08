@@ -1161,6 +1161,15 @@ def test_collect_fees_ledger_renders_credit_notes_as_credits():
     assert "entry.type === 'ADJUSTMENT' && (entry.description || '').startsWith('CREDIT NOTE:')" in template
 
 
+def test_collect_fees_term_summary_shows_auditable_movement_categories():
+    template = (Path(__file__).resolve().parents[1] / 'templates' / 'collect_fees.html').read_text(encoding='utf-8')
+
+    for heading in ('Debits', 'Credits', 'Waivers', 'Refunds'):
+        assert f'>{heading}</th>' in template
+    for field in ('row.debits', 'row.credits', 'row.waivers', 'row.refunds'):
+        assert f'formatCurrency({field})' in template
+
+
 def test_fee_structure_templates_use_blueprint_qualified_endpoints():
     template_root = Path(__file__).resolve().parents[1] / 'templates'
     template_names = (

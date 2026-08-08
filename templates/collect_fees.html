@@ -318,7 +318,7 @@
                             </div>
                             <div class="overflow-x-auto">
                                 <table class="w-full text-left border-collapse text-[10px]">
-                                    <thead><tr class="bg-slate-50 text-slate-500 font-black uppercase tracking-widest border-b border-slate-100"><th class="px-5 py-3">Period</th><th class="px-5 py-3 text-right">Opening</th><th class="px-5 py-3 text-right">Charges</th><th class="px-5 py-3 text-right">Receipts</th><th class="px-5 py-3 text-right">Credits / Waivers</th><th class="px-5 py-3 text-right">Closing</th></tr></thead>
+                                    <thead><tr class="bg-slate-50 text-slate-500 font-black uppercase tracking-widest border-b border-slate-100"><th class="px-5 py-3">Period</th><th class="px-5 py-3 text-right">Opening</th><th class="px-5 py-3 text-right">Charges</th><th class="px-5 py-3 text-right">Debits</th><th class="px-5 py-3 text-right">Receipts</th><th class="px-5 py-3 text-right">Credits</th><th class="px-5 py-3 text-right">Waivers</th><th class="px-5 py-3 text-right">Refunds</th><th class="px-5 py-3 text-right">Closing</th></tr></thead>
                                     <tbody id="statementSummaryBody" class="divide-y divide-slate-100"></tbody>
                                 </table>
                             </div>
@@ -1418,9 +1418,7 @@ function renderStatementSummary(admno) {
             const formatCurrency = amount => Number(amount || 0).toLocaleString('en-US', {minimumFractionDigits: 2});
             rows.forEach(row => {
                 const tr = document.createElement('tr');
-                const creditsAndWaivers = Number(row.credits || 0) + Number(row.waivers || 0);
-                const chargesAndDebits = Number(row.charges || 0) + Number(row.debits || 0) + Number(row.refunds || 0);
-                tr.innerHTML = `<td class="px-5 py-3 font-black text-slate-700">${row.academic_year} / Term ${row.term_number}</td><td class="px-5 py-3 text-right font-mono">${formatCurrency(row.opening_balance)}</td><td class="px-5 py-3 text-right font-mono text-rose-600">${formatCurrency(chargesAndDebits)}</td><td class="px-5 py-3 text-right font-mono text-emerald-700">${formatCurrency(row.payments)}</td><td class="px-5 py-3 text-right font-mono text-sky-700">${formatCurrency(creditsAndWaivers)}</td><td class="px-5 py-3 text-right font-mono font-black text-slate-900">${formatCurrency(row.closing_balance)}</td>`;
+                tr.innerHTML = `<td class="px-5 py-3 font-black text-slate-700">${row.academic_year} / Term ${row.term_number}</td><td class="px-5 py-3 text-right font-mono">${formatCurrency(row.opening_balance)}</td><td class="px-5 py-3 text-right font-mono text-rose-600">${formatCurrency(row.charges)}</td><td class="px-5 py-3 text-right font-mono text-rose-600">${formatCurrency(row.debits)}</td><td class="px-5 py-3 text-right font-mono text-emerald-700">${formatCurrency(row.payments)}</td><td class="px-5 py-3 text-right font-mono text-sky-700">${formatCurrency(row.credits)}</td><td class="px-5 py-3 text-right font-mono text-sky-700">${formatCurrency(row.waivers)}</td><td class="px-5 py-3 text-right font-mono text-rose-600">${formatCurrency(row.refunds)}</td><td class="px-5 py-3 text-right font-mono font-black text-slate-900">${formatCurrency(row.closing_balance)}</td>`;
                 body.appendChild(tr);
             });
             card.classList.remove('hidden');
