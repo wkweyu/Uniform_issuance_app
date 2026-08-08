@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, g, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, g, jsonify, current_app
 from core.permissions import admin_required, login_required
 from core.tenancy import require_current_school_id
 from blueprints.students.services import StudentService
@@ -323,6 +323,12 @@ def search_students_fees():
     service = StudentService(connection)
     try:
         return jsonify(service.search_students(q))
+    except Exception:
+        current_app.logger.exception('Bursar student lookup failed')
+        return jsonify({
+            'success': False,
+            'message': 'Unable to search students. Please try again later.',
+        }), 500
     finally:
         connection.close()
 

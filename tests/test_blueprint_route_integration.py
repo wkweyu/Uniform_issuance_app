@@ -440,6 +440,10 @@ class StudentServiceStub:
         self.calls.append(("get_student_by_admno", admno))
         return {"AdmNo": admno, "FName": "Ada", "MName": "", "SName": "Lovelace", "Sex": "F", "category": "Day", "student_group_name": "Scholarship"}
 
+    def search_students(self, query):
+        self.calls.append(("search_students", query))
+        return [{"AdmNo": 1001, "name": "Ada Lovelace", "class_name": "Grade 7 A"}]
+
     def get_student_class_info(self, admno):
         self.calls.append(("get_student_class_info", admno))
         return {"class_name": "Grade 7 A", "class_group": "Grade 7-9", "stream": "A"}
@@ -701,6 +705,27 @@ def test_student_service_searches_normalized_full_name_for_bursar_lookup():
     assert connection.cursor_obj.executed_params[1] == "%Mary  Wanjiku%"
     assert connection.cursor_obj.executed_params[2] == "%Mary  Wanjiku%"
     assert connection.cursor_obj.executed_params[3] == "%marywanjiku%"
+
+
+def test_bursar_student_lookup_returns_safe_json_when_search_fails(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(students_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(students_routes, "StudentService", StudentServiceStub)
+    monkeypatch.setattr(
+        StudentServiceStub,
+        "search_students",
+        lambda self, query: (_ for _ in ()).throw(RuntimeError("database password exposed")),
+    )
+
+    response = client.get("/api/search_students_fees?q=Ada")
+
+    assert response.status_code == 500
+    assert response.json == {
+        "success": False,
+        "message": "Unable to search students. Please try again later.",
+    }
+    assert b"database password exposed" not in response.data
 
 
 def test_finance_manage_budgets_route_uses_service_methods(client, db_session, monkeypatch):
