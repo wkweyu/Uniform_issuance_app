@@ -3,7 +3,7 @@
 <div class="max-w-3xl mx-auto py-8">
   <h1 class="text-2xl font-bold mb-4">Bulk Post Receipts</h1>
   <p class="text-sm text-gray-600 mb-4">Upload a CSV with columns: <span class="font-mono">admno,amount,mode,reference,bank,date,year_id,term_id</span>.</p>
-  <form action="{{ url_for('bulk_post_fees') }}" method="POST" enctype="multipart/form-data" class="bg-white border rounded-lg p-6">
+  <form action="{{ url_for('fees.bulk_post_fees') }}" method="POST" enctype="multipart/form-data" class="bg-white border rounded-lg p-6">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="file" name="file" accept=".csv" class="border rounded px-3 py-2 w-full">
     <div class="mt-4 text-right">

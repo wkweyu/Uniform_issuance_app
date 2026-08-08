@@ -262,13 +262,13 @@
                     <div class="px-6 py-4 border-b border-gray-50 flex justify-between items-center bg-green-50/30">
                         <div class="flex items-center gap-4">
                             <h3 class="font-bold text-green-900">Fee Payment History</h3>
-                            <a href="{{ url_for('fee_structure_card', class_id=student.classID, category='Day') }}" 
+                            <a href="{{ url_for('fees.fee_structure_card', class_id=student.classID, category='Day') }}"
                                class="text-[9px] font-black bg-blue-600 text-white px-3 py-1 rounded-full uppercase tracking-widest hover:bg-blue-700 transition no-print shadow-sm">
                                 <i class="fas fa-print mr-1"></i> Print Yearly Structure
                             </a>
                         </div>
                         <div class="flex items-center gap-3">
-                            <a href="{{ url_for('collect_fees') }}?admno={{ student.AdmNo }}" class="bg-green-600 text-white px-3 py-1 rounded-lg text-[10px] font-black uppercase shadow-sm hover:bg-green-700 transition no-print">
+                            <a href="{{ url_for('fees.collect_fees') }}?admno={{ student.AdmNo }}" class="bg-green-600 text-white px-3 py-1 rounded-lg text-[10px] font-black uppercase shadow-sm hover:bg-green-700 transition no-print">
                                 <i class="fas fa-plus mr-1"></i> Add Payment
                             </a>
                             <span class="text-xs font-bold text-green-700">{{ fee_history|length }} Payments Found</span>

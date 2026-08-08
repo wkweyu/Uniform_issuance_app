@@ -28,10 +28,10 @@
                     <a href="{{ url_for('fees.manage_fee_adjustments') }}" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-black transition uppercase tracking-widest border border-slate-200">
                         Debit / Credit Note
                     </a>
-                    <a href="{{ url_for('bulk_invoice') }}" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-black transition uppercase tracking-widest border border-slate-200">
+                    <a href="{{ url_for('fees.bulk_invoice') }}" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-black transition uppercase tracking-widest border border-slate-200">
                         Bulk Invoice
                     </a>
-                    <a href="{{ url_for('collect_fees') }}" class="bg-indigo-600 hover:bg-slate-900 text-white px-6 py-2 rounded-xl text-xs font-black transition shadow-lg shadow-indigo-100 uppercase tracking-widest">
+                    <a href="{{ url_for('fees.collect_fees') }}" class="bg-indigo-600 hover:bg-slate-900 text-white px-6 py-2 rounded-xl text-xs font-black transition shadow-lg shadow-indigo-100 uppercase tracking-widest">
                         Collect Fees
                     </a>
                 </div>
@@ -86,7 +86,7 @@
                         <h2 class="text-sm font-black text-slate-900 uppercase tracking-widest">Revenue Management</h2>
                     </div>
                     <div class="p-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <a href="{{ url_for('manage_voteheads') }}" class="group bg-slate-50 hover:bg-indigo-600 p-6 rounded-2xl transition shadow-sm border border-slate-100">
+                        <a href="{{ url_for('fees.manage_voteheads') }}" class="group bg-slate-50 hover:bg-indigo-600 p-6 rounded-2xl transition shadow-sm border border-slate-100">
                             <div class="bg-white w-10 h-10 rounded-xl flex items-center justify-center text-indigo-600 group-hover:text-indigo-600 mb-4 shadow-sm">
                                 <i class="fas fa-tags text-sm"></i>
                             </div>
@@ -94,7 +94,7 @@
                             <p class="text-[10px] text-slate-400 group-hover:text-indigo-100 mt-1">Configure income categories</p>
                         </a>
 
-                        <a href="{{ url_for('manage_fee_structures') }}" class="group bg-slate-50 hover:bg-slate-900 p-6 rounded-2xl transition shadow-sm border border-slate-100">
+                        <a href="{{ url_for('fees.manage_fee_structures') }}" class="group bg-slate-50 hover:bg-slate-900 p-6 rounded-2xl transition shadow-sm border border-slate-100">
                             <div class="bg-white w-10 h-10 rounded-xl flex items-center justify-center text-slate-900 mb-4 shadow-sm">
                                 <i class="fas fa-sitemap text-sm"></i>
                             </div>
@@ -102,7 +102,7 @@
                             <p class="text-[10px] text-slate-400 group-hover:text-slate-400 mt-1">Standard periodic billing</p>
                         </a>
 
-                        <a href="{{ url_for('manage_student_groups') }}" class="group bg-slate-50 hover:bg-slate-900 p-6 rounded-2xl transition shadow-sm border border-slate-100">
+                        <a href="{{ url_for('fees.manage_student_groups') }}" class="group bg-slate-50 hover:bg-slate-900 p-6 rounded-2xl transition shadow-sm border border-slate-100">
                             <div class="bg-white w-10 h-10 rounded-xl flex items-center justify-center text-slate-900 mb-4 shadow-sm">
                                 <i class="fas fa-users-viewfinder text-sm"></i>
                             </div>
@@ -110,7 +110,7 @@
                             <p class="text-[10px] text-slate-400 group-hover:text-slate-400 mt-1">Segmented fee policies</p>
                         </a>
 
-                        <a href="{{ url_for('reallocate_fee_payment') }}" class="group bg-slate-50 hover:bg-amber-500 p-6 rounded-2xl transition shadow-sm border border-slate-100">
+                        <a href="{{ url_for('fees.reallocate_fee_payment') }}" class="group bg-slate-50 hover:bg-amber-500 p-6 rounded-2xl transition shadow-sm border border-slate-100">
                             <div class="bg-white w-10 h-10 rounded-xl flex items-center justify-center text-amber-500 mb-4 shadow-sm">
                                 <i class="fas fa-shuffle text-sm"></i>
                             </div>
@@ -118,7 +118,7 @@
                             <p class="text-[10px] text-slate-400 group-hover:text-amber-50 mt-1">Correct payment posting errors</p>
                         </a>
 
-                        <a href="{{ url_for('bulk_post_fees') }}" class="group bg-slate-50 hover:bg-indigo-600 p-6 rounded-2xl transition shadow-sm border border-slate-100">
+                        <a href="{{ url_for('fees.bulk_post_fees') }}" class="group bg-slate-50 hover:bg-indigo-600 p-6 rounded-2xl transition shadow-sm border border-slate-100">
                             <div class="bg-white w-10 h-10 rounded-xl flex items-center justify-center text-indigo-600 mb-4 shadow-sm">
                                 <i class="fas fa-receipt text-sm"></i>
                             </div>
@@ -126,7 +126,7 @@
                             <p class="text-[10px] text-slate-400 group-hover:text-indigo-50 mt-1">Upload external bank slips</p>
                         </a>
 
-                        <a href="{{ url_for('fee_receipts_register') }}" class="group bg-slate-50 hover:bg-emerald-600 p-6 rounded-2xl transition shadow-sm border border-slate-100">
+                        <a href="{{ url_for('fees.fee_receipts_register') }}" class="group bg-slate-50 hover:bg-emerald-600 p-6 rounded-2xl transition shadow-sm border border-slate-100">
                             <div class="bg-white w-10 h-10 rounded-xl flex items-center justify-center text-emerald-600 mb-4 shadow-sm">
                                 <i class="fas fa-file-invoice-dollar text-sm"></i>
                             </div>
@@ -134,7 +134,7 @@
                             <p class="text-[10px] text-slate-400 group-hover:text-emerald-50 mt-1">Manage, Edit & Void Receipts</p>
                         </a>
 
-                        <a href="{{ url_for('admin_fees_rollup') }}" class="group bg-slate-50 hover:bg-rose-600 p-6 rounded-2xl transition shadow-sm border border-slate-100 border-dashed">
+                        <a href="{{ url_for('fees.admin_fees_rollup') }}" class="group bg-slate-50 hover:bg-rose-600 p-6 rounded-2xl transition shadow-sm border border-slate-100 border-dashed">
                             <div class="bg-white w-10 h-10 rounded-xl flex items-center justify-center text-rose-600 mb-4 shadow-sm">
                                 <i class="fas fa-calendar-check text-sm"></i>
                             </div>
@@ -152,7 +152,7 @@
                         <h2 class="text-sm font-black text-slate-900 uppercase tracking-widest">Analytical Reports</h2>
                     </div>
                     <div class="p-4 space-y-3 flex-grow">
-                        <a href="{{ url_for('fees_collection_report') }}" class="flex items-center justify-between p-4 rounded-2xl hover:bg-slate-50 border border-transparent hover:border-slate-100 transition group">
+                        <a href="{{ url_for('fees.fees_collection_report') }}" class="flex items-center justify-between p-4 rounded-2xl hover:bg-slate-50 border border-transparent hover:border-slate-100 transition group">
                             <div class="flex items-center gap-4">
                                 <div class="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
                                     <i class="fas fa-chart-line text-sm"></i>
@@ -214,7 +214,7 @@
                             <i class="fas fa-arrow-right text-slate-300 group-hover:text-violet-700 transition -translate-x-2 opacity-0 group-hover:opacity-100 group-hover:translate-x-0"></i>
                         </a>
 
-                        <a href="{{ url_for('fee_balances_report') }}" class="flex items-center justify-between p-4 rounded-2xl hover:bg-slate-50 border border-transparent hover:border-slate-100 transition group">
+                        <a href="{{ url_for('fees.fee_balances_report') }}" class="flex items-center justify-between p-4 rounded-2xl hover:bg-slate-50 border border-transparent hover:border-slate-100 transition group">
                             <div class="flex items-center gap-4">
                                 <div class="w-10 h-10 bg-rose-50 rounded-xl flex items-center justify-center text-rose-600">
                                     <i class="fas fa-file-invoice text-sm"></i>

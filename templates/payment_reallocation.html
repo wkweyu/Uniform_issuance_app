@@ -15,7 +15,7 @@
                 <i class="fas fa-exchange-alt text-blue-600"></i> Shift Payment
             </h2>
             
-            <form action="{{ url_for('reallocate_fee_payment') }}" method="POST" class="space-y-6">
+            <form action="{{ url_for('fees.reallocate_fee_payment') }}" method="POST" class="space-y-6">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 
                 <div>

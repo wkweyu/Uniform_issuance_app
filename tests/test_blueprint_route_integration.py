@@ -1061,12 +1061,28 @@ def test_fee_structure_templates_use_blueprint_qualified_endpoints():
         'fee_structure_card.html',
         'bulk_invoice.html',
         'bulk_debit_term.html',
+        'fees_dashboard.html',
+        'fee_receipts_register.html',
+        'base.html',
+        'admin_rollup.html',
+        'bulk_post_fees.html',
+        'edit_fee_receipt.html',
+        'index.html',
+        'manage_student_groups.html',
+        'manage_voteheads.html',
+        'payment_reallocation.html',
+        'print_fee_receipt.html',
+        'student_profile.html',
     )
     unqualified_endpoints = (
         'fees_dashboard', 'manage_fee_structures', 'fee_structures_overview',
         'create_yearly_fee_structure_route', 'fee_structure_card',
         'edit_fee_structure', 'copy_fee_structure', 'fee_structure_download',
         'bulk_invoice', 'bulk_debit_term',
+        'collect_fees', 'manage_voteheads', 'manage_student_groups',
+        'reallocate_fee_payment', 'bulk_post_fees', 'fee_receipts_register',
+        'admin_fees_rollup', 'fees_collection_report', 'fee_balances_report',
+        'print_fee_receipt', 'edit_fee_receipt',
     )
 
     for template_name in template_names:

@@ -9,7 +9,7 @@
         <div class="container mx-auto px-6 py-4">
             <div class="flex items-center justify-between">
                 <div class="flex items-center gap-4">
-                    <a href="{{ url_for('fees_dashboard') }}" class="text-gray-400 hover:text-indigo-600 transition">
+                    <a href="{{ url_for('fees.fees_dashboard') }}" class="text-gray-400 hover:text-indigo-600 transition">
                         <i class="fas fa-arrow-left text-xl"></i>
                     </a>
                     <div>
@@ -18,7 +18,7 @@
                     </div>
                 </div>
                 
-                <a href="{{ url_for('collect_fees') }}" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-indigo-100 transition flex items-center gap-2">
+                <a href="{{ url_for('fees.collect_fees') }}" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-indigo-100 transition flex items-center gap-2">
                     <i class="fas fa-plus"></i> New Payment
                 </a>
             </div>
@@ -57,7 +57,7 @@
                     <button type="submit" class="flex-1 bg-gray-900 text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:bg-gray-800 transition">
                         Apply Filters
                     </button>
-                    <a href="{{ url_for('fee_receipts_register') }}" class="bg-gray-100 text-gray-500 px-4 py-2.5 rounded-xl hover:bg-gray-200 transition">
+                    <a href="{{ url_for('fees.fee_receipts_register') }}" class="bg-gray-100 text-gray-500 px-4 py-2.5 rounded-xl hover:bg-gray-200 transition">
                         <i class="fas fa-sync-alt"></i>
                     </a>
                 </div>
@@ -112,14 +112,14 @@
                             </td>
                             <td class="px-8 py-5 text-right">
                                 <div class="flex items-center justify-end gap-2">
-                                    <a href="{{ url_for('print_fee_receipt', payment_id=record.id) }}" target="_blank" class="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center hover:bg-indigo-600 hover:text-white transition" title="Print Receipt">
+                                    <a href="{{ url_for('fees.print_fee_receipt', payment_id=record.id) }}" target="_blank" class="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center hover:bg-indigo-600 hover:text-white transition" title="Print Receipt">
                                         <i class="fas fa-print text-xs"></i>
                                     </a>
                                     <a href="{{ url_for('fees.receipt_lifecycle', payment_id=record.id) }}" class="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center hover:bg-slate-700 hover:text-white transition" title="Lifecycle History">
                                         <i class="fas fa-history text-xs"></i>
                                     </a>
                                     {% if record.status == 'COMPLETED' %}
-                                    <a href="{{ url_for('edit_fee_receipt', payment_id=record.id) }}" class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center hover:bg-amber-600 hover:text-white transition" title="Edit Meta">
+                                    <a href="{{ url_for('fees.edit_fee_receipt', payment_id=record.id) }}" class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center hover:bg-amber-600 hover:text-white transition" title="Edit Meta">
                                         <i class="fas fa-edit text-xs"></i>
                                     </a>
                                     <button onclick="confirmVoid('{{ record.id }}', '{{ record.receipt_no }}')" class="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center hover:bg-rose-600 hover:text-white transition" title="Void Receipt">
