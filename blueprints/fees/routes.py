@@ -45,6 +45,21 @@ def _parse_decimal(value, field_name, default=None):
         raise ValueError(f"{field_name} must be a valid number.")
 
 
+def _attach_transfer_snapshot_details(events):
+    for event in events:
+        if event.get('event_type') != 'TRANSFERRED':
+            continue
+        try:
+            snapshot = json.loads(event.get('snapshot_json') or '{}')
+        except (TypeError, json.JSONDecodeError):
+            snapshot = {}
+        if isinstance(snapshot, dict) and snapshot.get('from_admno') and snapshot.get('to_admno'):
+            event['transfer'] = {
+                'from_admno': snapshot['from_admno'],
+                'to_admno': snapshot['to_admno'],
+            }
+
+
 def _required_id_list(values, field_name):
     parsed_values = [_required_int(value, field_name) for value in values]
     if not parsed_values:
@@ -200,6 +215,7 @@ def receipt_lifecycle_report():
     service = FeesService(connection)
     try:
         records = service.get_receipt_lifecycle_register(start_date, end_date, event_type)
+        _attach_transfer_snapshot_details(records)
         return render_template(
             'receipt_lifecycle_report.html',
             records=records,
@@ -1296,18 +1312,7 @@ def receipt_lifecycle(payment_id):
             flash('Receipt not found.', 'error')
             return redirect(url_for('fees.fee_receipts_register'))
         events = service.get_receipt_lifecycle(payment_id)
-        for event in events:
-            if event.get('event_type') != 'TRANSFERRED':
-                continue
-            try:
-                snapshot = json.loads(event.get('snapshot_json') or '{}')
-            except (TypeError, json.JSONDecodeError):
-                snapshot = {}
-            if isinstance(snapshot, dict) and snapshot.get('from_admno') and snapshot.get('to_admno'):
-                event['transfer'] = {
-                    'from_admno': snapshot['from_admno'],
-                    'to_admno': snapshot['to_admno'],
-                }
+        _attach_transfer_snapshot_details(events)
         return render_template(
             'fee_receipt_lifecycle.html',
             receipt=receipt,

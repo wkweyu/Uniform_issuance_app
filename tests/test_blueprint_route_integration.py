@@ -1289,7 +1289,11 @@ def test_receipt_lifecycle_report_includes_audit_correlation_and_replacement_lin
 
     assert 'record.replacement_payment_id' in template
     assert 'record.correlation_id' in template
-    assert 'colspan="9"' in template
+    assert 'Transfer Source' in template
+    assert 'Transfer Destination' in template
+    assert 'record.transfer.from_admno if record.transfer else' in template
+    assert 'record.transfer.to_admno if record.transfer else' in template
+    assert 'colspan="11"' in template
 
 
 def test_fees_collect_route_forwards_manual_allocations_for_ajax_post(client, db_session, monkeypatch):
@@ -2500,6 +2504,29 @@ def test_receipt_lifecycle_report_passes_audit_filters_to_service(client, db_ses
     assert response.status_code == 200
     assert b"receipt_lifecycle_report.html:CANCELLED" in response.data
     assert FeesServiceStub.last_instance.calls == [("get_receipt_lifecycle_register", "2026-07-01", "2026-07-31", "CANCELLED")]
+
+
+def test_receipt_lifecycle_report_exposes_transfer_students_from_immutable_snapshot(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(fees_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(fees_routes, "FeesService", FeesServiceStub)
+    monkeypatch.setattr(
+        FeesServiceStub,
+        "get_receipt_lifecycle_register",
+        lambda _self, *_args: [{"event_type": "TRANSFERRED", "snapshot_json": '{"from_admno": 101, "to_admno": 202}'}],
+    )
+    captured_context = {}
+    monkeypatch.setattr(
+        fees_routes,
+        "render_template",
+        lambda _template, **context: captured_context.update(context) or "ok",
+    )
+
+    response = client.get("/admin/fees/reports/receipt-lifecycle")
+
+    assert response.status_code == 200
+    assert captured_context["records"][0]["transfer"] == {"from_admno": 101, "to_admno": 202}
 
 
 def test_reallocation_report_passes_period_filters_to_service(client, db_session, monkeypatch):
