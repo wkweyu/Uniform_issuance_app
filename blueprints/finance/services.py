@@ -194,7 +194,7 @@ class FinanceService:
         return self.cursor.fetchall()
 
     def get_cashier_session_register(self, start_date: Optional[str] = None, end_date: Optional[str] = None,
-                                     status: Optional[str] = None) -> List[Dict]:
+                                     status: Optional[str] = None, cashier_user_id: Optional[int] = None) -> List[Dict]:
         """Return cashier-session accountability totals for the active school."""
         query = """
             SELECT sessions.*, cashiers.username AS cashier_name, openers.username AS opened_by_name,
@@ -222,6 +222,9 @@ class FinanceService:
         if status:
             query += ' AND sessions.status = %s'
             params.append(status)
+        if cashier_user_id is not None:
+            query += ' AND sessions.cashier_user_id = %s'
+            params.append(cashier_user_id)
         query += ' GROUP BY sessions.id ORDER BY sessions.opened_at DESC, sessions.id DESC'
         self.cursor.execute(query, tuple(params))
         return self.cursor.fetchall()

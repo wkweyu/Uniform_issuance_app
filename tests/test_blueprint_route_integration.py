@@ -94,8 +94,8 @@ class FinanceServiceStub:
         self.calls.append(("get_cashier_sessions",))
         return []
 
-    def get_cashier_session_register(self, start_date, end_date, status):
-        self.calls.append(("get_cashier_session_register", start_date, end_date, status))
+    def get_cashier_session_register(self, start_date, end_date, status, cashier_user_id=None):
+        self.calls.append(("get_cashier_session_register", start_date, end_date, status, cashier_user_id))
         return []
 
     def open_cashier_session(self, cashier_user_id, opened_by):
@@ -873,8 +873,34 @@ def test_finance_cashier_session_report_forwards_filters(client, db_session, mon
     assert response.status_code == 200
     assert response.data == b'cashier_session_report.html:CLOSED'
     assert FinanceServiceStub.last_instance.calls == [
-        ('get_cashier_session_register', '2026-07-01', '2026-07-31', 'CLOSED'),
+        ('get_cashier_session_register', '2026-07-01', '2026-07-31', 'CLOSED', None),
     ]
+
+
+def test_finance_cashier_session_report_forwards_cashier_filter(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(finance_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(finance_routes, "FinanceService", FinanceServiceStub)
+    monkeypatch.setattr(
+        finance_routes, "render_template",
+        lambda template, **context: f"{template}:{context['cashier_user_id']}",
+    )
+
+    response = client.get('/admin/finance/reports/cashier-sessions?cashier_user_id=14')
+
+    assert response.status_code == 200
+    assert response.data == b'cashier_session_report.html:14'
+    assert FinanceServiceStub.last_instance.calls == [
+        ('get_cashier_session_register', None, None, None, 14),
+    ]
+
+
+def test_cashier_session_report_template_preserves_cashier_filter():
+    template = (Path(__file__).resolve().parents[1] / 'templates' / 'cashier_session_report.html').read_text(encoding='utf-8')
+
+    assert 'name="cashier_user_id"' in template
+    assert 'value="{{ cashier_user_id }}"' in template
 
 
 def test_finance_authorize_voucher_route_passes_source_account_to_service(client, db_session, monkeypatch):

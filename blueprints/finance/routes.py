@@ -246,13 +246,14 @@ def cashier_session_report():
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     status = request.args.get('status')
+    cashier_user_id = _parse_optional_int(request.args.get('cashier_user_id'), 'cashier_user_id')
     connection = get_db_connection()
     service = FinanceService(connection)
     try:
-        records = service.get_cashier_session_register(start_date, end_date, status)
+        records = service.get_cashier_session_register(start_date, end_date, status, cashier_user_id)
         return render_template(
             'cashier_session_report.html', records=records, start_date=start_date or '',
-            end_date=end_date or '', status=status or '',
+            end_date=end_date or '', status=status or '', cashier_user_id=cashier_user_id or '',
         )
     finally:
         connection.close()

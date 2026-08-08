@@ -8,6 +8,7 @@
     <label class="text-xs font-bold text-gray-500 uppercase">From<input type="date" name="start_date" value="{{ start_date }}" class="block border rounded px-3 py-1.5 text-sm mt-1"></label>
     <label class="text-xs font-bold text-gray-500 uppercase">To<input type="date" name="end_date" value="{{ end_date }}" class="block border rounded px-3 py-1.5 text-sm mt-1"></label>
     <label class="text-xs font-bold text-gray-500 uppercase">Status<select name="status" class="block border rounded px-3 py-1.5 text-sm mt-1"><option value="">All</option>{% for option in ('OPEN', 'PENDING_APPROVAL', 'CLOSED') %}<option value="{{ option }}" {{ 'selected' if status == option }}>{{ option.replace('_', ' ') }}</option>{% endfor %}</select></label>
+    <label class="text-xs font-bold text-gray-500 uppercase">Cashier ID<input type="number" min="1" name="cashier_user_id" value="{{ cashier_user_id }}" class="block border rounded px-3 py-1.5 text-sm mt-1"></label>
     <button type="submit" class="bg-blue-600 text-white px-4 py-1.5 rounded text-sm font-bold">Filter</button>
   </form>
   <button onclick="window.print()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-1.5 rounded text-sm font-bold">Print</button>
