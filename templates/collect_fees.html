@@ -568,6 +568,11 @@
                 </div>
             </div>
 
+            <div id="m_allocationSection" class="hidden rounded-2xl border border-indigo-100 bg-indigo-50/50 p-4 text-left">
+                <p class="mb-2 text-[9px] font-black uppercase tracking-widest text-indigo-700">Receipt Allocation</p>
+                <div id="m_allocationList" class="space-y-1.5 text-xs"></div>
+            </div>
+
             <!-- Modal Action Deck -->
             <div class="flex flex-col gap-2 pt-2">
                 <a href="#" id="m_printLink" target="_blank" class="w-full bg-indigo-600 hover:bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest py-4 rounded-xl shadow-lg transition">
@@ -1262,6 +1267,19 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('m_amount').textContent = 'KES ' + amount.toLocaleString('en-US', {minimumFractionDigits: 2});
         document.getElementById('m_balance').textContent = 'KES ' + data.balance.toLocaleString('en-US', {minimumFractionDigits: 2});
         document.getElementById('m_printLink').href = `/admin/fees/receipt/${data.payment_id}`;
+
+        const allocationSection = document.getElementById('m_allocationSection');
+        const allocationList = document.getElementById('m_allocationList');
+        const voteheadsById = new Map((activeStudentContext.outstanding_voteheads || []).map(item => [Number(item.votehead_id), item.votehead_name]));
+        allocationList.innerHTML = '';
+        (data.allocations || []).forEach(allocation => {
+            const row = document.createElement('div');
+            row.className = 'flex items-center justify-between gap-3 text-slate-700';
+            const voteheadName = voteheadsById.get(Number(allocation.votehead_id)) || `Votehead #${allocation.votehead_id}`;
+            row.innerHTML = `<span class="font-bold">${voteheadName}</span><span class="font-mono font-black text-indigo-700">KES ${Number(allocation.amount || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}</span>`;
+            allocationList.appendChild(row);
+        });
+        allocationSection.classList.toggle('hidden', !allocationList.children.length);
     }
 });
 

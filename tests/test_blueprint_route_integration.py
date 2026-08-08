@@ -1109,6 +1109,15 @@ def test_collect_fees_template_previews_manual_allocations_before_priority_remai
     assert "addEventListener('input', refreshProjectedPreview)" in template
 
 
+def test_collect_fees_template_shows_posted_allocations_in_receipt_preview():
+    template = (Path(__file__).resolve().parents[1] / 'templates' / 'collect_fees.html').read_text(encoding='utf-8')
+
+    assert 'id="m_allocationSection"' in template
+    assert 'id="m_allocationList"' in template
+    assert "(data.allocations || []).forEach(allocation =>" in template
+    assert "allocationSection.classList.toggle('hidden', !allocationList.children.length);" in template
+
+
 def test_fee_structure_templates_use_blueprint_qualified_endpoints():
     template_root = Path(__file__).resolve().parents[1] / 'templates'
     template_names = (
