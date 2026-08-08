@@ -12,6 +12,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxslt1-dev \
     libjpeg-dev \
     zlib1g-dev \
+    libcairo2 \
+    libgdk-pixbuf-2.0-0 \
+    libglib2.0-0 \
+    libpango-1.0-0 \
+    libpangoft2-1.0-0 \
+    fonts-dejavu-core \
     gcc \
     curl \
  && rm -rf /var/lib/apt/lists/*
