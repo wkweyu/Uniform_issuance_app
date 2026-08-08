@@ -1099,6 +1099,16 @@ def test_collect_fees_template_declares_accessible_cashier_shortcuts():
     assert "event.key.toLowerCase() === 'p' && !event.shiftKey" in template
 
 
+def test_collect_fees_template_previews_manual_allocations_before_priority_remainder():
+    template = (Path(__file__).resolve().parents[1] / 'templates' / 'collect_fees.html').read_text(encoding='utf-8')
+
+    assert "manualAmounts = new Map(" in template
+    assert "const manualDeduction = Math.min(manualAmount, item.amount, pool);" in template
+    assert "const remainingOutstanding = item.amount - manualDeduction;" in template
+    assert "priorityDeduction = Math.min(pool, remainingOutstanding);" in template
+    assert "addEventListener('input', refreshProjectedPreview)" in template
+
+
 def test_fee_structure_templates_use_blueprint_qualified_endpoints():
     template_root = Path(__file__).resolve().parents[1] / 'templates'
     template_names = (
