@@ -2,6 +2,7 @@ __pycache__/
 .venv
 venv/
 .env
+.env.*
 *.pyc
 *.pyo
 *.pyd
@@ -10,3 +11,5 @@ node_modules
 dist
 output
 *.sqlite3
+Finance Domain/
+Uniform_issuance_app-main/
