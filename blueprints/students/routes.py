@@ -373,14 +373,14 @@ def enroll_student_subjects(student_id):
             subject_ids = [_required_int(sid, 'subject_id') for sid in request.form.getlist('subject_ids')]
             class_service.enroll_student_in_subjects(class_allocation_id=class_allocation_id, subject_ids=subject_ids)
             flash('Student enrolled in subjects', 'success')
-            return redirect(url_for('manage_classes'))
+            return redirect(url_for('classes.manage_classes'))
         except ValueError as e:
             flash(f'Error enrolling student: {str(e)}', 'error')
         except Exception as e:
             flash(f'Error enrolling student: {str(e)}', 'error')
         finally:
             connection.close()
-            return redirect(url_for('students.students_list'))
+        return redirect(url_for('students.students_list'))
 
     # GET
     try:

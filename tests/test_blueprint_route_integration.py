@@ -469,7 +469,8 @@ class ClassServiceStub:
         self.calls = []
         ClassServiceStub.last_instance = self
 
-    def enroll_student_in_subjects(self, allocation_id, subject_ids):
+    def enroll_student_in_subjects(self, allocation_id=None, subject_ids=None, class_allocation_id=None):
+        allocation_id = class_allocation_id if class_allocation_id is not None else allocation_id
         self.calls.append(("enroll", allocation_id, subject_ids))
 
     def get_class_academic_year_id(self, class_id):
@@ -726,6 +727,24 @@ def test_bursar_student_lookup_returns_safe_json_when_search_fails(client, db_se
         "message": "Unable to search students. Please try again later.",
     }
     assert b"database password exposed" not in response.data
+
+
+def test_subject_enrollment_preserves_success_redirect(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(students_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(students_routes, "StudentService", StudentServiceStub)
+    monkeypatch.setattr(students_routes, "ClassManagementService", ClassServiceStub)
+
+    response = client.post(
+        "/admin/student/1001/subjects",
+        data={"class_allocation_id": "22", "subject_ids": ["4"]},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/manage_classes")
+    assert ClassServiceStub.last_instance.calls == [("enroll", 22, [4])]
 
 
 def test_finance_manage_budgets_route_uses_service_methods(client, db_session, monkeypatch):
