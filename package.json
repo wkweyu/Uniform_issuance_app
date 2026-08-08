@@ -1,9 +1,10 @@
 {
   "name": "uniform-issuance-app",
   "version": "1.0.0",
-  "main": "tailwind.config.js",
+  "main": "app.py",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tailwindcss --input ./static/styles.css --output ./static/css/tailwind.min.css --minify",
+    "watch": "tailwindcss --input ./static/styles.css --output ./static/css/tailwind.min.css --watch"
   },
   "repository": {
     "type": "git",
@@ -16,7 +17,7 @@
     "url": "https://github.com/wkweyu/Uniform_issuance_app/issues"
   },
   "homepage": "https://github.com/wkweyu/Uniform_issuance_app#readme",
-  "description": "",
+  "description": "School management application frontend build tools.",
   "devDependencies": {
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.6",
