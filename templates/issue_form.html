@@ -19,9 +19,7 @@
           <tr class="border-b">
             <th class="text-left p-2 font-semibold text-gray-600">Item</th>
             <th class="text-right p-2 font-semibold text-gray-600">Price (KES)</th>
-=======
             <th class="text-right p-2 font-semibold text-gray-600">Available Stock</th>
->>>>>>> 1b584a9 (class module)
             <th class="text-right p-2 font-semibold text-gray-600">Quantity</th>
             <th class="text-right p-2 font-semibold text-gray-600">Total (KES)</th>
           </tr>
@@ -31,6 +29,7 @@
           <tr class="border-b hover:bg-gray-50">
             <td class="p-2 text-gray-700">{{ item.item_name }}</td>
             <td class="text-right p-2 text-gray-700">{{ "%.2f"|format(item.price) }}</td>
+            <td class="text-right p-2">{{ item.stock }}</td>
             <td class="text-right p-2">
               <input type="number"
                 name="quantity_{{ item.item_name }}"
@@ -155,3 +154,14 @@ function submitIssuance() {
     })
     .then(data => {
       if (data.success) {
+        // handle success
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      alert('Error submitting issuance');
+    });
+}
+</script>
+
+{% endblock %}
