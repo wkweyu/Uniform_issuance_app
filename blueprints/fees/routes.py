@@ -1812,3 +1812,7 @@ def bulk_invoice():
     context = {'years': class_service.get_all_academic_years(), 'terms': terms, 'classes': class_service.get_active_classes(), 'voteheads': service.get_voteheads()}
     connection.close()
     return render_template('bulk_invoice.html', **context)
+                    # The term movement and the full ledger are intentionally
+                    # different scopes.  Expose their reconciliation so a
+                    # carried-forward balance is not mistaken for an error.
+                    'opening_balance': float(balance_value - term_summary['net_due']),
