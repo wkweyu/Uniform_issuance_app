@@ -24,7 +24,6 @@ JOIN (
     UNION ALL SELECT 'Boarding'
 ) categories
 WHERE years.is_current = TRUE
-  AND groups.is_active = TRUE
   AND NOT EXISTS (
       SELECT 1
       FROM fee_structures existing
