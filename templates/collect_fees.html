@@ -286,11 +286,7 @@
                             </div>
                         </div>
 
-                        <div id="termSummary" class="mt-5 grid grid-cols-2 sm:grid-cols-5 gap-3 border-t border-slate-100 pt-5 hidden">
-                            <div class="text-center">
-                                <p class="text-[9px] font-black uppercase tracking-widest text-slate-400">Opening Balance</p>
-                                <p id="termOpeningBalance" class="mt-1 text-xs font-black text-amber-700">KES 0.00</p>
-                            </div>
+                        <div id="termSummary" class="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3 border-t border-slate-100 pt-5 hidden">
                             <div class="text-center">
                                 <p class="text-[9px] font-black uppercase tracking-widest text-slate-400">Term Charges</p>
                                 <p id="termCharges" class="mt-1 text-xs font-black text-slate-800">KES 0.00</p>
@@ -1047,10 +1043,6 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!summary) return;
 
         const formatCurrency = amount => `KES ${Number(amount || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
-        const openingBalance = Number(summary.opening_balance || 0);
-        const openingBalanceCell = document.getElementById('termOpeningBalance');
-        openingBalanceCell.textContent = formatCurrency(openingBalance);
-        openingBalanceCell.className = `mt-1 text-xs font-black ${openingBalance > 0 ? 'text-amber-700' : openingBalance < 0 ? 'text-emerald-700' : 'text-slate-700'}`;
         document.getElementById('termCharges').textContent = formatCurrency(summary.charges + summary.debits);
         document.getElementById('termPayments').textContent = formatCurrency(summary.payments);
         document.getElementById('termCredits').textContent = formatCurrency(summary.credits);
