@@ -13,12 +13,14 @@ class MigrationCursor:
         applied_migrations=None,
         checksums=None,
         database_has_tables=False,
+        database_table_count=0,
     ):
         self.executed = []
         self.failing_statements = set(failing_statements or [])
         self.applied_migrations = set(applied_migrations or [])
         self.checksums = dict(checksums or {})
         self.database_has_tables = database_has_tables
+        self.database_table_count = database_table_count
         self._last_result = None
 
     def execute(self, statement, params=None):
@@ -26,7 +28,10 @@ class MigrationCursor:
         if statement in self.failing_statements:
             raise pymysql.err.OperationalError(1064, 'synthetic migration syntax error')
         if 'FROM information_schema.tables' in statement:
-            self._last_result = (1,) if self.database_has_tables else None
+            if 'COUNT(*)' in statement:
+                self._last_result = (self.database_table_count,)
+            else:
+                self._last_result = (1,) if self.database_has_tables else None
         elif 'SELECT migrations.migration_name' in statement:
             migration_name = params[0]
             self._last_result = (
@@ -53,12 +58,14 @@ class MigrationConnection:
         applied_migrations=None,
         checksums=None,
         database_has_tables=False,
+        database_table_count=0,
     ):
         self.cursor_obj = MigrationCursor(
             failing_statements,
             applied_migrations,
             checksums,
             database_has_tables,
+            database_table_count,
         )
         self.closed = False
 
@@ -115,12 +122,14 @@ def _configure_migration(
     checksums=None,
     schema_exists=False,
     database_has_tables=False,
+    database_table_count=0,
 ):
     connection = MigrationConnection(
         failing_statements,
         applied_migrations,
         checksums,
         database_has_tables,
+        database_table_count,
     )
     monkeypatch.setattr(migrate_db.pymysql, 'connect', lambda **_kwargs: connection)
     monkeypatch.setattr(migrate_db.os.path, 'exists', lambda _path: schema_exists)
@@ -339,6 +348,110 @@ def test_migration_runner_executes_schema_for_empty_database(monkeypatch):
     assert connection.cursor_obj.checksums['schema.sql'] == (
         migrate_db._calculate_checksum('BROKEN SQL;')
     )
+
+
+@pytest.mark.parametrize('table_count', [0, 4])
+def test_baseline_existing_refuses_database_with_fewer_than_five_tables(
+    monkeypatch, table_count
+):
+    connection = _configure_migration(
+        monkeypatch,
+        schema_exists=True,
+        database_table_count=table_count,
+    )
+
+    with pytest.raises(migrate_db.MigrationError, match='fewer than 5'):
+        migrate_db.baseline_existing()
+
+    assert not connection.cursor_obj.applied_migrations
+    assert not any(
+        statement == 'BROKEN SQL'
+        for statement, _ in connection.cursor_obj.executed
+    )
+    assert connection.closed is True
+
+
+def test_baseline_existing_records_schema_and_migrations_without_running_sql(
+    monkeypatch,
+):
+    connection = _configure_migration(
+        monkeypatch,
+        schema_exists=True,
+        database_table_count=345,
+    )
+
+    recorded = migrate_db.baseline_existing()
+
+    expected_migrations = {'schema.sql', 'migrations/999_broken.sql'}
+    assert set(recorded) == expected_migrations
+    assert connection.cursor_obj.applied_migrations == expected_migrations
+    assert connection.cursor_obj.checksums == {
+        'schema.sql': migrate_db._calculate_checksum('BROKEN SQL;'),
+        'migrations/999_broken.sql': migrate_db._calculate_checksum('BROKEN SQL;'),
+    }
+    assert not any(
+        statement == 'BROKEN SQL'
+        for statement, _ in connection.cursor_obj.executed
+    )
+
+
+def test_baseline_existing_is_idempotent(monkeypatch):
+    connection = _configure_migration(
+        monkeypatch,
+        schema_exists=True,
+        database_table_count=345,
+    )
+
+    migrate_db.baseline_existing()
+    second_run = migrate_db.baseline_existing()
+
+    assert second_run == []
+    assert connection.cursor_obj.applied_migrations == {
+        'schema.sql',
+        'migrations/999_broken.sql',
+    }
+    assert sum(
+        statement.startswith('INSERT INTO schema_migrations')
+        for statement, _ in connection.cursor_obj.executed
+    ) == 2
+    assert sum(
+        statement.startswith('INSERT INTO schema_migration_checksums')
+        for statement, _ in connection.cursor_obj.executed
+    ) == 2
+
+
+def test_baseline_cli_requires_confirmation(monkeypatch, capsys):
+    prompts = []
+    monkeypatch.setattr(
+        'builtins.input', lambda prompt: prompts.append(prompt) or 'N'
+    )
+    monkeypatch.setattr(
+        migrate_db,
+        'baseline_existing',
+        lambda: pytest.fail('baseline must not run without confirmation'),
+    )
+
+    migrate_db.main(['--baseline-existing'])
+
+    assert prompts == [migrate_db.BASELINE_CONFIRMATION]
+    assert 'Baseline cancelled.' in capsys.readouterr().out
+
+
+def test_baseline_cli_runs_after_confirmation(monkeypatch, capsys):
+    prompts = []
+    monkeypatch.setattr(
+        'builtins.input', lambda prompt: prompts.append(prompt) or 'y'
+    )
+    monkeypatch.setattr(
+        migrate_db,
+        'baseline_existing',
+        lambda: ['schema.sql'],
+    )
+
+    migrate_db.main(['--baseline-existing'])
+
+    assert prompts == [migrate_db.BASELINE_CONFIRMATION]
+    assert 'BASELINED schema.sql' in capsys.readouterr().out
 
 
 def test_migration_status_lists_applied_and_pending_files(monkeypatch):

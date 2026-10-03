@@ -11,6 +11,10 @@ class MigrationError(RuntimeError):
 
 
 SCHEMA_MIGRATION_NAME = 'schema.sql'
+BASELINE_MIN_TABLE_COUNT = 5
+BASELINE_CONFIRMATION = (
+    'This will mark the existing database schema as migrated without running SQL. Continue? y/N'
+)
 
 
 def _ensure_migration_journal(cursor):
@@ -194,6 +198,25 @@ def _database_has_application_tables(cursor):
     return cursor.fetchone() is not None
 
 
+def _count_non_system_tables(cursor):
+    cursor.execute(
+        '''
+        SELECT COUNT(*) AS table_count
+        FROM information_schema.tables
+        WHERE table_schema = DATABASE()
+          AND table_type = 'BASE TABLE'
+          AND table_name NOT IN (
+              'schema_migrations',
+              'schema_migration_checksums'
+          )
+        '''
+    )
+    result = cursor.fetchone()
+    if result is None:
+        return 0
+    return result.get('table_count', 0) if isinstance(result, dict) else result[0]
+
+
 def _get_migration_files():
     migration_files = []
     if os.path.exists(SCHEMA_MIGRATION_NAME):
@@ -288,6 +311,66 @@ def backfill_migration_checksums():
                 )
                 backfilled_migrations.append(migration_name)
             return backfilled_migrations
+    finally:
+        connection.close()
+
+
+def baseline_existing():
+    connection = _get_database_connection()
+    try:
+        with connection.cursor() as cursor:
+            table_count = _count_non_system_tables(cursor)
+            if table_count < BASELINE_MIN_TABLE_COUNT:
+                raise MigrationError(
+                    'Refusing to baseline database with fewer than '
+                    f'{BASELINE_MIN_TABLE_COUNT} non-system tables '
+                    f'(found {table_count}).'
+                )
+
+            if not os.path.exists(SCHEMA_MIGRATION_NAME):
+                raise MigrationError(
+                    f'Required baseline file is missing: {SCHEMA_MIGRATION_NAME}'
+                )
+
+            migration_scripts = []
+            for migration_name in _get_migration_files():
+                with open(migration_name, 'r') as migration_file:
+                    migration_scripts.append((migration_name, migration_file.read()))
+
+            _ensure_migration_journal(cursor)
+            migrations_to_record = []
+            for migration_name, sql_script in migration_scripts:
+                applied_migration = _get_applied_migration(cursor, migration_name)
+                checksum = _calculate_checksum(sql_script)
+                if applied_migration is None:
+                    migrations_to_record.append(
+                        (migration_name, sql_script, 'new')
+                    )
+                    continue
+
+                recorded_checksum = applied_migration.get('checksum')
+                if recorded_checksum and recorded_checksum != checksum:
+                    raise MigrationError(
+                        'Applied migration checksum differs from the current file: '
+                        f'{migration_name}'
+                    )
+                if not recorded_checksum:
+                    migrations_to_record.append(
+                        (migration_name, sql_script, 'checksum')
+                    )
+
+            recorded_names = []
+            for migration_name, sql_script, record_type in migrations_to_record:
+                if record_type == 'new':
+                    _record_migration(cursor, migration_name, sql_script)
+                else:
+                    cursor.execute(
+                        'INSERT INTO schema_migration_checksums '
+                        '(migration_name, checksum) VALUES (%s, %s)',
+                        (migration_name, _calculate_checksum(sql_script)),
+                    )
+                recorded_names.append(migration_name)
+            return recorded_names
     finally:
         connection.close()
 
@@ -403,7 +486,7 @@ def migrate_db(continue_on_error=False):
     finally:
         connection.close()
 
-if __name__ == "__main__":
+def main(argv=None):
     parser = argparse.ArgumentParser(description='Run ordered database migrations.')
     action_group = parser.add_mutually_exclusive_group()
     action_group.add_argument(
@@ -418,12 +501,26 @@ if __name__ == "__main__":
         '--backfill-checksums', action='store_true',
         help='Record current checksums for legacy applied journal entries without executing migrations.',
     )
-    args = parser.parse_args()
+    action_group.add_argument(
+        '--baseline-existing', action='store_true',
+        help='Mark an existing schema as migrated without executing SQL.',
+    )
+    args = parser.parse_args(argv)
     if args.status:
         for migration in get_migration_status():
             print(f"{migration['state']:10} {migration['migration_name']}")
     elif args.backfill_checksums:
         for migration_name in backfill_migration_checksums():
             print(f"BACKFILLED {migration_name}")
+    elif args.baseline_existing:
+        if input(BASELINE_CONFIRMATION).strip().lower() != 'y':
+            print('Baseline cancelled.')
+            return
+        for migration_name in baseline_existing():
+            print(f"BASELINED {migration_name}")
     else:
         migrate_db(continue_on_error=args.continue_on_error)
+
+
+if __name__ == "__main__":
+    main()
