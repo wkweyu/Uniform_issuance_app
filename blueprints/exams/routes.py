@@ -1,4 +1,5 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, g, jsonify, send_file
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, g, jsonify, send_file, abort
+from werkzeug.exceptions import HTTPException
 from core.permissions import admin_required, login_required
 from core.db import get_db_connection
 from blueprints.exams.services import ExamManagementService, ExamManagementError
@@ -16,6 +17,17 @@ def _required_int(value, field_name):
         return int(value)
     except (TypeError, ValueError):
         raise ValueError(f"{field_name} is required and must be a valid integer.")
+
+
+def _get_editable_exam_classes(class_service, exam):
+    classes = class_service.get_active_classes()
+    active_class_ids = {cls['classID'] for cls in classes}
+    classes.extend(
+        cls for cls in exam['classes']
+        if cls['classID'] not in active_class_ids
+    )
+    return sorted(classes, key=lambda cls: cls['display_name'])
+
 
 @exams_bp.route('/api/exams/<int:exam_id>/class/<int:class_id>/subjects-status')
 @login_required
@@ -118,24 +130,108 @@ def create_exam():
     connection = get_db_connection()
     service = ExamManagementService(connection)
     class_service = ClassManagementService(connection, school_id=service.school_id)
-    if request.method == 'POST':
-        try:
+    try:
+        if request.method == 'POST':
+            class_ids = [
+                _required_int(cid, 'class_ids')
+                for cid in request.form.getlist('class_ids')
+            ]
+            if not class_ids:
+                raise ExamManagementError("Select at least one participating class.")
             service.create_exam_series(
                 name=request.form.get('name'),
                 academic_year_id=_required_int(request.form.get('academic_year_id'), 'academic_year_id'),
                 term=_required_int(request.form.get('term'), 'term'),
                 created_by=session['userNo'],
-                class_ids=[_required_int(cid, 'class_ids') for cid in request.form.getlist('class_ids')]
+                class_ids=class_ids
             )
             flash("Exam series created.", "success")
             return redirect(url_for('exams.exams_dashboard'))
-        except (ValueError, ExamManagementError) as e: flash(str(e), "error")
-        except Exception as e: flash(str(e), "error")
 
-    years = class_service.get_all_academic_years()
-    classes = class_service.get_active_classes()
-    connection.close()
-    return render_template('create_exam.html', years=years, classes=classes)
+        years = class_service.get_all_academic_years()
+        classes = class_service.get_active_classes()
+        return render_template(
+            'create_exam.html',
+            years=years,
+            classes=classes,
+            form_name=request.form.get('name', ''),
+            form_term=request.form.get('term', '1'),
+            selected_year_id=request.form.get('academic_year_id', ''),
+            selected_class_ids=request.form.getlist('class_ids'),
+        )
+    except (ValueError, ExamManagementError) as e:
+        flash(str(e), "error")
+        return render_template(
+            'create_exam.html',
+            years=class_service.get_all_academic_years(),
+            classes=class_service.get_active_classes(),
+            form_name=request.form.get('name', ''),
+            form_term=request.form.get('term', '1'),
+            selected_year_id=request.form.get('academic_year_id', ''),
+            selected_class_ids=request.form.getlist('class_ids'),
+        )
+    except Exception as e:
+        flash(str(e), "error")
+        return redirect(url_for('exams.exams_dashboard'))
+    finally:
+        connection.close()
+
+
+@exams_bp.route('/admin/exams/<int:exam_id>/edit', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def edit_exam(exam_id):
+    connection = get_db_connection()
+    service = ExamManagementService(connection)
+    class_service = ClassManagementService(connection, school_id=service.school_id)
+    try:
+        exam = service.get_exam_series(exam_id)
+        if not exam:
+            abort(404)
+        if exam['is_locked']:
+            flash("Unlock the exam series before editing it.", "error")
+            return redirect(url_for('exams.exams_dashboard'))
+
+        if request.method == 'POST':
+            class_ids = [
+                _required_int(cid, 'class_ids')
+                for cid in request.form.getlist('class_ids')
+            ]
+            if not class_ids:
+                raise ExamManagementError("Select at least one participating class.")
+            service.update_exam_series(
+                exam_id,
+                request.form.get('name', ''),
+                class_ids,
+            )
+            flash("Exam series updated.", "success")
+            return redirect(url_for('exams.exams_dashboard'))
+
+        return render_template(
+            'edit_exam.html',
+            exam=exam,
+            classes=_get_editable_exam_classes(class_service, exam),
+            selected_class_ids=[str(cls['classID']) for cls in exam['classes']],
+        )
+    except (ValueError, ExamManagementError) as e:
+        flash(str(e), "error")
+        exam = service.get_exam_series(exam_id)
+        if not exam:
+            abort(404)
+        return render_template(
+            'edit_exam.html',
+            exam=exam,
+            classes=_get_editable_exam_classes(class_service, exam),
+            selected_class_ids=request.form.getlist('class_ids'),
+            form_name=request.form.get('name', exam['name']),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        flash(str(e), "error")
+        return redirect(url_for('exams.exams_dashboard'))
+    finally:
+        connection.close()
 
 @exams_bp.route('/admin/exams/<int:exam_id>/toggle-lock', methods=['POST'])
 @login_required

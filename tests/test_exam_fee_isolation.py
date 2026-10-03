@@ -143,6 +143,85 @@ def test_exam_service_rejects_marks_lookup_for_foreign_exam_before_mark_query():
     assert 'select id from exam_series where id = %s and school_id = %s' in query.lower()
 
 
+def test_exam_service_rejects_exam_creation_without_participating_classes():
+    connection = RecordingConnection(responses=[('one', {'id': 2026})])
+    service = ExamManagementService(connection, school_id=13)
+
+    with pytest.raises(ExamManagementError, match='Select at least one participating class'):
+        service.create_exam_series('Midterm', 2026, 2, 9, [])
+
+    assert connection.commit_calls == 0
+    assert connection.rollback_calls == 1
+    assert all('insert into exam_series' not in query.lower() for query, _ in connection.cursor_obj.executed)
+
+
+def test_exam_service_rejects_classes_outside_exam_academic_year():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {'id': 2026}),
+            ('all', []),
+        ]
+    )
+    service = ExamManagementService(connection, school_id=13)
+
+    with pytest.raises(ExamManagementError, match='active classes for the exam'):
+        service.create_exam_series('Midterm', 2026, 2, 9, [4])
+
+    query, params = connection.cursor_obj.executed[1]
+    assert params == (4, 13, 2026)
+    assert 'academic_year_id = %s' in query
+    assert 'is_active = true' in query.lower()
+    assert connection.rollback_calls == 1
+
+
+def test_exam_service_disallows_editing_locked_exam():
+    connection = RecordingConnection(
+        responses=[('one', {'id': 4, 'academic_year_id': 2026, 'is_locked': 1})]
+    )
+    service = ExamManagementService(connection, school_id=13)
+
+    with pytest.raises(ExamManagementError, match='Unlock the exam series'):
+        service.update_exam_series(4, 'Updated Midterm', [8])
+
+    assert connection.rollback_calls == 1
+    assert len(connection.cursor_obj.executed) == 1
+
+
+def test_exam_service_prevents_removing_a_class_with_recorded_marks():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {'id': 4, 'academic_year_id': 2026, 'is_locked': 0}),
+            ('all', [{'classID': 9}]),
+            ('all', [{'class_id': 8}]),
+            ('one', {'class_id': 8, 'display_name': 'Grade 7 A'}),
+        ]
+    )
+    service = ExamManagementService(connection, school_id=13)
+
+    with pytest.raises(ExamManagementError, match='Cannot remove Grade 7 A'):
+        service.update_exam_series(4, 'Updated Midterm', [9])
+
+    assert connection.rollback_calls == 1
+    assert all('update exam_series set name' not in query.lower() for query, _ in connection.cursor_obj.executed)
+
+
+def test_exam_service_allows_adding_class_to_exam_with_existing_classes():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {'id': 4, 'academic_year_id': 2026, 'is_locked': 0}),
+            ('all', [{'classID': 8}, {'classID': 9}]),
+            ('all', [{'class_id': 8}]),
+        ]
+    )
+    service = ExamManagementService(connection, school_id=13)
+
+    assert service.update_exam_series(4, 'Updated Midterm', [8, 9]) is True
+
+    assert connection.commit_calls == 1
+    assert connection.rollback_calls == 0
+    assert any('insert into exam_classes' in query.lower() for query, _ in connection.cursor_obj.executed)
+
+
 def test_fees_service_scopes_voteheads_query_and_group_join_to_school():
     connection = RecordingConnection(
         responses=[('all', [{'id': 1, 'name': 'Tuition', 'group_name': 'Boarders'}])]

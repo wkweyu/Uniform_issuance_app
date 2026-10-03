@@ -473,6 +473,7 @@ class ProcurementServiceStub:
 class ExamServiceStub:
     last_instance = None
     save_mark_error = None
+    locked = False
 
     def __init__(self, _connection):
         self.school_id = 7
@@ -487,6 +488,21 @@ class ExamServiceStub:
 
     def create_exam_series(self, name, academic_year_id, term, created_by, class_ids):
         self.calls.append(("create_exam_series", name, academic_year_id, term, created_by, class_ids))
+
+    def update_exam_series(self, exam_id, name, class_ids):
+        self.calls.append(("update_exam_series", exam_id, name, class_ids))
+
+    def get_exam_series(self, exam_id):
+        self.calls.append(("get_exam_series", exam_id))
+        return {
+            "id": exam_id,
+            "name": "Midterm",
+            "academic_year_id": 2026,
+            "academic_year_name": 2026,
+            "term": 2,
+            "is_locked": self.locked,
+            "classes": [{"classID": 14, "display_name": "Grade 7 A"}],
+        }
 
     def assign_scale_to_class(self, class_id, scale_id):
         self.calls.append(("assign_scale_to_class", class_id, scale_id))
@@ -543,7 +559,11 @@ class ClassServiceStub:
 
     def get_active_classes(self):
         self.calls.append(("get_active_classes",))
-        return [{"classID": 14, "display_name": "Grade 7 A", "stream_code": "A"}]
+        return [{"classID": 14, "display_name": "Grade 7 A", "stream_code": "A", "academic_year_id": 2026}]
+
+    def get_all_academic_years(self):
+        self.calls.append(("get_all_academic_years",))
+        return [{"id": 2026, "year": 2026, "is_current": True}]
 
     def allocate_subjects_to_class(self, class_id, subject_ids, compulsory=True):
         self.calls.append(("allocate_subjects_to_class", class_id, subject_ids, compulsory))
@@ -585,7 +605,7 @@ class ClassServiceStub:
 
     def get_active_classes(self):
         self.calls.append(("get_active_classes",))
-        return [{"classID": 14, "display_name": "Grade 7 A", "stream_code": "A"}]
+        return [{"classID": 14, "display_name": "Grade 7 A", "stream_code": "A", "academic_year_id": 2026}]
 
     def get_class_groups(self):
         self.calls.append(("get_class_groups",))
@@ -2076,6 +2096,91 @@ def test_exams_create_route_rejects_invalid_academic_year_before_service_call(cl
     assert all(call[0] != "create_exam_series" for call in ExamServiceStub.last_instance.calls)
     with client.session_transaction() as session:
         assert session.get("_flashes")[-1] == ("error", "academic_year_id is required and must be a valid integer.")
+
+
+def test_exams_create_route_passes_participating_classes_to_template(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+    monkeypatch.setattr(exams_routes, "ClassManagementService", ClassServiceStub)
+    template_context = {}
+
+    def capture_template(template, **context):
+        template_context.update(context)
+        return template
+
+    monkeypatch.setattr(exams_routes, "render_template", capture_template)
+
+    response = client.get("/admin/exams/create")
+
+    assert response.status_code == 200
+    assert response.data == b"create_exam.html"
+    assert template_context["classes"] == [{
+        "classID": 14,
+        "display_name": "Grade 7 A",
+        "stream_code": "A",
+        "academic_year_id": 2026,
+    }]
+    assert len(template_context["years"]) == 1
+
+
+def test_exams_create_route_requires_participating_class_before_service_call(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+    monkeypatch.setattr(exams_routes, "ClassManagementService", ClassServiceStub)
+    monkeypatch.setattr(
+        exams_routes,
+        "render_template",
+        lambda template, **context: f"{template}:{len(context['classes'])}",
+    )
+
+    response = client.post(
+        "/admin/exams/create",
+        data={"name": "Midterm", "academic_year_id": "2026", "term": "2"},
+    )
+
+    assert response.status_code == 200
+    assert b"create_exam.html:1" in response.data
+    assert all(call[0] != "create_exam_series" for call in ExamServiceStub.last_instance.calls)
+    with client.session_transaction() as session:
+        assert session.get("_flashes")[-1] == ("error", "Select at least one participating class.")
+
+
+def test_exams_edit_route_updates_name_and_classes(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+    monkeypatch.setattr(exams_routes, "ClassManagementService", ClassServiceStub)
+
+    response = client.post(
+        "/admin/exams/4/edit",
+        data={"name": "Updated Midterm", "class_ids": ["14"]},
+    )
+
+    assert response.status_code == 302
+    assert ("update_exam_series", 4, "Updated Midterm", [14]) in ExamServiceStub.last_instance.calls
+    with client.session_transaction() as session:
+        assert session.get("_flashes")[-1] == ("success", "Exam series updated.")
+
+
+def test_exams_edit_route_redirects_for_locked_series(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(ExamServiceStub, "locked", True)
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+    monkeypatch.setattr(exams_routes, "ClassManagementService", ClassServiceStub)
+
+    response = client.get("/admin/exams/4/edit")
+
+    assert response.status_code == 302
+    assert all(call[0] != "update_exam_series" for call in ExamServiceStub.last_instance.calls)
+    with client.session_transaction() as session:
+        assert session.get("_flashes")[-1] == ("error", "Unlock the exam series before editing it.")
 
 
 def test_inventory_manage_uniform_items_route_rejects_invalid_price_before_service_call(client, db_session, monkeypatch):

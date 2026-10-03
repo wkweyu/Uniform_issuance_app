@@ -99,6 +99,16 @@
                         </td>
                         <td class="px-6 py-4">
                             <div class="flex justify-center flex-wrap gap-2">
+                                {% if exam.is_locked %}
+                                <span class="text-gray-400 bg-gray-50 px-3 py-1.5 rounded flex items-center text-sm font-medium"
+                                      title="Unlock the exam series before editing it">
+                                    <i class="fas fa-pen mr-1"></i> Edit
+                                </span>
+                                {% else %}
+                                <a href="{{ url_for('exams.edit_exam', exam_id=exam.id) }}" class="text-gray-700 hover:text-gray-900 bg-gray-100 px-3 py-1.5 rounded flex items-center text-sm font-medium transition" title="Edit exam series">
+                                    <i class="fas fa-pen mr-1"></i> Edit
+                                </a>
+                                {% endif %}
                                 <a href="{{ url_for('marks_entry_select', exam_id=exam.id) }}" class="text-blue-600 hover:text-blue-900 bg-blue-50 px-3 py-1.5 rounded flex items-center text-sm font-medium transition" title="Enter Marks">
                                     <i class="fas fa-edit mr-1"></i> Marks
                                 </a>

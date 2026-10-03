@@ -1,0 +1,86 @@
+<div>
+    <p class="block text-sm font-semibold text-gray-700 mb-2">
+        Select Participating Classes <span class="text-red-500">*</span>
+    </p>
+    <div class="bg-gray-50 p-4 rounded-lg border border-gray-200 max-h-64 overflow-y-auto">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" id="exam-class-options">
+            {% for cls in classes %}
+            <label data-exam-class-option data-academic-year="{{ cls.academic_year_id }}"
+                   class="flex items-center space-x-3 p-2 hover:bg-white rounded border border-transparent hover:border-blue-200 cursor-pointer transition">
+                <input type="checkbox" name="class_ids" value="{{ cls.classID }}"
+                       {% if cls.classID|string in selected_class_ids|default([]) %}checked{% endif %}
+                       class="w-4 h-4 text-blue-600 rounded">
+                <span class="text-sm text-gray-700">
+                    {{ cls.display_name }}
+                    {% if cls.is_active is defined and not cls.is_active %}
+                    <span class="text-xs text-amber-700">(inactive; existing assignment)</span>
+                    {% endif %}
+                </span>
+            </label>
+            {% endfor %}
+        </div>
+        <p id="no-exam-classes" class="text-sm text-gray-500 {% if classes %}hidden{% endif %}">
+            No active classes are available for the selected academic year.
+        </p>
+    </div>
+    <p class="mt-1 text-xs text-gray-400 italic">Select one or more active classes for the selected academic year.</p>
+    <p id="exam-class-error" class="mt-2 text-sm text-red-600 hidden" role="alert">
+        Select at least one participating class.
+    </p>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const yearSelect = document.getElementById('academic_year_id');
+    const form = document.getElementById('exam-series-form');
+    const options = Array.from(document.querySelectorAll('[data-exam-class-option]'));
+    const checkboxes = options.map(function (option) {
+        return option.querySelector('input[name="class_ids"]');
+    });
+    const emptyMessage = document.getElementById('no-exam-classes');
+    const errorMessage = document.getElementById('exam-class-error');
+
+    function filterClasses() {
+        let visibleCount = 0;
+        options.forEach(function (option) {
+            const checkbox = option.querySelector('input[name="class_ids"]');
+            const matchesYear = option.dataset.academicYear === yearSelect.value;
+            option.hidden = !matchesYear;
+            checkbox.disabled = !matchesYear;
+            if (!matchesYear) {
+                checkbox.checked = false;
+            } else {
+                visibleCount += 1;
+            }
+        });
+        emptyMessage.classList.toggle('hidden', visibleCount > 0);
+        if (checkboxes.some(function (checkbox) { return checkbox.checked && !checkbox.disabled; })) {
+            errorMessage.classList.add('hidden');
+        }
+    }
+
+    yearSelect.addEventListener('change', filterClasses);
+    checkboxes.forEach(function (checkbox) {
+        checkbox.addEventListener('change', function () {
+            if (checkboxes.some(function (item) { return item.checked && !item.disabled; })) {
+                errorMessage.classList.add('hidden');
+            }
+        });
+    });
+    form.addEventListener('submit', function (event) {
+        const hasSelection = checkboxes.some(function (checkbox) {
+            return checkbox.checked && !checkbox.disabled;
+        });
+        errorMessage.classList.toggle('hidden', hasSelection);
+        if (!hasSelection) {
+            event.preventDefault();
+            const firstAvailable = checkboxes.find(function (checkbox) { return !checkbox.disabled; });
+            if (firstAvailable) {
+                firstAvailable.focus();
+            }
+        }
+    });
+
+    filterClasses();
+});
+</script>

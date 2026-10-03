@@ -43,18 +43,51 @@ class ExamManagementService:
         if not self.cursor.fetchone():
             raise ExamManagementError("Exam series not found for the active school.")
 
-    def _assert_classes_belong_to_school(self, class_ids: List[int]) -> None:
+    def _assert_classes_belong_to_school(
+        self,
+        class_ids: List[int],
+        academic_year_id: Optional[int] = None,
+        allow_inactive_exam_id: Optional[int] = None,
+    ) -> None:
         if not class_ids:
-            return
+            raise ExamManagementError("Select at least one participating class.")
         placeholders = ', '.join(['%s'] * len(class_ids))
+        filters = ["school_id = %s"]
+        params = tuple(class_ids) + (self.school_id,)
+        if academic_year_id is not None:
+            filters.append("academic_year_id = %s")
+            params += (academic_year_id,)
+            active_class_filter = "is_active = TRUE"
+            if allow_inactive_exam_id is not None:
+                active_class_filter = """
+              (
+                  is_active = TRUE
+                  OR classID IN (
+                      SELECT class_id
+                      FROM exam_classes
+                      WHERE exam_id = %s AND school_id = %s
+                  )
+              )
+            """
+                params += (allow_inactive_exam_id, self.school_id)
+            filters.append(active_class_filter)
         self.cursor.execute(
-            f"SELECT classID FROM classes WHERE classID IN ({placeholders}) AND school_id = %s",
-            tuple(class_ids) + (self.school_id,),
+            f"""
+            SELECT classID
+            FROM classes
+            WHERE classID IN ({placeholders})
+              AND {' AND '.join(filters)}
+            """,
+            params,
         )
         found = {row['classID'] for row in self.cursor.fetchall()}
         missing = [class_id for class_id in class_ids if class_id not in found]
         if missing:
-            raise ExamManagementError("One or more classes do not belong to the active school.")
+            if academic_year_id is None:
+                raise ExamManagementError("One or more classes do not belong to the active school.")
+            raise ExamManagementError(
+                "Select only active classes for the exam's academic year and active school."
+            )
 
     def _assert_grading_scale_belongs_to_school(self, scale_id: Optional[int]) -> None:
         if scale_id is None:
@@ -93,8 +126,12 @@ class ExamManagementService:
     def create_exam_series(self, name: str, academic_year_id: int, term: int, created_by: int, class_ids: List[int] = None) -> int:
         """Create a new exam series and assign classes."""
         try:
+            name = (name or "").strip()
+            if not name:
+                raise ExamManagementError("Exam series name is required.")
+            class_ids = list(dict.fromkeys(class_ids or []))
             self._assert_academic_year_belongs_to_school(academic_year_id)
-            self._assert_classes_belong_to_school(class_ids or [])
+            self._assert_classes_belong_to_school(class_ids, academic_year_id)
             sql = """
                 INSERT INTO exam_series (name, academic_year_id, term, created_by, school_id)
                 VALUES (%s, %s, %s, %s, %s)
@@ -102,10 +139,9 @@ class ExamManagementService:
             self.cursor.execute(sql, (name, academic_year_id, term, created_by, self.school_id))
             exam_id = self.cursor.lastrowid
 
-            if class_ids:
-                sql_class = "INSERT INTO exam_classes (exam_id, class_id, school_id) VALUES (%s, %s, %s)"
-                for cid in class_ids:
-                    self.cursor.execute(sql_class, (exam_id, cid, self.school_id))
+            sql_class = "INSERT INTO exam_classes (exam_id, class_id, school_id) VALUES (%s, %s, %s)"
+            for cid in class_ids:
+                self.cursor.execute(sql_class, (exam_id, cid, self.school_id))
 
             self.connection.commit()
             return exam_id
@@ -145,7 +181,7 @@ class ExamManagementService:
         if exam:
             # Get assigned classes
             self.cursor.execute("""
-                SELECT c.classID, c.display_name
+                SELECT c.classID, c.display_name, c.academic_year_id, c.is_active
                 FROM classes c
                 JOIN exam_classes ec ON c.classID = ec.class_id AND c.school_id = ec.school_id
                 WHERE ec.exam_id = %s AND ec.school_id = %s
@@ -154,26 +190,104 @@ class ExamManagementService:
 
         return exam
 
-    @audit_log('update_exam_classes')
-    def update_exam_classes(self, exam_id: int, class_ids: List[int]) -> bool:
-        """Update the classes assigned to an exam."""
+    @audit_log('update_exam_series')
+    def update_exam_series(self, exam_id: int, name: str, class_ids: List[int]) -> bool:
+        """Update an unlocked exam's name and participating classes safely."""
         try:
-            self._assert_exam_belongs_to_school(exam_id)
-            self._assert_classes_belong_to_school(class_ids or [])
-            # Delete existing
-            self.cursor.execute("DELETE FROM exam_classes WHERE exam_id = %s AND school_id = %s", (exam_id, self.school_id))
+            name = (name or "").strip()
+            if not name:
+                raise ExamManagementError("Exam series name is required.")
+            class_ids = list(dict.fromkeys(class_ids or []))
 
-            # Insert new
-            if class_ids:
-                sql = "INSERT INTO exam_classes (exam_id, class_id, school_id) VALUES (%s, %s, %s)"
-                for cid in class_ids:
-                    self.cursor.execute(sql, (exam_id, cid, self.school_id))
+            self.connection.begin()
+            self.cursor.execute(
+                """
+                SELECT id, academic_year_id, is_locked
+                FROM exam_series
+                WHERE id = %s AND school_id = %s
+                FOR UPDATE
+                """,
+                (exam_id, self.school_id),
+            )
+            exam = self.cursor.fetchone()
+            if not exam:
+                raise ExamManagementError("Exam series not found for the active school.")
+            if exam['is_locked']:
+                raise ExamManagementError("Unlock the exam series before editing it.")
+
+            self._assert_classes_belong_to_school(
+                class_ids,
+                exam['academic_year_id'],
+                allow_inactive_exam_id=exam_id,
+            )
+
+            self.cursor.execute(
+                "SELECT class_id FROM exam_classes WHERE exam_id = %s AND school_id = %s",
+                (exam_id, self.school_id),
+            )
+            current_class_ids = {row['class_id'] for row in self.cursor.fetchall()}
+            selected_class_ids = set(class_ids)
+            removed_class_ids = current_class_ids - selected_class_ids
+
+            if removed_class_ids:
+                placeholders = ', '.join(['%s'] * len(removed_class_ids))
+                self.cursor.execute(
+                    f"""
+                    SELECT DISTINCT ec.class_id, c.display_name
+                    FROM exam_classes ec
+                    JOIN classes c
+                      ON c.classID = ec.class_id AND c.school_id = ec.school_id
+                    JOIN class_allocation ca
+                      ON ca.class_id = ec.class_id AND ca.school_id = ec.school_id
+                    JOIN exam_marks em
+                      ON em.student_id = ca.student_id
+                     AND em.exam_id = ec.exam_id
+                     AND em.school_id = ec.school_id
+                    WHERE ec.exam_id = %s
+                      AND ec.school_id = %s
+                      AND ca.academic_year_id = %s
+                      AND ec.class_id IN ({placeholders})
+                    LIMIT 1
+                    """,
+                    (exam_id, self.school_id, exam['academic_year_id'], *sorted(removed_class_ids)),
+                )
+                marked_class = self.cursor.fetchone()
+                if marked_class:
+                    raise ExamManagementError(
+                        f"Cannot remove {marked_class['display_name']} because marks have been recorded for that class."
+                    )
+
+            self.cursor.execute(
+                "UPDATE exam_series SET name = %s WHERE id = %s AND school_id = %s",
+                (name, exam_id, self.school_id),
+            )
+
+            for class_id in sorted(removed_class_ids):
+                self.cursor.execute(
+                    "DELETE FROM exam_classes WHERE exam_id = %s AND class_id = %s AND school_id = %s",
+                    (exam_id, class_id, self.school_id),
+                )
+            for class_id in sorted(selected_class_ids - current_class_ids):
+                self.cursor.execute(
+                    "INSERT INTO exam_classes (exam_id, class_id, school_id) VALUES (%s, %s, %s)",
+                    (exam_id, class_id, self.school_id),
+                )
 
             self.connection.commit()
             return True
         except Exception as e:
             self.connection.rollback()
-            raise ExamManagementError(f"Failed to update exam classes: {str(e)}")
+            if isinstance(e, ExamManagementError):
+                raise
+            raise ExamManagementError(f"Failed to update exam series: {str(e)}")
+
+    @audit_log('update_exam_classes')
+    def update_exam_classes(self, exam_id: int, class_ids: List[int]) -> bool:
+        """Update participating classes while preserving exam edit safeguards."""
+        exam = self.get_exam_series(exam_id)
+        if not exam:
+            raise ExamManagementError("Exam series not found for the active school.")
+        return self.update_exam_series(exam_id, exam['name'], class_ids)
 
     def get_exam_classes(self, exam_id: int) -> List[Dict]:
         """Get all classes assigned to an exam."""
