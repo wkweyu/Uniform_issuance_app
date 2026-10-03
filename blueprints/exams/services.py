@@ -13,13 +13,24 @@ Centralized business logic for:
 """
 
 import pymysql
-from datetime import datetime
+import json
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Dict, List, Tuple, Optional
 import logging
+from flask import has_request_context, session
 from core.audit import audit_log
 from core.tenancy import require_current_school_id
 from flask import g
+from blueprints.exams.assessment import (
+    AssessmentConfigurationError,
+    calculate_bundle,
+    calculate_assessment,
+)
+from blueprints.exams.audit import record_exam_event
+from blueprints.exams.ranking import RankingStyle, TieBreaker, rank_rows
+from blueprints.exams.statistics import describe_eligible_scores
+from blueprints.exams.workflow import ExamWorkflowError, ExamWorkflowService
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -33,6 +44,28 @@ class ExamManagementService:
         self.connection = connection
         self.cursor = connection.cursor(pymysql.cursors.DictCursor)
         self.school_id = school_id or require_current_school_id()
+
+    def _record_audit_event(
+        self,
+        event_key: str,
+        entity_type: str,
+        entity_id: Optional[str] = None,
+        old_values=None,
+        new_values=None,
+        reason: Optional[str] = None,
+    ) -> None:
+        actor_user_id = session.get('userNo') if has_request_context() else None
+        record_exam_event(
+            self.cursor,
+            self.school_id,
+            event_key,
+            entity_type,
+            entity_id,
+            actor_user_id=actor_user_id,
+            old_values=old_values,
+            new_values=new_values,
+            reason=reason,
+        )
 
     def _assert_academic_year_belongs_to_school(self, academic_year_id: int) -> None:
         self.cursor.execute("SELECT id FROM academic_years WHERE id = %s AND school_id = %s", (academic_year_id, self.school_id))
@@ -233,14 +266,57 @@ class ExamManagementService:
     def get_exam_subjects_status(self, exam_id: int, class_id: int) -> List[Dict]:
         """Return eligible subjects and mark-entry completion counts for a class."""
         subjects = self.get_exam_subjects_for_class(exam_id, class_id)
+        self.cursor.execute(
+            """
+            SELECT subject_id, COUNT(*) AS component_count
+            FROM exam_assessment_components
+            WHERE school_id = %s AND exam_id = %s AND class_id = %s
+              AND is_active = TRUE
+            GROUP BY subject_id
+            """,
+            (self.school_id, exam_id, class_id),
+        )
+        component_counts = {
+            row['subject_id']: row['component_count']
+            for row in self.cursor.fetchall()
+        }
         status = []
         for subject in subjects:
             students = self.get_marks_for_class_subject(exam_id, class_id, subject['id'])
-            entered = sum(
-                student['mark'] is not None or bool(student['is_absent'])
-                for student in students
-            )
             total = len(students)
+            component_count = component_counts.get(subject['id'], 0)
+            if component_count:
+                components = self.get_exam_assessment_components(
+                    exam_id, class_id, subject['id']
+                )
+                component_marks = self.get_exam_component_marks_for_class(
+                    exam_id,
+                    class_id,
+                    subject['id'],
+                    [str(student['AdmNo']) for student in students],
+                    components=components,
+                )
+                component_ids = {component['id'] for component in components}
+                entered = sum(
+                    all(
+                        (str(student['AdmNo']), component_id) in component_marks
+                        and (
+                            component_marks[
+                                (str(student['AdmNo']), component_id)
+                            ]['mark'] is not None
+                            or component_marks[
+                                (str(student['AdmNo']), component_id)
+                            ]['is_absent']
+                        )
+                        for component_id in component_ids
+                    )
+                    for student in students
+                )
+            else:
+                entered = sum(
+                    student['mark'] is not None or bool(student['is_absent'])
+                    for student in students
+                )
             complete = total > 0 and entered == total
             status.append({
                 **subject,
@@ -248,8 +324,1051 @@ class ExamManagementService:
                 'status_text': f"{entered}/{total} entered" if total else "No eligible students",
                 'entered_count': entered,
                 'student_count': total,
+                'component_count': component_count,
+                'uses_components': subject['id'] in component_counts,
             })
         return status
+
+    def get_exam_assessment_components(
+        self,
+        exam_id: int,
+        class_id: int,
+        subject_id: int,
+    ) -> List[Dict]:
+        self.get_exam_subject(exam_id, class_id, subject_id)
+        self.cursor.execute(
+            """
+            SELECT id, name, category, maximum_mark, weight_percent,
+                   display_order, is_required
+            FROM exam_assessment_components
+            WHERE school_id = %s AND exam_id = %s AND class_id = %s
+              AND subject_id = %s AND is_active = TRUE
+            ORDER BY display_order, id
+            """,
+            (self.school_id, exam_id, class_id, subject_id),
+        )
+        return self.cursor.fetchall()
+
+    def get_exam_component_marks_for_class(
+        self,
+        exam_id: int,
+        class_id: int,
+        subject_id: int,
+        student_ids: List[str],
+        components: Optional[List[Dict]] = None,
+    ) -> Dict[Tuple[str, int], Dict]:
+        if components is None:
+            components = self.get_exam_assessment_components(
+                exam_id, class_id, subject_id
+            )
+        if not components or not student_ids:
+            return {}
+        component_ids = [component['id'] for component in components]
+        marks = {}
+        for component_offset in range(0, len(component_ids), 500):
+            component_chunk = component_ids[component_offset:component_offset + 500]
+            component_placeholders = ', '.join(['%s'] * len(component_chunk))
+            for student_offset in range(0, len(student_ids), 500):
+                student_chunk = student_ids[student_offset:student_offset + 500]
+                student_placeholders = ', '.join(['%s'] * len(student_chunk))
+                self.cursor.execute(
+                    f"""
+                    SELECT component_id, student_id, mark, is_absent, remarks
+                    FROM exam_component_marks
+                    WHERE school_id = %s
+                      AND component_id IN ({component_placeholders})
+                      AND student_id IN ({student_placeholders})
+                    """,
+                    (
+                        self.school_id, *component_chunk, *student_chunk,
+                    ),
+                )
+                for mark in self.cursor.fetchall():
+                    marks[(str(mark['student_id']), mark['component_id'])] = mark
+        return marks
+
+    def get_exam_bundle_options(self) -> List[Dict]:
+        self.cursor.execute(
+            """
+            SELECT e.id, e.name, e.term, e.workflow_status, ay.year
+            FROM exam_series e
+            JOIN academic_years ay
+              ON ay.id = e.academic_year_id AND ay.school_id = e.school_id
+            WHERE e.school_id = %s
+            ORDER BY ay.year DESC, e.term DESC, e.id DESC
+            """,
+            (self.school_id,),
+        )
+        return self.cursor.fetchall()
+
+    def get_exam_bundles(self, bundle_id: Optional[int] = None) -> List[Dict]:
+        filters = ["b.school_id = %s"]
+        params = [self.school_id]
+        if bundle_id is not None:
+            filters.append("b.id = %s")
+            params.append(bundle_id)
+        self.cursor.execute(
+            f"""
+            SELECT b.id, b.name, b.calculation_method, b.ranking_metric,
+                   b.ranking_scope, b.ranking_style, b.ranking_tie_breakers,
+                   b.term_scope, b.effective_from, b.effective_to, b.is_active,
+                   be.exam_id, be.display_order, be.weight_percent AS exam_weight,
+                   e.name AS exam_name, e.term, ay.year AS academic_year
+            FROM exam_result_bundles b
+            LEFT JOIN exam_result_bundle_exams be
+              ON be.bundle_id = b.id AND be.school_id = b.school_id
+            LEFT JOIN exam_series e
+              ON e.id = be.exam_id AND e.school_id = be.school_id
+            LEFT JOIN academic_years ay
+              ON ay.id = e.academic_year_id AND ay.school_id = e.school_id
+            WHERE {' AND '.join(filters)}
+            ORDER BY b.name, be.display_order, be.id
+            """,
+            tuple(params),
+        )
+        bundles_by_id = {}
+        for row in self.cursor.fetchall():
+            bundle = bundles_by_id.setdefault(row['id'], {
+                key: row[key]
+                for key in (
+                    'id', 'name', 'calculation_method', 'ranking_metric',
+                    'ranking_scope', 'ranking_style', 'ranking_tie_breakers',
+                    'term_scope', 'effective_from', 'effective_to', 'is_active',
+                )
+            })
+            if isinstance(bundle['ranking_tie_breakers'], str):
+                bundle['ranking_tie_breakers'] = json.loads(
+                    bundle['ranking_tie_breakers']
+                )
+            if row['exam_id'] is not None:
+                bundle.setdefault('exams', []).append({
+                    'id': row['exam_id'],
+                    'name': row['exam_name'],
+                    'term': row['term'],
+                    'academic_year': row['academic_year'],
+                    'display_order': row['display_order'],
+                    'weight_percent': row['exam_weight'],
+                })
+            else:
+                bundle['exams'] = []
+        return list(bundles_by_id.values())
+
+    def save_exam_bundle(
+        self,
+        bundle_id: Optional[int],
+        name: str,
+        calculation_method: str,
+        ranking_metric: str,
+        ranking_scope: str,
+        ranking_style: str,
+        exams: List[Dict],
+        actor_user_id: int,
+        *,
+        ranking_tie_breakers: Optional[List[Dict]] = None,
+        term_scope: Optional[str] = None,
+        effective_from: Optional[str] = None,
+        effective_to: Optional[str] = None,
+    ) -> int:
+        """Create or replace a school-owned exam bundle and its ordered exams."""
+        name = (name or '').strip()
+        if not name or len(name) > 100:
+            raise ExamManagementError("Bundle name must contain 1 to 100 characters.")
+        if calculation_method not in {'equal', 'weighted'}:
+            raise ExamManagementError("Bundle calculation must be equal or weighted.")
+        allowed_metrics = {
+            'total_marks', 'total_points', 'average', 'percentage', 'mean_grade',
+        }
+        if ranking_metric not in allowed_metrics:
+            raise ExamManagementError("The selected bundle ranking metric is invalid.")
+        if ranking_scope not in {'stream', 'class', 'grade', 'school'}:
+            raise ExamManagementError("The selected bundle ranking scope is invalid.")
+        if ranking_style not in {'dense', 'competition'}:
+            raise ExamManagementError("The selected bundle ranking style is invalid.")
+        if not exams:
+            raise ExamManagementError("Select at least one exam for the bundle.")
+        if len(exams) > 100:
+            raise ExamManagementError("A bundle cannot contain more than 100 exams.")
+
+        tie_breakers = []
+        allowed_tie_keys = {
+            'total_marks', 'total_points', 'average', 'percentage',
+            'mean_grade', 'gender', 'admno',
+        }
+        for item in ranking_tie_breakers or []:
+            key = str(item.get('key') or '')
+            direction = item.get('direction', 'desc')
+            if key not in allowed_tie_keys or direction not in {'asc', 'desc'}:
+                raise ExamManagementError("A bundle ranking tie-break rule is invalid.")
+            tie_breakers.append({'key': key, 'direction': direction})
+        if len({row['key'] for row in tie_breakers}) != len(tie_breakers):
+            raise ExamManagementError("Bundle ranking tie-break fields must be unique.")
+        if term_scope and len(term_scope) > 24:
+            raise ExamManagementError("Term scope cannot exceed 24 characters.")
+
+        normalized_exams = []
+        seen_exam_ids = set()
+        weight_total = Decimal(0)
+        has_weight = False
+        for position, item in enumerate(exams):
+            try:
+                exam_id = int(item.get('exam_id'))
+            except (TypeError, ValueError) as exc:
+                raise ExamManagementError("Each bundle exam must be selected.") from exc
+            if exam_id in seen_exam_ids:
+                raise ExamManagementError("An exam may appear only once in a bundle.")
+            seen_exam_ids.add(exam_id)
+            raw_weight = item.get('weight_percent')
+            try:
+                weight = Decimal(str(raw_weight)) if raw_weight not in (None, '') else None
+            except (InvalidOperation, TypeError, ValueError) as exc:
+                raise ExamManagementError("Bundle weights must be numeric.") from exc
+            if weight is not None:
+                if not weight.is_finite() or weight < 0 or weight > 100:
+                    raise ExamManagementError("Bundle weights must be between 0 and 100.")
+                has_weight = True
+                weight_total += weight
+            normalized_exams.append({
+                'exam_id': exam_id,
+                'display_order': position,
+                'weight_percent': weight,
+            })
+        if calculation_method == 'weighted':
+            if any(row['weight_percent'] is None for row in normalized_exams):
+                raise ExamManagementError(
+                    "Weighted bundles require a weight for every selected exam."
+                )
+            if weight_total != Decimal(100):
+                raise ExamManagementError("Bundle weights must total 100%.")
+        elif has_weight:
+            raise ExamManagementError(
+                "Leave exam weights blank when using equal weighting."
+            )
+
+        try:
+            start_date = date.fromisoformat(effective_from) if effective_from else None
+            end_date = date.fromisoformat(effective_to) if effective_to else None
+        except ValueError as exc:
+            raise ExamManagementError("Bundle effective dates must use YYYY-MM-DD.") from exc
+        if start_date and end_date and start_date > end_date:
+            raise ExamManagementError("Bundle start date must not be after its end date.")
+
+        self.connection.begin()
+        try:
+            if bundle_id is not None:
+                self.cursor.execute(
+                    """
+                    SELECT id, name, calculation_method, ranking_metric,
+                           ranking_scope, ranking_style, ranking_tie_breakers,
+                           term_scope, effective_from, effective_to
+                    FROM exam_result_bundles
+                    WHERE id = %s AND school_id = %s
+                    FOR UPDATE
+                    """,
+                    (bundle_id, self.school_id),
+                )
+                previous = self.cursor.fetchone()
+                if not previous:
+                    raise ExamManagementError("Result bundle not found for the active school.")
+                self.cursor.execute(
+                    """
+                    UPDATE exam_result_bundles
+                    SET name = %s, calculation_method = %s, ranking_metric = %s,
+                        ranking_scope = %s, ranking_style = %s,
+                        ranking_tie_breakers = %s, term_scope = %s,
+                        effective_from = %s, effective_to = %s
+                    WHERE id = %s AND school_id = %s
+                    """,
+                    (
+                        name, calculation_method, ranking_metric, ranking_scope,
+                        ranking_style, json.dumps(tie_breakers), term_scope,
+                        start_date, end_date, bundle_id, self.school_id,
+                    ),
+                )
+            else:
+                previous = None
+                self.cursor.execute(
+                    """
+                    INSERT INTO exam_result_bundles (
+                        school_id, name, calculation_method, ranking_metric,
+                        ranking_scope, ranking_style, ranking_tie_breakers,
+                        term_scope, effective_from, effective_to, created_by
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        self.school_id, name, calculation_method, ranking_metric,
+                        ranking_scope, ranking_style, json.dumps(tie_breakers),
+                        term_scope, start_date, end_date, actor_user_id,
+                    ),
+                )
+                bundle_id = self.cursor.lastrowid
+
+            exam_placeholders = ', '.join(['%s'] * len(normalized_exams))
+            self.cursor.execute(
+                f"""
+                SELECT id FROM exam_series
+                WHERE school_id = %s AND id IN ({exam_placeholders})
+                """,
+                (self.school_id, *(row['exam_id'] for row in normalized_exams)),
+            )
+            owned_exam_ids = {row['id'] for row in self.cursor.fetchall()}
+            if owned_exam_ids != seen_exam_ids:
+                raise ExamManagementError(
+                    "Every selected exam must belong to the active school."
+                )
+
+            self.cursor.execute(
+                """
+                DELETE FROM exam_result_bundle_exams
+                WHERE school_id = %s AND bundle_id = %s
+                """,
+                (self.school_id, bundle_id),
+            )
+            for row in normalized_exams:
+                self.cursor.execute(
+                    """
+                    INSERT INTO exam_result_bundle_exams (
+                        school_id, bundle_id, exam_id, display_order, weight_percent
+                    )
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    (
+                        self.school_id, bundle_id, row['exam_id'],
+                        row['display_order'], row['weight_percent'],
+                    ),
+                )
+            self._record_audit_event(
+                'exam_result_bundle_saved',
+                'exam_result_bundle',
+                bundle_id,
+                old_values=previous,
+                new_values={
+                    'name': name,
+                    'calculation_method': calculation_method,
+                    'ranking_metric': ranking_metric,
+                    'ranking_scope': ranking_scope,
+                    'ranking_style': ranking_style,
+                    'ranking_tie_breakers': tie_breakers,
+                    'term_scope': term_scope,
+                    'effective_from': start_date,
+                    'effective_to': end_date,
+                    'exams': normalized_exams,
+                },
+            )
+            self.connection.commit()
+            return bundle_id
+        except Exception as exc:
+            self.connection.rollback()
+            if isinstance(exc, ExamManagementError):
+                raise
+            raise ExamManagementError(f"Failed to save result bundle: {exc}") from exc
+
+    def calculate_bundle_for_learner(
+        self,
+        bundle: Dict,
+        learner_results: Dict[int, Dict],
+    ):
+        """Calculate normalized bundle results using the shared bundle engine."""
+        try:
+            return calculate_bundle(
+                bundle.get('exams', []),
+                learner_results,
+                calculation_method=bundle['calculation_method'],
+            )
+        except AssessmentConfigurationError as exc:
+            raise ExamManagementError(str(exc)) from exc
+
+    def rank_exam_bundle_results(
+        self,
+        bundle: Dict,
+        rows: List[Dict],
+        *,
+        grade_order: Optional[List[str]] = None,
+    ):
+        """Rank already-calculated bundle rows using the saved school policy."""
+        try:
+            tie_breakers = [
+                TieBreaker(
+                    key=rule['key'],
+                    descending=rule.get('direction', 'desc') == 'desc',
+                )
+                for rule in bundle.get('ranking_tie_breakers') or []
+            ]
+            return rank_rows(
+                rows,
+                bundle['ranking_metric'],
+                tie_breakers=tie_breakers,
+                style=bundle['ranking_style'],
+                grade_order=grade_order,
+                missing_policy='missing',
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ExamManagementError(
+                f"Bundle ranking configuration is invalid: {exc}"
+            ) from exc
+
+    def save_exam_assessment_components(
+        self,
+        exam_id: int,
+        class_id: int,
+        subject_id: int,
+        components: List[Dict],
+        actor_user_id: int,
+    ) -> int:
+        """Replace a draft subject's assessment definition atomically."""
+        if not components:
+            raise ExamManagementError("At least one assessment component is required.")
+        self.connection.begin()
+        try:
+            self.cursor.execute(
+                """
+                SELECT workflow_status, is_locked
+                FROM exam_series
+                WHERE id = %s AND school_id = %s
+                FOR UPDATE
+                """,
+                (exam_id, self.school_id),
+            )
+            exam = self.cursor.fetchone()
+            if not exam:
+                raise ExamManagementError("Exam series not found for the active school.")
+            status = exam.get('workflow_status') or (
+                'locked' if exam.get('is_locked') else 'marks_open'
+            )
+            if status != 'draft':
+                raise ExamManagementError(
+                    "Assessment components can only be configured while the exam is a draft."
+                )
+            self.get_exam_subject(exam_id, class_id, subject_id)
+
+            normalized = []
+            names = set()
+            has_weight = any(
+                row.get('weight_percent') not in (None, '')
+                for row in components
+            )
+            weight_total = Decimal(0)
+            for position, row in enumerate(components):
+                name = str(row.get('name') or '').strip()
+                category = str(row.get('category') or '').strip().lower()
+                try:
+                    maximum = Decimal(str(row.get('maximum_mark')))
+                    weight = (
+                        Decimal(str(row['weight_percent']))
+                        if row.get('weight_percent') not in (None, '')
+                        else None
+                    )
+                except (InvalidOperation, TypeError, ValueError) as exc:
+                    raise ExamManagementError(
+                        "Each component needs a valid maximum mark and optional weight."
+                    ) from exc
+                if not name or len(name) > 80:
+                    raise ExamManagementError(
+                        "Component names must contain 1 to 80 characters."
+                    )
+                if name.casefold() in names:
+                    raise ExamManagementError("Component names must be unique per subject.")
+                if category not in {'formative', 'summative'}:
+                    raise ExamManagementError(
+                        "Component category must be formative or summative."
+                    )
+                if not maximum.is_finite() or maximum <= 0:
+                    raise ExamManagementError("Component maximum must be greater than zero.")
+                if weight is not None and (
+                    not weight.is_finite()
+                    or weight < 0
+                    or weight > 100
+                ):
+                    raise ExamManagementError(
+                        "Component weights must be between 0 and 100."
+                    )
+                if has_weight and weight is None:
+                    raise ExamManagementError(
+                        "Provide a weight for every component or leave all weights empty."
+                    )
+                names.add(name.casefold())
+                if weight is not None:
+                    weight_total += weight
+                normalized.append({
+                    'name': name,
+                    'category': category,
+                    'maximum_mark': maximum,
+                    'weight_percent': weight,
+                    'display_order': int(row.get('display_order', position)),
+                    'is_required': bool(row.get('is_required', True)),
+                })
+            if has_weight and weight_total != Decimal(100):
+                raise ExamManagementError("Component weights must total 100%.")
+
+            self.cursor.execute(
+                """
+                SELECT id, name, category, maximum_mark, weight_percent,
+                       display_order, is_required
+                FROM exam_assessment_components
+                WHERE school_id = %s AND exam_id = %s AND class_id = %s
+                  AND subject_id = %s
+                FOR UPDATE
+                """,
+                (self.school_id, exam_id, class_id, subject_id),
+            )
+            previous = self.cursor.fetchall()
+            previous_ids = [row['id'] for row in previous]
+            if previous_ids:
+                placeholders = ', '.join(['%s'] * len(previous_ids))
+                self.cursor.execute(
+                    f"""
+                    SELECT 1
+                    FROM exam_component_marks
+                    WHERE school_id = %s AND component_id IN ({placeholders})
+                    LIMIT 1
+                    """,
+                    (self.school_id, *previous_ids),
+                )
+                if self.cursor.fetchone():
+                    raise ExamManagementError(
+                        "Existing component marks prevent changing this assessment definition."
+                    )
+            self.cursor.execute(
+                """
+                DELETE FROM exam_assessment_components
+                WHERE school_id = %s AND exam_id = %s AND class_id = %s
+                  AND subject_id = %s
+                """,
+                (self.school_id, exam_id, class_id, subject_id),
+            )
+            for row in normalized:
+                self.cursor.execute(
+                    """
+                    INSERT INTO exam_assessment_components (
+                        school_id, exam_id, class_id, subject_id, name,
+                        category, maximum_mark, weight_percent, display_order,
+                        is_required, created_by
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        self.school_id, exam_id, class_id, subject_id,
+                        row['name'], row['category'], row['maximum_mark'],
+                        row['weight_percent'], row['display_order'],
+                        row['is_required'], actor_user_id,
+                    ),
+                )
+            self._record_audit_event(
+                'exam_assessment_components_updated',
+                'exam_series_class_subject',
+                f'{exam_id}:{class_id}:{subject_id}',
+                old_values={'components': previous},
+                new_values={'components': normalized},
+            )
+            self.connection.commit()
+            return len(normalized)
+        except Exception as exc:
+            self.connection.rollback()
+            if isinstance(exc, ExamManagementError):
+                raise
+            raise ExamManagementError(
+                f"Failed to save assessment components: {exc}"
+            ) from exc
+
+    def _get_component_results_for_class(
+        self,
+        exam_id: int,
+        class_id: int,
+        subject_ids: List[int],
+        student_ids: List[str],
+    ) -> Dict[Tuple[str, int], Dict]:
+        """Batch component configuration and marks for a class result view."""
+        if not subject_ids or not student_ids:
+            return {}
+        subject_placeholders = ', '.join(['%s'] * len(subject_ids))
+        self.cursor.execute(
+            f"""
+            SELECT id, subject_id, name, category, maximum_mark,
+                   weight_percent, display_order, is_required
+            FROM exam_assessment_components
+            WHERE school_id = %s AND exam_id = %s AND class_id = %s
+              AND subject_id IN ({subject_placeholders}) AND is_active = TRUE
+            ORDER BY subject_id, display_order, id
+            """,
+            (
+                self.school_id, exam_id, class_id, *subject_ids,
+            ),
+        )
+        components_by_subject = {}
+        for component in self.cursor.fetchall():
+            components_by_subject.setdefault(
+                component['subject_id'], []
+            ).append(component)
+        if not components_by_subject:
+            return {}
+
+        marks_by_component_student = {}
+        component_ids = [
+            component['id']
+            for components in components_by_subject.values()
+            for component in components
+        ]
+        for component_offset in range(0, len(component_ids), 500):
+            component_chunk = component_ids[component_offset:component_offset + 500]
+            component_placeholders = ', '.join(['%s'] * len(component_chunk))
+            for student_offset in range(0, len(student_ids), 500):
+                student_chunk = student_ids[student_offset:student_offset + 500]
+                student_placeholders = ', '.join(['%s'] * len(student_chunk))
+                self.cursor.execute(
+                    f"""
+                    SELECT component_id, student_id, mark, is_absent, remarks
+                    FROM exam_component_marks
+                    WHERE school_id = %s
+                      AND component_id IN ({component_placeholders})
+                      AND student_id IN ({student_placeholders})
+                    """,
+                    (
+                        self.school_id, *component_chunk, *student_chunk,
+                    ),
+                )
+                for mark in self.cursor.fetchall():
+                    marks_by_component_student[
+                        (str(mark['student_id']), mark['component_id'])
+                    ] = mark
+
+        results = {}
+        for student_id in map(str, student_ids):
+            for subject_id, components in components_by_subject.items():
+                marks = {
+                    component['id']: marks_by_component_student[
+                        (student_id, component['id'])
+                    ]
+                    for component in components
+                    if (student_id, component['id'])
+                    in marks_by_component_student
+                }
+                try:
+                    result = calculate_assessment(components, marks)
+                except AssessmentConfigurationError as exc:
+                    raise ExamManagementError(str(exc)) from exc
+                component_states = [
+                    (
+                        'missing' if component['id'] not in marks
+                        else 'absent' if marks[component['id']]['is_absent']
+                        else 'missing' if marks[component['id']]['mark'] is None
+                        else 'scored'
+                    )
+                    for component in components
+                ]
+                if all(state == 'absent' for state in component_states):
+                    state = 'absent'
+                elif any(state == 'scored' for state in component_states):
+                    state = (
+                        'scored'
+                        if all(component_state == 'scored' for component_state in component_states)
+                        else 'partial'
+                    )
+                elif all(state == 'missing' for state in component_states):
+                    state = 'missing'
+                else:
+                    state = 'partial'
+                results[(student_id, subject_id)] = {
+                    'mark': float(result.percentage),
+                    'is_absent': state == 'absent',
+                    'grade': None,
+                    'state': state,
+                    'total_mark': float(result.total_mark),
+                    'maximum_mark': float(result.maximum_mark),
+                    'component_count': result.component_count,
+                    'scored_components': result.scored_count,
+                    'absent_components': result.absent_count,
+                    'missing_components': result.missing_count,
+                }
+        return results
+
+    def save_exam_component_marks_bulk(
+        self,
+        exam_id: int,
+        class_id: int,
+        subject_id: int,
+        marks: List[Dict],
+        actor_user_id: int,
+    ) -> int:
+        """Validate then atomically save a bounded component-mark batch."""
+        if not marks:
+            raise ExamManagementError("No component marks were provided.")
+        if len(marks) > 1000:
+            raise ExamManagementError(
+                "A component-mark batch cannot contain more than 1,000 entries."
+            )
+        self.connection.begin()
+        try:
+            self.cursor.execute(
+                """
+                SELECT workflow_status, is_locked
+                FROM exam_series
+                WHERE id = %s AND school_id = %s
+                FOR UPDATE
+                """,
+                (exam_id, self.school_id),
+            )
+            exam = self.cursor.fetchone()
+            if not exam:
+                raise ExamManagementError("Exam series not found for the active school.")
+            status = exam.get('workflow_status') or (
+                'locked' if exam.get('is_locked') else 'marks_open'
+            )
+            if status != 'marks_open' or exam.get('is_locked'):
+                raise ExamManagementError(
+                    f"Component marks can only be edited while marks entry is open "
+                    f"(current state: {status})."
+                )
+            self.get_exam_subject(exam_id, class_id, subject_id)
+            components = self.get_exam_assessment_components(
+                exam_id, class_id, subject_id
+            )
+            if not components:
+                raise ExamManagementError(
+                    "This exam subject has no configured assessment components."
+                )
+            components_by_id = {
+                component['id']: component for component in components
+            }
+            seen = set()
+            prepared = []
+            for row in marks:
+                student_id = str(row.get('student_id', '')).strip()
+                try:
+                    component_id = int(row.get('component_id'))
+                except (TypeError, ValueError) as exc:
+                    raise ExamManagementError(
+                        "Each mark needs a valid assessment component."
+                    ) from exc
+                if not student_id or component_id not in components_by_id:
+                    raise ExamManagementError(
+                        "Each mark needs an eligible student and a component assigned to this exam subject."
+                    )
+                key = (student_id, component_id)
+                if key in seen:
+                    raise ExamManagementError(
+                        f"Duplicate component mark for student {student_id}."
+                    )
+                seen.add(key)
+                class_for_student = self._assert_mark_target_is_valid(
+                    exam_id, student_id, subject_id
+                )
+                if class_for_student != class_id:
+                    raise ExamManagementError(
+                        "Student is not enrolled in the selected exam class."
+                    )
+                is_absent = row.get('is_absent', False)
+                if not isinstance(is_absent, bool):
+                    raise ExamManagementError(
+                        "Absent status must be true or false."
+                    )
+                raw_mark = row.get('mark')
+                if is_absent and raw_mark not in (None, ''):
+                    raise ExamManagementError(
+                        "An absent component cannot also contain a numeric mark."
+                    )
+                if is_absent or raw_mark in (None, ''):
+                    mark = None
+                else:
+                    try:
+                        mark = Decimal(str(raw_mark))
+                    except (InvalidOperation, TypeError, ValueError) as exc:
+                        raise ExamManagementError(
+                            "Component mark must be a valid number."
+                        ) from exc
+                    maximum = Decimal(
+                        str(components_by_id[component_id]['maximum_mark'])
+                    )
+                    if not mark.is_finite() or mark < 0 or mark > maximum:
+                        raise ExamManagementError(
+                            f"Component mark must be between 0 and {maximum}."
+                        )
+                prepared.append((
+                    student_id,
+                    component_id,
+                    mark,
+                    is_absent,
+                    str(row.get('remarks') or '')[:500],
+                ))
+
+            for student_id, component_id, mark, is_absent, remarks in prepared:
+                self.cursor.execute(
+                    """
+                    SELECT mark, is_absent, remarks
+                    FROM exam_component_marks
+                    WHERE school_id = %s AND component_id = %s
+                      AND student_id = %s
+                    FOR UPDATE
+                    """,
+                    (self.school_id, component_id, student_id),
+                )
+                previous = self.cursor.fetchone()
+                self.cursor.execute(
+                    """
+                    INSERT INTO exam_component_marks (
+                        school_id, component_id, student_id, mark, is_absent,
+                        remarks, created_by, updated_by
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        mark = VALUES(mark), is_absent = VALUES(is_absent),
+                        remarks = VALUES(remarks), updated_by = VALUES(updated_by),
+                        updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (
+                        self.school_id, component_id, student_id, mark,
+                        is_absent, remarks, actor_user_id, actor_user_id,
+                    ),
+                )
+                self._record_audit_event(
+                    'exam_component_mark_saved',
+                    'exam_component_mark',
+                    f'{exam_id}:{student_id}:{component_id}',
+                    old_values=(
+                        {
+                            'mark': previous.get('mark'),
+                            'is_absent': bool(previous.get('is_absent')),
+                            'remarks': previous.get('remarks'),
+                        }
+                        if previous else None
+                    ),
+                    new_values={
+                        'mark': str(mark) if mark is not None else None,
+                        'is_absent': is_absent,
+                        'state': (
+                            'absent' if is_absent
+                            else 'missing' if mark is None
+                            else 'scored'
+                        ),
+                        'remarks': remarks,
+                    },
+                )
+            self.connection.commit()
+            return len(prepared)
+        except Exception as exc:
+            self.connection.rollback()
+            if isinstance(exc, ExamManagementError):
+                raise
+            raise ExamManagementError(
+                f"Failed to save component marks: {exc}"
+            ) from exc
+
+    def save_exam_workbook_component_marks(
+        self,
+        exam_id: int,
+        class_id: int,
+        marks: List[Dict],
+        actor_user_id: int,
+        source_sha256: str,
+        row_count: int,
+    ) -> Dict:
+        """Atomically persist a fully validated multi-subject workbook."""
+        if not marks:
+            raise ExamManagementError("The workbook contains no component marks.")
+        if len(marks) > 10000:
+            raise ExamManagementError(
+                "A workbook batch cannot contain more than 10,000 component marks."
+            )
+        if len(source_sha256) != 64 or any(
+            character not in '0123456789abcdef' for character in source_sha256.lower()
+        ):
+            raise ExamManagementError("Workbook checksum is invalid.")
+        self.connection.begin()
+        try:
+            self.cursor.execute(
+                """
+                SELECT workflow_status, is_locked
+                FROM exam_series
+                WHERE id = %s AND school_id = %s
+                FOR UPDATE
+                """,
+                (exam_id, self.school_id),
+            )
+            exam = self.cursor.fetchone()
+            if not exam:
+                raise ExamManagementError("Exam series not found for the active school.")
+            status = exam.get('workflow_status') or (
+                'locked' if exam.get('is_locked') else 'marks_open'
+            )
+            if status != 'marks_open' or exam.get('is_locked'):
+                raise ExamManagementError(
+                    f"Workbook marks can only be imported while marks entry is open "
+                    f"(current state: {status})."
+                )
+            self.get_exam_class_info(exam_id, class_id)
+            self.cursor.execute(
+                """
+                SELECT id, subject_id, maximum_mark, is_required
+                FROM exam_assessment_components
+                WHERE school_id = %s AND exam_id = %s AND class_id = %s
+                  AND is_active = TRUE
+                """,
+                (self.school_id, exam_id, class_id),
+            )
+            components = {
+                row['id']: row for row in self.cursor.fetchall()
+            }
+            if not components:
+                raise ExamManagementError(
+                    "No assessment components are configured for this exam class."
+                )
+
+            prepared = []
+            seen = set()
+            checked_students = set()
+            for row in marks:
+                student_id = str(row.get('student_id') or '').strip()
+                subject_id = row.get('subject_id')
+                try:
+                    component_id = int(row.get('component_id'))
+                except (TypeError, ValueError) as exc:
+                    raise ExamManagementError(
+                        "Workbook contains an invalid component identifier."
+                    ) from exc
+                component = components.get(component_id)
+                if not student_id or component is None:
+                    raise ExamManagementError(
+                        "Workbook contains a component outside this exam class."
+                    )
+                if component['subject_id'] != subject_id:
+                    raise ExamManagementError(
+                        "Workbook component does not belong to its listed subject."
+                    )
+                target = (student_id, component_id)
+                if target in seen:
+                    raise ExamManagementError(
+                        f"Duplicate workbook mark for student {student_id}."
+                    )
+                seen.add(target)
+                student_subject = (student_id, subject_id)
+                if student_subject not in checked_students:
+                    actual_class_id = self._assert_mark_target_is_valid(
+                        exam_id, student_id, subject_id
+                    )
+                    if actual_class_id != class_id:
+                        raise ExamManagementError(
+                            f"Student {student_id} is not in the selected class."
+                        )
+                    checked_students.add(student_subject)
+                is_absent = row.get('is_absent', False)
+                if not isinstance(is_absent, bool):
+                    raise ExamManagementError(
+                        "Workbook absent state must be true or false."
+                    )
+                raw_mark = row.get('mark')
+                if is_absent and raw_mark not in (None, ''):
+                    raise ExamManagementError(
+                        "An absent component cannot also contain a numeric mark."
+                    )
+                if is_absent or raw_mark in (None, ''):
+                    mark = None
+                else:
+                    try:
+                        mark = Decimal(str(raw_mark))
+                    except (InvalidOperation, TypeError, ValueError) as exc:
+                        raise ExamManagementError(
+                            "Workbook component mark must be numeric."
+                        ) from exc
+                    maximum = Decimal(str(component['maximum_mark']))
+                    if not mark.is_finite() or mark < 0 or mark > maximum:
+                        raise ExamManagementError(
+                            f"Component mark must be between 0 and {maximum}."
+                        )
+                prepared.append((
+                    student_id,
+                    component_id,
+                    mark,
+                    is_absent,
+                    str(row.get('remarks') or '')[:500],
+                ))
+
+            self.cursor.execute(
+                """
+                INSERT INTO exam_import_batches (
+                    school_id, exam_id, class_id, created_by, source_type,
+                    source_sha256, row_count, mark_count, status
+                )
+                VALUES (%s, %s, %s, %s, 'xlsx_components', %s, %s, %s, 'applied')
+                """,
+                (
+                    self.school_id, exam_id, class_id, actor_user_id,
+                    source_sha256.lower(), row_count, len(prepared),
+                ),
+            )
+            batch_id = self.cursor.lastrowid
+            for student_id, component_id, mark, is_absent, remarks in prepared:
+                self.cursor.execute(
+                    """
+                    SELECT mark, is_absent, remarks
+                    FROM exam_component_marks
+                    WHERE school_id = %s AND component_id = %s
+                      AND student_id = %s
+                    FOR UPDATE
+                    """,
+                    (self.school_id, component_id, student_id),
+                )
+                previous = self.cursor.fetchone()
+                self.cursor.execute(
+                    """
+                    INSERT INTO exam_component_marks (
+                        school_id, component_id, student_id, mark, is_absent,
+                        remarks, created_by, updated_by
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        mark = VALUES(mark), is_absent = VALUES(is_absent),
+                        remarks = VALUES(remarks), updated_by = VALUES(updated_by),
+                        updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (
+                        self.school_id, component_id, student_id, mark,
+                        is_absent, remarks, actor_user_id, actor_user_id,
+                    ),
+                )
+                self._record_audit_event(
+                    'exam_component_mark_imported',
+                    'exam_component_mark',
+                    f'{exam_id}:{student_id}:{component_id}',
+                    old_values=(
+                        {
+                            'mark': previous.get('mark'),
+                            'is_absent': bool(previous.get('is_absent')),
+                            'remarks': previous.get('remarks'),
+                        }
+                        if previous else None
+                    ),
+                    new_values={
+                        'mark': str(mark) if mark is not None else None,
+                        'is_absent': is_absent,
+                        'state': (
+                            'absent' if is_absent
+                            else 'missing' if mark is None
+                            else 'scored'
+                        ),
+                        'remarks': remarks,
+                        'batch_id': batch_id,
+                    },
+                )
+            self._record_audit_event(
+                'exam_component_workbook_imported',
+                'exam_import_batch',
+                batch_id,
+                new_values={
+                    'exam_id': exam_id,
+                    'class_id': class_id,
+                    'row_count': row_count,
+                    'mark_count': len(prepared),
+                    'source_sha256': source_sha256.lower(),
+                },
+            )
+            self.connection.commit()
+            return {'batch_id': batch_id, 'mark_count': len(prepared)}
+        except Exception as exc:
+            self.connection.rollback()
+            if isinstance(exc, ExamManagementError):
+                raise
+            raise ExamManagementError(
+                f"Failed to import component workbook: {exc}"
+            ) from exc
 
     # =========================================================================
     # 1. EXAM SERIES MANAGEMENT
@@ -266,8 +1385,11 @@ class ExamManagementService:
             self._assert_academic_year_belongs_to_school(academic_year_id)
             self._assert_classes_belong_to_school(class_ids, academic_year_id)
             sql = """
-                INSERT INTO exam_series (name, academic_year_id, term, created_by, school_id)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO exam_series (
+                    name, academic_year_id, term, created_by, school_id,
+                    workflow_status
+                )
+                VALUES (%s, %s, %s, %s, %s, 'draft')
             """
             self.cursor.execute(sql, (name, academic_year_id, term, created_by, self.school_id))
             exam_id = self.cursor.lastrowid
@@ -276,6 +1398,17 @@ class ExamManagementService:
             for cid in class_ids:
                 self.cursor.execute(sql_class, (exam_id, cid, self.school_id))
 
+            self._record_audit_event(
+                'exam_created',
+                'exam_series',
+                exam_id,
+                new_values={
+                    'name': name,
+                    'academic_year_id': academic_year_id,
+                    'term': term,
+                    'class_ids': class_ids,
+                },
+            )
             self.connection.commit()
             return exam_id
         except Exception as e:
@@ -335,7 +1468,7 @@ class ExamManagementService:
             self.connection.begin()
             self.cursor.execute(
                 """
-                SELECT id, academic_year_id, is_locked
+                SELECT id, name, academic_year_id, is_locked, workflow_status
                 FROM exam_series
                 WHERE id = %s AND school_id = %s
                 FOR UPDATE
@@ -345,8 +1478,15 @@ class ExamManagementService:
             exam = self.cursor.fetchone()
             if not exam:
                 raise ExamManagementError("Exam series not found for the active school.")
-            if exam['is_locked']:
+            workflow_status = exam.get('workflow_status') or (
+                'locked' if exam['is_locked'] else 'draft'
+            )
+            if workflow_status == 'locked':
                 raise ExamManagementError("Unlock the exam series before editing it.")
+            if workflow_status != 'draft':
+                raise ExamManagementError(
+                    "Only draft exam series can be edited."
+                )
 
             self._assert_classes_belong_to_school(
                 class_ids,
@@ -406,6 +1546,19 @@ class ExamManagementService:
                     (exam_id, class_id, self.school_id),
                 )
 
+            self._record_audit_event(
+                'exam_updated',
+                'exam_series',
+                exam_id,
+                old_values={
+                    'name': exam.get('name'),
+                    'class_ids': sorted(current_class_ids),
+                },
+                new_values={
+                    'name': name,
+                    'class_ids': sorted(selected_class_ids),
+                },
+            )
             self.connection.commit()
             return True
         except Exception as e:
@@ -494,16 +1647,45 @@ class ExamManagementService:
     # (Other methods kept for brevity, applying audit_log where needed)
 
     @audit_log('toggle_exam_lock')
-    def toggle_exam_lock(self, exam_id: int, lock: bool) -> bool:
-        """Lock or unlock an exam series."""
+    def transition_exam_workflow(
+        self,
+        exam_id: int,
+        target_status: str,
+        actor_user_id: int,
+        reason: Optional[str] = None,
+    ) -> str:
+        """Apply a validated workflow transition to a school-owned exam."""
         try:
-            sql = "UPDATE exam_series SET is_locked = %s WHERE id = %s AND school_id = %s"
-            self.cursor.execute(sql, (lock, exam_id, self.school_id))
-            self.connection.commit()
-            return True
-        except Exception as e:
-            self.connection.rollback()
-            raise ExamManagementError(f"Failed to toggle exam lock: {str(e)}")
+            return ExamWorkflowService(
+                self.connection, self.school_id
+            ).transition(
+                exam_id,
+                target_status,
+                actor_user_id,
+                reason=reason,
+            )
+        except ExamWorkflowError as exc:
+            raise ExamManagementError(str(exc)) from exc
+
+    def toggle_exam_lock(
+        self,
+        exam_id: int,
+        lock: bool,
+        reason: Optional[str] = None,
+        actor_user_id: Optional[int] = None,
+    ) -> bool:
+        """Compatibility facade for the explicit publish/lock workflow transitions."""
+        if actor_user_id is None and has_request_context():
+            actor_user_id = session.get('userNo')
+        if actor_user_id is None:
+            raise ExamManagementError("An authenticated user is required.")
+        self.transition_exam_workflow(
+            exam_id,
+            'locked' if lock else 'published',
+            actor_user_id,
+            reason,
+        )
+        return True
 
     @audit_log('save_exam_marks')
     def save_marks_bulk(self, exam_id: int, marks: List[Dict]) -> int:
@@ -515,7 +1697,7 @@ class ExamManagementService:
             self.connection.begin()
             self.cursor.execute(
                 """
-                SELECT id, is_locked
+                SELECT id, is_locked, workflow_status
                 FROM exam_series
                 WHERE id = %s AND school_id = %s
                 FOR UPDATE
@@ -525,11 +1707,18 @@ class ExamManagementService:
             exam = self.cursor.fetchone()
             if not exam:
                 raise ExamManagementError("Exam series not found for the active school.")
-            if exam['is_locked']:
-                raise ExamManagementError("Cannot edit marks for a locked exam series.")
+            workflow_status = exam.get('workflow_status') or (
+                'locked' if exam['is_locked'] else 'marks_open'
+            )
+            if workflow_status != 'marks_open' or exam['is_locked']:
+                raise ExamManagementError(
+                    f"Marks can only be edited while the exam is open for entry "
+                    f"(current state: {workflow_status})."
+                )
 
             prepared_marks = []
             seen_targets = set()
+            checked_assessment_subjects = set()
             for row in marks:
                 student_id = str(row.get('student_id', '')).strip()
                 subject_id = row.get('subject_id')
@@ -560,9 +1749,31 @@ class ExamManagementService:
                 class_id = self._assert_mark_target_is_valid(
                     exam_id, student_id, subject_id
                 )
+                assessment_subject = (class_id, subject_id)
+                if assessment_subject not in checked_assessment_subjects:
+                    self.cursor.execute(
+                        """
+                        SELECT 1
+                        FROM exam_assessment_components
+                        WHERE school_id = %s AND exam_id = %s
+                          AND class_id = %s AND subject_id = %s
+                          AND is_active = TRUE
+                        LIMIT 1
+                        """,
+                        (
+                            self.school_id, exam_id, class_id, subject_id,
+                        ),
+                    )
+                    if self.cursor.fetchone():
+                        raise ExamManagementError(
+                            "This subject uses assessment components. Enter marks on the component-mark page."
+                        )
+                    checked_assessment_subjects.add(assessment_subject)
                 grade_id = None
                 if not is_absent and mark is not None:
-                    scale_id = self.get_class_grading_scale_id(class_id)
+                    scale_id = self.get_effective_grading_scale_id(
+                        exam_id, class_id
+                    )
                     grade_rec = self.get_grade_for_mark(mark, scale_id)
                     if grade_rec:
                         grade_id = grade_rec['id']
@@ -579,7 +1790,70 @@ class ExamManagementService:
                     mark = VALUES(mark), grade_id = VALUES(grade_id), is_absent = VALUES(is_absent),
                     remarks = VALUES(remarks), ct_remarks = VALUES(ct_remarks), p_remarks = VALUES(p_remarks)
             """
+            previous_marks = {}
+            for offset in range(0, len(prepared_marks), 500):
+                mark_chunk = prepared_marks[offset:offset + 500]
+                pair_conditions = " OR ".join(
+                    "(student_id = %s AND subject_id = %s)"
+                    for _ in mark_chunk
+                )
+                pair_params = tuple(
+                    value
+                    for row in mark_chunk
+                    for value in (row[1], row[2])
+                )
+                self.cursor.execute(
+                    f"""
+                    SELECT student_id, subject_id, mark, is_absent,
+                           remarks, ct_remarks, p_remarks
+                    FROM exam_marks
+                    WHERE exam_id = %s AND school_id = %s
+                      AND ({pair_conditions})
+                    """,
+                    (exam_id, self.school_id, *pair_params),
+                )
+                previous_marks.update({
+                    (str(row['student_id']), row['subject_id']): row
+                    for row in self.cursor.fetchall()
+                })
+
             for values in prepared_marks:
+                student_id = str(values[1])
+                subject_id = values[2]
+                previous = previous_marks.get((student_id, subject_id))
+                old_values = None
+                if previous is not None:
+                    old_values = {
+                        'mark': previous['mark'],
+                        'is_absent': bool(previous['is_absent']),
+                        'remarks': previous.get('remarks'),
+                        'ct_remarks': previous.get('ct_remarks'),
+                        'p_remarks': previous.get('p_remarks'),
+                        'state': (
+                            'absent' if previous['is_absent']
+                            else 'missing' if previous['mark'] is None
+                            else 'scored'
+                        ),
+                    }
+                new_values = {
+                    'mark': values[3],
+                    'is_absent': bool(values[5]),
+                    'remarks': values[6],
+                    'ct_remarks': values[7],
+                    'p_remarks': values[8],
+                    'state': (
+                        'absent' if values[5]
+                        else 'missing' if values[3] is None
+                        else 'scored'
+                    ),
+                }
+                self._record_audit_event(
+                    'exam_mark_saved',
+                    'exam_mark',
+                    f"{exam_id}:{student_id}:{subject_id}",
+                    old_values=old_values,
+                    new_values=new_values,
+                )
                 self.cursor.execute(sql, values)
             self.connection.commit()
             return len(prepared_marks)
@@ -604,6 +1878,100 @@ class ExamManagementService:
         }])
         return True
 
+    def override_exam_subject_remark(
+        self,
+        exam_id: int,
+        student_id: str,
+        subject_id: int,
+        remarks: str,
+        reason: str,
+        actor_user_id: int,
+    ) -> bool:
+        """Apply a reasoned, auditable subject-remark override before lock."""
+        reason = (reason or '').strip()
+        remarks = (remarks or '').strip()
+        if len(reason) < 10 or len(reason) > 500:
+            raise ExamManagementError(
+                "A remark-override reason of 10 to 500 characters is required."
+            )
+        if len(remarks) > 500:
+            raise ExamManagementError("Subject remarks cannot exceed 500 characters.")
+        self.connection.begin()
+        try:
+            self.cursor.execute(
+                """
+                SELECT workflow_status, is_locked
+                FROM exam_series
+                WHERE id = %s AND school_id = %s
+                FOR UPDATE
+                """,
+                (exam_id, self.school_id),
+            )
+            exam = self.cursor.fetchone()
+            if not exam:
+                raise ExamManagementError("Exam series not found for the active school.")
+            status = exam.get('workflow_status') or (
+                'locked' if exam.get('is_locked') else 'marks_open'
+            )
+            if status != 'marks_open' or exam.get('is_locked'):
+                raise ExamManagementError(
+                    "Subject remarks can only be overridden while marks entry is open."
+                )
+            self._assert_mark_target_is_valid(exam_id, student_id, subject_id)
+            self.cursor.execute(
+                """
+                SELECT mark, grade_id, is_absent, remarks, ct_remarks, p_remarks
+                FROM exam_marks
+                WHERE exam_id = %s AND student_id = %s
+                  AND subject_id = %s AND school_id = %s
+                FOR UPDATE
+                """,
+                (exam_id, student_id, subject_id, self.school_id),
+            )
+            previous = self.cursor.fetchone()
+            old_remarks = previous.get('remarks') if previous else None
+            if (old_remarks or '') == remarks:
+                raise ExamManagementError("The new remark matches the current remark.")
+            self.cursor.execute(
+                """
+                INSERT INTO exam_marks (
+                    exam_id, student_id, subject_id, mark, grade_id, is_absent,
+                    remarks, ct_remarks, p_remarks, school_id
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE remarks = VALUES(remarks)
+                """,
+                (
+                    exam_id,
+                    student_id,
+                    subject_id,
+                    previous.get('mark') if previous else None,
+                    previous.get('grade_id') if previous else None,
+                    previous.get('is_absent', False) if previous else False,
+                    remarks,
+                    previous.get('ct_remarks') if previous else None,
+                    previous.get('p_remarks') if previous else None,
+                    self.school_id,
+                ),
+            )
+            self._record_audit_event(
+                'exam_subject_remark_overridden',
+                'exam_mark',
+                f'{exam_id}:{student_id}:{subject_id}',
+                old_values={'remarks': old_remarks},
+                new_values={'remarks': remarks},
+                reason=reason,
+            )
+            self.connection.commit()
+            return True
+        except Exception as exc:
+            self.connection.rollback()
+            if isinstance(exc, ExamManagementError):
+                raise
+            raise ExamManagementError(
+                f"Failed to override subject remark: {exc}"
+            ) from exc
+
     def get_mark_feedback(
         self,
         exam_id: int,
@@ -623,7 +1991,7 @@ class ExamManagementService:
         class_id = self._assert_mark_target_is_valid(
             exam_id, student_id, subject_id
         )
-        scale_id = self.get_class_grading_scale_id(class_id)
+        scale_id = self.get_effective_grading_scale_id(exam_id, class_id)
         grade = self.get_grade_for_mark(float(mark), scale_id)
         return {
             'grade': grade.get('grade') if grade else None,
@@ -635,12 +2003,38 @@ class ExamManagementService:
     @audit_log('create_grading_scale')
     def create_grading_scale(self, name: str, description: str = "", is_default: bool = False) -> int:
         try:
+            self.connection.begin()
+            previous_defaults = []
             if is_default:
+                self.cursor.execute(
+                    """
+                    SELECT id, name
+                    FROM grading_scales
+                    WHERE is_default = TRUE AND school_id = %s
+                    FOR UPDATE
+                    """,
+                    (self.school_id,),
+                )
+                previous_defaults = self.cursor.fetchall()
                 self.cursor.execute("UPDATE grading_scales SET is_default = FALSE WHERE school_id = %s", (self.school_id,))
             sql = "INSERT INTO grading_scales (name, description, is_default, school_id) VALUES (%s, %s, %s, %s)"
             self.cursor.execute(sql, (name, description, is_default, self.school_id))
+            scale_id = self.cursor.lastrowid
+            self._record_audit_event(
+                'grading_scale_created',
+                'grading_scale',
+                scale_id,
+                old_values={
+                    'default_scales': previous_defaults,
+                },
+                new_values={
+                    'name': name,
+                    'description': description,
+                    'is_default': bool(is_default),
+                },
+            )
             self.connection.commit()
-            return self.cursor.lastrowid
+            return scale_id
         except Exception as e:
             self.connection.rollback()
             raise ExamManagementError(f"Failed to create scale: {str(e)}")
@@ -686,6 +2080,18 @@ class ExamManagementService:
                     )
 
             self.connection.begin()
+            self.cursor.execute(
+                """
+                SELECT grade, min_mark, max_mark, points, remarks,
+                       class_teacher_remarks, principal_remarks
+                FROM grading_details
+                WHERE scale_id = %s AND school_id = %s
+                ORDER BY min_mark, id
+                FOR UPDATE
+                """,
+                (scale_id, self.school_id),
+            )
+            previous_grades = self.cursor.fetchall()
             self.cursor.execute("DELETE FROM grading_details WHERE scale_id = %s AND school_id = %s", (scale_id, self.school_id))
             sql = "INSERT INTO grading_details (scale_id, grade, min_mark, max_mark, points, remarks, class_teacher_remarks, principal_remarks, school_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
             for grade in normalized_grades:
@@ -700,6 +2106,13 @@ class ExamManagementService:
                     grade.get('principal_remarks', ''),
                     self.school_id,
                 ))
+            self._record_audit_event(
+                'grading_details_updated',
+                'grading_scale',
+                scale_id,
+                old_values={'grades': previous_grades},
+                new_values={'grades': normalized_grades},
+            )
             self.connection.commit()
             return True
         except Exception as e:
@@ -723,6 +2136,20 @@ class ExamManagementService:
             for scale_id in set(assignments.values()):
                 self._assert_grading_scale_belongs_to_school(scale_id)
 
+            placeholders = ', '.join(['%s'] * len(class_ids))
+            self.cursor.execute(
+                f"""
+                SELECT classID, grading_scale_id
+                FROM classes
+                WHERE school_id = %s AND classID IN ({placeholders})
+                FOR UPDATE
+                """,
+                (self.school_id, *class_ids),
+            )
+            previous_assignments = {
+                row['classID']: row['grading_scale_id']
+                for row in self.cursor.fetchall()
+            }
             for class_id, scale_id in assignments.items():
                 self.cursor.execute(
                     """
@@ -732,6 +2159,15 @@ class ExamManagementService:
                     """,
                     (scale_id, class_id, self.school_id),
                 )
+                previous_scale_id = previous_assignments.get(class_id)
+                if previous_scale_id != scale_id:
+                    self._record_audit_event(
+                        'class_grading_scale_assigned',
+                        'class',
+                        class_id,
+                        old_values={'grading_scale_id': previous_scale_id},
+                        new_values={'grading_scale_id': scale_id},
+                    )
             self.connection.commit()
             return True
         except Exception as e:
@@ -743,11 +2179,138 @@ class ExamManagementService:
     def assign_scale_to_class(self, class_id: int, scale_id: Optional[int]) -> bool:
         return self.assign_scales_to_classes({class_id: scale_id})
 
+    def assign_exam_grading_scales(
+        self,
+        exam_id: int,
+        assignments: Dict[int, Optional[int]],
+        actor_user_id: int,
+    ) -> bool:
+        """Set or clear class-level scale overrides for one draft exam."""
+        if not assignments:
+            raise ExamManagementError("Select at least one participating class.")
+        self.connection.begin()
+        try:
+            self.cursor.execute(
+                """
+                SELECT workflow_status, is_locked
+                FROM exam_series
+                WHERE id = %s AND school_id = %s
+                FOR UPDATE
+                """,
+                (exam_id, self.school_id),
+            )
+            exam = self.cursor.fetchone()
+            if not exam:
+                raise ExamManagementError("Exam series not found for the active school.")
+            status = exam.get('workflow_status') or (
+                'locked' if exam.get('is_locked') else 'marks_open'
+            )
+            if status != 'draft':
+                raise ExamManagementError(
+                    "Exam-specific grading scales can only be changed while the exam is a draft."
+                )
+
+            for class_id, scale_id in assignments.items():
+                self._get_exam_class_details(exam_id, class_id)
+                self._assert_grading_scale_belongs_to_school(scale_id)
+                self.cursor.execute(
+                    """
+                    SELECT grading_scale_id
+                    FROM exam_grading_overrides
+                    WHERE school_id = %s AND exam_id = %s AND class_id = %s
+                    FOR UPDATE
+                    """,
+                    (self.school_id, exam_id, class_id),
+                )
+                current = self.cursor.fetchone()
+                previous_scale_id = (
+                    current['grading_scale_id'] if current else None
+                )
+                if previous_scale_id == scale_id:
+                    continue
+                if scale_id is None:
+                    self.cursor.execute(
+                        """
+                        DELETE FROM exam_grading_overrides
+                        WHERE school_id = %s AND exam_id = %s AND class_id = %s
+                        """,
+                        (self.school_id, exam_id, class_id),
+                    )
+                else:
+                    self.cursor.execute(
+                        """
+                        INSERT INTO exam_grading_overrides (
+                            school_id, exam_id, class_id, grading_scale_id,
+                            created_by
+                        )
+                        VALUES (%s, %s, %s, %s, %s)
+                        ON DUPLICATE KEY UPDATE
+                            grading_scale_id = VALUES(grading_scale_id),
+                            created_by = VALUES(created_by)
+                        """,
+                        (
+                            self.school_id,
+                            exam_id,
+                            class_id,
+                            scale_id,
+                            actor_user_id,
+                        ),
+                    )
+                self._record_audit_event(
+                    'exam_grading_scale_changed',
+                    'exam_series_class',
+                    f'{exam_id}:{class_id}',
+                    old_values={'grading_scale_id': previous_scale_id},
+                    new_values={'grading_scale_id': scale_id},
+                )
+            self.connection.commit()
+            return True
+        except Exception as exc:
+            self.connection.rollback()
+            if isinstance(exc, ExamManagementError):
+                raise
+            raise ExamManagementError(
+                f"Failed to assign exam grading scales: {exc}"
+            ) from exc
+
     # Implementation of other helper methods from previous version...
     def get_class_grading_scale_id(self, class_id: int) -> Optional[int]:
         self.cursor.execute("SELECT grading_scale_id FROM classes WHERE classID = %s AND school_id = %s", (class_id, self.school_id))
         res = self.cursor.fetchone()
         return res['grading_scale_id'] if res else None
+
+    def get_effective_grading_scale_id(
+        self,
+        exam_id: int,
+        class_id: int,
+    ) -> Optional[int]:
+        """Resolve exam override, class assignment, then school default."""
+        self.cursor.execute(
+            """
+            SELECT grading_scale_id
+            FROM exam_grading_overrides
+            WHERE school_id = %s AND exam_id = %s AND class_id = %s
+            """,
+            (self.school_id, exam_id, class_id),
+        )
+        override = self.cursor.fetchone()
+        if override:
+            return override['grading_scale_id']
+        class_scale_id = self.get_class_grading_scale_id(class_id)
+        if class_scale_id is not None:
+            return class_scale_id
+        self.cursor.execute(
+            """
+            SELECT id
+            FROM grading_scales
+            WHERE school_id = %s AND is_default = TRUE
+            ORDER BY id
+            LIMIT 1
+            """,
+            (self.school_id,),
+        )
+        default_scale = self.cursor.fetchone()
+        return default_scale['id'] if default_scale else None
 
     def get_grade_for_mark(self, mark: float, scale_id: Optional[int] = None) -> Optional[Dict]:
         if mark is None: return None
@@ -757,10 +2320,24 @@ class ExamManagementService:
             self.cursor.execute("SELECT gd.* FROM grading_details gd JOIN grading_scales gs ON gd.scale_id = gs.id AND gd.school_id = gs.school_id WHERE gs.is_default = TRUE AND %s BETWEEN gd.min_mark AND gd.max_mark AND gd.school_id = %s", (mark, self.school_id))
         return self.cursor.fetchone()
 
-    def get_marks_for_class_subject(self, exam_id: int, class_id: int, subject_id: int) -> List[Dict]:
+    def get_marks_for_class_subject(
+        self,
+        exam_id: int,
+        class_id: int,
+        subject_id: int,
+        *,
+        search_term: Optional[str] = None,
+        page: int = 1,
+        page_size: Optional[int] = None,
+    ) -> List[Dict]:
         self._assert_exam_belongs_to_school(exam_id)
         class_info = self._get_exam_class_details(exam_id, class_id)
         self.get_exam_subject(exam_id, class_id, subject_id)
+        if page < 1:
+            raise ExamManagementError("Page number must be positive.")
+        if page_size is not None and not 1 <= page_size <= 200:
+            raise ExamManagementError("Page size must be between 1 and 200.")
+        normalized_search = (search_term or '').strip()[:100]
         sql = """
             SELECT s.AdmNo, s.FName, s.SName as LName, m.mark, m.is_absent, gd.grade, m.remarks, m.ct_remarks, m.p_remarks
             FROM class_allocation ca
@@ -783,17 +2360,99 @@ class ExamManagementService:
                         AND ss.school_id = ca.school_id
                         AND ss.is_active = TRUE
                   )
-              )
-            ORDER BY s.FName, s.SName
+            )
         """
+        params = [
+            exam_id, subject_id, class_id,
+            class_info['exam_academic_year_id'], self.school_id, subject_id,
+        ]
+        if normalized_search:
+            sql += """
+             AND (
+                 CAST(s.AdmNo AS CHAR) LIKE %s
+                 OR s.FName LIKE %s
+                 OR s.SName LIKE %s
+             )
+            """
+            search_pattern = f'%{normalized_search}%'
+            params.extend([search_pattern, search_pattern, search_pattern])
+        sql += " ORDER BY s.FName, s.SName, s.AdmNo"
+        if page_size is not None:
+            sql += " LIMIT %s OFFSET %s"
+            params.extend([page_size, (page - 1) * page_size])
         self.cursor.execute(
             sql,
-            (
-                exam_id, subject_id, class_id,
-                class_info['exam_academic_year_id'], self.school_id, subject_id,
-            ),
+            tuple(params),
         )
-        return self.cursor.fetchall()
+        rows = self.cursor.fetchall()
+        scale_id = self.get_effective_grading_scale_id(exam_id, class_id)
+        for row in rows:
+            if row['mark'] is None or row['is_absent']:
+                row['grade'] = None
+                continue
+            grade = self.get_grade_for_mark(float(row['mark']), scale_id)
+            row['grade'] = grade['grade'] if grade else None
+            if row['ct_remarks'] in (None, '') and grade:
+                row['ct_remarks'] = grade.get('class_teacher_remarks')
+            if row['p_remarks'] in (None, '') and grade:
+                row['p_remarks'] = grade.get('principal_remarks')
+            if row['remarks'] in (None, '') and grade:
+                row['remarks'] = grade.get('remarks')
+        return rows
+
+    def count_exam_eligible_students(
+        self,
+        exam_id: int,
+        class_id: int,
+        subject_id: int,
+        *,
+        search_term: Optional[str] = None,
+    ) -> int:
+        self._assert_exam_belongs_to_school(exam_id)
+        class_info = self._get_exam_class_details(exam_id, class_id)
+        self.get_exam_subject(exam_id, class_id, subject_id)
+        sql = """
+            SELECT COUNT(*) AS total
+            FROM class_allocation ca
+            JOIN studentinfo s
+              ON s.AdmNo = ca.student_id AND s.school_id = ca.school_id
+            WHERE ca.class_id = %s AND ca.academic_year_id = %s
+              AND ca.is_current = TRUE AND ca.school_id = %s
+              AND (
+                  EXISTS (
+                      SELECT 1 FROM student_subjects ss
+                      WHERE ss.class_allocation_id = ca.id
+                        AND ss.subject_id = %s
+                        AND ss.school_id = ca.school_id
+                        AND ss.is_active = TRUE
+                  )
+                  OR NOT EXISTS (
+                      SELECT 1 FROM student_subjects ss
+                      WHERE ss.class_allocation_id = ca.id
+                        AND ss.school_id = ca.school_id
+                        AND ss.is_active = TRUE
+                  )
+              )
+        """
+        params = [
+            class_id,
+            class_info['exam_academic_year_id'],
+            self.school_id,
+            subject_id,
+        ]
+        normalized_search = (search_term or '').strip()[:100]
+        if normalized_search:
+            sql += """
+              AND (
+                  CAST(s.AdmNo AS CHAR) LIKE %s
+                  OR s.FName LIKE %s
+                  OR s.SName LIKE %s
+              )
+            """
+            search_pattern = f'%{normalized_search}%'
+            params.extend([search_pattern, search_pattern, search_pattern])
+        self.cursor.execute(sql, tuple(params))
+        return int((self.cursor.fetchone() or {}).get('total', 0))
 
     def get_class_tabulation(self, exam_id: int, class_id: int) -> Dict:
         class_info = self._get_exam_class_details(exam_id, class_id)
@@ -811,6 +2470,25 @@ class ExamManagementService:
             (class_id, class_info['exam_academic_year_id'], self.school_id),
         )
         students = self.cursor.fetchall()
+        self.cursor.execute(
+            """
+            SELECT ss.class_allocation_id, ss.subject_id
+            FROM student_subjects ss
+            JOIN class_allocation ca
+              ON ca.id = ss.class_allocation_id AND ca.school_id = ss.school_id
+            WHERE ca.class_id = %s AND ca.academic_year_id = %s
+              AND ca.is_current = TRUE AND ca.school_id = %s
+              AND ss.is_active = TRUE
+            """,
+            (class_id, class_info['exam_academic_year_id'], self.school_id),
+        )
+        enrollment_rows = self.cursor.fetchall()
+        enrolled_by_allocation = {}
+        for enrollment in enrollment_rows:
+            enrolled_by_allocation.setdefault(
+                enrollment['class_allocation_id'], set()
+            ).add(enrollment['subject_id'])
+
         marks_map = {}
         for subject in subjects:
             subject_marks = self.get_marks_for_class_subject(
@@ -819,7 +2497,28 @@ class ExamManagementService:
             for mark in subject_marks:
                 marks_map.setdefault(str(mark['AdmNo']), {})[subject['id']] = mark
 
-        scale_id = self.get_class_grading_scale_id(class_id)
+        scale_id = self.get_effective_grading_scale_id(exam_id, class_id)
+        component_results = self._get_component_results_for_class(
+            exam_id,
+            class_id,
+            [subject['id'] for subject in subjects],
+            [str(student['AdmNo']) for student in students],
+        )
+        for (student_id, subject_id), component_result in component_results.items():
+            mark_value = (
+                None
+                if component_result['scored_components'] == 0
+                else component_result['mark']
+            )
+            grade_rec = (
+                self.get_grade_for_mark(mark_value, scale_id)
+                if mark_value is not None else None
+            )
+            marks_map.setdefault(student_id, {})[subject_id] = {
+                **component_result,
+                'mark': mark_value,
+                'grade': grade_rec['grade'] if grade_rec else None,
+            }
         tabulation = []
         for s in students:
             sid = str(s['AdmNo'])
@@ -830,84 +2529,209 @@ class ExamManagementService:
                 'marks': [],
                 'total': 0.0,
             }
-            count = 0
+            enrolled_subject_ids = enrolled_by_allocation.get(
+                s.get('allocation_id'), set()
+            )
+            eligible_subjects = [
+                subject for subject in subjects
+                if not enrolled_subject_ids or subject['id'] in enrolled_subject_ids
+            ]
+            eligible_subject_ids = {
+                subject['id'] for subject in eligible_subjects
+            }
+            numeric_count = 0
+            absent_count = 0
+            missing_count = 0
             for sub in subjects:
+                if sub['id'] not in eligible_subject_ids:
+                    row['marks'].append({
+                        'subject_id': sub['id'], 'mark': None,
+                        'grade': '-', 'is_absent': False, 'state': 'ineligible',
+                    })
+                    continue
                 m = marks_map.get(sid, {}).get(sub['id'])
                 if m:
                     mark_value = m['mark']
-                    if m['is_absent']:
+                    state = m.get('state') or (
+                        'absent' if m['is_absent']
+                        else 'scored' if mark_value is not None
+                        else 'missing'
+                    )
+                    if state == 'absent':
                         row['marks'].append({
                             'subject_id': sub['id'], 'mark': None,
-                            'grade': '-', 'is_absent': True,
+                            'grade': '-', 'is_absent': True, 'state': state,
                         })
+                        absent_count += 1
+                    elif state == 'missing':
+                        row['marks'].append({
+                            'subject_id': sub['id'], 'mark': None,
+                            'grade': '-', 'is_absent': False, 'state': state,
+                        })
+                        missing_count += 1
                     else:
                         row['marks'].append({
                             'subject_id': sub['id'], 'mark': mark_value,
                             'grade': m['grade'] or '-', 'is_absent': False,
+                            'state': state,
                         })
                         if mark_value is not None:
                             row['total'] += float(mark_value)
-                            count += 1
+                            numeric_count += 1
+                        else:
+                            missing_count += 1
                 else:
                     row['marks'].append({
                         'subject_id': sub['id'], 'mark': None,
-                        'grade': '-', 'is_absent': False,
+                        'grade': '-', 'is_absent': False, 'state': 'missing',
                     })
-            row['numeric_subjects'] = count
-            row['average'] = row['total'] / count if count else 0
-            grade_rec = self.get_grade_for_mark(row['average'], scale_id) if count else None
+                    missing_count += 1
+            row['eligible_subjects'] = len(eligible_subjects)
+            row['numeric_subjects'] = numeric_count
+            row['absent_subjects'] = absent_count
+            row['missing_subjects'] = missing_count
+            row['average'] = (
+                row['total'] / len(eligible_subjects)
+                if eligible_subjects else 0
+            )
+            grade_rec = (
+                self.get_grade_for_mark(row['average'], scale_id)
+                if eligible_subjects else None
+            )
             row['grade'] = grade_rec['grade'] if grade_rec else '-'
             tabulation.append(row)
         tabulation.sort(key=lambda row: (
-            row['numeric_subjects'] == 0,
+            row['eligible_subjects'] == 0,
             -row['average'],
             -row['total'],
             str(row['admno']),
         ))
-        rank = 0
-        previous_average = None
-        ranked_position = 0
+        ranked_rows = rank_rows(
+            [row for row in tabulation if row['eligible_subjects'] > 0],
+            'average',
+            style=RankingStyle.COMPETITION,
+            missing_policy='missing',
+        )
+        for ranked_row in ranked_rows:
+            ranked_row.row['rank'] = ranked_row.rank
         for row in tabulation:
-            if row['numeric_subjects'] == 0:
+            if row['eligible_subjects'] == 0:
                 row['rank'] = '-'
-            else:
-                ranked_position += 1
-                if previous_average is None or row['average'] != previous_average:
-                    rank = ranked_position
-                    previous_average = row['average']
-                row['rank'] = rank
 
         subject_stats = []
         eligible_mark_count = 0
         entered_mark_count = 0
         for subject in subjects:
-            eligible_marks = [
-                marks_map.get(str(student['AdmNo']), {}).get(subject['id'])
-                for student in students
+            eligible_students = [
+                student for student in students
+                if not enrolled_by_allocation.get(student.get('allocation_id'))
+                or subject['id'] in enrolled_by_allocation[
+                    student.get('allocation_id')
+                ]
             ]
-            eligible_marks = [mark for mark in eligible_marks if mark is not None]
-            eligible_mark_count += len(eligible_marks)
+            eligible_mark_count += len(eligible_students)
             entered_mark_count += sum(
-                mark['mark'] is not None or bool(mark['is_absent'])
-                for mark in eligible_marks
+                (mark := marks_map.get(str(student['AdmNo']), {}).get(subject['id']))
+                is not None
+                and (
+                    mark['mark'] is not None
+                    or bool(mark['is_absent'])
+                    or (
+                        mark.get('component_count', 0) > 0
+                        and mark.get('scored_components', 0)
+                            + mark.get('absent_components', 0)
+                            == mark['component_count']
+                    )
+                )
+                for student in eligible_students
             )
+            eligible_count = len(eligible_students)
+            subject_marks = [
+                marks_map.get(str(student['AdmNo']), {}).get(subject['id'])
+                for student in eligible_students
+            ]
             scores = [
                 mark['mark']
-                for row in tabulation
-                for mark in row['marks']
-                if mark['subject_id'] == subject['id']
+                for mark in subject_marks
+                if mark is not None
                 and not mark['is_absent']
                 and mark['mark'] is not None
+                and mark.get('state') != 'missing'
             ]
-            average = sum(float(score) for score in scores) / len(scores) if scores else 0
-            grade = self.get_grade_for_mark(average, scale_id) if scores else None
+            average = (
+                sum(float(score) for score in scores) / eligible_count
+                if eligible_count else 0
+            )
+            grade = (
+                self.get_grade_for_mark(average, scale_id)
+                if eligible_count else None
+            )
+            statistics = describe_eligible_scores(
+                (
+                    0
+                    if mark is None or mark['is_absent'] or mark['mark'] is None
+                    else float(mark['mark'])
+                    for mark in subject_marks
+                ),
+                grade_values=(
+                    mark.get('grade')
+                    for mark in subject_marks
+                    if mark is not None
+                    and not mark['is_absent']
+                    and mark['mark'] is not None
+                    and mark.get('state') != 'missing'
+                ),
+            )
             subject_stats.append({
                 'subject_id': subject['id'],
                 'name': subject['name'],
                 'code': subject['code'],
                 'count': len(scores),
+                'eligible_count': eligible_count,
+                'entered_count': sum(
+                    mark is not None
+                    and (
+                        mark['mark'] is not None
+                        or bool(mark['is_absent'])
+                        or (
+                            mark.get('component_count', 0) > 0
+                            and mark.get('scored_components', 0)
+                                + mark.get('absent_components', 0)
+                                == mark['component_count']
+                        )
+                    )
+                    for mark in subject_marks
+                ),
+                'absent_count': sum(
+                    mark is not None and bool(mark['is_absent'])
+                    for mark in subject_marks
+                ),
+                'absent_component_count': sum(
+                    mark.get('absent_components', 0)
+                    for mark in subject_marks if mark is not None
+                ),
+                'missing_component_count': sum(
+                    mark.get('missing_components', 0)
+                    for mark in subject_marks if mark is not None
+                ),
+                'missing_count': sum(
+                    mark is None or (
+                        mark.get('state') == 'missing'
+                        or (
+                            mark.get('component_count', 0) > 0
+                            and mark.get('missing_components', 0) > 0
+                        )
+                        or (
+                            mark['mark'] is None and not mark['is_absent']
+                            and mark.get('scored_components', 0) == 0
+                            and mark.get('absent_components', 0) == 0
+                        )
+                    )
+                    for mark in subject_marks
+                ),
                 'average': average,
                 'grade': grade['grade'] if grade else '-',
+                'statistics': statistics,
             })
         return {
             'class_info': class_info,
@@ -956,7 +2780,10 @@ class ExamManagementService:
             'results': results['subjects'],
             'summary': results['summary'],
             'rank': rank,
-            'class_size': len(tab['tabulation']),
+            'class_size': sum(
+                row.get('eligible_subjects', 1) > 0
+                for row in tab['tabulation']
+            ),
         }
 
     def get_student_results(self, student_id: str, exam_id: int) -> Dict:
@@ -1014,25 +2841,45 @@ class ExamManagementService:
         marks_by_subject = {
             row['subject_id']: row for row in self.cursor.fetchall()
         }
+        component_results = self._get_component_results_for_class(
+            exam_id,
+            allocation['class_id'],
+            subject_ids,
+            [str(student_id)],
+        )
+        for (component_student_id, subject_id), component_result in component_results.items():
+            if component_student_id != str(student_id):
+                continue
+            mark_value = (
+                None
+                if component_result['scored_components'] == 0
+                else component_result['mark']
+            )
+            marks_by_subject[subject_id] = {
+                **component_result,
+                'mark': mark_value,
+                'remarks': marks_by_subject.get(subject_id, {}).get('remarks'),
+                'ct_remarks': marks_by_subject.get(subject_id, {}).get('ct_remarks'),
+                'p_remarks': marks_by_subject.get(subject_id, {}).get('p_remarks'),
+            }
         results = []
         scores = []
+        scale_id = self.get_effective_grading_scale_id(
+            exam_id, allocation['class_id']
+        )
         for subject in subjects:
             mark = marks_by_subject.get(subject['id'], {})
             grade = None
             points = None
-            if mark.get('grade_id'):
-                self.cursor.execute(
-                    """
-                    SELECT grade, points, remarks, class_teacher_remarks,
-                           principal_remarks
-                    FROM grading_details
-                    WHERE id = %s AND school_id = %s
-                    """,
-                    (mark['grade_id'], self.school_id),
-                )
-                grade = self.cursor.fetchone()
             numeric_mark = mark.get('mark')
             is_absent = bool(mark.get('is_absent', False))
+            if numeric_mark is not None and not is_absent:
+                grade = self.get_grade_for_mark(float(numeric_mark), scale_id)
+            state = mark.get('state') or (
+                'absent' if is_absent
+                else 'scored' if numeric_mark is not None
+                else 'missing'
+            )
             if numeric_mark is not None and not is_absent:
                 scores.append(float(numeric_mark))
             results.append({
@@ -1043,21 +2890,51 @@ class ExamManagementService:
                 'points': grade['points'] if grade else None,
                 'remarks': mark.get('remarks'),
                 'grade_remarks': grade['remarks'] if grade else None,
-                'ct_remarks': mark.get('ct_remarks'),
-                'p_remarks': mark.get('p_remarks'),
+                'ct_remarks': (
+                    mark.get('ct_remarks')
+                    or (grade.get('class_teacher_remarks') if grade else None)
+                ),
+                'p_remarks': (
+                    mark.get('p_remarks')
+                    or (grade.get('principal_remarks') if grade else None)
+                ),
                 'is_absent': is_absent,
+                'state': state,
+                'total_mark': mark.get('total_mark'),
+                'maximum_mark': mark.get('maximum_mark'),
+                'component_count': mark.get('component_count'),
+                'scored_components': mark.get('scored_components'),
+                'absent_components': mark.get('absent_components'),
+                'missing_components': mark.get('missing_components'),
             })
         total = sum(scores)
-        average = total / len(scores) if scores else 0
-        scale_id = self.get_class_grading_scale_id(allocation['class_id'])
-        mean_grade = self.get_grade_for_mark(average, scale_id) if scores else None
+        average = total / len(subjects) if subjects else 0
+        mean_grade = (
+            self.get_grade_for_mark(average, scale_id) if subjects else None
+        )
         return {
             'subjects': results,
             'summary': {
                 'total_marks': total,
                 'mean_mark': average,
                 'mean_grade': mean_grade['grade'] if mean_grade else '-',
-                'subjects_taken': len(scores),
+                'subjects_taken': len(subjects),
+                'scored_subjects': len(scores),
+                'absent_subjects': sum(
+                    result['state'] == 'absent' for result in results
+                ),
+                'missing_subjects': sum(
+                    result['state'] == 'missing' for result in results
+                ),
+                'partial_subjects': sum(
+                    result['state'] == 'partial' for result in results
+                ),
+                'absent_components': sum(
+                    result.get('absent_components') or 0 for result in results
+                ),
+                'missing_components': sum(
+                    result.get('missing_components') or 0 for result in results
+                ),
             },
         }
 
@@ -1075,26 +2952,25 @@ class ExamManagementService:
             tab = self.get_class_tabulation(exam_id, class_row['classID'])
             results.extend(
                 row for row in tab['tabulation']
-                if row['numeric_subjects'] > 0
+                if row.get(
+                    'eligible_subjects', row.get('numeric_subjects', 0)
+                ) > 0
             )
         results.sort(
             key=lambda row: (
-                row['numeric_subjects'] == 0,
                 -row['average'],
                 -row['total'],
                 str(row['admno']),
             )
         )
-        rank = 0
-        previous_average = None
-        for index, row in enumerate(results, start=1):
-            if row['numeric_subjects'] == 0:
-                row['rank'] = '-'
-                continue
-            if previous_average is None or row['average'] != previous_average:
-                rank = index
-                previous_average = row['average']
-            row['rank'] = rank
+        ranked_rows = rank_rows(
+            results,
+            'average',
+            style=RankingStyle.COMPETITION,
+            missing_policy='missing',
+        )
+        for ranked_row in ranked_rows:
+            ranked_row.row['rank'] = ranked_row.rank
         return results[:limit] if limit else results
 
     def get_subject_winners(self, exam_id: int, class_id: Optional[int] = None) -> List[Dict]:
@@ -1165,12 +3041,16 @@ class ExamManagementService:
         previous_by_student = {
             str(row['admno']): row
             for row in previous_results
-            if row['numeric_subjects'] > 0
+            if row.get(
+                'eligible_subjects', row.get('numeric_subjects', 0)
+            ) > 0
         }
         improvements = []
         for current in current_results:
             previous = previous_by_student.get(str(current['admno']))
-            if previous and current['numeric_subjects'] > 0:
+            if previous and current.get(
+                'eligible_subjects', current.get('numeric_subjects', 0)
+            ) > 0:
                 delta = current['average'] - previous['average']
                 if delta > 0:
                     improvements.append({
@@ -1189,10 +3069,13 @@ class ExamManagementService:
         dist = {}
         ranked_students = [
             row for row in tab['tabulation']
-            if row['numeric_subjects'] > 0
+            if row.get(
+                'eligible_subjects', row.get('numeric_subjects', 0)
+            ) > 0
         ]
         for row in ranked_students:
-            dist[row['grade']] = dist.get(row['grade'], 0) + 1
+            if row['grade'] not in (None, '', '-'):
+                dist[row['grade']] = dist.get(row['grade'], 0) + 1
         mean_score = (
             sum(row['average'] for row in ranked_students) / len(ranked_students)
             if ranked_students else 0
@@ -1215,6 +3098,7 @@ class ExamManagementService:
         scored_students = []
         grade_distribution = {}
         subject_totals = {}
+        school_subject_cohorts = {}
         stream_groups = {}
         expected_mark_count = 0
         entered_mark_count = 0
@@ -1223,13 +3107,26 @@ class ExamManagementService:
         for class_row in classes:
             tab = self.get_class_tabulation(exam_id, class_row['classID'])
             class_students = tab['tabulation']
+            subject_keys_by_id = {}
+            for subject in tab['subject_stats']:
+                if subject.get('subject_id') is not None:
+                    subject_keys_by_id[subject['subject_id']] = (
+                        subject['code'], subject['name']
+                    )
             class_scored = [
                 student for student in class_students
                 if student['numeric_subjects'] > 0
             ]
+            class_rankable = [
+                student for student in class_students
+                if student.get(
+                    'eligible_subjects', student.get('numeric_subjects', 0)
+                ) > 0
+            ]
             class_mean = (
-                sum(student['average'] for student in class_scored) / len(class_scored)
-                if class_scored else 0
+                sum(student['average'] for student in class_rankable)
+                / len(class_rankable)
+                if class_rankable else 0
             )
             class_summary = {
                 'class_id': class_row['classID'],
@@ -1237,6 +3134,7 @@ class ExamManagementService:
                 'class_group': class_row.get('class_group_code') or 'Other Classes',
                 'stream_code': class_row.get('stream_code'),
                 'student_count': len(class_students),
+                'eligible_student_count': len(class_rankable),
                 'scored_student_count': len(class_scored),
                 'mean_score': class_mean,
                 'expected_mark_count': tab.get('eligible_mark_count', 0),
@@ -1248,21 +3146,58 @@ class ExamManagementService:
             expected_mark_count += class_summary['expected_mark_count']
             entered_mark_count += class_summary['entered_mark_count']
 
-            for student in class_scored:
+            for student in class_rankable:
                 scored_students.append({
                     **student,
                     'class_id': class_row['classID'],
                     'class_name': class_row['display_name'],
                 })
                 grade = student['grade']
-                grade_distribution[grade] = grade_distribution.get(grade, 0) + 1
+                if grade not in (None, '', '-'):
+                    grade_distribution[grade] = grade_distribution.get(grade, 0) + 1
+                for mark in student.get('marks', []):
+                    if mark.get('state') == 'ineligible':
+                        continue
+                    subject_id = mark.get('subject_id')
+                    subject_key = subject_keys_by_id.get(subject_id)
+                    if subject_key is None:
+                        continue
+                    cohort = school_subject_cohorts.setdefault(
+                        subject_key, {'scores': [], 'grades': []}
+                    )
+                    score = mark.get('mark')
+                    cohort['scores'].append(
+                        0 if score is None or mark.get('is_absent') else float(score)
+                    )
+                    grade_value = mark.get('grade')
+                    if (
+                        score is not None
+                        and not mark.get('is_absent')
+                        and grade_value not in (None, '', '-')
+                    ):
+                        cohort['grades'].append(grade_value)
 
             for subject in tab['subject_stats']:
                 key = (subject['code'], subject['name'])
-                total, count = subject_totals.get(key, (0.0, 0))
+                (
+                    total, eligible_count, scored_count, entered_count,
+                    absent_count, absent_component_count, missing_count,
+                    missing_component_count,
+                ) = subject_totals.get(
+                    key, (0.0, 0, 0, 0, 0, 0, 0, 0)
+                )
+                subject_count = subject.get('eligible_count', subject['count'])
                 subject_totals[key] = (
-                    total + float(subject['average']) * subject['count'],
-                    count + subject['count'],
+                    total + float(subject['average']) * subject_count,
+                    eligible_count + subject_count,
+                    scored_count + subject['count'],
+                    entered_count + subject.get('entered_count', 0),
+                    absent_count + subject.get('absent_count', 0),
+                    absent_component_count
+                        + subject.get('absent_component_count', 0),
+                    missing_count + subject.get('missing_count', 0),
+                    missing_component_count
+                        + subject.get('missing_component_count', 0),
                 )
 
             stream_code = class_row.get('stream_code')
@@ -1281,9 +3216,9 @@ class ExamManagementService:
                 )
                 stream_summary['classes'].append(class_row['display_name'])
                 stream_summary['student_averages'].extend(
-                    student['average'] for student in class_scored
+                    student['average'] for student in class_rankable
                 )
-                stream_summary['student_count'] += len(class_scored)
+                stream_summary['student_count'] += len(class_rankable)
 
         class_summaries.sort(
             key=lambda item: (-item['mean_score'], item['class_name'])
@@ -1293,22 +3228,39 @@ class ExamManagementService:
                 -item['average'], -item['total'], str(item['admno'])
             )
         )
-        rank = 0
-        previous_average = None
-        for position, student in enumerate(scored_students, start=1):
-            if student['average'] != previous_average:
-                rank = position
-                previous_average = student['average']
-            student['rank'] = rank
-        subject_stats = [
-            {
+        ranked_students = rank_rows(
+            scored_students,
+            'average',
+            style=RankingStyle.COMPETITION,
+            missing_policy='missing',
+        )
+        for ranked_student in ranked_students:
+            ranked_student.row['rank'] = ranked_student.rank
+        subject_stats = []
+        for (code, name), (
+            total, eligible_count, scored_count, entered_count,
+            absent_count, absent_component_count, missing_count,
+            missing_component_count,
+        ) in subject_totals.items():
+            cohort = school_subject_cohorts.get(
+                (code, name), {'scores': [], 'grades': []}
+            )
+            subject_stats.append({
                 'code': code,
                 'name': name,
-                'count': count,
-                'average': total / count if count else 0,
-            }
-            for (code, name), (total, count) in subject_totals.items()
-        ]
+                'count': scored_count,
+                'eligible_count': eligible_count,
+                'entered_count': entered_count,
+                'absent_count': absent_count,
+                'absent_component_count': absent_component_count,
+                'missing_count': missing_count,
+                'missing_component_count': missing_component_count,
+                'average': total / eligible_count if eligible_count else 0,
+                'statistics': describe_eligible_scores(
+                    cohort['scores'],
+                    grade_values=cohort['grades'],
+                ),
+            })
         subject_stats.sort(key=lambda item: item['name'])
 
         stream_comparisons = []
@@ -1339,7 +3291,10 @@ class ExamManagementService:
             'classes': class_summaries,
             'class_count': len(classes),
             'student_count': student_count,
-            'scored_student_count': len(scored_students),
+            'scored_student_count': sum(
+                student['numeric_subjects'] > 0
+                for student in scored_students
+            ),
             'mean_score': mean_score,
             'grade_distribution': grade_distribution,
             'expected_mark_count': expected_mark_count,
@@ -1359,7 +3314,9 @@ class ExamManagementService:
             tab = self.get_class_tabulation(exam_id, class_row['classID'])
             students = [
                 row for row in tab['tabulation']
-                if row['numeric_subjects'] > 0
+                if row.get(
+                    'eligible_subjects', row.get('numeric_subjects', 0)
+                ) > 0
             ]
             group_name = class_row.get('class_group_code') or 'Other Classes'
             stream_name = class_row.get('stream_code') or class_row['display_name']

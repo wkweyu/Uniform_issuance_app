@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% set workflow_status = exam.workflow_status or ('locked' if exam.is_locked else 'marks_open') %}
+<main class="mx-auto max-w-5xl px-4 py-8">
+    <a href="{{ url_for('exams.marks_entry_select', exam_id=exam.id) }}"
+       class="mb-5 inline-block text-sm font-semibold text-blue-700 hover:underline">
+        &larr; Back to class and subject selection
+    </a>
+    <section class="rounded-xl border border-gray-200 bg-white p-6 shadow">
+        <h1 class="text-2xl font-bold text-gray-900">Assessment Components</h1>
+        <p class="mt-2 text-gray-600">
+            {{ exam.name }} &middot; {{ class_info.display_name }} &middot; {{ subject.name }}
+        </p>
+        <p class="mt-2 text-sm text-gray-600">
+            Each component is normalized to its maximum mark. Leave every weight blank
+            for maximum-mark weighting, or set all weights so they total 100%.
+        </p>
+
+        {% if workflow_status != 'draft' %}
+        <div class="mt-5 rounded border border-amber-300 bg-amber-50 p-3 text-amber-900">
+            Assessment definitions are read-only because this exam is
+            {{ workflow_status|replace('_', ' ') }}. Definitions can only change on a draft.
+        </div>
+        {% endif %}
+
+        <form method="post" class="mt-6 space-y-5" id="components-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="overflow-x-auto">
+                <table class="w-full min-w-[700px] border-collapse text-left">
+                    <thead>
+                        <tr class="bg-gray-100 text-sm text-gray-700">
+                            <th class="p-3">Component</th>
+                            <th class="p-3">Category</th>
+                            <th class="p-3">Maximum</th>
+                            <th class="p-3">Weight % (optional)</th>
+                            <th class="p-3">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="component-rows">
+                        {% for component in components %}
+                        <tr class="component-row border-t">
+                            <td class="p-2">
+                                <input name="component_name" maxlength="80" value="{{ component.name }}"
+                                       required class="w-full rounded border border-gray-300 p-2"
+                                       {% if workflow_status != 'draft' %}disabled{% endif %}>
+                            </td>
+                            <td class="p-2">
+                                <select name="component_category" required
+                                        class="w-full rounded border border-gray-300 p-2"
+                                        {% if workflow_status != 'draft' %}disabled{% endif %}>
+                                    <option value="formative" {{ 'selected' if component.category == 'formative' }}>Formative</option>
+                                    <option value="summative" {{ 'selected' if component.category == 'summative' }}>Summative</option>
+                                </select>
+                            </td>
+                            <td class="p-2">
+                                <input name="component_maximum" type="number" min="0.01" step="0.01"
+                                       value="{{ component.maximum_mark }}" required
+                                       class="w-full rounded border border-gray-300 p-2"
+                                       {% if workflow_status != 'draft' %}disabled{% endif %}>
+                            </td>
+                            <td class="p-2">
+                                <input name="component_weight" type="number" min="0" max="100" step="0.001"
+                                       value="{{ component.weight_percent if component.weight_percent is not none else '' }}"
+                                       class="w-full rounded border border-gray-300 p-2"
+                                       {% if workflow_status != 'draft' %}disabled{% endif %}>
+                            </td>
+                            <td class="p-2">
+                                <button type="button" class="remove-component rounded bg-red-50 px-3 py-2 text-sm text-red-700"
+                                        {% if workflow_status != 'draft' %}disabled{% endif %}>Remove</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if workflow_status == 'draft' %}
+            <div class="flex flex-wrap gap-3">
+                <button type="button" id="add-component"
+                        class="rounded border border-indigo-600 px-4 py-2 font-semibold text-indigo-700">
+                    Add component
+                </button>
+                <button type="submit"
+                        class="rounded bg-indigo-700 px-5 py-2 font-bold text-white hover:bg-indigo-800">
+                    Save component definition
+                </button>
+            </div>
+            {% endif %}
+        </form>
+    </section>
+</main>
+
+{% if workflow_status == 'draft' %}
+<template id="component-row-template">
+    <tr class="component-row border-t">
+        <td class="p-2"><input name="component_name" maxlength="80" required class="w-full rounded border border-gray-300 p-2"></td>
+        <td class="p-2">
+            <select name="component_category" required class="w-full rounded border border-gray-300 p-2">
+                <option value="formative">Formative</option>
+                <option value="summative">Summative</option>
+            </select>
+        </td>
+        <td class="p-2"><input name="component_maximum" type="number" min="0.01" step="0.01" required class="w-full rounded border border-gray-300 p-2"></td>
+        <td class="p-2"><input name="component_weight" type="number" min="0" max="100" step="0.001" class="w-full rounded border border-gray-300 p-2"></td>
+        <td class="p-2"><button type="button" class="remove-component rounded bg-red-50 px-3 py-2 text-sm text-red-700">Remove</button></td>
+    </tr>
+</template>
+<script>
+const componentRows = document.getElementById('component-rows');
+document.getElementById('add-component').addEventListener('click', () => {
+    componentRows.appendChild(
+        document.getElementById('component-row-template').content.cloneNode(true)
+    );
+});
+componentRows.addEventListener('click', (event) => {
+    if (event.target.closest('.remove-component')) {
+        event.target.closest('.component-row').remove();
+    }
+});
+if (!componentRows.children.length) {
+    document.getElementById('add-component').click();
+}
+</script>
+{% endif %}
+{% endblock %}

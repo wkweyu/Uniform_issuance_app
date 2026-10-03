@@ -86,7 +86,12 @@
                         {% for m in row.marks %}
                         <td class="px-1 py-2 border-2 border-gray-900 text-center">
                             <div class="flex flex-col leading-none">
-                                <span class="font-black text-sm">{{ m.mark or '-' }}</span>
+                                <span class="font-black text-sm">
+                                    {% if m.is_absent %}ABS
+                                    {% elif m.mark is not none %}{{ m.mark }}
+                                    {% elif m.state == 'ineligible' %}—
+                                    {% else %}MISSING{% endif %}
+                                </span>
                                 <span class="text-[7px] text-gray-400 font-black uppercase mt-0.5">{{ m.grade or '-' }}</span>
                             </div>
                         </td>

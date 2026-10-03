@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 py-8">
+    <div class="mb-6">
+        <a href="{{ url_for('exams.exams_dashboard') }}" class="text-sm text-indigo-700 hover:underline">Back to exams</a>
+        <p class="mt-4 text-xs font-bold uppercase tracking-widest text-indigo-600">Assessment setup</p>
+        <h1 class="text-3xl font-black text-gray-900">Grading scales — {{ exam.name }}</h1>
+        <p class="mt-2 text-sm text-gray-600">
+            Choose an exam-specific class override. Leaving the selection at the class or school default preserves the configured precedence.
+        </p>
+    </div>
+
+    {% if exam.workflow_status != 'draft' %}
+    <div class="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        Grading overrides are read-only after the exam leaves Draft.
+    </div>
+    {% endif %}
+
+    <form method="post" class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50 text-xs uppercase text-gray-600">
+                    <tr>
+                        <th class="px-4 py-3 text-left">Participating class</th>
+                        <th class="px-4 py-3 text-left">Exam override</th>
+                        <th class="px-4 py-3 text-left">Effective scale</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for class_row in classes %}
+                    <tr>
+                        <td class="px-4 py-3 font-semibold">{{ class_row.display_name }}</td>
+                        <td class="px-4 py-3">
+                            <select name="scale_{{ class_row.classID }}"
+                                    {% if exam.workflow_status != 'draft' %}disabled{% endif %}
+                                    class="w-full min-w-[14rem] px-3 py-2 border border-gray-300 rounded-lg">
+                                <option value="">Use class/school default</option>
+                                {% for scale in scales %}
+                                <option value="{{ scale.id }}"
+                                        {% if class_row.override_scale_id == scale.id %}selected{% endif %}>
+                                    {{ scale.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </td>
+                        <td class="px-4 py-3 text-gray-600">
+                            {% for scale in scales %}
+                                {% if class_row.effective_scale_id == scale.id %}{{ scale.name }}{% endif %}
+                            {% else %}
+                                School default
+                            {% endfor %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="3" class="px-4 py-8 text-center text-gray-500">No classes participate in this exam.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if exam.workflow_status == 'draft' %}
+        <div class="p-4 border-t border-gray-100 flex justify-end">
+            <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700">
+                Save grading overrides
+            </button>
+        </div>
+        {% endif %}
+    </form>
+</div>
+{% endblock %}

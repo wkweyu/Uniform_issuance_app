@@ -1,14 +1,10 @@
-# 🔒 Security Implementation & Deployment Guide
+# Security Implementation & Deployment Guide
 
 ## Executive Summary
 
-All security enhancements have been **successfully implemented and tested**:
-- ✅ **Authentication**: @login_required on 46 routes
-- ✅ **Authorization**: @admin_required on 2 admin routes  
-- ✅ **CSRF Protection**: Flask-WTF integrated, 17+ forms protected
-- ✅ **Dependencies**: Flask-WTF 1.2.2 installed and verified
+The application includes authentication, admin authorization, Flask-WTF CSRF protection, and the school-scoped exam access and audit work documented below. Focused exam tests pass, but no production-equivalent MySQL database was available to verify the new migrations.
 
-**Status**: Ready for deployment ✓
+**Release status**: Do not treat this guide as a production-readiness certification. Run the ordered migrations and regression checks against a staging database and verify the target schema before deployment.
 
 ---
 
@@ -34,6 +30,29 @@ Set `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, and `DB_NAME` for the target
 python3 migrate_db.py
 ```
 
+The migration runner follows the application's database TLS configuration. It does not force TLS for endpoints that do not support it. If the database provider requires TLS, set `DB_SSL_CA` to the provider's CA certificate path in the service/container running the migration; a configured but missing certificate path fails with an explicit error rather than silently disabling TLS. On Render, make sure these database variables use the same internal or external host, port, and credentials as the deployed application.
+
+If an already-deployed copy of `migrate_db.py` still fails with PyMySQL error 2026 (`SSL is required but the server doesn't support it`), first deploy the TLS fix. As a one-off Render Shell workaround only when the configured database endpoint does not support TLS, this runs the migration runner in-process with TLS disabled for that command (it does not edit application files or persist a setting):
+
+```bash
+python - <<'PY'
+import pymysql
+import migrate_db
+
+connect = pymysql.connect
+
+def connect_without_tls(**kwargs):
+    kwargs['ssl'] = None
+    return connect(**kwargs)
+
+pymysql.connect = connect_without_tls
+for migration in migrate_db.get_migration_status():
+    print(migration['state'], migration['migration_name'])
+PY
+```
+
+Review the status output and take a verified database backup before applying changes. Then run the same Render Shell wrapper with `migrate_db.migrate_db()` instead of the status loop. Do not use this workaround when the provider requires TLS; configure its valid CA through `DB_SSL_CA` instead. The status command does not apply migration SQL, although it may initialize the migration journal tables.
+
 The runner records `schema.sql`, each completed migration, and its SHA-256 checksum. It skips only matching files on later runs, fails closed if an applied file has changed, and never records a failed file. For diagnostics on an existing database, process every pending migration and still receive a non-zero exit on any failure:
 
 ```bash
@@ -55,6 +74,20 @@ python3 migrate_db.py --backfill-checksums
 This command records checksums for already-applied entries; it does not execute migration SQL.
 
 Do not use shell wildcard redirection such as `mysql < migrations/*.sql`; it does not reliably execute every migration file in order.
+
+### Exam access and audit migration
+
+Migration `049_exam_access_and_audit.sql` adds school-scoped examination roles, explicit subject-access requests and approvals, and durable exam audit events. Apply it with the ordered migration runner before enabling the updated exam routes. Afterward, a school administrator can assign examination roles from the Exam Access page; users request marks access from the marks-selection page, and administrators review or revoke those scoped grants from the access screen.
+
+### Exam workflow and assessment migration
+
+Migration `050_exam_workflow_and_assessments.sql` adds lifecycle metadata, component assessment definitions and marks, exam-specific grading overrides, and result-bundle configuration tables. Apply migrations `049` and `050` with `migrate_db.py` in a staging environment before deploying code that uses examination workflow or component entry. Configure components while an exam is still a draft; after opening marks entry, use the component-mark page for those subjects. Existing single-score subjects continue to use the legacy marks workflow. School-authorized exam staff can configure ordered result bundles, normalized equal/weighted calculation, and the bundle ranking policy from the Exam Bundles page.
+
+Migration `051_exam_import_batches.sql` adds atomic workbook-import batch records. The XLSX flow uses the declared `openpyxl` dependency, accepts files up to 10 MiB, validates all configured subject sheets and roster rows before an import, and applies valid component marks and audit events in one transaction. Dry-run mode never writes marks. Marks entry rosters are searchable and paginated; the completion dashboard reports each accessible class/subject, and subject-remark overrides require a reason and are audited.
+
+The component results are now included in class tabulation and report-card calculations. School-level analytics provide eligible-cohort subject statistics and downloadable class, subject, stream, and top-learner CSV views; each analytics export is audit logged, and text cells are protected against spreadsheet formula injection. Subject statistics use eligible learners as the denominator, count absent/missing outcomes as zero, and retain their separate completion counts. Pass percentages are intentionally not shown until the school configures a pass threshold.
+
+The application still needs production-equivalent schema testing before release: no live database was available during development, so foreign-key compatibility, migration behavior, and runtime behavior against each supported school schema remain unverified. Do not run these migrations directly against production without a successful staging run and a verified backup.
 
 ### 3. Run the Application
 ```bash

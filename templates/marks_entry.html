@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% set workflow_status = exam.workflow_status or ('locked' if exam.is_locked else 'marks_open') %}
+{% set can_edit_marks = workflow_status == 'marks_open' and not exam.is_locked %}
 <div class="container mx-auto px-4 py-8">
     <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div>
@@ -15,10 +17,15 @@
                 <span><i class="fas fa-users mr-1"></i> Class: <span class="font-semibold">{{ class_info.display_name }}</span></span>
                 <span><i class="fas fa-book mr-1"></i> Subject: <span class="font-semibold">{{ subject.name }}</span></span>
             </div>
+            {% if not can_edit_marks %}
+            <p class="mt-2 text-sm font-semibold text-amber-700">
+                This exam is read-only while its workflow status is {{ workflow_status|replace('_', ' ')|title }}.
+            </p>
+            {% endif %}
         </div>
         
         <div class="flex flex-wrap gap-3 items-center">
-            {% if not exam.is_locked %}
+            {% if can_edit_marks %}
             <div class="flex gap-2">
                 <a href="{{ url_for('export_marks_template', exam_id=exam.id, class_id=class_info.classID, subject_id=subject.id) }}" 
                    class="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition shadow-sm text-sm font-bold">
@@ -44,6 +51,24 @@
     </div>
 
     <div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+        <form method="get" class="flex flex-wrap items-end gap-3 border-b bg-gray-50 p-4 no-print">
+            <input type="hidden" name="class_id" value="{{ class_id }}">
+            <input type="hidden" name="subject_id" value="{{ subject_id }}">
+            <label class="min-w-64 flex-1 text-sm font-semibold text-gray-700">
+                Search learner by admission number or name
+                <input name="student" value="{{ student_search }}" maxlength="100"
+                       class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+                       placeholder="e.g. 1001 or learner name">
+            </label>
+            <button class="rounded bg-gray-800 px-4 py-2 font-semibold text-white" type="submit">Search</button>
+            {% if student_search %}
+            <a href="{{ url_for('exams.marks_entry', exam_id=exam.id, class_id=class_id, subject_id=subject_id) }}"
+               class="px-2 py-2 text-sm font-semibold text-blue-700 underline">Clear</a>
+            {% endif %}
+            <span class="w-full text-xs text-gray-600 md:w-auto">
+                Showing {{ students|length }} of {{ total_students }} eligible learner(s); page {{ page }} of {{ page_count }}.
+            </span>
+        </form>
         <div class="overflow-x-auto">
             <table class="w-full min-w-[1360px] table-fixed text-left border-collapse" id="marks-table">
                 <thead>
@@ -72,7 +97,7 @@
                                 data-field="mark"
                                 aria-label="Score for {{ student.FName }} {{ student.LName }}"
                                 inputmode="decimal"
-                                {{ 'disabled' if exam.is_locked or student.is_absent }}
+                                {{ 'disabled' if not can_edit_marks or student.is_absent }}
                                 class="w-full min-w-[6rem] max-w-[8rem] px-3 py-2 border border-gray-300 rounded text-center text-lg focus:ring-2 focus:ring-blue-500 outline-none transition disabled:bg-gray-100 mark-input text-black">
                         </td>
                         <td class="px-6 py-4 text-center text-black">
@@ -83,25 +108,31 @@
                         <td class="px-6 py-4 text-center">
                             <input type="checkbox" data-field="is_absent" 
                                 {{ 'checked' if student.is_absent }}
-                                {{ 'disabled' if exam.is_locked }}
+                                {{ 'disabled' if not can_edit_marks }}
                                 class="w-5 h-5 rounded text-blue-600 focus:ring-blue-500 border-gray-300 transition absent-checkbox">
                         </td>
                         <td class="px-6 py-4">
                             <input type="text" value="{{ student.remarks or '' }}" 
                                 data-field="remarks"
-                                {{ 'disabled' if exam.is_locked }}
+                                readonly
                                 class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none transition disabled:bg-gray-100 remarks-input text-black text-sm">
+                            {% if can_edit_marks %}
+                            <button type="button" class="mt-1 text-xs font-semibold text-indigo-700 underline remark-override"
+                                    data-student-id="{{ student.AdmNo }}">
+                                Override with reason
+                            </button>
+                            {% endif %}
                         </td>
                         <td class="px-6 py-4">
                             <input type="text" value="{{ student.ct_remarks or '' }}" 
                                 data-field="ct_remarks"
-                                {{ 'disabled' if exam.is_locked }}
+                                {{ 'disabled' if not can_edit_marks }}
                                 class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none transition disabled:bg-gray-100 ct_remarks-input text-black text-sm">
                         </td>
                         <td class="px-6 py-4">
                             <input type="text" value="{{ student.p_remarks or '' }}" 
                                 data-field="p_remarks"
-                                {{ 'disabled' if exam.is_locked }}
+                                {{ 'disabled' if not can_edit_marks }}
                                 class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none transition disabled:bg-gray-100 p_remarks-input text-black text-sm">
                         </td>
                         <td class="px-6 py-4 text-center">
@@ -117,9 +148,10 @@
             </table>
         </div>
         <div class="p-6 bg-gray-50 border-t border-gray-200">
-            <div class="flex justify-between items-center">
+            <div class="flex flex-wrap justify-between items-center gap-3">
                 <p class="text-sm text-gray-500">
-                    <span class="font-bold">{{ students|length }}</span> students total in this class.
+                    Showing <span class="font-bold">{{ students|length }}</span> learner(s)
+                    out of {{ total_students }} matching this subject.
                 </p>
                 <div class="flex gap-4">
                     <a href="{{ url_for('marks_entry_select', exam_id=exam.id) }}" class="px-6 py-2 bg-white border border-gray-300 rounded hover:bg-gray-100 text-gray-700 font-semibold transition">
@@ -130,6 +162,19 @@
                     </button>
                 </div>
             </div>
+            {% if page_count > 1 %}
+            <nav class="mt-4 flex items-center justify-between border-t pt-4 no-print" aria-label="Marks roster pages">
+                {% if page > 1 %}
+                <a class="rounded border px-4 py-2 text-sm font-semibold text-blue-700"
+                   href="{{ url_for('exams.marks_entry', exam_id=exam.id, class_id=class_id, subject_id=subject_id, student=student_search, page=page-1) }}">Previous 100</a>
+                {% else %}<span></span>{% endif %}
+                <span class="text-sm text-gray-600">Page {{ page }} of {{ page_count }}</span>
+                {% if page < page_count %}
+                <a class="rounded border px-4 py-2 text-sm font-semibold text-blue-700"
+                   href="{{ url_for('exams.marks_entry', exam_id=exam.id, class_id=class_id, subject_id=subject_id, student=student_search, page=page+1) }}">Next 100</a>
+                {% endif %}
+            </nav>
+            {% endif %}
         </div>
     </div>
 </div>
@@ -179,6 +224,45 @@ document.addEventListener('DOMContentLoaded', function() {
 
         e.preventDefault();
         nextInput.focus();
+    });
+
+    table.addEventListener('click', async function(e) {
+        const button = e.target.closest('.remark-override');
+        if (!button) return;
+        const row = button.closest('tr');
+        const remarksInput = row.querySelector('.remarks-input');
+        const remarks = window.prompt('Enter the approved subject remark:', remarksInput.value);
+        if (remarks === null) return;
+        const reason = window.prompt('Reason for this remark override (10-500 characters):');
+        if (reason === null) return;
+        const status = row.querySelector('.status-indicator');
+        button.disabled = true;
+        try {
+            const response = await fetch(`/api/exams/${examId}/override-subject-remark`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({
+                    student_id: button.dataset.studentId,
+                    subject_id: subjectId,
+                    remarks,
+                    reason
+                })
+            });
+            const result = await response.json();
+            if (!response.ok || !result.success) {
+                throw new Error(result.message || 'Remark override failed.');
+            }
+            remarksInput.value = remarks;
+            status.title = result.message;
+            status.querySelector('.fa-check-circle').classList.remove('opacity-0');
+        } catch (error) {
+            window.alert(error.message || 'Remark override failed.');
+        } finally {
+            button.disabled = false;
+        }
     });
 
     let saveTimeouts = {};

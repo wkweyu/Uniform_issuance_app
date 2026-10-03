@@ -1,10 +1,12 @@
 from datetime import datetime
 from decimal import Decimal
+import csv
 import io
 from pathlib import Path
 import uuid
 
 import pytest
+from openpyxl import Workbook
 
 import blueprints.exams.routes as exams_routes
 import blueprints.fees.routes as fees_routes
@@ -497,20 +499,102 @@ class ExamServiceStub:
         self.calls.append(("get_exam_class_info", exam_id, class_id))
         return {"classID": class_id, "display_name": "Grade 7 A"}
 
+    def get_exam_series(self, exam_id):
+        self.calls.append(("get_exam_series", exam_id))
+        return {
+            "id": exam_id, "name": "Midterm", "workflow_status": "marks_open",
+            "is_locked": False,
+        }
+
     def get_exam_subject(self, exam_id, class_id, subject_id):
         self.calls.append(("get_exam_subject", exam_id, class_id, subject_id))
         return {"id": subject_id, "name": "Mathematics"}
 
-    def get_marks_for_class_subject(self, exam_id, class_id, subject_id):
-        self.calls.append(("get_marks_for_class_subject", exam_id, class_id, subject_id))
+    def get_exam_assessment_components(self, exam_id, class_id, subject_id):
+        self.calls.append((
+            "get_exam_assessment_components", exam_id, class_id, subject_id
+        ))
+        return [{
+            "id": 21, "name": "CAT", "category": "formative",
+            "maximum_mark": 20, "weight_percent": None,
+        }]
+
+    def get_exam_subjects_for_class(self, exam_id, class_id):
+        self.calls.append(("get_exam_subjects_for_class", exam_id, class_id))
+        return [{"id": 12, "name": "Mathematics", "code": "MTH"}]
+
+    def get_exam_component_marks_for_class(
+        self, exam_id, class_id, subject_id, student_ids, components=None
+    ):
+        self.calls.append((
+            "get_exam_component_marks_for_class", exam_id, class_id,
+            subject_id, student_ids, components,
+        ))
+        return {}
+
+    def save_exam_component_marks_bulk(
+        self, exam_id, class_id, subject_id, marks, actor_user_id
+    ):
+        self.calls.append((
+            "save_exam_component_marks_bulk", exam_id, class_id,
+            subject_id, marks, actor_user_id,
+        ))
+        return len(marks)
+
+    def save_exam_workbook_component_marks(
+        self, exam_id, class_id, marks, actor_user_id, source_sha256, row_count
+    ):
+        self.calls.append((
+            "save_exam_workbook_component_marks", exam_id, class_id, marks,
+            actor_user_id, source_sha256, row_count,
+        ))
+        return {"batch_id": 81, "mark_count": len(marks)}
+
+    def get_exam_bundles(self):
+        self.calls.append(("get_exam_bundles",))
+        return []
+
+    def get_exam_bundle_options(self):
+        self.calls.append(("get_exam_bundle_options",))
+        return []
+
+    def save_exam_bundle(self, *args, **kwargs):
+        self.calls.append(("save_exam_bundle", args, kwargs))
+        return 71
+
+    def get_marks_for_class_subject(
+        self, exam_id, class_id, subject_id, **kwargs
+    ):
+        self.calls.append((
+            "get_marks_for_class_subject", exam_id, class_id, subject_id, kwargs
+        ))
         return [{
             "AdmNo": "1001", "FName": "Ada", "LName": "Lovelace",
             "mark": None, "is_absent": False,
         }]
 
+    def count_exam_eligible_students(self, exam_id, class_id, subject_id, **kwargs):
+        self.calls.append((
+            "count_exam_eligible_students", exam_id, class_id, subject_id, kwargs
+        ))
+        return 1
+
     def get_exam_subjects_status(self, exam_id, class_id):
         self.calls.append(("get_exam_subjects_status", exam_id, class_id))
-        return [{"id": 12, "name": "Mathematics", "is_complete": False}]
+        return [{
+            "id": 12, "name": "Mathematics", "is_complete": False,
+            "student_count": 1, "entered_count": 0,
+            "status_text": "0/1 entered", "uses_components": False,
+        }]
+
+    def override_exam_subject_remark(
+        self, exam_id, student_id, subject_id, remarks, reason, actor_user_id
+    ):
+        self.calls.append((
+            "override_exam_subject_remark", exam_id, student_id, subject_id,
+            remarks, reason, actor_user_id,
+        ))
+        return True
 
     def get_exam_classes(self, exam_id):
         self.calls.append(("get_exam_classes", exam_id))
@@ -2594,8 +2678,279 @@ def test_exams_subject_status_api_returns_service_subject_list(client, db_sessio
     assert response.status_code == 200
     assert response.json == {
         "success": True,
-        "subjects": [{"id": 12, "name": "Mathematics", "is_complete": False}],
+        "subjects": [{
+            "id": 12, "name": "Mathematics", "is_complete": False,
+            "student_count": 1, "entered_count": 0,
+            "status_text": "0/1 entered", "uses_components": False,
+        }],
     }
+
+
+def test_component_marks_route_builds_scoped_page_context(
+    client, db_session, monkeypatch
+):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    captured = {}
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+
+    def render_template(template_name, **context):
+        captured["template_name"] = template_name
+        captured.update(context)
+        return "rendered"
+
+    monkeypatch.setattr(exams_routes, "render_template", render_template)
+
+    response = client.get(
+        "/admin/exams/5/class/14/subject/12/component-marks"
+    )
+
+    assert response.status_code == 200
+    assert captured["template_name"] == "exam_component_marks.html"
+    assert captured["class_info"]["classID"] == 14
+    assert captured["subject"]["id"] == 12
+    assert captured["components"][0]["id"] == 21
+    assert captured["students"][0]["AdmNo"] == "1001"
+
+
+def test_component_marks_page_template_renders_for_real_flask_route(
+    client, db_session, monkeypatch
+):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+
+    response = client.get(
+        "/admin/exams/5/class/14/subject/12/component-marks"
+    )
+
+    assert response.status_code == 200
+    assert b"Assessment Component Marks" in response.data
+    assert b"CAT" in response.data
+
+
+def test_component_marks_api_passes_path_scope_and_actor_to_service(
+    client, db_session, monkeypatch
+):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+
+    response = client.post(
+        "/api/exams/5/class/14/subject/12/component-marks",
+        json={"marks": [{
+            "student_id": "1001", "component_id": 21,
+            "mark": "16.5", "is_absent": False,
+        }]},
+    )
+
+    assert response.status_code == 200
+    assert response.json == {"success": True, "saved_count": 1}
+    call = ExamServiceStub.last_instance.calls[0]
+    assert call[:4] == (
+        "save_exam_component_marks_bulk", 5, 14, 12,
+    )
+    assert call[4][0]["component_id"] == 21
+
+
+def test_exam_bundle_route_saves_configured_exam_weights(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+
+    response = client.post(
+        "/admin/exams/bundles",
+        data={
+            "name": "Term Results",
+            "calculation_method": "weighted",
+            "ranking_metric": "percentage",
+            "ranking_scope": "class",
+            "ranking_style": "competition",
+            "exam_id": ["5", "6"],
+            "weight_5": "60",
+            "weight_6": "40",
+            "tie_breaker_key": ["total_points", "", ""],
+            "tie_breaker_direction": ["desc", "desc", "desc"],
+        },
+    )
+
+    assert response.status_code == 302
+    call = ExamServiceStub.last_instance.calls[0]
+    assert call[0] == "save_exam_bundle"
+    assert call[1][6] == [
+        {"exam_id": "5", "weight_percent": "60"},
+        {"exam_id": "6", "weight_percent": "40"},
+    ]
+    assert call[2]["ranking_tie_breakers"] == [
+        {"key": "total_points", "direction": "desc"}
+    ]
+
+
+def test_exam_bundle_page_template_renders_in_flask(
+    client, db_session, monkeypatch
+):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+
+    response = client.get("/admin/exams/bundles")
+
+    assert response.status_code == 200
+    assert b"Create bundle" in response.data
+    assert b"Configured bundles" in response.data
+
+
+def test_component_workbook_template_download_route(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+
+    response = client.get(
+        "/admin/exams/5/class/14/component-marks-template.xlsx"
+    )
+
+    assert response.status_code == 200
+    assert response.mimetype == (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert response.headers["Content-Disposition"].endswith(
+        "exam-5-class-14-component-marks.xlsx"
+    )
+
+
+def test_component_workbook_route_supports_validation_only_dry_run(
+    client, db_session, monkeypatch
+):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "MTH - 12"
+    sheet.append([
+        "student_id", "student_name", "mark_21", "absent_21",
+        "remarks_21", "server_calculated_total",
+        "server_calculated_percentage",
+    ])
+    sheet.append(["1001", "Ada Lovelace", 10, "FALSE", "", "", ""])
+    output = io.BytesIO()
+    workbook.save(output)
+    workbook.close()
+
+    response = client.post(
+        "/admin/exams/5/class/14/component-marks-import",
+        data={
+            "mode": "validate",
+            "file": (io.BytesIO(output.getvalue()), "marks.xlsx"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    assert b"All workbook checks passed" in response.data
+    assert b"No marks were changed" in response.data
+    assert not any(
+        call[0] == "save_exam_workbook_component_marks"
+        for call in ExamServiceStub.last_instance.calls
+    )
+
+
+def test_component_workbook_apply_mode_saves_validated_rows(
+    client, db_session, monkeypatch
+):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "MTH - 12"
+    sheet.append([
+        "student_id", "student_name", "mark_21", "absent_21",
+        "remarks_21", "server_calculated_total",
+        "server_calculated_percentage",
+    ])
+    sheet.append(["1001", "Ada Lovelace", 0, "FALSE", "", "=C2", "=C2/20*100"])
+    output = io.BytesIO()
+    workbook.save(output)
+    workbook.close()
+
+    response = client.post(
+        "/admin/exams/5/class/14/component-marks-import",
+        data={
+            "mode": "apply",
+            "file": (io.BytesIO(output.getvalue()), "marks.xlsx"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 302
+    call = next(
+        call for call in ExamServiceStub.last_instance.calls
+        if call[0] == "save_exam_workbook_component_marks"
+    )
+    assert call[3][0]["mark"] == 0
+    assert call[3][0]["is_absent"] is False
+    assert len(call[5]) == 64
+
+
+def test_exam_completion_page_renders_accessible_subject_status(
+    client, db_session, monkeypatch
+):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    captured = {}
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+
+    def render_template(template_name, **context):
+        captured["template_name"] = template_name
+        captured.update(context)
+        return "rendered"
+
+    monkeypatch.setattr(exams_routes, "render_template", render_template)
+
+    response = client.get("/admin/exams/5/completion")
+
+    assert response.status_code == 200
+    assert captured["template_name"] == "exam_marks_completion.html"
+    assert captured["class_rows"][0]["subjects"][0]["id"] == 12
+
+
+def test_reasoned_remark_override_route_passes_actor_and_reason(
+    client, db_session, monkeypatch
+):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+
+    response = client.post(
+        "/api/exams/5/override-subject-remark",
+        json={
+            "student_id": "1001",
+            "subject_id": 12,
+            "remarks": "Excellent progress",
+            "reason": "Approved after moderation",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json["success"] is True
+    call = ExamServiceStub.last_instance.calls[0]
+    assert call == (
+        "override_exam_subject_remark", 5, "1001", 12,
+        "Excellent progress", "Approved after moderation", 10,
+    )
 
 
 def test_exam_tabulation_route_supplies_classes_and_selected_tabulation(
@@ -2701,6 +3056,147 @@ def test_exam_analytics_dashboard_selects_exam_and_renders_school_overview(
     assert b"Grade Analytics" in response.data
     assert b"Midterm" in response.data
     assert b"School grade distribution" in response.data
+
+
+def test_exam_analytics_csv_export_is_audited_and_formula_safe(
+    client, db_session, monkeypatch
+):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    audit_events = []
+
+    class AuditConnection(DummyConnection):
+        begin_calls = 0
+        commit_calls = 0
+
+        def begin(self):
+            self.begin_calls += 1
+
+        def cursor(self):
+            return None
+
+        def commit(self):
+            self.commit_calls += 1
+
+    connection = AuditConnection()
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: connection)
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+    monkeypatch.setattr(
+        exams_routes,
+        "get_current_school_id",
+        lambda: school.id,
+    )
+    monkeypatch.setattr(
+        exams_routes,
+        "record_exam_event",
+        lambda *args, **kwargs: audit_events.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        ExamServiceStub,
+        "get_exam_analytics_overview",
+        lambda _self, _exam_id: {
+            "top_students": [{
+                "rank": 1,
+                "name": '=HYPERLINK("https://example.invalid","Learner")',
+                "admno": "1001",
+                "class_name": "Grade 7 A",
+                "numeric_subjects": 1,
+                "average": 99,
+            }],
+            "classes": [],
+            "subject_stats": [],
+            "stream_comparisons": [],
+        },
+    )
+
+    response = client.get(
+        "/admin/exams/analytics/export.csv?exam_id=5&view=top_students"
+    )
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/csv"
+    exported_rows = list(csv.reader(io.StringIO(response.data.decode("utf-8-sig"))))
+    assert exported_rows[1][1].startswith("'=")
+    assert connection.begin_calls == connection.commit_calls == 1
+    assert audit_events[0][1]["new_values"] == {
+        "format": "csv", "view": "top_students",
+    }
+
+
+def test_exam_analytics_csv_rejects_unsupported_view(client, db_session):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+
+    response = client.get(
+        "/admin/exams/analytics/export.csv?exam_id=5&view=arbitrary"
+    )
+
+    assert response.status_code == 400
+
+
+def test_class_marksheet_csv_export_preserves_mark_states_and_audits(
+    client, db_session, monkeypatch
+):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    audit_events = []
+
+    class AuditConnection(DummyConnection):
+        def begin(self):
+            pass
+
+        def cursor(self):
+            return None
+
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
+
+    monkeypatch.setattr(
+        exams_routes, "get_db_connection", lambda: AuditConnection()
+    )
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+    monkeypatch.setattr(
+        exams_routes, "get_current_school_id", lambda: school.id
+    )
+    monkeypatch.setattr(
+        exams_routes,
+        "record_exam_event",
+        lambda *args, **kwargs: audit_events.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        ExamServiceStub,
+        "get_class_tabulation",
+        lambda *_args: {
+            "subjects": [{"id": 12, "code": "MAT", "name": "Mathematics"}],
+            "tabulation": [{
+                "name": "=HYPERLINK(\"bad\")",
+                "admno": "1001",
+                "total": 0,
+                "average": 0,
+                "rank": 1,
+                "marks": [{
+                    "subject_id": 12,
+                    "state": "absent",
+                    "mark": None,
+                    "grade": "-",
+                }],
+            }],
+        },
+    )
+
+    response = client.get(
+        "/admin/exams/5/class/14/reports.csv"
+    )
+
+    assert response.status_code == 200
+    rows = list(csv.reader(io.StringIO(response.data.decode("utf-8-sig"))))
+    assert rows[1][0].startswith("'=")
+    assert rows[1][5] == "absent"
+    assert rows[1][6] == ""
+    assert audit_events[0][1]["new_values"] == {"format": "csv"}
 
 
 def test_marks_entry_template_has_score_width_and_keyboard_navigation():

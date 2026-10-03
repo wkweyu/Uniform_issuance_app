@@ -70,6 +70,53 @@ def _configure_migration(
     return connection
 
 
+def test_migration_connection_does_not_force_tls_without_configured_ca(monkeypatch):
+    captured = {}
+    monkeypatch.setenv('DB_HOST', 'mysql.internal.render')
+    monkeypatch.delenv('DB_SSL_CA', raising=False)
+    monkeypatch.setattr(migrate_db.config, 'DB_SSL_CA', None, raising=False)
+    monkeypatch.setattr(
+        migrate_db.pymysql,
+        'connect',
+        lambda **kwargs: captured.update(kwargs) or object(),
+    )
+
+    migrate_db._get_database_connection()
+
+    assert captured['ssl'] is None
+
+
+def test_migration_connection_uses_configured_ca(monkeypatch):
+    captured = {}
+    monkeypatch.setenv('DB_HOST', 'mysql.internal.render')
+    monkeypatch.setenv('DB_SSL_CA', 'C:/certificates/render-ca.pem')
+    monkeypatch.setattr(
+        migrate_db.os.path,
+        'isfile',
+        lambda path: path == 'C:/certificates/render-ca.pem',
+    )
+    monkeypatch.setattr(
+        migrate_db.pymysql,
+        'connect',
+        lambda **kwargs: captured.update(kwargs) or object(),
+    )
+
+    migrate_db._get_database_connection()
+
+    assert captured['ssl'] == {
+        'ca': 'C:/certificates/render-ca.pem',
+        'check_hostname': False,
+    }
+
+
+def test_migration_connection_rejects_missing_configured_ca(monkeypatch):
+    monkeypatch.setenv('DB_SSL_CA', 'C:/certificates/missing-ca.pem')
+    monkeypatch.setattr(migrate_db.os.path, 'isfile', lambda _path: False)
+
+    with pytest.raises(migrate_db.MigrationError, match='DB_SSL_CA'):
+        migrate_db._get_database_connection()
+
+
 def test_migration_runner_fails_closed_on_unexpected_statement_error(monkeypatch):
     connection = _configure_migration(monkeypatch, failing_statements={'BROKEN SQL'})
 
