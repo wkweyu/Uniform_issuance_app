@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import pytest
 
 from blueprints.exams.services import ExamManagementError
@@ -216,10 +218,258 @@ def test_exam_service_allows_adding_class_to_exam_with_existing_classes():
     service = ExamManagementService(connection, school_id=13)
 
     assert service.update_exam_series(4, 'Updated Midterm', [8, 9]) is True
-
     assert connection.commit_calls == 1
     assert connection.rollback_calls == 0
     assert any('insert into exam_classes' in query.lower() for query, _ in connection.cursor_obj.executed)
+
+
+def test_bulk_marks_roll_back_all_rows_when_any_student_is_not_eligible():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {'id': 4, 'is_locked': 0}),
+            ('one', {'class_id': 8, 'allocation_id': 80}),
+            ('all', []),
+            ('one', None),
+        ]
+    )
+    service = ExamManagementService(connection, school_id=13)
+
+    with pytest.raises(ExamManagementError, match='Student, subject, and exam assignment'):
+        service.save_marks_bulk(4, [
+            {'student_id': '1001', 'subject_id': 12, 'mark': '71', 'is_absent': False},
+            {'student_id': '1002', 'subject_id': 12, 'mark': '88', 'is_absent': False},
+        ])
+
+    assert connection.begin_calls == 1
+    assert connection.commit_calls == 0
+    assert connection.rollback_calls == 1
+    assert not any(
+        'insert into exam_marks' in query.lower()
+        for query, _ in connection.cursor_obj.executed
+    )
+
+
+def test_save_mark_persists_all_remarks_and_commits_once():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {'id': 4, 'is_locked': 0}),
+            ('one', {'class_id': 8, 'allocation_id': 80}),
+            ('all', []),
+            ('one', None),
+            ('one', None),
+        ]
+    )
+    service = ExamManagementService(connection, school_id=13)
+
+    assert service.save_mark(
+        4, '1001', 12, 71, False, 'Subject remark', 'Class remark', 'Head remark'
+    ) is True
+
+    assert connection.commit_calls == 1
+    insert_query, insert_params = next(
+        (query, params)
+        for query, params in connection.cursor_obj.executed
+        if 'insert into exam_marks' in query.lower()
+    )
+    assert insert_params[6:9] == ('Subject remark', 'Class remark', 'Head remark')
+
+
+def test_exam_subjects_include_class_subjects_for_students_without_enrollments():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {
+                'classID': 5, 'display_name': 'Grade 1 A',
+                'academic_year_id': 2026, 'exam_academic_year_id': 2026,
+            }),
+            ('all', [
+                {'id': 1, 'code': 'ENG', 'name': 'English'},
+                {'id': 2, 'code': 'MTH', 'name': 'Mathematics'},
+            ]),
+            ('all', [{'subject_id': 1}]),
+            ('one', {'count': 1}),
+        ]
+    )
+    service = ExamManagementService(connection, school_id=13)
+
+    subjects = service.get_exam_subjects_for_class(4, 5)
+
+    assert [subject['id'] for subject in subjects] == [1, 2]
+
+
+def test_exam_subjects_use_individual_enrollments_when_all_students_have_them():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {
+                'classID': 5, 'display_name': 'Grade 1 A',
+                'academic_year_id': 2026, 'exam_academic_year_id': 2026,
+            }),
+            ('all', [
+                {'id': 1, 'code': 'ENG', 'name': 'English'},
+                {'id': 2, 'code': 'MTH', 'name': 'Mathematics'},
+            ]),
+            ('all', [{'subject_id': 2}]),
+            ('one', {'count': 0}),
+        ]
+    )
+    service = ExamManagementService(connection, school_id=13)
+
+    subjects = service.get_exam_subjects_for_class(4, 5)
+
+    assert [subject['id'] for subject in subjects] == [2]
+
+
+def test_exam_rankings_assign_tied_places_and_exclude_unmarked_students(monkeypatch):
+    connection = RecordingConnection()
+    service = ExamManagementService(connection, school_id=13)
+    classes = [
+        {'classID': 5, 'display_name': 'Grade 1 A'},
+        {'classID': 6, 'display_name': 'Grade 1 B'},
+    ]
+    tabulations = {
+        5: {'tabulation': [
+            {'admno': '1001', 'average': 90, 'total': 180, 'numeric_subjects': 2},
+            {'admno': '1002', 'average': 0, 'total': 0, 'numeric_subjects': 0},
+        ]},
+        6: {'tabulation': [
+            {'admno': '1003', 'average': 90, 'total': 90, 'numeric_subjects': 1},
+            {'admno': '1004', 'average': 70, 'total': 70, 'numeric_subjects': 1},
+        ]},
+    }
+    monkeypatch.setattr(service, 'get_exam_classes', lambda _exam_id: classes)
+    monkeypatch.setattr(
+        service,
+        'get_class_tabulation',
+        lambda _exam_id, class_id: tabulations[class_id],
+    )
+
+    rankings = service.get_exam_rankings(4)
+
+    assert [(row['admno'], row['rank']) for row in rankings] == [
+        ('1001', 1), ('1003', 1), ('1004', 3),
+    ]
+
+
+def test_class_tabulation_ranks_zero_mark_ahead_of_unmarked_student(monkeypatch):
+    connection = RecordingConnection(
+        responses=[
+            ('all', [
+                {'AdmNo': '1001', 'FName': 'No', 'LName': 'Mark'},
+                {'AdmNo': '1002', 'FName': 'Zero', 'LName': 'Score'},
+            ]),
+        ]
+    )
+    service = ExamManagementService(connection, school_id=13)
+    class_info = {
+        'classID': 5,
+        'display_name': 'Grade 1 A',
+        'exam_academic_year_id': 2026,
+    }
+    subject = {'id': 12, 'name': 'Mathematics', 'code': 'MTH'}
+    monkeypatch.setattr(service, '_get_exam_class_details', lambda *_args: class_info)
+    monkeypatch.setattr(service, 'get_exam_subjects_for_class', lambda *_args: [subject])
+    monkeypatch.setattr(
+        service,
+        'get_marks_for_class_subject',
+        lambda *_args: [{
+            'AdmNo': '1002', 'mark': 0, 'is_absent': False, 'grade': None,
+        }],
+    )
+    monkeypatch.setattr(service, 'get_class_grading_scale_id', lambda _class_id: None)
+    monkeypatch.setattr(service, 'get_grade_for_mark', lambda *_args: None)
+
+    tabulation = service.get_class_tabulation(4, 5)['tabulation']
+
+    assert [(row['admno'], row['rank']) for row in tabulation] == [
+        ('1002', 1), ('1001', '-'),
+    ]
+
+
+def test_most_improved_handles_previous_exam_without_requested_class(monkeypatch):
+    connection = RecordingConnection(responses=[('one', {'id': 3})])
+    service = ExamManagementService(connection, school_id=13)
+    monkeypatch.setattr(
+        service,
+        'get_exam_series',
+        lambda _exam_id: {
+            'created_at': datetime(2026, 3, 1),
+            'academic_year_id': 2026,
+            'term': 1,
+        },
+    )
+    ranking_calls = []
+
+    def rankings(exam_id, class_id=None, limit=None):
+        ranking_calls.append((exam_id, class_id, limit))
+        if exam_id == 4:
+            return [{
+                'admno': '1001', 'name': 'Ada', 'class_name': 'Grade 1 B',
+                'average': 80, 'numeric_subjects': 2,
+            }]
+        return [{
+            'admno': '1001', 'name': 'Ada', 'class_name': 'Grade 1 A',
+            'average': 70, 'numeric_subjects': 2,
+        }]
+
+    monkeypatch.setattr(service, 'get_exam_rankings', rankings)
+
+    improved = service.get_most_improved(4, class_id=6)
+
+    assert improved[0]['improvement'] == 10
+    assert ranking_calls == [(4, 6, None), (3, None, None)]
+
+
+def test_stream_analysis_orders_classes_by_mean_score(monkeypatch):
+    connection = RecordingConnection()
+    service = ExamManagementService(connection, school_id=13)
+    classes = [
+        {
+            'classID': 5, 'display_name': 'Grade 1 A',
+            'class_group_code': 'Grade 1-3', 'stream_code': 'A',
+        },
+        {
+            'classID': 6, 'display_name': 'Grade 1 B',
+            'class_group_code': 'Grade 1-3', 'stream_code': 'B',
+        },
+    ]
+    tabulations = {
+        5: {'tabulation': [
+            {'average': 60, 'numeric_subjects': 1},
+            {'average': 40, 'numeric_subjects': 1},
+        ]},
+        6: {'tabulation': [
+            {'average': 90, 'numeric_subjects': 1},
+        ]},
+    }
+    monkeypatch.setattr(service, 'get_exam_classes', lambda _exam_id: classes)
+    monkeypatch.setattr(
+        service,
+        'get_class_tabulation',
+        lambda _exam_id, class_id: tabulations[class_id],
+    )
+
+    analysis = service.get_stream_performance_comparison(4)
+
+    assert [row['stream'] for row in analysis[0]['streams']] == ['B', 'A']
+    assert [row['mean_score'] for row in analysis[0]['streams']] == [90, 50]
+
+
+def test_grading_save_rejects_overlapping_ranges_before_deleting_existing_rows():
+    connection = RecordingConnection(
+        responses=[('one', {'id': 2})]
+    )
+    service = ExamManagementService(connection, school_id=13)
+
+    with pytest.raises(ExamManagementError, match='overlap'):
+        service.save_grading_details(2, [
+            {'grade': 'A', 'min_mark': '0', 'max_mark': '60', 'points': '4'},
+            {'grade': 'B', 'min_mark': '50', 'max_mark': '100', 'points': '3'},
+        ])
+
+    assert connection.commit_calls == 0
+    assert not any(
+        'delete from grading_details' in query.lower()
+        for query, _ in connection.cursor_obj.executed
+    )
 
 
 def test_fees_service_scopes_voteheads_query_and_group_join_to_school():

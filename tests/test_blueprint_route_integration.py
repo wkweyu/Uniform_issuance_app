@@ -480,11 +480,52 @@ class ExamServiceStub:
         self.calls = []
         ExamServiceStub.last_instance = self
 
-    def save_mark(self, exam_id, student_id, subject_id, mark, is_absent, remarks):
-        self.calls.append((exam_id, student_id, subject_id, mark, is_absent, remarks))
+    def save_mark(self, exam_id, student_id, subject_id, mark, is_absent, remarks, ct_remarks="", p_remarks=""):
+        self.calls.append((exam_id, student_id, subject_id, mark, is_absent, remarks, ct_remarks, p_remarks))
         if self.save_mark_error is not None:
             raise self.save_mark_error
         return True
+
+    def get_mark_feedback(self, exam_id, student_id, subject_id, mark, is_absent=False):
+        self.calls.append(("get_mark_feedback", exam_id, student_id, subject_id, mark, is_absent))
+        return {
+            "grade": "B", "remarks": "Good", "ct_remarks": "Consistent",
+            "p_remarks": "Keep improving",
+        }
+
+    def get_exam_class_info(self, exam_id, class_id):
+        self.calls.append(("get_exam_class_info", exam_id, class_id))
+        return {"classID": class_id, "display_name": "Grade 7 A"}
+
+    def get_exam_subject(self, exam_id, class_id, subject_id):
+        self.calls.append(("get_exam_subject", exam_id, class_id, subject_id))
+        return {"id": subject_id, "name": "Mathematics"}
+
+    def get_marks_for_class_subject(self, exam_id, class_id, subject_id):
+        self.calls.append(("get_marks_for_class_subject", exam_id, class_id, subject_id))
+        return [{
+            "AdmNo": "1001", "FName": "Ada", "LName": "Lovelace",
+            "mark": None, "is_absent": False,
+        }]
+
+    def get_exam_subjects_status(self, exam_id, class_id):
+        self.calls.append(("get_exam_subjects_status", exam_id, class_id))
+        return [{"id": 12, "name": "Mathematics", "is_complete": False}]
+
+    def get_exam_classes(self, exam_id):
+        self.calls.append(("get_exam_classes", exam_id))
+        return [{"classID": 14, "display_name": "Grade 7 A"}]
+
+    def get_class_tabulation(self, exam_id, class_id):
+        self.calls.append(("get_class_tabulation", exam_id, class_id))
+        return {
+            "class_info": {"classID": class_id, "display_name": "Grade 7 A"},
+            "subjects": [], "subject_stats": [], "tabulation": [],
+        }
+
+    def save_marks_bulk(self, exam_id, marks):
+        self.calls.append(("save_marks_bulk", exam_id, marks))
+        return len(marks)
 
     def create_exam_series(self, name, academic_year_id, term, created_by, class_ids):
         self.calls.append(("create_exam_series", name, academic_year_id, term, created_by, class_ids))
@@ -503,6 +544,9 @@ class ExamServiceStub:
             "is_locked": self.locked,
             "classes": [{"classID": 14, "display_name": "Grade 7 A"}],
         }
+
+    def save_grading_details(self, scale_id, grades):
+        self.calls.append(("save_grading_details", scale_id, grades))
 
     def assign_scale_to_class(self, class_id, scale_id):
         self.calls.append(("assign_scale_to_class", class_id, scale_id))
@@ -2267,8 +2311,36 @@ def test_exams_save_mark_route_passes_payload_to_service(client, db_session, mon
     )
 
     assert response.status_code == 200
-    assert response.json == {"success": True}
-    assert ExamServiceStub.last_instance.calls == [(5, "1001", 12, 71, False, "steady")]
+    assert response.json == {
+        "success": True, "grade": "B", "remarks": "Good",
+        "ct_remarks": "Consistent", "p_remarks": "Keep improving",
+    }
+    assert ExamServiceStub.last_instance.calls == [
+        (5, "1001", 12, 71, False, "steady", "", ""),
+        ("get_mark_feedback", 5, "1001", 12, 71, False),
+    ]
+
+
+def test_exams_save_mark_route_passes_all_remarks_to_service(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+
+    response = client.post(
+        "/api/exams/5/save-mark",
+        json={
+            "student_id": "1001", "subject_id": 12, "mark": 71,
+            "remarks": "steady", "ct_remarks": "Good effort",
+            "p_remarks": "Keep it up",
+        },
+    )
+
+    assert response.status_code == 200
+    assert ExamServiceStub.last_instance.calls[0] == (
+        5, "1001", 12, 71, False, "steady", "Good effort", "Keep it up"
+    )
+    assert ExamServiceStub.last_instance.calls[1][0] == "get_mark_feedback"
 
 
 def test_exams_save_mark_route_rejects_malformed_payload(client, db_session, monkeypatch):
@@ -2300,7 +2372,9 @@ def test_exams_save_mark_route_maps_service_validation_to_400(client, db_session
 
     assert response.status_code == 400
     assert response.json == {"success": False, "message": "Student, subject, and exam assignment do not match for the active school."}
-    assert ExamServiceStub.last_instance.calls == [(5, "1001", 12, 71, False, "")]
+    assert ExamServiceStub.last_instance.calls == [
+        (5, "1001", 12, 71, False, "", "", "")
+    ]
 
     ExamServiceStub.save_mark_error = None
 
@@ -2319,6 +2393,129 @@ def test_exams_save_mark_route_rejects_invalid_subject_id_before_service_call(cl
     assert response.status_code == 400
     assert response.json == {"success": False, "message": "subject_id is required and must be a valid integer."}
     assert ExamServiceStub.last_instance.calls == []
+
+
+def test_exams_marks_csv_import_uses_atomic_bulk_service(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+
+    response = client.post(
+        "/admin/exams/5/class/14/subject/12/marks.csv",
+        data={
+            "file": (
+                io.BytesIO(
+                    b"student_id,student_name,mark,is_absent,remarks,ct_remarks,p_remarks\n"
+                    b"1001,Ada Lovelace,71,false,steady,Good effort,Keep it up\n"
+                ),
+                "marks.csv",
+            )
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 302
+    calls = ExamServiceStub.last_instance.calls
+    assert ("get_exam_class_info", 5, 14) in calls
+    assert ("get_exam_subject", 5, 14, 12) in calls
+    bulk_call = next(call for call in calls if call[0] == "save_marks_bulk")
+    assert bulk_call[1] == 5
+    assert bulk_call[2] == [{
+        "student_id": "1001",
+        "subject_id": 12,
+        "mark": "71",
+        "is_absent": False,
+        "remarks": "steady",
+        "ct_remarks": "Good effort",
+        "p_remarks": "Keep it up",
+    }]
+
+
+def test_exams_marks_template_exports_current_class_subject_roster(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+
+    response = client.get(
+        "/admin/exams/5/class/14/subject/12/marks-template.csv"
+    )
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/csv"
+    assert response.headers["Content-Disposition"].startswith("attachment;")
+    contents = response.get_data(as_text=True)
+    assert "student_id,student_name,mark,is_absent" in contents
+    assert "1001,Ada Lovelace,,false" in contents
+
+
+def test_exams_subject_status_api_returns_service_subject_list(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+
+    response = client.get("/api/exams/5/class/14/subjects-status")
+
+    assert response.status_code == 200
+    assert response.json == {
+        "success": True,
+        "subjects": [{"id": 12, "name": "Mathematics", "is_complete": False}],
+    }
+
+
+def test_exam_tabulation_route_supplies_classes_and_selected_tabulation(
+    client, db_session, monkeypatch
+):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    captured = {}
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+
+    def render_template(template_name, **context):
+        captured["template_name"] = template_name
+        captured.update(context)
+        return "rendered"
+
+    monkeypatch.setattr(exams_routes, "render_template", render_template)
+
+    response = client.get("/admin/exams/5/tabulation?class_id=14")
+
+    assert response.status_code == 200
+    assert captured["template_name"] == "exam_tabulation.html"
+    assert captured["classes"] == [{"classID": 14, "display_name": "Grade 7 A"}]
+    assert captured["class_id"] == 14
+    assert captured["class_info"]["classID"] == 14
+    assert captured["tabulation_data"]["subject_stats"] == []
+
+
+def test_exam_grading_route_parses_aligned_grade_form_rows(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+
+    response = client.post(
+        "/admin/grading-scales/2/save-grades",
+        data={
+            "grade[]": ["A", "B"],
+            "min_mark[]": ["80", "60"],
+            "max_mark[]": ["100", "79.99"],
+            "points[]": ["4", "3"],
+            "remarks[]": ["Excellent", "Good"],
+            "class_teacher_remarks[]": ["Excellent", "Good"],
+            "principal_remarks[]": ["Excellent", "Good"],
+        },
+    )
+
+    assert response.status_code == 302
+    call = ExamServiceStub.last_instance.calls[0]
+    assert call[0] == "save_grading_details"
+    assert call[1] == 2
+    assert [row["grade"] for row in call[2]] == ["A", "B"]
+    assert [row["points"] for row in call[2]] == ["4", "3"]
 
 
 def test_student_subject_update_route_uses_service_layer(client, db_session, monkeypatch):

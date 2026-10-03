@@ -76,16 +76,24 @@ function fetchSubjects(classId) {
 
     loadingText.classList.remove('hidden');
     subjectSelect.disabled = true;
+    submitBtn.disabled = true;
 
     // Call the new status-aware API
     fetch(`/api/exams/${examId}/class/${classId}/subjects-status`)
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(data => {
+                throw new Error(data.message || 'Unable to load subjects.');
+            });
+        }
+        return response.json();
+    })
     .then(data => {
         loadingText.classList.add('hidden');
-        subjectSelect.disabled = false;
         
         if (data.success && data.subjects.length > 0) {
             subjectSelect.innerHTML = '<option value="">-- Choose Subject --</option>';
+            subjectSelect.disabled = false;
             data.subjects.forEach(sub => {
                 const option = document.createElement('option');
                 option.value = sub.id;
@@ -100,17 +108,24 @@ function fetchSubjects(classId) {
                 
                 subjectSelect.appendChild(option);
             });
-            submitBtn.disabled = false;
+            submitBtn.disabled = true;
         } else {
             subjectSelect.innerHTML = '<option value="">No subjects allocated to this class</option>';
-            submitBtn.disabled = true;
+            subjectSelect.disabled = true;
         }
     })
     .catch(error => {
         console.error('Error fetching subjects:', error);
         loadingText.classList.add('hidden');
+        subjectSelect.disabled = true;
         subjectSelect.innerHTML = '<option value="">Error loading subjects</option>';
+        subjectSelect.title = error.message;
+        submitBtn.disabled = true;
     });
 }
+
+document.getElementById('subject_id').addEventListener('change', function() {
+    document.getElementById('submit-btn').disabled = !this.value;
+});
 </script>
 {% endblock %}
