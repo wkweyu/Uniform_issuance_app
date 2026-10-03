@@ -95,7 +95,7 @@ def _get_database_connection():
     if os.path.exists(ca_path):
         ssl_config = {'ca': ca_path, 'check_hostname': False}
     else:
-        ssl_config = True
+        ssl_config = None
 
     print("Connecting to cloud database...")
     DB_HOST = os.environ.get('DB_HOST', getattr(config, 'DB_HOST', 'localhost'))
@@ -110,7 +110,7 @@ def _get_database_connection():
         password=DB_PASSWORD,
         database=DB_NAME,
         port=DB_PORT,
-        ssl=ssl_config,
+        ssl=None,
         autocommit=True
     )
 
