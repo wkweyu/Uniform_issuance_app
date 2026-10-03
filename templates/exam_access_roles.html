@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 py-8">
+    <div class="mb-6">
+        <p class="text-xs font-bold uppercase tracking-widest text-indigo-600">Exam administration</p>
+        <h1 class="text-3xl font-black text-gray-900 mt-1">Examination Access</h1>
+        <p class="text-sm text-gray-600 mt-2">
+            Assign school-scoped examination roles. Class and subject teacher access follows active teaching assignments.
+        </p>
+    </div>
+    <div class="flex flex-wrap gap-3 mb-5">
+        <a href="{{ url_for('exams.review_exam_access_requests') }}"
+           class="px-4 py-2 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700">
+            Review scoped access
+        </a>
+        <a href="{{ url_for('exams.exam_access_request') }}"
+           class="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 font-semibold hover:bg-gray-50">
+            Request scoped access
+        </a>
+    </div>
+
+    <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50 text-xs uppercase text-gray-600">
+                    <tr>
+                        <th class="px-4 py-3 text-left">User</th>
+                        <th class="px-4 py-3 text-left">Staff ID</th>
+                        <th class="px-4 py-3 text-center">Examination Officer</th>
+                        <th class="px-4 py-3 text-center">Academic Administrator</th>
+                        <th class="px-4 py-3 text-right">Action</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for user in users %}
+                    <tr>
+                        <td class="px-4 py-3">
+                            <span class="font-semibold">{{ user.username }}</span>
+                            <span class="block text-xs text-gray-500">User #{{ user.userNo }}</span>
+                        </td>
+                        <td class="px-4 py-3">{{ user.StaffID or '—' }}</td>
+                        <td class="px-4 py-3 text-center">
+                            <input type="checkbox" name="role_key" value="examination_officer"
+                                   form="roles-{{ user.userNo }}"
+                                   {% if 'examination_officer' in user.exam_roles %}checked{% endif %}>
+                        </td>
+                        <td class="px-4 py-3 text-center">
+                            <input type="checkbox" name="role_key" value="academic_administrator"
+                                   form="roles-{{ user.userNo }}"
+                                   {% if 'academic_administrator' in user.exam_roles %}checked{% endif %}>
+                        </td>
+                        <td class="px-4 py-3 text-right">
+                            <form id="roles-{{ user.userNo }}" method="post"
+                                  action="{{ url_for('exams.exam_access_roles') }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="user_id" value="{{ user.userNo }}">
+                                <button type="submit"
+                                        class="px-3 py-2 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700">
+                                    Save roles
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5" class="px-4 py-8 text-center text-gray-500">No school users found.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <p class="mt-4 text-xs text-gray-500">
+        Administrator roles are logged with the granting user. Removing a role deactivates its assignment without deleting history.
+    </p>
+</div>
+{% endblock %}

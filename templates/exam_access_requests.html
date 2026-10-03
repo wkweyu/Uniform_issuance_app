@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-4 py-8">
+    <div class="mb-6">
+        <p class="text-xs font-bold uppercase tracking-widest text-indigo-600">Exam administration</p>
+        <h1 class="text-3xl font-black text-gray-900 mt-1">Scoped access requests</h1>
+        <p class="text-sm text-gray-600 mt-2">Approvals and revocations are recorded in the examination audit trail.</p>
+    </div>
+
+    <div class="space-y-4">
+        {% for grant in grants %}
+        <article class="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+            <div class="grid gap-2 md:grid-cols-2 text-sm">
+                <p><span class="font-semibold">User:</span> {{ grant.username }} (#{{ grant.user_id }})</p>
+                <p><span class="font-semibold">Exam:</span> {{ grant.exam_name }}</p>
+                <p><span class="font-semibold">Class:</span> {{ grant.class_name }}</p>
+                <p><span class="font-semibold">Subject:</span> #{{ grant.subject_id }}</p>
+                <p><span class="font-semibold">Permission:</span> {{ grant.permission_key }}</p>
+                <p><span class="font-semibold">Status:</span> {{ grant.status|title }}</p>
+                <p class="md:col-span-2"><span class="font-semibold">Request reason:</span> {{ grant.request_reason }}</p>
+            </div>
+            <form method="post" class="mt-4 flex flex-col md:flex-row gap-3 items-start">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="grant_id" value="{{ grant.id }}">
+                <textarea name="reason" required minlength="10" maxlength="500" rows="2"
+                          class="w-full md:flex-1 px-3 py-2 border rounded-lg"
+                          placeholder="Required review reason"></textarea>
+                {% if grant.status == 'requested' %}
+                <button name="decision" value="approved" class="px-3 py-2 rounded-lg bg-green-600 text-white font-semibold">Approve</button>
+                <button name="decision" value="denied" class="px-3 py-2 rounded-lg bg-red-600 text-white font-semibold">Deny</button>
+                {% else %}
+                <button name="decision" value="revoked" class="px-3 py-2 rounded-lg bg-red-600 text-white font-semibold">Revoke</button>
+                {% endif %}
+            </form>
+        </article>
+        {% else %}
+        <div class="bg-white border border-gray-200 rounded-xl p-8 text-center text-gray-500">
+            No pending requests or active scoped grants.
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

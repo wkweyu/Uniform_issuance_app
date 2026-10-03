@@ -11,3 +11,4 @@ requests
 cryptography
 Pillow
 python-dotenv
+openpyxl>=3.1,<4

@@ -31,14 +31,24 @@
         <tbody>
             {% for sub in results %}
             <tr>
-                <td class="border border-gray-800 p-2 font-medium">{{ sub.subject_name }}</td>
+                <td class="border border-gray-800 p-2 font-medium">
+                    {{ sub.subject_name }}
+                    {% if sub.component_count %}
+                    <span class="block text-xs font-normal text-gray-600">
+                        Component total: {{ sub.total_mark }}/{{ sub.maximum_mark }}
+                        ({{ sub.scored_components }} scored,
+                        {{ sub.absent_components }} absent,
+                        {{ sub.missing_components }} missing)
+                    </span>
+                    {% endif %}
+                </td>
                 <td class="border border-gray-800 p-2 text-center">
                     {% if sub.is_absent %}
                         <span class="text-red-600 font-bold">ABS</span>
                     {% elif sub.mark is not none %}
                         {{ sub.mark }}
                     {% else %}
-                        -
+                        MISSING
                     {% endif %}
                 </td>
                 <td class="border border-gray-800 p-2 text-center font-bold">{{ sub.grade or '-' }}</td>

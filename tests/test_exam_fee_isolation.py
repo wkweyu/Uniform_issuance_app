@@ -373,12 +373,13 @@ def test_exam_rankings_assign_tied_places_and_exclude_unmarked_students(monkeypa
     ]
 
 
-def test_class_tabulation_ranks_zero_mark_ahead_of_unmarked_student(monkeypatch):
+def test_class_tabulation_counts_zero_and_missing_as_zero_but_keeps_states(monkeypatch):
     connection = RecordingConnection(
         responses=[
             ('all', [
                 {'AdmNo': '1001', 'FName': 'No', 'LName': 'Mark'},
                 {'AdmNo': '1002', 'FName': 'Zero', 'LName': 'Score'},
+                {'AdmNo': '1003', 'FName': 'Absent', 'LName': 'Learner'},
             ]),
         ]
     )
@@ -397,6 +398,7 @@ def test_class_tabulation_ranks_zero_mark_ahead_of_unmarked_student(monkeypatch)
         lambda *_args: [
             {'AdmNo': '1002', 'mark': 0, 'is_absent': False, 'grade': None},
             {'AdmNo': '1001', 'mark': None, 'is_absent': False, 'grade': None},
+            {'AdmNo': '1003', 'mark': None, 'is_absent': True, 'grade': None},
         ],
     )
     monkeypatch.setattr(service, 'get_class_grading_scale_id', lambda _class_id: None)
@@ -406,10 +408,138 @@ def test_class_tabulation_ranks_zero_mark_ahead_of_unmarked_student(monkeypatch)
     tabulation = class_data['tabulation']
 
     assert [(row['admno'], row['rank']) for row in tabulation] == [
-        ('1002', 1), ('1001', '-'),
+        ('1001', 1), ('1002', 1), ('1003', 1),
     ]
-    assert class_data['eligible_mark_count'] == 2
-    assert class_data['entered_mark_count'] == 1
+    assert [row['marks'][0]['state'] for row in tabulation] == [
+        'missing', 'scored', 'absent',
+    ]
+    assert [row['average'] for row in tabulation] == [0, 0, 0]
+    assert class_data['eligible_mark_count'] == 3
+    assert class_data['entered_mark_count'] == 2
+
+
+def test_class_tabulation_excludes_unenrolled_subjects_from_learner_average(monkeypatch):
+    connection = RecordingConnection(
+        responses=[
+            ('all', [
+                {
+                    'AdmNo': '1001', 'FName': 'Ada', 'LName': 'One',
+                    'allocation_id': 101,
+                },
+                {
+                    'AdmNo': '1002', 'FName': 'Ben', 'LName': 'Two',
+                    'allocation_id': 102,
+                },
+            ]),
+            ('all', [
+                {'class_allocation_id': 101, 'subject_id': 12},
+                {'class_allocation_id': 101, 'subject_id': 13},
+                {'class_allocation_id': 102, 'subject_id': 12},
+            ]),
+        ]
+    )
+    service = ExamManagementService(connection, school_id=13)
+    monkeypatch.setattr(
+        service,
+        '_get_exam_class_details',
+        lambda *_args: {
+            'classID': 5,
+            'display_name': 'Grade 1 A',
+            'exam_academic_year_id': 2026,
+        },
+    )
+    monkeypatch.setattr(
+        service,
+        'get_exam_subjects_for_class',
+        lambda *_args: [
+            {'id': 12, 'name': 'Mathematics', 'code': 'MTH'},
+            {'id': 13, 'name': 'Science', 'code': 'SCI'},
+        ],
+    )
+
+    def marks_for_subject(_exam_id, _class_id, subject_id):
+        if subject_id == 12:
+            return [
+                {'AdmNo': '1001', 'mark': 100, 'is_absent': False, 'grade': 'A'},
+                {'AdmNo': '1002', 'mark': 50, 'is_absent': False, 'grade': 'C'},
+            ]
+        return []
+
+    monkeypatch.setattr(service, 'get_marks_for_class_subject', marks_for_subject)
+    monkeypatch.setattr(service, 'get_class_grading_scale_id', lambda _class_id: None)
+    monkeypatch.setattr(service, 'get_grade_for_mark', lambda *_args: None)
+
+    class_data = service.get_class_tabulation(4, 5)
+    students = {
+        row['admno']: row for row in class_data['tabulation']
+    }
+
+    assert students['1001']['eligible_subjects'] == 2
+    assert students['1001']['average'] == 50
+    assert students['1002']['eligible_subjects'] == 1
+    assert students['1002']['average'] == 50
+    assert students['1002']['marks'][1]['state'] == 'ineligible'
+    assert class_data['eligible_mark_count'] == 3
+    assert class_data['entered_mark_count'] == 2
+    subject_stats = {
+        row['subject_id']: row for row in class_data['subject_stats']
+    }
+    assert subject_stats[12]['average'] == 75
+    assert subject_stats[12]['eligible_count'] == 2
+    assert subject_stats[13]['average'] == 0
+    assert subject_stats[13]['missing_count'] == 1
+    assert subject_stats[13]['statistics']['eligible_count'] == 1
+    assert subject_stats[13]['statistics']['mean'] == 0
+
+
+def test_report_card_distinguishes_scored_absent_and_missing_marks(monkeypatch):
+    connection = RecordingConnection(
+        responses=[
+            ('one', {'allocation_id': 101, 'class_id': 5}),
+            ('all', [
+                {'subject_id': 12, 'mark': 0, 'is_absent': False},
+                {'subject_id': 13, 'mark': None, 'is_absent': True},
+            ]),
+        ]
+    )
+    service = ExamManagementService(connection, school_id=13)
+    subjects = [
+        {'id': 12, 'name': 'Mathematics', 'code': 'MTH'},
+        {'id': 13, 'name': 'English', 'code': 'ENG'},
+        {'id': 14, 'name': 'Science', 'code': 'SCI'},
+    ]
+    monkeypatch.setattr(service, '_get_active_class_subjects', lambda _class_id: subjects)
+    monkeypatch.setattr(service, '_get_student_active_subject_ids', lambda _allocation_id: [])
+    monkeypatch.setattr(service, 'get_class_grading_scale_id', lambda _class_id: None)
+    monkeypatch.setattr(
+        service,
+        'get_grade_for_mark',
+        lambda _mark, _scale_id: {
+            'grade': 'E',
+            'points': 1,
+            'remarks': 'Fail',
+            'class_teacher_remarks': 'Needs support',
+            'principal_remarks': 'Review',
+        },
+    )
+
+    result = service.get_student_results('1001', 4)
+
+    assert [subject['state'] for subject in result['subjects']] == [
+        'scored', 'absent', 'missing',
+    ]
+    assert result['summary'] == {
+        'total_marks': 0,
+        'mean_mark': 0,
+        'mean_grade': 'E',
+        'subjects_taken': 3,
+        'scored_subjects': 1,
+        'absent_subjects': 1,
+        'missing_subjects': 1,
+        'partial_subjects': 0,
+        'absent_components': 0,
+        'missing_components': 0,
+    }
 
 
 def test_most_improved_handles_previous_exam_without_requested_class(monkeypatch):
@@ -566,15 +696,27 @@ def test_school_exam_analytics_aggregate_classes_streams_and_subjects(monkeypatc
             'tabulation': [
                 {
                     'admno': '1001', 'name': 'Ada', 'average': 80, 'total': 160,
-                    'numeric_subjects': 2, 'grade': 'A',
+                    'numeric_subjects': 2, 'eligible_subjects': 2, 'grade': 'A',
+                    'marks': [{
+                        'subject_id': 12, 'mark': 90, 'grade': 'A',
+                        'is_absent': False, 'state': 'scored',
+                    }],
                 },
                 {
                     'admno': '1002', 'name': 'Ben', 'average': 0, 'total': 0,
-                    'numeric_subjects': 0, 'grade': '-',
+                    'numeric_subjects': 0, 'eligible_subjects': 1, 'grade': '-',
+                    'marks': [{
+                        'subject_id': 12, 'mark': None, 'grade': '-',
+                        'is_absent': False, 'state': 'missing',
+                    }],
                 },
             ],
             'subject_stats': [{
-                'code': 'MAT', 'name': 'Mathematics', 'count': 2, 'average': 70,
+                'subject_id': 12, 'code': 'MAT', 'name': 'Mathematics',
+                'count': 1, 'eligible_count': 2, 'entered_count': 1,
+                'absent_count': 0, 'absent_component_count': 0,
+                'missing_count': 1, 'missing_component_count': 0,
+                'average': 45,
             }],
             'eligible_mark_count': 4,
             'entered_mark_count': 3,
@@ -582,10 +724,18 @@ def test_school_exam_analytics_aggregate_classes_streams_and_subjects(monkeypatc
         6: {
             'tabulation': [{
                 'admno': '1003', 'name': 'Cal', 'average': 90, 'total': 90,
-                'numeric_subjects': 1, 'grade': 'A',
+                'numeric_subjects': 1, 'eligible_subjects': 1, 'grade': 'A',
+                'marks': [{
+                    'subject_id': 12, 'mark': 90, 'grade': 'A',
+                    'is_absent': False, 'state': 'scored',
+                }],
             }],
             'subject_stats': [{
-                'code': 'MAT', 'name': 'Mathematics', 'count': 1, 'average': 90,
+                'subject_id': 12, 'code': 'MAT', 'name': 'Mathematics',
+                'count': 1, 'eligible_count': 1, 'entered_count': 1,
+                'absent_count': 0, 'absent_component_count': 0,
+                'missing_count': 0, 'missing_component_count': 0,
+                'average': 90,
             }],
             'eligible_mark_count': 1,
             'entered_mark_count': 1,
@@ -604,7 +754,7 @@ def test_school_exam_analytics_aggregate_classes_streams_and_subjects(monkeypatc
     assert overview['class_count'] == 2
     assert overview['student_count'] == 3
     assert overview['scored_student_count'] == 2
-    assert overview['mean_score'] == 85
+    assert overview['mean_score'] == pytest.approx(170 / 3)
     assert overview['grade_distribution'] == {'A': 2}
     assert overview['expected_mark_count'] == 5
     assert overview['entered_mark_count'] == 4
@@ -612,11 +762,39 @@ def test_school_exam_analytics_aggregate_classes_streams_and_subjects(monkeypatc
     assert overview['subject_stats'] == [{
         'code': 'MAT',
         'name': 'Mathematics',
-        'count': 3,
-        'average': pytest.approx(76.6666666667),
+        'count': 2,
+        'eligible_count': 3,
+        'entered_count': 2,
+        'absent_count': 0,
+        'absent_component_count': 0,
+        'missing_count': 1,
+        'missing_component_count': 0,
+        'average': 60,
+        'statistics': {
+            'eligible_count': 3,
+            'highest': 90.0,
+            'lowest': 0.0,
+            'mean': pytest.approx(60),
+            'median': 90.0,
+            'mode': [90.0],
+            'variance': pytest.approx(1800),
+            'standard_deviation': pytest.approx(42.4264068712),
+            'quartiles': {'q1': 45, 'q2': 90, 'q3': 90},
+            'distribution': {
+                '0-<10': 1, '10-<20': 0, '20-<30': 0, '30-<40': 0,
+                '40-<50': 0, '50-<60': 0, '60-<70': 0, '70-<80': 0,
+                '80-<90': 0, '90-100': 2,
+            },
+            'grade_distribution': {'A': 2},
+            'pass_percentage': None,
+            'pass_threshold': None,
+            'denominator_policy': 'eligible learners; ABS and MISSING are zero',
+        },
     }]
     assert [row['stream'] for row in overview['stream_comparisons'][0]['streams']] == ['B', 'A']
-    assert [row['admno'] for row in overview['top_students']] == ['1003', '1001']
+    assert [row['admno'] for row in overview['top_students']] == [
+        '1003', '1001', '1002',
+    ]
 
 
 def test_school_exam_analytics_rejects_exam_not_found_in_active_tenant():
@@ -625,8 +803,30 @@ def test_school_exam_analytics_rejects_exam_not_found_in_active_tenant():
 
     with pytest.raises(ExamManagementError, match='Exam series not found for the active school'):
         service.get_exam_analytics_overview(404)
-
     assert connection.cursor_obj.executed[0][1] == (404, 13)
+
+
+def test_class_distribution_includes_unmarked_eligible_learners_without_dash_grade(
+    monkeypatch,
+):
+    service = ExamManagementService(RecordingConnection(), school_id=13)
+    monkeypatch.setattr(
+        service,
+        'get_class_tabulation',
+        lambda *_args: {
+            'tabulation': [
+                {'eligible_subjects': 1, 'average': 90, 'grade': 'A'},
+                {'eligible_subjects': 1, 'average': 0, 'grade': '-'},
+            ],
+            'subject_stats': [],
+        },
+    )
+
+    distribution = service.get_class_performance_distribution(4, 5)
+
+    assert distribution['distribution'] == {'A': 1}
+    assert distribution['total_students'] == 2
+    assert distribution['mean_score'] == 45
 
 
 def test_fees_service_scopes_voteheads_query_and_group_join_to_school():

@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block content %}
+<main class="mx-auto max-w-7xl px-4 py-8">
+    <div class="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+            <a href="{{ url_for('exams.exams_dashboard') }}"
+               class="text-sm font-semibold text-blue-700 hover:underline">&larr; Exam dashboard</a>
+            <h1 class="mt-3 text-2xl font-bold text-gray-900">Marks Completion</h1>
+            <p class="mt-1 text-gray-600">
+                {{ exam.name }} &middot; {{ exam.academic_year_name }} &middot; Term {{ exam.term }}
+            </p>
+        </div>
+        <a href="{{ url_for('exams.marks_entry_select', exam_id=exam.id) }}"
+           class="rounded bg-blue-700 px-4 py-2 font-bold text-white hover:bg-blue-800">
+            Enter marks
+        </a>
+    </div>
+    {% if not class_rows %}
+    <section class="rounded-xl border border-amber-200 bg-amber-50 p-6 text-amber-900">
+        No participating class subjects are available to your examination role.
+    </section>
+    {% endif %}
+
+    <div class="space-y-6">
+        {% for class_row in class_rows %}
+        <section class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow">
+            <header class="flex flex-wrap items-center justify-between gap-3 border-b bg-gray-50 p-4">
+                <div>
+                    <h2 class="text-lg font-bold text-gray-900">{{ class_row.class_info.display_name }}</h2>
+                    <p class="text-sm text-gray-600">
+                        Eligible subject-mark records entered:
+                        {{ class_row.entered_count }} / {{ class_row.expected_count }}
+                    </p>
+                </div>
+                <a href="{{ url_for('exams.exam_tabulation', exam_id=exam.id, class_id=class_row.class_info.classID) }}"
+                   class="text-sm font-semibold text-indigo-700 underline">View mark sheet</a>
+            </header>
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-left">
+                    <thead>
+                        <tr class="text-xs uppercase text-gray-600">
+                            <th class="p-3">Subject</th>
+                            <th class="p-3">Completion</th>
+                            <th class="p-3">Missing eligible learners</th>
+                            <th class="p-3">Entry</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        {% for subject in class_row.subjects %}
+                        {% set missing_count = subject.student_count - subject.entered_count %}
+                        <tr>
+                            <td class="p-3 font-semibold text-gray-800">{{ subject.name }}</td>
+                            <td class="p-3">
+                                <div class="flex items-center gap-3">
+                                    <span class="text-sm font-bold {{ 'text-green-700' if subject.is_complete else 'text-amber-700' }}">
+                                        {{ subject.entered_count }} / {{ subject.student_count }}
+                                    </span>
+                                    <div class="h-2 w-32 overflow-hidden rounded bg-gray-200">
+                                        <div class="h-full {{ 'bg-green-600' if subject.is_complete else 'bg-amber-500' }}"
+                                             style="width: {{ (subject.entered_count * 100 // subject.student_count) if subject.student_count else 0 }}%"></div>
+                                    </div>
+                                    <span class="text-xs text-gray-500">{{ subject.status_text }}</span>
+                                </div>
+                            </td>
+                            <td class="p-3 text-sm">{{ missing_count }}</td>
+                            <td class="p-3">
+                                <a href="{{ url_for('exams.marks_entry', exam_id=exam.id, class_id=class_row.class_info.classID, subject_id=subject.id, entry_type='components' if subject.uses_components else 'standard') }}"
+                                   class="font-semibold text-blue-700 underline">
+                                    {{ 'Component entry' if subject.uses_components else 'Standard entry' }}
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        {% endfor %}
+    </div>
+</main>
+{% endblock %}
