@@ -151,7 +151,11 @@ def create_app(config_class=Config):
                         continue
                 return url_for(endpoint, **values)
 
-        return dict(url_for=compat_url_for, datetime=datetime)
+        return dict(
+            url_for=compat_url_for,
+            datetime=datetime,
+            now=datetime.now(),
+        )
 
     @app.context_processor
     def inject_school_branding():
