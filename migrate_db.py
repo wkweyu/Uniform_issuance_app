@@ -63,6 +63,116 @@ def _record_migration(cursor, migration_name, sql_script):
     )
 
 
+def _statement_without_line_comments(statement):
+    return '\n'.join(
+        line for line in statement.splitlines()
+        if not line.lstrip().startswith('--')
+    ).strip()
+
+
+def _is_uniform_prices_item_reference_statement(statement):
+    normalized = ' '.join(
+        _statement_without_line_comments(statement).lower().split()
+    )
+    return normalized == (
+        'alter table uniform_prices add column item_id int, '
+        'add foreign key (item_id) references item_stock(item_id) '
+        'on delete cascade'
+    )
+
+
+def _ensure_uniform_prices_item_reference(cursor):
+    cursor.execute(
+        '''
+        SELECT DATA_TYPE
+        FROM information_schema.columns
+        WHERE table_schema = DATABASE()
+          AND table_name = 'uniform_prices'
+          AND column_name = 'item_id'
+        '''
+    )
+    item_column = cursor.fetchone()
+    if item_column:
+        data_type = (
+            item_column.get('DATA_TYPE')
+            if isinstance(item_column, dict)
+            else item_column[0]
+        )
+        if str(data_type).lower() != 'int':
+            raise MigrationError(
+                'uniform_prices.item_id exists but is not an INT column; '
+                'review the live schema before continuing.'
+            )
+    else:
+        cursor.execute(
+            'ALTER TABLE uniform_prices ADD COLUMN item_id INT'
+        )
+
+    cursor.execute(
+        '''
+        SELECT DATA_TYPE
+        FROM information_schema.columns
+        WHERE table_schema = DATABASE()
+          AND table_name = 'item_stock'
+          AND column_name = 'item_id'
+        '''
+    )
+    stock_column = cursor.fetchone()
+    if not stock_column:
+        raise MigrationError(
+            'item_stock.item_id is missing; cannot add the uniform_prices '
+            'foreign key.'
+        )
+    stock_data_type = (
+        stock_column.get('DATA_TYPE')
+        if isinstance(stock_column, dict)
+        else stock_column[0]
+    )
+    if str(stock_data_type).lower() != 'int':
+        raise MigrationError(
+            'item_stock.item_id is not an INT column; review the live schema '
+            'before continuing.'
+        )
+
+    cursor.execute(
+        '''
+        SELECT referenced_table_name, referenced_column_name
+        FROM information_schema.key_column_usage
+        WHERE table_schema = DATABASE()
+          AND table_name = 'uniform_prices'
+          AND column_name = 'item_id'
+          AND referenced_table_name IS NOT NULL
+        '''
+    )
+    references = cursor.fetchall()
+    expected_reference = ('item_stock', 'item_id')
+    if references:
+        actual_references = {
+            (
+                row.get('referenced_table_name'),
+                row.get('referenced_column_name'),
+            )
+            if isinstance(row, dict)
+            else tuple(row)
+            for row in references
+        }
+        if actual_references != {expected_reference}:
+            raise MigrationError(
+                'uniform_prices.item_id has an unexpected foreign key; '
+                'review the live schema before continuing.'
+            )
+        return
+
+    cursor.execute(
+        '''
+        ALTER TABLE uniform_prices
+        ADD CONSTRAINT fk_uniform_prices_item_stock
+        FOREIGN KEY (item_id) REFERENCES item_stock(item_id)
+        ON DELETE CASCADE
+        '''
+    )
+
+
 def _calculate_checksum(sql_script):
     return hashlib.sha256(sql_script.encode('utf-8')).hexdigest()
 
@@ -197,7 +307,12 @@ def migrate_db(continue_on_error=False):
                     for statement in schema_script.split(';'):
                         statement = statement.strip()
                         if statement:
-                            cursor.execute(statement)
+                            if _is_uniform_prices_item_reference_statement(
+                                statement
+                            ):
+                                _ensure_uniform_prices_item_reference(cursor)
+                            else:
+                                cursor.execute(statement)
                     print("✔️ schema.sql completed.")
                     _record_migration(cursor, SCHEMA_MIGRATION_NAME, schema_script)
                 except Exception as exc:

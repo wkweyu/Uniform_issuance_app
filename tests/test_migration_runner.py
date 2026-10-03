@@ -55,6 +55,39 @@ class MigrationConnection:
         self.closed = True
 
 
+class UniformPriceSchemaCursor:
+    def __init__(self, *, price_item_type='int', foreign_key=None):
+        self.price_item_type = price_item_type
+        self.foreign_key = foreign_key
+        self.executed = []
+        self._result = None
+        self._results = []
+
+    def execute(self, statement, params=None):
+        self.executed.append((statement, params))
+        normalized = ' '.join(statement.lower().split())
+        if 'from information_schema.columns' in normalized:
+            if "table_name = 'uniform_prices'" in normalized:
+                self._result = (
+                    (self.price_item_type,)
+                    if self.price_item_type is not None else None
+                )
+            else:
+                self._result = ('int',)
+        elif 'from information_schema.key_column_usage' in normalized:
+            self._results = [self.foreign_key] if self.foreign_key else []
+        elif normalized == 'alter table uniform_prices add column item_id int':
+            self.price_item_type = 'int'
+        elif 'add constraint fk_uniform_prices_item_stock' in normalized:
+            self.foreign_key = ('item_stock', 'item_id')
+
+    def fetchone(self):
+        return self._result
+
+    def fetchall(self):
+        return self._results
+
+
 def _configure_migration(
     monkeypatch,
     failing_statements=None,
@@ -68,6 +101,68 @@ def _configure_migration(
     monkeypatch.setattr(migrate_db.glob, 'glob', lambda _pattern: ['migrations/999_broken.sql'])
     monkeypatch.setattr('builtins.open', lambda *_args, **_kwargs: io.StringIO('BROKEN SQL;'))
     return connection
+
+
+def test_schema_item_reference_statement_matches_with_comment_prefix():
+    statement = """
+    -- Update uniform_prices to reference item_stock
+    ALTER TABLE uniform_prices
+    ADD COLUMN item_id INT,
+    ADD FOREIGN KEY (item_id)
+    REFERENCES item_stock(item_id) ON DELETE CASCADE
+    """
+
+    assert migrate_db._is_uniform_prices_item_reference_statement(statement)
+
+
+def test_schema_item_reference_adds_missing_foreign_key_when_column_exists():
+    cursor = UniformPriceSchemaCursor(price_item_type='int')
+
+    migrate_db._ensure_uniform_prices_item_reference(cursor)
+
+    statements = [statement.lower() for statement, _ in cursor.executed]
+    assert not any('add column item_id' in statement for statement in statements)
+    assert any(
+        'add constraint fk_uniform_prices_item_stock' in statement
+        for statement in statements
+    )
+
+
+def test_schema_item_reference_skips_existing_matching_foreign_key():
+    cursor = UniformPriceSchemaCursor(
+        price_item_type='int',
+        foreign_key=('item_stock', 'item_id'),
+    )
+
+    migrate_db._ensure_uniform_prices_item_reference(cursor)
+
+    assert not any(
+        'alter table uniform_prices' in statement.lower()
+        for statement, _ in cursor.executed
+    )
+
+
+def test_schema_item_reference_adds_column_and_foreign_key_when_missing():
+    cursor = UniformPriceSchemaCursor(price_item_type=None)
+
+    migrate_db._ensure_uniform_prices_item_reference(cursor)
+
+    statements = [statement.lower() for statement, _ in cursor.executed]
+    assert 'alter table uniform_prices add column item_id int' in statements
+    assert any(
+        'add constraint fk_uniform_prices_item_stock' in statement
+        for statement in statements
+    )
+
+
+def test_schema_item_reference_rejects_unexpected_existing_foreign_key():
+    cursor = UniformPriceSchemaCursor(
+        price_item_type='int',
+        foreign_key=('other_table', 'id'),
+    )
+
+    with pytest.raises(migrate_db.MigrationError, match='unexpected foreign key'):
+        migrate_db._ensure_uniform_prices_item_reference(cursor)
 
 
 def test_migration_connection_does_not_force_tls_without_configured_ca(monkeypatch):
