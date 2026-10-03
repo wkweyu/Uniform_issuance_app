@@ -216,13 +216,14 @@ def _require_matching_checksum(cursor, migration_name, sql_script):
 
 
 def _get_database_connection():
-    # Enable SSL for SkySQL
     ssl_config = None
-    ca_path = os.path.join(os.path.dirname(__file__), 'globalsignrootca.pem')
-    if os.path.exists(ca_path):
+    ca_path = os.environ.get('DB_SSL_CA', getattr(config, 'DB_SSL_CA', None))
+    if ca_path:
+        if not os.path.isfile(ca_path):
+            raise MigrationError(
+                f'DB_SSL_CA does not point to a file: {ca_path}'
+            )
         ssl_config = {'ca': ca_path, 'check_hostname': False}
-    else:
-        ssl_config = None
 
     print("Connecting to cloud database...")
     DB_HOST = os.environ.get('DB_HOST', getattr(config, 'DB_HOST', 'localhost'))
@@ -237,7 +238,7 @@ def _get_database_connection():
         password=DB_PASSWORD,
         database=DB_NAME,
         port=DB_PORT,
-        ssl=None,
+        ssl=ssl_config,
         autocommit=True
     )
 
