@@ -1,0 +1,4 @@
+PermissionId,PermissionName,CapabilityId,ActionScope,DataScope,RoleDefault,DualApprovalRequired,AuditRequired,Notes
+PERM-FIN-001,ViewSetup,CAP-FIN-001,view,school,finance_manager,no,yes,
+PERM-FIN-020,ReceivePayment,CAP-FIN-003,create,school,bursar,no,yes,
+PERM-FIN-041,ReverseJournal,CAP-FIN-007,approve,school,finance_manager,yes,yes,

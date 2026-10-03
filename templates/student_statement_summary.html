@@ -1,0 +1,286 @@
+{% extends 'base.html' %}
+
+{% block title %}Student Fee Statement - {{ student_full_name }}{% endblock %}
+
+{% block content %}
+<div class="bg-slate-50 min-h-screen pb-12">
+    <!-- Header -->
+    <div class="bg-white border-b sticky top-0 z-10 no-print">
+        <div class="container mx-auto px-6 py-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl font-black text-slate-900">Fee Statement</h1>
+                    <p class="text-sm text-slate-500 mt-1">
+                        {% if student_full_name %}{{ student_full_name }}{% endif %} 
+                        (Adm. No: <span class="font-mono font-bold">{{ admno }}</span>)
+                    </p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <a href="{{ url_for('fees.fees_dashboard') }}" class="text-sm font-semibold text-blue-700 hover:text-blue-900">Back to Dashboard</a>
+                    <button onclick="window.print()" class="px-4 py-2 bg-slate-100 text-slate-700 font-semibold rounded-lg hover:bg-slate-200 transition no-print">
+                        <i class="fas fa-print mr-2"></i>Print
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container mx-auto px-6 py-8">
+        <!-- Per-Term Summary Table -->
+        <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden mb-8">
+            <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+                <h2 class="text-lg font-black text-slate-900">Fee Statement Summary - By Term</h2>
+                <p class="text-sm text-slate-500 mt-1">Chronological breakdown of charges, payments, and balance movements per term</p>
+            </div>
+            
+            <div class="overflow-x-auto">
+                <table class="w-full divide-y divide-slate-200">
+                    <thead class="bg-slate-100">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-black text-slate-700 uppercase tracking-wider">Academic Year</th>
+                            <th class="px-6 py-3 text-left text-xs font-black text-slate-700 uppercase tracking-wider">Term</th>
+                            <th class="px-6 py-3 text-right text-xs font-black text-slate-700 uppercase tracking-wider">Opening Balance</th>
+                            <th class="px-6 py-3 text-right text-xs font-black text-slate-700 uppercase tracking-wider">Charges</th>
+                            <th class="px-6 py-3 text-right text-xs font-black text-slate-700 uppercase tracking-wider">Debits</th>
+                            <th class="px-6 py-3 text-right text-xs font-black text-slate-700 uppercase tracking-wider">Payments</th>
+                            <th class="px-6 py-3 text-right text-xs font-black text-slate-700 uppercase tracking-wider">Credits</th>
+                            <th class="px-6 py-3 text-right text-xs font-black text-slate-700 uppercase tracking-wider">Closing Balance</th>
+                            <th class="px-6 py-3 text-center text-xs font-black text-slate-700 uppercase tracking-wider">Transactions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200" id="statementTableBody">
+                        <!-- Populated by JavaScript -->
+                        <tr class="text-center text-slate-500 py-6">
+                            <td colspan="9" class="py-8">
+                                <i class="fas fa-spinner fa-spin mr-2"></i>Loading statement data...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Summary Totals (if applicable) -->
+            <div class="px-6 py-4 bg-slate-50 border-t border-slate-200">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                        <p class="text-xs text-slate-500 uppercase font-semibold mb-1">Total Charges</p>
+                        <p class="text-2xl font-black text-slate-900" id="totalCharges">KES 0.00</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-slate-500 uppercase font-semibold mb-1">Total Payments</p>
+                        <p class="text-2xl font-black text-blue-700" id="totalPayments">KES 0.00</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-slate-500 uppercase font-semibold mb-1">Total Credits</p>
+                        <p class="text-2xl font-black text-purple-700" id="totalCredits">KES 0.00</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-slate-500 uppercase font-semibold mb-1">Current Balance</p>
+                        <p class="text-2xl font-black" id="currentBalance">KES 0.00</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Detailed Transaction History (Optional) -->
+        <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+                <h2 class="text-lg font-black text-slate-900">Detailed Transaction History</h2>
+                <p class="text-sm text-slate-500 mt-1">Individual ledger entries in chronological order</p>
+            </div>
+            
+            <div class="overflow-x-auto">
+                <table class="w-full divide-y divide-slate-200">
+                    <thead class="bg-slate-100">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-black text-slate-700 uppercase tracking-wider">Date</th>
+                            <th class="px-6 py-3 text-left text-xs font-black text-slate-700 uppercase tracking-wider">Type</th>
+                            <th class="px-6 py-3 text-left text-xs font-black text-slate-700 uppercase tracking-wider">Description</th>
+                            <th class="px-6 py-3 text-left text-xs font-black text-slate-700 uppercase tracking-wider">Reference</th>
+                            <th class="px-6 py-3 text-right text-xs font-black text-slate-700 uppercase tracking-wider">Amount</th>
+                            <th class="px-6 py-3 text-right text-xs font-black text-slate-700 uppercase tracking-wider">Balance After</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200" id="detailTableBody">
+                        <!-- Populated by JavaScript -->
+                        <tr class="text-center text-slate-500 py-6">
+                            <td colspan="6" class="py-8">
+                                <i class="fas fa-spinner fa-spin mr-2"></i>Loading transaction details...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', async function() {
+    const admnoParam = new URLSearchParams(window.location.search).get('admno') || '{{ admno }}';
+    if (!admnoParam) {
+        document.getElementById('statementTableBody').innerHTML = `
+            <tr class="text-center text-red-500">
+                <td colspan="9" class="py-8">No admission number provided. Please specify &admno=XXX in URL.</td>
+            </tr>
+        `;
+        return;
+    }
+
+    try {
+        // Fetch summary data
+        const summaryResponse = await fetch(`/api/fees/statement-summary?admno=${admnoParam}`);
+        const summaryData = await summaryResponse.json();
+        
+        if (!Array.isArray(summaryData) || summaryData.length === 0) {
+            document.getElementById('statementTableBody').innerHTML = `
+                <tr class="text-center text-slate-500">
+                    <td colspan="9" class="py-8">No fee statement data found for this student.</td>
+                </tr>
+            `;
+        } else {
+            renderSummaryTable(summaryData);
+        }
+
+        // Fetch detailed transaction history
+        const detailResponse = await fetch(`/api/fees/statement?admno=${admnoParam}`);
+        const detailData = await detailResponse.json();
+        
+        if (Array.isArray(detailData) && detailData.length > 0) {
+            renderDetailTable(detailData);
+        } else {
+            document.getElementById('detailTableBody').innerHTML = `
+                <tr class="text-center text-slate-500">
+                    <td colspan="6" class="py-8">No transaction details found.</td>
+                </tr>
+            `;
+        }
+    } catch (error) {
+        console.error('Error loading statement:', error);
+        document.getElementById('statementTableBody').innerHTML = `
+            <tr class="text-center text-red-500">
+                <td colspan="9" class="py-8">Error loading statement data: ${error.message}</td>
+            </tr>
+        `;
+    }
+});
+
+function renderSummaryTable(data) {
+    let totalCharges = 0, totalPayments = 0, totalCredits = 0, currentBalance = 0;
+    
+    const rows = data.map((row, idx) => {
+        totalCharges += parseFloat(row.charges || 0);
+        totalPayments += parseFloat(row.payments || 0);
+        totalCredits += parseFloat(row.credits || 0);
+        currentBalance = parseFloat(row.closing_balance || 0);
+
+        return `
+            <tr class="hover:bg-slate-50 transition">
+                <td class="px-6 py-4 text-sm font-bold text-slate-900">${row.academic_year}</td>
+                <td class="px-6 py-4 text-sm text-slate-700">Term ${row.term_number}</td>
+                <td class="px-6 py-4 text-sm text-right font-mono text-slate-700">
+                    ${formatCurrency(row.opening_balance)}
+                </td>
+                <td class="px-6 py-4 text-sm text-right font-mono text-green-700 font-bold">
+                    ${formatCurrency(row.charges)}
+                </td>
+                <td class="px-6 py-4 text-sm text-right font-mono text-orange-700 font-bold">
+                    ${formatCurrency(row.debits)}
+                </td>
+                <td class="px-6 py-4 text-sm text-right font-mono text-blue-700 font-bold">
+                    ${formatCurrency(row.payments)}
+                </td>
+                <td class="px-6 py-4 text-sm text-right font-mono text-purple-700 font-bold">
+                    ${formatCurrency(row.credits)}
+                </td>
+                <td class="px-6 py-4 text-sm text-right font-mono font-black ${
+                    parseFloat(row.closing_balance) > 0 ? 'text-red-700' : 'text-green-700'
+                }">
+                    ${formatCurrency(row.closing_balance)}
+                </td>
+                <td class="px-6 py-4 text-sm text-center text-slate-700 font-bold">
+                    ${row.transaction_count || 0}
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    document.getElementById('statementTableBody').innerHTML = rows;
+    document.getElementById('totalCharges').textContent = formatCurrency(totalCharges);
+    document.getElementById('totalPayments').textContent = formatCurrency(totalPayments);
+    document.getElementById('totalCredits').textContent = formatCurrency(totalCredits);
+    const balanceEl = document.getElementById('currentBalance');
+    balanceEl.textContent = formatCurrency(currentBalance);
+    balanceEl.className = currentBalance > 0 ? 'text-2xl font-black text-red-700' : 'text-2xl font-black text-green-700';
+}
+
+function renderDetailTable(data) {
+    const rows = data.map((row) => {
+        const typeColor = {
+            'CHARGE': 'bg-green-50 text-green-700',
+            'PAYMENT': 'bg-blue-50 text-blue-700',
+            'CREDIT': 'bg-purple-50 text-purple-700',
+            'DEBIT': 'bg-orange-50 text-orange-700',
+            'ADJUSTMENT': 'bg-yellow-50 text-yellow-700',
+            'REFUND': 'bg-indigo-50 text-indigo-700'
+        }[row.type] || 'bg-slate-50 text-slate-700';
+
+        return `
+            <tr class="hover:bg-slate-50 transition">
+                <td class="px-6 py-4 text-sm text-slate-700">
+                    ${formatDate(row.transaction_date)}
+                </td>
+                <td class="px-6 py-4 text-sm font-bold">
+                    <span class="inline-block px-2 py-1 rounded text-xs font-black ${typeColor}">
+                        ${row.type}
+                    </span>
+                </td>
+                <td class="px-6 py-4 text-sm text-slate-700">
+                    ${row.description || row.votehead_name || 'N/A'}
+                </td>
+                <td class="px-6 py-4 text-sm text-slate-600 font-mono">
+                    ${row.reference_no || '-'}
+                </td>
+                <td class="px-6 py-4 text-sm text-right font-mono font-bold text-slate-900">
+                    ${formatCurrency(row.amount)}
+                </td>
+                <td class="px-6 py-4 text-sm text-right font-mono font-bold text-slate-900">
+                    ${formatCurrency(row.balance_after)}
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    document.getElementById('detailTableBody').innerHTML = rows;
+}
+
+function formatCurrency(value) {
+    const num = parseFloat(value || 0);
+    return new Intl.NumberFormat('en-KE', {
+        style: 'currency',
+        currency: 'KES',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    }).format(num);
+}
+
+function formatDate(dateStr) {
+    if (!dateStr) return '-';
+    const date = new Date(dateStr);
+    return new Intl.DateTimeFormat('en-KE', {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit'
+    }).format(date);
+}
+</script>
+
+<style>
+    @media print {
+        .no-print { display: none; }
+        body { background: white; }
+        .container { box-shadow: none; }
+        table { page-break-inside: avoid; }
+    }
+</style>
+{% endblock %}

@@ -1,0 +1,11 @@
+RiskId,CapabilityId,Owner,PriorityScore,TargetDate,Status,Week1Checkpoint,Week2Checkpoint,Week3Checkpoint,EvidenceNeeded,NextAction
+RISK-FIN-006,CAP-FIN-008,Security Lead,9,2026-08-29,Open,2026-07-31,2026-08-07,2026-08-14,Multi-tenant report test suite plus query review checklist,Add tenant-scoped integration tests to report query paths
+RISK-FIN-035,CAP-FIN-017,Integrations Platform Lead,9,2026-09-19,Open,2026-08-01,2026-08-08,2026-08-15,Contract test matrix plus health alert simulation output,Introduce mandatory adapter contract tests
+RISK-FIN-027,CAP-FIN-014,Security Lead,9,2026-10-03,Open,2026-08-05,2026-08-12,2026-08-19,Security review signoff plus adversarial relationship-mapping tests,Implement relationship-scoped access tests
+RISK-FIN-005,CAP-FIN-003,AR Engineering Lead,8,2026-08-22,Open,2026-07-30,2026-08-06,2026-08-13,Reversal chain integrity audit with zero orphan links,Normalize orphan reversal references before cutover
+RISK-FIN-010,CAP-FIN-011,Finance Engineering Lead,8,2026-09-05,Open,2026-08-04,2026-08-11,2026-08-18,Trigger load benchmark report against PERF threshold,Run production-scale trigger load test
+RISK-FIN-024,CAP-FIN-009,Communications Platform Lead,8,2026-09-05,Open,2026-08-04,2026-08-11,2026-08-18,Compliance test report proving opted-out recipients are blocked,Enforce suppression and consent checks in dispatch
+RISK-FIN-021,CAP-FIN-005,Payments Integrations Product Lead,8,2026-09-12,Open,2026-08-05,2026-08-12,2026-08-19,Runbook entry plus mismatch case evidence,Auto-create settlement exception cases
+RISK-FIN-015,CAP-FIN-017,Integrations Platform Lead,8,2026-09-19,Open,2026-08-01,2026-08-08,2026-08-15,Adapter contract compatibility matrix,Wrap existing integrations before interface changes
+RISK-FIN-017,CAP-FIN-018,Eventing Platform Lead,8,2026-09-19,Open,2026-08-01,2026-08-08,2026-08-15,Schema registry policy plus CI enforcement logs,Enforce schema registry and block breaking event changes
+RISK-FIN-037,CAP-FIN-018,Eventing Platform Lead,8,2026-09-19,Open,2026-08-01,2026-08-08,2026-08-15,Producer-consumer compatibility verification report,Add consumer compatibility tests before cutover

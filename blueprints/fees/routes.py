@@ -777,14 +777,37 @@ def manage_fee_adjustments():
             )
             flash('Account adjustment posted.', 'success')
             return redirect(url_for('fees.manage_fee_adjustments'))
+        # GET: Load form data with validation
+        voteheads = service.get_voteheads()
+        if not voteheads:
+            current_app.logger.warning(f"[manage_fee_adjustments] No voteheads found for school {service.school_id}")
+            flash('Warning: No voteheads configured. Please configure fees before posting adjustments.', 'warning')
+
+        years = class_service.get_all_academic_years()
+        if not years:
+            current_app.logger.warning(f"[manage_fee_adjustments] No academic years found for school {service.school_id}")
+            flash('Warning: No academic years configured.', 'warning')
+
+        terms = service.get_recent_terms()
+        if not terms:
+            current_app.logger.warning(f"[manage_fee_adjustments] No terms found for school {service.school_id}")
+            flash('Warning: No terms configured for the current academic year.', 'warning')
+
         return render_template(
             'manage_fee_adjustments.html',
-            voteheads=service.get_voteheads(), years=class_service.get_all_academic_years(),
-            terms=service.get_recent_terms(), now=datetime.now(),
+            voteheads=voteheads or [],
+            years=years or [],
+            terms=terms or [],
+            now=datetime.now(),
         )
     except (ValueError, FeesError) as exc:
+        current_app.logger.error(f"[manage_fee_adjustments] Adjustment posting failed: {str(exc)}")
         flash(str(exc), 'error')
         return redirect(url_for('fees.manage_fee_adjustments'))
+    except Exception as e:
+        current_app.logger.exception(f"[manage_fee_adjustments] Unexpected error: {str(e)}")
+        flash(f'Unexpected error: {str(e)}', 'error')
+        return redirect(url_for('fees.fees_dashboard'))
     finally:
         connection.close()
 
@@ -1290,6 +1313,25 @@ def api_statement():
         return jsonify({'success': False, 'message': str(e)}), 400
     finally: connection.close()
 
+@fees_bp.route('/admin/fees/student/<int:admno>/statement')
+@login_required
+def student_statement(admno):
+    connection = get_db_connection()
+    try:
+        from blueprints.students.services import StudentService
+        service = FeesService(connection)
+        student = StudentService(connection, school_id=service.school_id).get_student_by_admno(admno)
+        if not student:
+            return 'Student not found', 404
+        full_name = ' '.join(filter(None, (student.get('FName'), student.get('MName'), student.get('SName'))))
+        return render_template(
+            'student_statement_summary.html',
+            admno=admno,
+            student_full_name=full_name,
+        )
+    finally:
+        connection.close()
+
 @fees_bp.route('/api/fees/statement-summary')
 @login_required
 def api_statement_summary():
@@ -1531,6 +1573,10 @@ def api_fees_student_context():
                     'payments': float(term_summary['payments']),
                     'credits': float(term_summary['credits']),
                     'net_due': float(term_summary['net_due']),
+                    # The term movement and the full ledger are intentionally
+                    # different scopes.  Expose their reconciliation so a
+                    # carried-forward balance is not mistaken for an error.
+                    'opening_balance': float(balance_value - term_summary['net_due']),
                 } if term_summary else None
             ),
             'term_invoices': [

@@ -1728,9 +1728,16 @@ class FeesService:
                 ay.year AS academic_year,
                 fl.term_id,
                 utd.term_number,
-                CAST(SUBSTRING_INDEX(GROUP_CONCAT(fl.balance_after ORDER BY fl.transaction_date, fl.id), ',', 1) AS DECIMAL(15, 2))
-                    - CAST(SUBSTRING_INDEX(GROUP_CONCAT(({signed_amount}) ORDER BY fl.transaction_date, fl.id), ',', 1) AS DECIMAL(15, 2))
-                    AS opening_balance,
+                COALESCE(
+                    (SELECT balance_after FROM fee_ledger prev
+                     WHERE prev.admno = fl.admno AND prev.school_id = fl.school_id
+                       AND (prev.academic_year_id < fl.academic_year_id
+                            OR (prev.academic_year_id = fl.academic_year_id
+                                AND prev.term_id < fl.term_id))
+                     ORDER BY prev.academic_year_id DESC, prev.term_id DESC, prev.id DESC
+                     LIMIT 1),
+                    0
+                ) AS opening_balance,
                 COALESCE(SUM(CASE WHEN fl.type = 'CHARGE' THEN fl.amount ELSE 0 END), 0) AS charges,
                 COALESCE(SUM(CASE
                     WHEN fl.type = 'DEBIT'
@@ -1744,8 +1751,14 @@ class FeesService:
                       OR (fl.type = 'ADJUSTMENT' AND fl.description LIKE 'CREDIT NOTE:%%')
                     THEN fl.amount ELSE 0 END), 0) AS credits,
                 COALESCE(SUM(CASE WHEN fl.type = 'REFUND' THEN fl.amount ELSE 0 END), 0) AS refunds,
-                CAST(SUBSTRING_INDEX(GROUP_CONCAT(fl.balance_after ORDER BY fl.transaction_date DESC, fl.id DESC), ',', 1) AS DECIMAL(15, 2))
-                    AS closing_balance,
+                COALESCE(
+                    (SELECT balance_after FROM fee_ledger last
+                     WHERE last.admno = fl.admno AND last.school_id = fl.school_id
+                       AND last.academic_year_id = fl.academic_year_id AND last.term_id = fl.term_id
+                     ORDER BY last.id DESC
+                     LIMIT 1),
+                    0
+                ) AS closing_balance,
                 COUNT(*) AS transaction_count
             FROM fee_ledger fl
             JOIN academic_years ay ON fl.academic_year_id = ay.id AND fl.school_id = ay.school_id
