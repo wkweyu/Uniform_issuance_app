@@ -32,6 +32,27 @@ python3 migrate_db.py
 
 The migration runner follows the application's database TLS configuration. It does not force TLS for endpoints that do not support it. If the database provider requires TLS, set `DB_SSL_CA` to the provider's CA certificate path in the service/container running the migration; a configured but missing certificate path fails with an explicit error rather than silently disabling TLS. On Render, make sure these database variables use the same internal or external host, port, and credentials as the deployed application.
 
+If an already-deployed copy of `migrate_db.py` still fails with PyMySQL error 2026 (`SSL is required but the server doesn't support it`), first deploy the TLS fix. As a one-off Render Shell workaround only when the configured database endpoint does not support TLS, this runs the migration runner in-process with TLS disabled for that command (it does not edit application files or persist a setting):
+
+```bash
+python - <<'PY'
+import pymysql
+import migrate_db
+
+connect = pymysql.connect
+
+def connect_without_tls(**kwargs):
+    kwargs['ssl'] = None
+    return connect(**kwargs)
+
+pymysql.connect = connect_without_tls
+for migration in migrate_db.get_migration_status():
+    print(migration['state'], migration['migration_name'])
+PY
+```
+
+Review the status output and take a verified database backup before applying changes. Then run the same Render Shell wrapper with `migrate_db.migrate_db()` instead of the status loop. Do not use this workaround when the provider requires TLS; configure its valid CA through `DB_SSL_CA` instead. The status command does not apply migration SQL, although it may initialize the migration journal tables.
+
 The runner records `schema.sql`, each completed migration, and its SHA-256 checksum. It skips only matching files on later runs, fails closed if an applied file has changed, and never records a failed file. For diagnostics on an existing database, process every pending migration and still receive a non-zero exit on any failure:
 
 ```bash
