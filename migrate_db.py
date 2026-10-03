@@ -53,7 +53,13 @@ def _get_applied_migration(cursor, migration_name):
         ''',
         (migration_name,),
     )
-    return cursor.fetchone()
+    applied_migration = cursor.fetchone()
+    if applied_migration is None or isinstance(applied_migration, dict):
+        return applied_migration
+    return {
+        'migration_name': applied_migration[0],
+        'checksum': applied_migration[1],
+    }
 
 
 def _record_migration(cursor, migration_name, sql_script):

@@ -14,6 +14,7 @@ class MigrationCursor:
         checksums=None,
         database_has_tables=False,
         database_table_count=0,
+        journal_rows_as_tuples=False,
     ):
         self.executed = []
         self.failing_statements = set(failing_statements or [])
@@ -21,6 +22,7 @@ class MigrationCursor:
         self.checksums = dict(checksums or {})
         self.database_has_tables = database_has_tables
         self.database_table_count = database_table_count
+        self.journal_rows_as_tuples = journal_rows_as_tuples
         self._last_result = None
 
     def execute(self, statement, params=None):
@@ -34,14 +36,15 @@ class MigrationCursor:
                 self._last_result = (1,) if self.database_has_tables else None
         elif 'SELECT migrations.migration_name' in statement:
             migration_name = params[0]
-            self._last_result = (
-                {
+            if migration_name in self.applied_migrations:
+                self._last_result = {
                     'migration_name': migration_name,
                     'checksum': self.checksums.get(migration_name),
                 }
-                if migration_name in self.applied_migrations
-                else None
-            )
+                if self.journal_rows_as_tuples:
+                    self._last_result = tuple(self._last_result.values())
+            else:
+                self._last_result = None
         elif statement.startswith('INSERT INTO schema_migrations'):
             self.applied_migrations.add(params[0])
         elif statement.startswith('INSERT INTO schema_migration_checksums'):
@@ -59,6 +62,7 @@ class MigrationConnection:
         checksums=None,
         database_has_tables=False,
         database_table_count=0,
+        journal_rows_as_tuples=False,
     ):
         self.cursor_obj = MigrationCursor(
             failing_statements,
@@ -66,6 +70,7 @@ class MigrationConnection:
             checksums,
             database_has_tables,
             database_table_count,
+            journal_rows_as_tuples,
         )
         self.closed = False
 
@@ -123,6 +128,7 @@ def _configure_migration(
     schema_exists=False,
     database_has_tables=False,
     database_table_count=0,
+    journal_rows_as_tuples=False,
 ):
     connection = MigrationConnection(
         failing_statements,
@@ -130,6 +136,7 @@ def _configure_migration(
         checksums,
         database_has_tables,
         database_table_count,
+        journal_rows_as_tuples,
     )
     monkeypatch.setattr(migrate_db.pymysql, 'connect', lambda **_kwargs: connection)
     monkeypatch.setattr(migrate_db.os.path, 'exists', lambda _path: schema_exists)
@@ -418,6 +425,24 @@ def test_baseline_existing_is_idempotent(monkeypatch):
         statement.startswith('INSERT INTO schema_migration_checksums')
         for statement, _ in connection.cursor_obj.executed
     ) == 2
+
+
+def test_status_after_baseline_normalizes_tuple_journal_rows(monkeypatch):
+    connection = _configure_migration(
+        monkeypatch,
+        schema_exists=True,
+        database_table_count=345,
+        journal_rows_as_tuples=True,
+    )
+
+    migrate_db.baseline_existing()
+    status = migrate_db.get_migration_status()
+
+    assert status == [
+        {'migration_name': 'schema.sql', 'state': 'APPLIED'},
+        {'migration_name': 'migrations/999_broken.sql', 'state': 'APPLIED'},
+    ]
+    assert connection.closed is True
 
 
 def test_baseline_cli_requires_confirmation(monkeypatch, capsys):
