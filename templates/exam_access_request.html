@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto px-4 py-8">
+    <div class="mb-6">
+        <p class="text-xs font-bold uppercase tracking-widest text-indigo-600">Examination access</p>
+        <h1 class="text-3xl font-black text-gray-900 mt-1">Request scoped access</h1>
+        <p class="text-sm text-gray-600 mt-2">
+            Request access only for a subject and class you need to support. A school administrator must review it.
+        </p>
+    </div>
+
+    <form method="get" class="bg-white border border-gray-200 rounded-xl p-5 mb-5">
+        <label class="block text-sm font-semibold text-gray-700 mb-2" for="exam_id">Exam series</label>
+        <select id="exam_id" name="exam_id" required onchange="this.form.submit()"
+                class="w-full px-3 py-2 border rounded-lg">
+            <option value="">Choose an exam</option>
+            {% for exam_option in exams %}
+            <option value="{{ exam_option.id }}"
+                    {% if selected_exam and selected_exam.id == exam_option.id %}selected{% endif %}>
+                {{ exam_option.name }} — {{ exam_option.academic_year_name }}, Term {{ exam_option.term }}
+            </option>
+            {% endfor %}
+        </select>
+        {% if selected_exam %}
+        <label class="block text-sm font-semibold text-gray-700 mt-4 mb-2" for="class_id">Class</label>
+        <select id="class_id" name="class_id" required onchange="this.form.submit()"
+                class="w-full px-3 py-2 border rounded-lg">
+            <option value="">Choose a class</option>
+            {% for class_option in classes %}
+            <option value="{{ class_option.classID }}"
+                    {% if selected_class and selected_class.classID == class_option.classID %}selected{% endif %}>
+                {{ class_option.display_name }}
+            </option>
+            {% endfor %}
+        </select>
+        {% endif %}
+    </form>
+
+    {% if selected_exam and selected_class %}
+    <form method="post" class="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="exam_id" value="{{ selected_exam.id }}">
+        <input type="hidden" name="class_id" value="{{ selected_class.classID }}">
+        <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2" for="subject_id">Subject</label>
+            <select id="subject_id" name="subject_id" required class="w-full px-3 py-2 border rounded-lg">
+                <option value="">Choose a subject</option>
+                {% for subject in subjects %}
+                <option value="{{ subject.id }}">{{ subject.name }} ({{ subject.code }})</option>
+                {% endfor %}
+            </select>
+            {% if not subjects %}
+            <p class="mt-2 text-sm text-amber-700">No active subjects are assigned to this class for this exam.</p>
+            {% endif %}
+        </div>
+        <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2" for="permission">Access requested</label>
+            <select id="permission" name="permission" required class="w-full px-3 py-2 border rounded-lg">
+                <option value="marks.view">View marks</option>
+                <option value="marks.edit">Enter or edit marks</option>
+            </select>
+        </div>
+        <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2" for="reason">Reason</label>
+            <textarea id="reason" name="reason" required minlength="10" maxlength="500" rows="3"
+                      class="w-full px-3 py-2 border rounded-lg"
+                      placeholder="Explain why you need this specific access."></textarea>
+        </div>
+        <button type="submit" {% if not subjects %}disabled{% endif %}
+                class="px-4 py-2 rounded-lg bg-indigo-600 text-white font-semibold disabled:bg-gray-400">
+            Submit request
+        </button>
+    </form>
+    {% endif %}
+</div>
+{% endblock %}

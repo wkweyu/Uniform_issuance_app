@@ -10,6 +10,10 @@
             </p>
         </div>
         <div class="flex gap-4">
+            <a href="{{ url_for('exams.export_class_exam_marksheet_csv', exam_id=exam.id, class_id=class_info.classID) }}"
+               class="px-5 py-2 border border-indigo-200 bg-white text-indigo-700 rounded-xl font-bold uppercase text-xs hover:bg-indigo-50 transition">
+                <i class="fas fa-file-csv mr-2"></i> Export Marksheet
+            </a>
             <button onclick="window.print()" class="px-6 py-2 bg-gray-800 text-white rounded-xl font-bold uppercase text-xs hover:bg-black transition shadow-lg">
                 <i class="fas fa-print mr-2"></i> Print Report
             </button>
@@ -74,8 +78,17 @@
                     <thead>
                         <tr class="bg-gray-50 text-[10px] font-black uppercase tracking-widest text-gray-400">
                             <th class="px-6 py-3 text-left">Subject</th>
-                            <th class="px-6 py-3 text-center">Sat</th>
+                            <th class="px-3 py-3 text-center">Scored</th>
+                            <th class="px-3 py-3 text-center">Eligible</th>
+                            <th class="px-3 py-3 text-center">Recorded</th>
+                            <th class="px-3 py-3 text-center">Absent subjects</th>
+                            <th class="px-3 py-3 text-center">Absent components</th>
+                            <th class="px-3 py-3 text-center">Missing subjects</th>
+                            <th class="px-3 py-3 text-center">Missing components</th>
                             <th class="px-6 py-3 text-right">Mean Score</th>
+                            <th class="px-6 py-3 text-right">Median</th>
+                            <th class="px-6 py-3 text-right">Range</th>
+                            <th class="px-6 py-3 text-right">Std. dev.</th>
                             <th class="px-6 py-3 text-center">Mean Grade</th>
                         </tr>
                     </thead>
@@ -86,9 +99,24 @@
                                 <div class="font-bold text-gray-900">{{ subj.name }}</div>
                                 <div class="text-[10px] text-gray-400 uppercase font-bold">{{ subj.code }}</div>
                             </td>
-                            <td class="px-6 py-4 text-center font-bold text-gray-600">{{ subj.count }}</td>
+                            <td class="px-3 py-4 text-center font-bold text-gray-600">{{ subj.count }}</td>
+                            <td class="px-3 py-4 text-center font-bold text-gray-600">{{ subj.eligible_count if subj.eligible_count is defined else subj.count }}</td>
+                            <td class="px-3 py-4 text-center">{{ subj.entered_count if subj.entered_count is defined else subj.count }}</td>
+                            <td class="px-3 py-4 text-center">{{ subj.absent_count if subj.absent_count is defined else 0 }}</td>
+                            <td class="px-3 py-4 text-center">{{ subj.absent_component_count if subj.absent_component_count is defined else 0 }}</td>
+                            <td class="px-3 py-4 text-center">{{ subj.missing_count if subj.missing_count is defined else 0 }}</td>
+                            <td class="px-3 py-4 text-center">{{ subj.missing_component_count if subj.missing_component_count is defined else 0 }}</td>
                             <td class="px-6 py-4 text-right">
                                 <span class="font-black text-gray-800">{{ "%.2f"|format(subj.average) }}</span>
+                            </td>
+                            <td class="px-6 py-4 text-right">
+                                {% if subj.statistics is defined and subj.statistics.median is not none %}{{ "%.2f"|format(subj.statistics.median) }}{% else %}-{% endif %}
+                            </td>
+                            <td class="px-6 py-4 text-right">
+                                {% if subj.statistics is defined and subj.statistics.lowest is not none %}{{ "%.2f"|format(subj.statistics.lowest) }}-{{ "%.2f"|format(subj.statistics.highest) }}{% else %}-{% endif %}
+                            </td>
+                            <td class="px-6 py-4 text-right">
+                                {% if subj.statistics is defined and subj.statistics.standard_deviation is not none %}{{ "%.2f"|format(subj.statistics.standard_deviation) }}{% else %}-{% endif %}
                             </td>
                             <td class="px-6 py-4 text-center">
                                 <span class="px-3 py-1 bg-blue-50 text-blue-700 rounded-lg font-black">{{ subj.grade }}</span>

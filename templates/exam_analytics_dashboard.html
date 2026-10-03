@@ -30,6 +30,17 @@
     </div>
 
     {% if overview %}
+    <div class="flex flex-wrap gap-2">
+        {% for view, label in [
+            ('classes', 'Class CSV'), ('subjects', 'Subject CSV'),
+            ('streams', 'Stream CSV'), ('top_students', 'Top learners CSV')
+        ] %}
+        <a href="{{ url_for('exams.export_exam_analytics_csv', exam_id=overview.exam.id, view=view) }}"
+           class="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-50">
+            <i class="fas fa-download mr-1"></i>{{ label }}
+        </a>
+        {% endfor %}
+    </div>
     {% set exam = overview.exam %}
     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6 p-4 bg-indigo-50 border border-indigo-100 rounded-xl">
         <div>
@@ -182,22 +193,33 @@
         <section class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
             <div class="p-5 border-b border-gray-100">
                 <h2 class="text-lg font-black text-gray-900">Subject performance</h2>
-                <p class="text-sm text-gray-500">School mean across eligible numeric marks, per subject.</p>
+                <p class="text-sm text-gray-500">Eligible learners form the cohort; absent and missing entries contribute zero while remaining distinct in completion reporting.</p>
+                <p class="text-xs text-gray-400 mt-1">Score bands include their lower bound; upper bounds are exclusive except for the final 90-100 band.</p>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-sm">
                     <thead class="bg-gray-50 text-xs uppercase text-gray-500">
-                        <tr><th class="text-left px-4 py-3">Subject</th><th class="text-center px-3 py-3">Scored</th><th class="text-right px-4 py-3">Mean</th></tr>
+                        <tr><th class="text-left px-4 py-3">Subject</th><th class="text-center px-3 py-3">Scored</th><th class="text-center px-3 py-3">Eligible</th><th class="text-center px-3 py-3">Recorded</th><th class="text-center px-3 py-3">Absent subjects</th><th class="text-center px-3 py-3">Absent components</th><th class="text-center px-3 py-3">Missing subjects</th><th class="text-center px-3 py-3">Missing components</th><th class="text-right px-4 py-3">Mean</th><th class="text-right px-4 py-3">Median</th><th class="text-right px-4 py-3">Range</th><th class="text-right px-4 py-3">Std. dev.</th><th class="text-left px-4 py-3">Score bands</th></tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
                         {% for subject in overview.subject_stats %}
                         <tr>
                             <td class="px-4 py-3"><span class="font-bold">{{ subject.name }}</span><span class="text-xs text-gray-500 ml-2">{{ subject.code }}</span></td>
                             <td class="px-3 py-3 text-center">{{ subject.count }}</td>
+                            <td class="px-3 py-3 text-center">{{ subject.eligible_count }}</td>
+                            <td class="px-3 py-3 text-center">{{ subject.entered_count }}</td>
+                            <td class="px-3 py-3 text-center">{{ subject.absent_count }}</td>
+                            <td class="px-3 py-3 text-center">{{ subject.absent_component_count }}</td>
+                            <td class="px-3 py-3 text-center">{{ subject.missing_count }}</td>
+                            <td class="px-3 py-3 text-center">{{ subject.missing_component_count }}</td>
                             <td class="px-4 py-3 text-right font-bold">{{ "%.2f"|format(subject.average) }}%</td>
+                            <td class="px-4 py-3 text-right">{{ "%.2f"|format(subject.statistics.median) if subject.statistics.median is not none else "—" }}</td>
+                            <td class="px-4 py-3 text-right">{{ "%.2f"|format(subject.statistics.lowest) if subject.statistics.lowest is not none else "—" }}–{{ "%.2f"|format(subject.statistics.highest) if subject.statistics.highest is not none else "—" }}</td>
+                            <td class="px-4 py-3 text-right">{{ "%.2f"|format(subject.statistics.standard_deviation) if subject.statistics.standard_deviation is not none else "—" }}</td>
+                            <td class="px-4 py-3"><div class="flex flex-wrap gap-1">{% for band, count in subject.statistics.distribution.items() %}{% if count %}<span class="rounded bg-gray-100 px-2 py-1 text-xs" title="{{ count }} eligible learner(s)">{{ band }}: {{ count }}</span>{% endif %}{% endfor %}{% if not subject.statistics.eligible_count %}<span class="text-xs text-gray-400">No eligible roster data</span>{% endif %}</div></td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="3" class="px-4 py-8 text-center text-gray-500">No subject marks are available yet.</td></tr>
+                        <tr><td colspan="13" class="px-4 py-8 text-center text-gray-500">No subject marks are available yet.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -208,7 +230,7 @@
     <section class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div class="p-5 border-b border-gray-100">
             <h2 class="text-lg font-black text-gray-900">Top performers across participating classes</h2>
-            <p class="text-sm text-gray-500">Ranked by average of recorded numeric subject marks; absent and missing marks are excluded.</p>
+            <p class="text-sm text-gray-500">Eligible learners are ranked using normalized subject averages; recorded zero, absent, and missing marks each contribute zero while their states remain visible in marks and completion reports.</p>
         </div>
         <div class="overflow-x-auto">
             <table class="w-full text-sm">

@@ -1,14 +1,10 @@
-# 🔒 Security Implementation & Deployment Guide
+# Security Implementation & Deployment Guide
 
 ## Executive Summary
 
-All security enhancements have been **successfully implemented and tested**:
-- ✅ **Authentication**: @login_required on 46 routes
-- ✅ **Authorization**: @admin_required on 2 admin routes  
-- ✅ **CSRF Protection**: Flask-WTF integrated, 17+ forms protected
-- ✅ **Dependencies**: Flask-WTF 1.2.2 installed and verified
+The application includes authentication, admin authorization, Flask-WTF CSRF protection, and the school-scoped exam access and audit work documented below. Focused exam tests pass, but no production-equivalent MySQL database was available to verify the new migrations.
 
-**Status**: Ready for deployment ✓
+**Release status**: Do not treat this guide as a production-readiness certification. Run the ordered migrations and regression checks against a staging database and verify the target schema before deployment.
 
 ---
 
@@ -55,6 +51,20 @@ python3 migrate_db.py --backfill-checksums
 This command records checksums for already-applied entries; it does not execute migration SQL.
 
 Do not use shell wildcard redirection such as `mysql < migrations/*.sql`; it does not reliably execute every migration file in order.
+
+### Exam access and audit migration
+
+Migration `049_exam_access_and_audit.sql` adds school-scoped examination roles, explicit subject-access requests and approvals, and durable exam audit events. Apply it with the ordered migration runner before enabling the updated exam routes. Afterward, a school administrator can assign examination roles from the Exam Access page; users request marks access from the marks-selection page, and administrators review or revoke those scoped grants from the access screen.
+
+### Exam workflow and assessment migration
+
+Migration `050_exam_workflow_and_assessments.sql` adds lifecycle metadata, component assessment definitions and marks, exam-specific grading overrides, and result-bundle configuration tables. Apply migrations `049` and `050` with `migrate_db.py` in a staging environment before deploying code that uses examination workflow or component entry. Configure components while an exam is still a draft; after opening marks entry, use the component-mark page for those subjects. Existing single-score subjects continue to use the legacy marks workflow. School-authorized exam staff can configure ordered result bundles, normalized equal/weighted calculation, and the bundle ranking policy from the Exam Bundles page.
+
+Migration `051_exam_import_batches.sql` adds atomic workbook-import batch records. The XLSX flow uses the declared `openpyxl` dependency, accepts files up to 10 MiB, validates all configured subject sheets and roster rows before an import, and applies valid component marks and audit events in one transaction. Dry-run mode never writes marks. Marks entry rosters are searchable and paginated; the completion dashboard reports each accessible class/subject, and subject-remark overrides require a reason and are audited.
+
+The component results are now included in class tabulation and report-card calculations. School-level analytics provide eligible-cohort subject statistics and downloadable class, subject, stream, and top-learner CSV views; each analytics export is audit logged, and text cells are protected against spreadsheet formula injection. Subject statistics use eligible learners as the denominator, count absent/missing outcomes as zero, and retain their separate completion counts. Pass percentages are intentionally not shown until the school configures a pass threshold.
+
+The application still needs production-equivalent schema testing before release: no live database was available during development, so foreign-key compatibility, migration behavior, and runtime behavior against each supported school schema remain unverified. Do not run these migrations directly against production without a successful staging run and a verified backup.
 
 ### 3. Run the Application
 ```bash

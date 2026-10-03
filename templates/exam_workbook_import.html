@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block content %}
+<main class="mx-auto max-w-6xl px-4 py-8">
+    <a href="{{ url_for('exams.marks_entry_select', exam_id=exam.id) }}"
+       class="text-sm font-semibold text-blue-700 hover:underline">&larr; Back to exam marks</a>
+    <section class="mt-4 rounded-xl border border-gray-200 bg-white p-6 shadow">
+        <h1 class="text-2xl font-bold text-gray-900">Component Marks Workbook</h1>
+        <p class="mt-1 text-gray-600">{{ exam.name }} &middot; {{ class_info.display_name }}</p>
+        <p class="mt-4 text-sm text-gray-700">
+            Download the roster workbook, enter marks in the component columns, and preserve all learner rows and subject worksheets.
+            A blank required component is an error; enter <strong>0</strong> for a recorded zero or mark the learner absent.
+            The server ignores workbook formulas and calculates normalized results from validated component marks.
+        </p>
+        <div class="mt-5 flex flex-wrap gap-3">
+            <a href="{{ url_for('exams.export_component_marks_workbook', exam_id=exam.id, class_id=class_info.classID) }}"
+               class="rounded bg-green-700 px-5 py-2 font-bold text-white hover:bg-green-800">
+                Download workbook template
+            </a>
+        </div>
+        <form method="post" enctype="multipart/form-data" class="mt-8 space-y-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label class="block text-sm font-semibold text-gray-700">
+                Select completed workbook (.xlsx, maximum 10 MiB)
+                <input type="file" name="file" accept=".xlsx"
+                       required class="mt-2 block w-full rounded border border-gray-300 p-3">
+            </label>
+            <div class="flex flex-wrap gap-3">
+                <button type="submit" name="mode" value="validate"
+                        class="rounded border border-indigo-700 px-5 py-2 font-bold text-indigo-800 hover:bg-indigo-50">
+                    Validate only (dry run)
+                </button>
+                <button type="submit" name="mode" value="apply"
+                        class="rounded bg-indigo-700 px-5 py-2 font-bold text-white hover:bg-indigo-800">
+                    Validate and import atomically
+                </button>
+            </div>
+        </form>
+    </section>
+
+    {% if result %}
+    <section class="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow">
+        <h2 class="text-xl font-bold text-gray-900">
+            {{ 'Dry-run validation' if result.mode == 'validate' else 'Import validation' }}
+        </h2>
+        <p class="mt-2 text-sm text-gray-700">
+            {{ result.sheet_count }} subject sheets &middot;
+            {{ result.row_count }} roster entries &middot;
+            {{ result.mark_count }} component marks
+        </p>
+        {% if result.valid %}
+        <div class="mt-4 rounded border border-green-300 bg-green-50 p-3 text-green-900">
+            All workbook checks passed.
+            {% if result.mode == 'validate' %}
+            No marks were changed. Re-upload and choose “Validate and import atomically” to save.
+            {% endif %}
+        </div>
+        {% else %}
+        <div class="mt-4 rounded border border-red-300 bg-red-50 p-3 font-semibold text-red-900">
+            {{ result.errors|length }} validation issue(s) found. No marks were changed.
+        </div>
+        <ul class="mt-3 space-y-2">
+            {% for error in result.errors %}
+            <li class="rounded bg-red-50 p-3 text-sm text-red-900">
+                {% if error.sheet %}<strong>{{ error.sheet }}</strong>{% endif %}
+                {% if error.row %} row {{ error.row }}:{% endif %}
+                {{ error.message }}
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        {% if result.warnings %}
+        <ul class="mt-4 space-y-2">
+            {% for warning in result.warnings %}
+            <li class="rounded bg-amber-50 p-3 text-sm text-amber-900">
+                {{ warning.sheet }}: {{ warning.message }}
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </section>
+    {% endif %}
+</main>
+{% endblock %}
