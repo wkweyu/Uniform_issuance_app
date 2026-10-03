@@ -89,20 +89,28 @@ def _require_matching_checksum(cursor, migration_name, sql_script):
 
 
 def _get_database_connection():
-    # Enable SSL for SkySQL
-    ssl_config = None
-    ca_path = os.path.join(os.path.dirname(__file__), 'globalsignrootca.pem')
-    if os.path.exists(ca_path):
-        ssl_config = {'ca': ca_path, 'check_hostname': False}
-    else:
-        ssl_config = True
-
-    print("Connecting to cloud database...")
     DB_HOST = os.environ.get('DB_HOST', getattr(config, 'DB_HOST', 'localhost'))
     DB_PORT = int(os.environ.get('DB_PORT', getattr(config, 'DB_PORT', 3306)))
     DB_USER = os.environ.get('DB_USER', getattr(config, 'DB_USER', 'root'))
     DB_PASSWORD = os.environ.get('DB_PASSWORD') or os.environ.get('DB_PASS', getattr(config, 'DB_PASSWORD', ''))
     DB_NAME = os.environ.get('DB_NAME', getattr(config, 'DB_NAME', 'schoolmngt'))
+    configured_ca = os.environ.get('DB_SSL_CA') or getattr(
+        config, 'DB_SSL_CA', None
+    )
+    default_ca = os.path.join(os.path.dirname(__file__), 'globalsignrootca.pem')
+    ca_path = configured_ca
+    if not ca_path and 'skysql.com' in DB_HOST.lower() and os.path.exists(default_ca):
+        ca_path = default_ca
+
+    ssl_config = None
+    if ca_path:
+        if not os.path.isfile(ca_path):
+            raise MigrationError(
+                f'DB_SSL_CA does not point to a readable CA certificate: {ca_path}'
+            )
+        ssl_config = {'ca': ca_path, 'check_hostname': False}
+
+    print("Connecting to cloud database...")
 
     return pymysql.connect(
         host=DB_HOST,

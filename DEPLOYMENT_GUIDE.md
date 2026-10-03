@@ -30,6 +30,8 @@ Set `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, and `DB_NAME` for the target
 python3 migrate_db.py
 ```
 
+The migration runner follows the application's database TLS configuration. It does not force TLS for endpoints that do not support it. If the database provider requires TLS, set `DB_SSL_CA` to the provider's CA certificate path in the service/container running the migration; a configured but missing certificate path fails with an explicit error rather than silently disabling TLS. On Render, make sure these database variables use the same internal or external host, port, and credentials as the deployed application.
+
 The runner records `schema.sql`, each completed migration, and its SHA-256 checksum. It skips only matching files on later runs, fails closed if an applied file has changed, and never records a failed file. For diagnostics on an existing database, process every pending migration and still receive a non-zero exit on any failure:
 
 ```bash
