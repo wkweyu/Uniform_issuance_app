@@ -7,18 +7,27 @@ import migrate_db
 
 
 class MigrationCursor:
-    def __init__(self, failing_statements=None, applied_migrations=None, checksums=None):
+    def __init__(
+        self,
+        failing_statements=None,
+        applied_migrations=None,
+        checksums=None,
+        database_has_tables=False,
+    ):
         self.executed = []
         self.failing_statements = set(failing_statements or [])
         self.applied_migrations = set(applied_migrations or [])
         self.checksums = dict(checksums or {})
+        self.database_has_tables = database_has_tables
         self._last_result = None
 
     def execute(self, statement, params=None):
         self.executed.append((statement, params))
         if statement in self.failing_statements:
             raise pymysql.err.OperationalError(1064, 'synthetic migration syntax error')
-        if 'SELECT migrations.migration_name' in statement:
+        if 'FROM information_schema.tables' in statement:
+            self._last_result = (1,) if self.database_has_tables else None
+        elif 'SELECT migrations.migration_name' in statement:
             migration_name = params[0]
             self._last_result = (
                 {
@@ -38,8 +47,19 @@ class MigrationCursor:
 
 
 class MigrationConnection:
-    def __init__(self, failing_statements=None, applied_migrations=None, checksums=None):
-        self.cursor_obj = MigrationCursor(failing_statements, applied_migrations, checksums)
+    def __init__(
+        self,
+        failing_statements=None,
+        applied_migrations=None,
+        checksums=None,
+        database_has_tables=False,
+    ):
+        self.cursor_obj = MigrationCursor(
+            failing_statements,
+            applied_migrations,
+            checksums,
+            database_has_tables,
+        )
         self.closed = False
 
     def cursor(self):
@@ -61,8 +81,14 @@ def _configure_migration(
     applied_migrations=None,
     checksums=None,
     schema_exists=False,
+    database_has_tables=False,
 ):
-    connection = MigrationConnection(failing_statements, applied_migrations, checksums)
+    connection = MigrationConnection(
+        failing_statements,
+        applied_migrations,
+        checksums,
+        database_has_tables,
+    )
     monkeypatch.setattr(migrate_db.pymysql, 'connect', lambda **_kwargs: connection)
     monkeypatch.setattr(migrate_db.os.path, 'exists', lambda _path: schema_exists)
     monkeypatch.setattr(migrate_db.glob, 'glob', lambda _pattern: ['migrations/999_broken.sql'])
@@ -130,6 +156,47 @@ def test_migration_runner_records_and_skips_successful_schema(monkeypatch):
     migrate_db.migrate_db()
 
     assert len(connection.cursor_obj.executed) == executed_count + 4
+
+
+def test_migration_runner_skips_schema_baseline_for_existing_database(
+    monkeypatch, capsys
+):
+    connection = _configure_migration(
+        monkeypatch,
+        schema_exists=True,
+        database_has_tables=True,
+    )
+
+    migrate_db.migrate_db()
+
+    assert [
+        statement for statement, _ in connection.cursor_obj.executed
+        if statement == 'BROKEN SQL'
+    ] == ['BROKEN SQL']
+    assert connection.cursor_obj.applied_migrations == {
+        'schema.sql',
+        'migrations/999_broken.sql',
+    }
+    assert connection.cursor_obj.checksums['schema.sql'] == (
+        migrate_db._calculate_checksum('BROKEN SQL;')
+    )
+    assert 'Existing database detected. Skipping schema.sql baseline.' in (
+        capsys.readouterr().out
+    )
+
+
+def test_migration_runner_executes_schema_for_empty_database(monkeypatch):
+    connection = _configure_migration(monkeypatch, schema_exists=True)
+
+    migrate_db.migrate_db()
+
+    assert [
+        statement for statement, _ in connection.cursor_obj.executed
+        if statement == 'BROKEN SQL'
+    ] == ['BROKEN SQL', 'BROKEN SQL']
+    assert connection.cursor_obj.checksums['schema.sql'] == (
+        migrate_db._calculate_checksum('BROKEN SQL;')
+    )
 
 
 def test_migration_status_lists_applied_and_pending_files(monkeypatch):

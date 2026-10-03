@@ -67,6 +67,23 @@ def _calculate_checksum(sql_script):
     return hashlib.sha256(sql_script.encode('utf-8')).hexdigest()
 
 
+def _database_has_application_tables(cursor):
+    cursor.execute(
+        '''
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = DATABASE()
+          AND table_type = 'BASE TABLE'
+          AND table_name NOT IN (
+              'schema_migrations',
+              'schema_migration_checksums'
+          )
+        LIMIT 1
+        '''
+    )
+    return cursor.fetchone() is not None
+
+
 def _get_migration_files():
     migration_files = []
     if os.path.exists(SCHEMA_MIGRATION_NAME):
@@ -182,6 +199,15 @@ def migrate_db(continue_on_error=False):
                 )
             else:
                 schema_is_applied = False
+
+            if (
+                os.path.exists(SCHEMA_MIGRATION_NAME)
+                and not schema_is_applied
+                and _database_has_application_tables(cursor)
+            ):
+                print("Existing database detected. Skipping schema.sql baseline.")
+                _record_migration(cursor, SCHEMA_MIGRATION_NAME, schema_script)
+                schema_is_applied = True
 
             if os.path.exists(SCHEMA_MIGRATION_NAME) and not schema_is_applied:
                 print("Running schema.sql...")
