@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 py-8">
+    <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5 mb-8">
+        <div>
+            <p class="text-xs font-black tracking-[0.2em] uppercase text-indigo-600">Academic performance</p>
+            <h1 class="text-3xl font-black text-gray-900 mt-1">Grade Analytics</h1>
+            <p class="text-sm text-gray-500 mt-2">School-wide, class and stream reporting for one selected exam series.</p>
+        </div>
+        <form method="get" action="{{ url_for('exams.exam_analytics_dashboard') }}"
+              class="flex flex-col sm:flex-row gap-3 sm:items-end bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+            <div>
+                <label for="exam_id" class="block text-xs font-bold uppercase tracking-wide text-gray-500 mb-1">Academic year / exam</label>
+                <select id="exam_id" name="exam_id" required
+                        class="min-w-[18rem] max-w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900">
+                    <option value="">Choose an exam series</option>
+                    {% for exam_option in exams %}
+                    <option value="{{ exam_option.id }}"
+                            {{ 'selected' if selected_exam_id == exam_option.id }}>
+                        {{ exam_option.academic_year_name }} · Term {{ exam_option.term }} · {{ exam_option.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="px-5 py-2 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700">
+                View analytics
+            </button>
+        </form>
+    </div>
+
+    {% if overview %}
+    {% set exam = overview.exam %}
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6 p-4 bg-indigo-50 border border-indigo-100 rounded-xl">
+        <div>
+            <h2 class="text-xl font-black text-gray-900">{{ exam.name }}</h2>
+            <p class="text-sm text-indigo-800">School overview · {{ exam.academic_year_name }} · Term {{ exam.term }} · one exam series</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            <a href="{{ url_for('exams.marks_entry_select', exam_id=exam.id) }}"
+               class="px-3 py-2 rounded-lg bg-white border border-indigo-200 text-indigo-800 text-sm font-semibold">Marks entry</a>
+            <a href="{{ url_for('exams.exam_tabulation', exam_id=exam.id) }}"
+               class="px-3 py-2 rounded-lg bg-white border border-indigo-200 text-indigo-800 text-sm font-semibold">Tabulation sheets</a>
+            <a href="{{ url_for('exams.exam_series_report', exam_id=exam.id) }}"
+               class="px-3 py-2 rounded-lg bg-white border border-indigo-200 text-indigo-800 text-sm font-semibold">Detailed series report</a>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 mb-8">
+        <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+            <p class="text-xs uppercase font-bold text-gray-500">Participating classes</p>
+            <p class="text-3xl font-black text-gray-900 mt-2">{{ overview.class_count }}</p>
+        </div>
+        <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+            <p class="text-xs uppercase font-bold text-gray-500">Students in classes</p>
+            <p class="text-3xl font-black text-gray-900 mt-2">{{ overview.student_count }}</p>
+        </div>
+        <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+            <p class="text-xs uppercase font-bold text-gray-500">Students with marks</p>
+            <p class="text-3xl font-black text-gray-900 mt-2">{{ overview.scored_student_count }}</p>
+        </div>
+        <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+            <p class="text-xs uppercase font-bold text-gray-500">School mean score</p>
+            <p class="text-3xl font-black text-indigo-700 mt-2">{{ "%.2f"|format(overview.mean_score) }}%</p>
+        </div>
+        <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+            <p class="text-xs uppercase font-bold text-gray-500">Mark coverage</p>
+            <p class="text-3xl font-black text-gray-900 mt-2">{{ "%.1f"|format(overview.mark_coverage_percent) }}%</p>
+            <p class="text-xs text-gray-500 mt-1">{{ overview.entered_mark_count }} / {{ overview.expected_mark_count }} eligible entries</p>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-8">
+        <section class="xl:col-span-2 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div class="p-5 border-b border-gray-100">
+                <h2 class="text-lg font-black text-gray-900">Class performance</h2>
+                <p class="text-sm text-gray-500">Classes participating in {{ exam.name }}; scores use recorded numeric marks only.</p>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+                        <tr>
+                            <th class="text-left px-4 py-3">Class</th>
+                            <th class="text-center px-3 py-3">Students</th>
+                            <th class="text-center px-3 py-3">Scored</th>
+                            <th class="text-right px-4 py-3">Mean</th>
+                            <th class="text-right px-4 py-3">Coverage</th>
+                            <th class="text-right px-4 py-3">Reports</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        {% for cls in overview.classes %}
+                        <tr>
+                            <td class="px-4 py-3">
+                                <div class="font-bold text-gray-900">{{ cls.class_name }}</div>
+                                <div class="text-xs text-gray-500">
+                                    {{ cls.class_group }}{% if cls.stream_code %} · Stream {{ cls.stream_code }}{% endif %}
+                                </div>
+                            </td>
+                            <td class="px-3 py-3 text-center">{{ cls.student_count }}</td>
+                            <td class="px-3 py-3 text-center">{{ cls.scored_student_count }}</td>
+                            <td class="px-4 py-3 text-right font-bold">{{ "%.2f"|format(cls.mean_score) }}%</td>
+                            <td class="px-4 py-3 text-right">
+                                {% if cls.expected_mark_count %}
+                                    {{ "%.1f"|format(100 * cls.entered_mark_count / cls.expected_mark_count) }}%
+                                {% else %}-{% endif %}
+                            </td>
+                            <td class="px-4 py-3 text-right whitespace-nowrap">
+                                <a class="text-indigo-700 hover:underline"
+                                   href="{{ url_for('exams.class_exam_report', exam_id=exam.id, class_id=cls.class_id) }}">Class report</a>
+                                <span class="text-gray-300 mx-1">|</span>
+                                <a class="text-indigo-700 hover:underline"
+                                   href="{{ url_for('exams.exam_tabulation', exam_id=exam.id, class_id=cls.class_id) }}">Mark sheet</a>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="6" class="px-4 py-8 text-center text-gray-500">No classes are assigned to this exam series.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div class="p-5 border-b border-gray-100">
+                <h2 class="text-lg font-black text-gray-900">School grade distribution</h2>
+                <p class="text-sm text-gray-500">Students with at least one numeric mark.</p>
+            </div>
+            <div class="p-5">
+                {% if overview.grade_distribution %}
+                <div class="space-y-3">
+                    {% for grade, count in overview.grade_distribution|dictsort %}
+                    <div class="flex justify-between items-center">
+                        <span class="font-bold text-gray-700">Grade {{ grade }}</span>
+                        <span class="px-3 py-1 rounded-full bg-indigo-50 text-indigo-800 font-black">{{ count }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-sm text-gray-500 py-5">No numeric marks have been entered for this exam.</p>
+                {% endif %}
+            </div>
+        </section>
+    </div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-8">
+        <section class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div class="p-5 border-b border-gray-100">
+                <h2 class="text-lg font-black text-gray-900">Stream comparison</h2>
+                <p class="text-sm text-gray-500">Only configured streams within the same class group are compared.</p>
+            </div>
+            {% for group in overview.stream_comparisons %}
+            <div class="p-5 {% if not loop.first %}border-t border-gray-100{% endif %}">
+                <h3 class="font-bold text-gray-800 mb-3">{{ group.class_group }}</h3>
+                {% if group.streams|length > 1 %}
+                    <div class="space-y-3">
+                        {% for stream in group.streams %}
+                        <div>
+                            <div class="flex justify-between text-sm mb-1">
+                                <span class="font-semibold">Stream {{ stream.stream }} <span class="text-gray-400">({{ stream.student_count }} scored)</span></span>
+                                <span class="font-black">{{ "%.2f"|format(stream.mean_score) }}%</span>
+                            </div>
+                            <div class="h-2 rounded-full bg-gray-100 overflow-hidden">
+                                <div class="h-full bg-indigo-600 rounded-full" style="width: {{ [stream.mean_score, 100]|min }}%"></div>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-1">{{ stream.classes|join(', ') }}</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-sm text-gray-500">Only one configured stream participates in this class group, so there is no peer comparison.</p>
+                {% endif %}
+            </div>
+            {% else %}
+            <p class="p-5 text-sm text-gray-500">No participating classes have configured stream codes. Class reporting remains available above.</p>
+            {% endfor %}
+            <div class="px-5 pb-5">
+                <a href="{{ url_for('exams.stream_analysis', exam_id=exam.id) }}" class="text-sm font-bold text-indigo-700 hover:underline">Open detailed stream report</a>
+            </div>
+        </section>
+
+        <section class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div class="p-5 border-b border-gray-100">
+                <h2 class="text-lg font-black text-gray-900">Subject performance</h2>
+                <p class="text-sm text-gray-500">School mean across eligible numeric marks, per subject.</p>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+                        <tr><th class="text-left px-4 py-3">Subject</th><th class="text-center px-3 py-3">Scored</th><th class="text-right px-4 py-3">Mean</th></tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        {% for subject in overview.subject_stats %}
+                        <tr>
+                            <td class="px-4 py-3"><span class="font-bold">{{ subject.name }}</span><span class="text-xs text-gray-500 ml-2">{{ subject.code }}</span></td>
+                            <td class="px-3 py-3 text-center">{{ subject.count }}</td>
+                            <td class="px-4 py-3 text-right font-bold">{{ "%.2f"|format(subject.average) }}%</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="3" class="px-4 py-8 text-center text-gray-500">No subject marks are available yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <section class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div class="p-5 border-b border-gray-100">
+            <h2 class="text-lg font-black text-gray-900">Top performers across participating classes</h2>
+            <p class="text-sm text-gray-500">Ranked by average of recorded numeric subject marks; absent and missing marks are excluded.</p>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+                    <tr><th class="text-center px-4 py-3">Rank</th><th class="text-left px-4 py-3">Student</th><th class="text-left px-4 py-3">Class</th><th class="text-center px-3 py-3">Subjects marked</th><th class="text-right px-4 py-3">Average</th><th class="text-right px-4 py-3">Report</th></tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for student in overview.top_students %}
+                    <tr>
+                        <td class="px-4 py-3 text-center font-black">{{ student.rank }}</td>
+                        <td class="px-4 py-3"><span class="font-bold">{{ student.name }}</span><span class="text-xs text-gray-500 ml-2">{{ student.admno }}</span></td>
+                        <td class="px-4 py-3">{{ student.class_name }}</td>
+                        <td class="px-3 py-3 text-center">{{ student.numeric_subjects }}</td>
+                        <td class="px-4 py-3 text-right font-black">{{ "%.2f"|format(student.average) }}%</td>
+                        <td class="px-4 py-3 text-right">
+                            <a class="text-indigo-700 hover:underline" href="{{ url_for('exams.student_report_card', exam_id=exam.id, student_id=student.admno) }}">Report card</a>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6" class="px-4 py-8 text-center text-gray-500">No students have numeric marks in this exam series yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% else %}
+    <div class="bg-white border-2 border-dashed border-gray-200 rounded-2xl p-12 text-center">
+        <i class="fas fa-chart-bar text-4xl text-indigo-300"></i>
+        <h2 class="text-xl font-black text-gray-900 mt-4">Choose an exam series</h2>
+        <p class="text-gray-500 mt-2">Analytics are calculated for a single exam series and its participating classes. Results from other exams and terms are not mixed.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

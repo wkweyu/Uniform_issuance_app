@@ -226,7 +226,17 @@ class ClassManagementService:
         self.connection.commit()
 
     def get_active_classes(self) -> List[Dict]:
-        self.cursor.execute("SELECT classID, display_name, academic_year_id, class_group_code, stream_code FROM classes WHERE is_active = TRUE AND school_id = %s ORDER BY display_name", (self.school_id,))
+        self.cursor.execute(
+            """
+            SELECT classID, display_name, academic_year_id,
+                   class_group_code, class_group_code AS class_group,
+                   stream_code, grading_scale_id
+            FROM classes
+            WHERE is_active = TRUE AND school_id = %s
+            ORDER BY display_name
+            """,
+            (self.school_id,),
+        )
         return self.cursor.fetchall()
 
     def get_class_summary_report(self) -> List[Dict]:

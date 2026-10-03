@@ -527,6 +527,38 @@ class ExamServiceStub:
         self.calls.append(("save_marks_bulk", exam_id, marks))
         return len(marks)
 
+    def assign_scales_to_classes(self, assignments):
+        self.calls.append(("assign_scales_to_classes", assignments))
+
+    def get_exam_analytics_overview(self, exam_id):
+        self.calls.append(("get_exam_analytics_overview", exam_id))
+        return {
+            "exam": self.get_exam_series(exam_id),
+            "classes": [],
+            "class_count": 0,
+            "student_count": 0,
+            "scored_student_count": 0,
+            "mean_score": 0,
+            "grade_distribution": {},
+            "expected_mark_count": 0,
+            "entered_mark_count": 0,
+            "mark_coverage_percent": 0,
+            "subject_stats": [],
+            "stream_comparisons": [],
+            "top_students": [],
+        }
+
+    def get_all_exams(self):
+        self.calls.append(("get_all_exams",))
+        return [{
+            "id": 5, "name": "Midterm", "academic_year_name": 2026,
+            "term": 2, "class_count": 1,
+        }]
+
+    def get_all_grading_scales(self):
+        self.calls.append(("get_all_grading_scales",))
+        return []
+
     def create_exam_series(self, name, academic_year_id, term, created_by, class_ids):
         self.calls.append(("create_exam_series", name, academic_year_id, term, created_by, class_ids))
 
@@ -603,7 +635,12 @@ class ClassServiceStub:
 
     def get_active_classes(self):
         self.calls.append(("get_active_classes",))
-        return [{"classID": 14, "display_name": "Grade 7 A", "stream_code": "A", "academic_year_id": 2026}]
+        return [{
+            "classID": 14, "display_name": "Grade 7 A",
+            "stream_code": "A", "academic_year_id": 2026,
+            "class_group_code": "Grade 7-9", "class_group": "Grade 7-9",
+            "grading_scale_id": 3,
+        }]
 
     def get_all_academic_years(self):
         self.calls.append(("get_all_academic_years",))
@@ -649,7 +686,12 @@ class ClassServiceStub:
 
     def get_active_classes(self):
         self.calls.append(("get_active_classes",))
-        return [{"classID": 14, "display_name": "Grade 7 A", "stream_code": "A", "academic_year_id": 2026}]
+        return [{
+            "classID": 14, "display_name": "Grade 7 A",
+            "stream_code": "A", "academic_year_id": 2026,
+            "class_group_code": "Grade 7-9", "class_group": "Grade 7-9",
+            "grading_scale_id": 3,
+        }]
 
     def get_class_groups(self):
         self.calls.append(("get_class_groups",))
@@ -2165,6 +2207,9 @@ def test_exams_create_route_passes_participating_classes_to_template(client, db_
         "display_name": "Grade 7 A",
         "stream_code": "A",
         "academic_year_id": 2026,
+        "class_group_code": "Grade 7-9",
+        "class_group": "Grade 7-9",
+        "grading_scale_id": 3,
     }]
     assert len(template_context["years"]) == 1
 
@@ -2432,6 +2477,94 @@ def test_exams_marks_csv_import_uses_atomic_bulk_service(client, db_session, mon
     }]
 
 
+def test_exams_marks_csv_import_accepts_excel_semicolon_bom_headers(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+    csv_text = (
+        "Student ID;Student Name;Score;Is Absent;Subject Remarks;"
+        "Class Teacher Remarks;Head Teacher Remarks\r\n"
+        "1001;Ada Lovelace;71;FALSE;steady;Good effort;Keep it up\r\n"
+    )
+
+    response = client.post(
+        "/admin/exams/5/class/14/subject/12/marks.csv",
+        data={"file": (io.BytesIO(b"\xef\xbb\xbf" + csv_text.encode("utf-8")), "marks.csv")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 302
+    bulk_call = next(
+        call for call in ExamServiceStub.last_instance.calls
+        if call[0] == "save_marks_bulk"
+    )
+    assert bulk_call[2] == [{
+        "student_id": "1001",
+        "subject_id": 12,
+        "mark": "71",
+        "is_absent": False,
+        "remarks": "steady",
+        "ct_remarks": "Good effort",
+        "p_remarks": "Keep it up",
+    }]
+
+
+def test_exams_marks_csv_import_accepts_utf16_excel_export(client, db_session, monkeypatch):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+    csv_bytes = (
+        "student_id,mark,is_absent\r\n1001,40,FALSE\r\n"
+    ).encode("utf-16")
+
+    response = client.post(
+        "/admin/exams/5/class/14/subject/12/marks.csv",
+        data={"file": (io.BytesIO(csv_bytes), "marks.csv")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 302
+    bulk_call = next(
+        call for call in ExamServiceStub.last_instance.calls
+        if call[0] == "save_marks_bulk"
+    )
+    assert bulk_call[2][0]["mark"] == "40"
+    assert bulk_call[2][0]["is_absent"] is False
+
+
+def test_exams_marks_csv_import_reports_invalid_physical_row_and_does_not_save(
+    client, db_session, monkeypatch
+):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+
+    response = client.post(
+        "/admin/exams/5/class/14/subject/12/marks.csv",
+        data={
+            "file": (
+                io.BytesIO(
+                    b"student_id,mark,is_absent\n"
+                    b"1001,not-a-score,false\n"
+                ),
+                "marks.csv",
+            )
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 302
+    assert not any(
+        call[0] == "save_marks_bulk"
+        for call in ExamServiceStub.last_instance.calls
+    )
+    with client.session_transaction() as session:
+        assert "CSV row 2 has an invalid score." in str(session.get("_flashes"))
+
+
 def test_exams_marks_template_exports_current_class_subject_roster(client, db_session, monkeypatch):
     school = _create_school(db_session)
     _login_admin(client, school.id)
@@ -2516,6 +2649,69 @@ def test_exam_grading_route_parses_aligned_grade_form_rows(client, db_session, m
     assert call[1] == 2
     assert [row["grade"] for row in call[2]] == ["A", "B"]
     assert [row["points"] for row in call[2]] == ["4", "3"]
+
+
+def test_grading_assignment_get_renders_template_with_assigned_scale_context(
+    client, db_session, monkeypatch
+):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+    monkeypatch.setattr(exams_routes, "ClassManagementService", ClassServiceStub)
+
+    response = client.get("/admin/grading-scales/assign")
+
+    assert response.status_code == 200
+    assert b"Assign Grading Scales" in response.data
+    assert b"Grade 7 A" in response.data
+    assert b'name="scale_14"' in response.data
+
+
+def test_grading_assignment_post_parses_scale_class_fields_and_clear_value(
+    client, db_session, monkeypatch
+):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+
+    response = client.post(
+        "/admin/grading-scales/save-assignments",
+        data={"scale_14": "3", "scale_18": ""},
+    )
+
+    assert response.status_code == 302
+    assert ExamServiceStub.last_instance.calls == [
+        ("assign_scales_to_classes", {14: 3, 18: None})
+    ]
+
+
+def test_exam_analytics_dashboard_selects_exam_and_renders_school_overview(
+    client, db_session, monkeypatch
+):
+    school = _create_school(db_session)
+    _login_admin(client, school.id)
+    monkeypatch.setattr(exams_routes, "get_db_connection", lambda: DummyConnection())
+    monkeypatch.setattr(exams_routes, "ExamManagementService", ExamServiceStub)
+
+    response = client.get("/admin/exams/analytics?exam_id=5")
+
+    assert response.status_code == 200
+    assert b"Grade Analytics" in response.data
+    assert b"Midterm" in response.data
+    assert b"School grade distribution" in response.data
+
+
+def test_marks_entry_template_has_score_width_and_keyboard_navigation():
+    template_path = Path(__file__).parents[1] / "templates" / "marks_entry.html"
+    template = template_path.read_text(encoding="utf-8")
+
+    assert "min-w-[1360px] table-fixed" in template
+    assert "w-40" in template
+    assert "e.key !== 'ArrowDown'" in template
+    assert "e.key !== 'ArrowUp'" in template
+    assert "nextInput.focus()" in template
 
 
 def test_student_subject_update_route_uses_service_layer(client, db_session, monkeypatch):

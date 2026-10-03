@@ -708,17 +708,40 @@ class ExamManagementService:
                 raise
             raise ExamManagementError(f"Failed to save grades: {str(e)}")
 
-    @audit_log('assign_grading_scale')
-    def assign_scale_to_class(self, class_id: int, scale_id: Optional[int]) -> bool:
+    @audit_log('assign_grading_scales')
+    def assign_scales_to_classes(
+        self,
+        assignments: Dict[int, Optional[int]],
+    ) -> bool:
         try:
-            self._assert_classes_belong_to_school([class_id])
-            self._assert_grading_scale_belongs_to_school(scale_id)
-            self.cursor.execute("UPDATE classes SET grading_scale_id = %s WHERE classID = %s AND school_id = %s", (scale_id, class_id, self.school_id))
+            if not assignments:
+                raise ExamManagementError("Select at least one class to update.")
+
+            class_ids = list(assignments)
+            self.connection.begin()
+            self._assert_classes_belong_to_school(class_ids)
+            for scale_id in set(assignments.values()):
+                self._assert_grading_scale_belongs_to_school(scale_id)
+
+            for class_id, scale_id in assignments.items():
+                self.cursor.execute(
+                    """
+                    UPDATE classes
+                    SET grading_scale_id = %s
+                    WHERE classID = %s AND school_id = %s
+                    """,
+                    (scale_id, class_id, self.school_id),
+                )
             self.connection.commit()
             return True
         except Exception as e:
             self.connection.rollback()
+            if isinstance(e, ExamManagementError):
+                raise
             raise ExamManagementError(f"Failed to assign scale: {str(e)}")
+
+    def assign_scale_to_class(self, class_id: int, scale_id: Optional[int]) -> bool:
+        return self.assign_scales_to_classes({class_id: scale_id})
 
     # Implementation of other helper methods from previous version...
     def get_class_grading_scale_id(self, class_id: int) -> Optional[int]:
@@ -855,7 +878,19 @@ class ExamManagementService:
                 row['rank'] = rank
 
         subject_stats = []
+        eligible_mark_count = 0
+        entered_mark_count = 0
         for subject in subjects:
+            eligible_marks = [
+                marks_map.get(str(student['AdmNo']), {}).get(subject['id'])
+                for student in students
+            ]
+            eligible_marks = [mark for mark in eligible_marks if mark is not None]
+            eligible_mark_count += len(eligible_marks)
+            entered_mark_count += sum(
+                mark['mark'] is not None or bool(mark['is_absent'])
+                for mark in eligible_marks
+            )
             scores = [
                 mark['mark']
                 for row in tabulation
@@ -879,6 +914,8 @@ class ExamManagementService:
             'subjects': subjects,
             'subject_stats': subject_stats,
             'tabulation': tabulation,
+            'eligible_mark_count': eligible_mark_count,
+            'entered_mark_count': entered_mark_count,
         }
 
     def get_report_card_data(self, student_id: str, exam_id: int) -> Dict:
@@ -1165,6 +1202,155 @@ class ExamManagementService:
             'mean_score': mean_score,
             'total_students': len(ranked_students),
             'subject_stats': tab['subject_stats'],
+        }
+
+    def get_exam_analytics_overview(self, exam_id: int) -> Dict:
+        """Build school, class, and stream analytics for one exam series."""
+        exam = self.get_exam_series(exam_id)
+        if not exam:
+            raise ExamManagementError("Exam series not found for the active school.")
+
+        classes = self.get_exam_classes(exam_id)
+        class_summaries = []
+        scored_students = []
+        grade_distribution = {}
+        subject_totals = {}
+        stream_groups = {}
+        expected_mark_count = 0
+        entered_mark_count = 0
+        student_count = 0
+
+        for class_row in classes:
+            tab = self.get_class_tabulation(exam_id, class_row['classID'])
+            class_students = tab['tabulation']
+            class_scored = [
+                student for student in class_students
+                if student['numeric_subjects'] > 0
+            ]
+            class_mean = (
+                sum(student['average'] for student in class_scored) / len(class_scored)
+                if class_scored else 0
+            )
+            class_summary = {
+                'class_id': class_row['classID'],
+                'class_name': class_row['display_name'],
+                'class_group': class_row.get('class_group_code') or 'Other Classes',
+                'stream_code': class_row.get('stream_code'),
+                'student_count': len(class_students),
+                'scored_student_count': len(class_scored),
+                'mean_score': class_mean,
+                'expected_mark_count': tab.get('eligible_mark_count', 0),
+                'entered_mark_count': tab.get('entered_mark_count', 0),
+                'subject_stats': tab['subject_stats'],
+            }
+            class_summaries.append(class_summary)
+            student_count += len(class_students)
+            expected_mark_count += class_summary['expected_mark_count']
+            entered_mark_count += class_summary['entered_mark_count']
+
+            for student in class_scored:
+                scored_students.append({
+                    **student,
+                    'class_id': class_row['classID'],
+                    'class_name': class_row['display_name'],
+                })
+                grade = student['grade']
+                grade_distribution[grade] = grade_distribution.get(grade, 0) + 1
+
+            for subject in tab['subject_stats']:
+                key = (subject['code'], subject['name'])
+                total, count = subject_totals.get(key, (0.0, 0))
+                subject_totals[key] = (
+                    total + float(subject['average']) * subject['count'],
+                    count + subject['count'],
+                )
+
+            stream_code = class_row.get('stream_code')
+            if stream_code:
+                group_code = class_row.get('class_group_code') or 'Other Classes'
+                group_streams = stream_groups.setdefault(group_code, {})
+                stream_summary = group_streams.setdefault(
+                    stream_code,
+                    {
+                        'stream': stream_code,
+                        'class_group': group_code,
+                        'classes': [],
+                        'student_averages': [],
+                        'student_count': 0,
+                    },
+                )
+                stream_summary['classes'].append(class_row['display_name'])
+                stream_summary['student_averages'].extend(
+                    student['average'] for student in class_scored
+                )
+                stream_summary['student_count'] += len(class_scored)
+
+        class_summaries.sort(
+            key=lambda item: (-item['mean_score'], item['class_name'])
+        )
+        scored_students.sort(
+            key=lambda item: (
+                -item['average'], -item['total'], str(item['admno'])
+            )
+        )
+        rank = 0
+        previous_average = None
+        for position, student in enumerate(scored_students, start=1):
+            if student['average'] != previous_average:
+                rank = position
+                previous_average = student['average']
+            student['rank'] = rank
+        subject_stats = [
+            {
+                'code': code,
+                'name': name,
+                'count': count,
+                'average': total / count if count else 0,
+            }
+            for (code, name), (total, count) in subject_totals.items()
+        ]
+        subject_stats.sort(key=lambda item: item['name'])
+
+        stream_comparisons = []
+        for group_code, streams in sorted(stream_groups.items()):
+            summaries = []
+            for stream in streams.values():
+                averages = stream.pop('student_averages')
+                stream['classes'].sort()
+                stream['mean_score'] = (
+                    sum(averages) / len(averages) if averages else 0
+                )
+                summaries.append(stream)
+            summaries.sort(
+                key=lambda item: (-item['mean_score'], item['stream'])
+            )
+            stream_comparisons.append({
+                'class_group': group_code,
+                'streams': summaries,
+            })
+
+        mean_score = (
+            sum(student['average'] for student in scored_students)
+            / len(scored_students)
+            if scored_students else 0
+        )
+        return {
+            'exam': exam,
+            'classes': class_summaries,
+            'class_count': len(classes),
+            'student_count': student_count,
+            'scored_student_count': len(scored_students),
+            'mean_score': mean_score,
+            'grade_distribution': grade_distribution,
+            'expected_mark_count': expected_mark_count,
+            'entered_mark_count': entered_mark_count,
+            'mark_coverage_percent': (
+                100 * entered_mark_count / expected_mark_count
+                if expected_mark_count else 0
+            ),
+            'subject_stats': subject_stats,
+            'stream_comparisons': stream_comparisons,
+            'top_students': scored_students[:10],
         }
 
     def get_stream_performance_comparison(self, exam_id: int) -> List[Dict]:

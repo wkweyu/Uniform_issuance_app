@@ -4,6 +4,7 @@ import pytest
 
 from blueprints.exams.services import ExamManagementError
 from blueprints.exams.services import ExamManagementService
+from blueprints.classes.services import ClassManagementService
 from blueprints.fees.services import FeesService
 
 
@@ -71,6 +72,29 @@ def test_exam_service_scopes_grading_scale_reads_to_school():
     assert 'where school_id = %s' in connection.cursor_obj.executed[0][0].lower()
     assert connection.cursor_obj.executed[1][1] == (10, 7)
     assert 'where scale_id = %s and school_id = %s' in connection.cursor_obj.executed[1][0].lower()
+
+
+def test_class_service_returns_grading_assignment_template_fields():
+    connection = RecordingConnection(
+        responses=[('all', [{
+            'classID': 4,
+            'display_name': 'Grade 1 Stream A',
+            'academic_year_id': 2026,
+            'class_group_code': 'Grade 1-3',
+            'class_group': 'Grade 1-3',
+            'stream_code': 'A',
+            'grading_scale_id': 2,
+        }])]
+    )
+    service = ClassManagementService(connection, school_id=9)
+
+    classes = service.get_active_classes()
+
+    assert classes[0]['grading_scale_id'] == 2
+    assert classes[0]['class_group'] == 'Grade 1-3'
+    query, params = connection.cursor_obj.executed[0]
+    assert 'grading_scale_id' in query
+    assert params == (9,)
 
 
 def test_exam_service_scopes_exam_series_and_class_queries_to_school():
@@ -370,18 +394,22 @@ def test_class_tabulation_ranks_zero_mark_ahead_of_unmarked_student(monkeypatch)
     monkeypatch.setattr(
         service,
         'get_marks_for_class_subject',
-        lambda *_args: [{
-            'AdmNo': '1002', 'mark': 0, 'is_absent': False, 'grade': None,
-        }],
+        lambda *_args: [
+            {'AdmNo': '1002', 'mark': 0, 'is_absent': False, 'grade': None},
+            {'AdmNo': '1001', 'mark': None, 'is_absent': False, 'grade': None},
+        ],
     )
     monkeypatch.setattr(service, 'get_class_grading_scale_id', lambda _class_id: None)
     monkeypatch.setattr(service, 'get_grade_for_mark', lambda *_args: None)
 
-    tabulation = service.get_class_tabulation(4, 5)['tabulation']
+    class_data = service.get_class_tabulation(4, 5)
+    tabulation = class_data['tabulation']
 
     assert [(row['admno'], row['rank']) for row in tabulation] == [
         ('1002', 1), ('1001', '-'),
     ]
+    assert class_data['eligible_mark_count'] == 2
+    assert class_data['entered_mark_count'] == 1
 
 
 def test_most_improved_handles_previous_exam_without_requested_class(monkeypatch):
@@ -470,6 +498,135 @@ def test_grading_save_rejects_overlapping_ranges_before_deleting_existing_rows()
         'delete from grading_details' in query.lower()
         for query, _ in connection.cursor_obj.executed
     )
+
+
+def test_grading_scale_assignments_update_atomically_for_school():
+    connection = RecordingConnection(
+        responses=[
+            ('all', [{'classID': 3}, {'classID': 4}]),
+            ('one', {'id': 10}),
+        ]
+    )
+    service = ExamManagementService(connection, school_id=13)
+
+    assert service.assign_scales_to_classes({3: 10, 4: None}) is True
+
+    assert connection.begin_calls == 1
+    assert connection.commit_calls == 1
+    assert connection.rollback_calls == 0
+    updates = [
+        params for query, params in connection.cursor_obj.executed
+        if 'update classes' in query.lower()
+    ]
+    assert updates == [(10, 3, 13), (None, 4, 13)]
+
+
+def test_grading_scale_assignment_rolls_back_when_scale_is_foreign():
+    connection = RecordingConnection(
+        responses=[
+            ('all', [{'classID': 3}]),
+            ('one', None),
+        ]
+    )
+    service = ExamManagementService(connection, school_id=13)
+
+    with pytest.raises(ExamManagementError, match='Grading scale not found'):
+        service.assign_scales_to_classes({3: 999})
+
+    assert connection.begin_calls == 1
+    assert connection.commit_calls == 0
+    assert connection.rollback_calls == 1
+    assert not any(
+        'update classes' in query.lower()
+        for query, _ in connection.cursor_obj.executed
+    )
+
+
+def test_school_exam_analytics_aggregate_classes_streams_and_subjects(monkeypatch):
+    connection = RecordingConnection()
+    service = ExamManagementService(connection, school_id=13)
+    exam = {
+        'id': 4,
+        'name': 'End Term',
+        'academic_year_name': 2026,
+        'term': 3,
+    }
+    classes = [
+        {
+            'classID': 5, 'display_name': 'Grade 1 A',
+            'class_group_code': 'Grade 1-3', 'stream_code': 'A',
+        },
+        {
+            'classID': 6, 'display_name': 'Grade 1 B',
+            'class_group_code': 'Grade 1-3', 'stream_code': 'B',
+        },
+    ]
+    tabs = {
+        5: {
+            'tabulation': [
+                {
+                    'admno': '1001', 'name': 'Ada', 'average': 80, 'total': 160,
+                    'numeric_subjects': 2, 'grade': 'A',
+                },
+                {
+                    'admno': '1002', 'name': 'Ben', 'average': 0, 'total': 0,
+                    'numeric_subjects': 0, 'grade': '-',
+                },
+            ],
+            'subject_stats': [{
+                'code': 'MAT', 'name': 'Mathematics', 'count': 2, 'average': 70,
+            }],
+            'eligible_mark_count': 4,
+            'entered_mark_count': 3,
+        },
+        6: {
+            'tabulation': [{
+                'admno': '1003', 'name': 'Cal', 'average': 90, 'total': 90,
+                'numeric_subjects': 1, 'grade': 'A',
+            }],
+            'subject_stats': [{
+                'code': 'MAT', 'name': 'Mathematics', 'count': 1, 'average': 90,
+            }],
+            'eligible_mark_count': 1,
+            'entered_mark_count': 1,
+        },
+    }
+    monkeypatch.setattr(service, 'get_exam_series', lambda _exam_id: exam)
+    monkeypatch.setattr(service, 'get_exam_classes', lambda _exam_id: classes)
+    monkeypatch.setattr(
+        service,
+        'get_class_tabulation',
+        lambda _exam_id, class_id: tabs[class_id],
+    )
+
+    overview = service.get_exam_analytics_overview(4)
+
+    assert overview['class_count'] == 2
+    assert overview['student_count'] == 3
+    assert overview['scored_student_count'] == 2
+    assert overview['mean_score'] == 85
+    assert overview['grade_distribution'] == {'A': 2}
+    assert overview['expected_mark_count'] == 5
+    assert overview['entered_mark_count'] == 4
+    assert overview['mark_coverage_percent'] == 80
+    assert overview['subject_stats'] == [{
+        'code': 'MAT',
+        'name': 'Mathematics',
+        'count': 3,
+        'average': pytest.approx(76.6666666667),
+    }]
+    assert [row['stream'] for row in overview['stream_comparisons'][0]['streams']] == ['B', 'A']
+    assert [row['admno'] for row in overview['top_students']] == ['1003', '1001']
+
+
+def test_school_exam_analytics_rejects_exam_not_found_in_active_tenant():
+    connection = RecordingConnection()
+    service = ExamManagementService(connection, school_id=13)
+
+    with pytest.raises(ExamManagementError, match='Exam series not found for the active school'):
+        service.get_exam_analytics_overview(404)
+
+    assert connection.cursor_obj.executed[0][1] == (404, 13)
 
 
 def test_fees_service_scopes_voteheads_query_and_group_join_to_school():

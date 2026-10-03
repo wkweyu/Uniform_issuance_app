@@ -29,6 +29,88 @@ def _get_editable_exam_classes(class_service, exam):
     return sorted(classes, key=lambda cls: cls['display_name'])
 
 
+def _normalize_marks_csv_header(header):
+    normalized = (header or '').replace('\ufeff', '').strip().casefold()
+    normalized = '_'.join(normalized.replace('-', ' ').split())
+    aliases = {
+        'adm_no': 'student_id',
+        'admno': 'student_id',
+        'admission_no': 'student_id',
+        'admission_number': 'student_id',
+        'score': 'mark',
+        'marks': 'mark',
+        'absent': 'is_absent',
+        'isabsent': 'is_absent',
+        'subject_remarks': 'remarks',
+        'class_teacher_remarks': 'ct_remarks',
+        'c/t_remarks': 'ct_remarks',
+        'principal_remarks': 'p_remarks',
+        'head_teacher_remarks': 'p_remarks',
+        'h/t_remarks': 'p_remarks',
+    }
+    return aliases.get(normalized, normalized)
+
+
+def _parse_marks_csv(file_storage):
+    raw_data = file_storage.stream.read()
+    if not raw_data:
+        raise ExamManagementError("The uploaded CSV file is empty.")
+    if raw_data.startswith((b'\xff\xfe', b'\xfe\xff')):
+        text = raw_data.decode('utf-16')
+    else:
+        try:
+            text = raw_data.decode('utf-8-sig')
+        except UnicodeDecodeError as exc:
+            try:
+                text = raw_data.decode('cp1252')
+            except UnicodeDecodeError:
+                raise ExamManagementError(
+                    "The CSV encoding is not supported. Save it as UTF-8 CSV and try again."
+                ) from exc
+
+    sample = text[:8192]
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=',;\t')
+    except csv.Error:
+        first_line = next((line for line in text.splitlines() if line.strip()), '')
+        delimiter = max(
+            (',', ';', '\t'),
+            key=lambda candidate: first_line.count(candidate),
+        )
+        reader = csv.reader(io.StringIO(text, newline=''), delimiter=delimiter)
+    else:
+        reader = csv.reader(io.StringIO(text, newline=''), dialect)
+    try:
+        original_headers = next(reader)
+    except StopIteration as exc:
+        raise ExamManagementError("The uploaded CSV file has no header row.") from exc
+    headers = [_normalize_marks_csv_header(header) for header in original_headers]
+    if len(headers) != len(set(headers)):
+        raise ExamManagementError(
+            "The CSV contains duplicate column headers after normalization."
+        )
+
+    rows = []
+    for values in reader:
+        row_number = reader.line_num
+        if not any(value.strip() for value in values):
+            continue
+        if len(values) > len(headers) and any(
+            value.strip() for value in values[len(headers):]
+        ):
+            raise ExamManagementError(
+                f"CSV row {row_number} has more values than the header row."
+            )
+        padded_values = values[:len(headers)] + [''] * max(
+            0, len(headers) - len(values)
+        )
+        rows.append((
+            row_number,
+            dict(zip(headers, (value.strip() for value in padded_values))),
+        ))
+    return headers, rows
+
+
 @exams_bp.route('/api/exams/<int:exam_id>/class/<int:class_id>/subjects-status')
 @login_required
 def get_exam_subjects_status(exam_id, class_id):
@@ -121,12 +203,18 @@ def save_grading_details(scale_id):
 @admin_required
 def assign_class_grading():
     connection = get_db_connection()
-    service = ExamManagementService(connection)
-    class_service = ClassManagementService(connection, school_id=service.school_id)
-    classes = class_service.get_active_classes()
-    scales = service.get_all_grading_scales()
-    connection.close()
-    return render_template('assign_grading_scales.html', classes=classes, scales=scales)
+    try:
+        service = ExamManagementService(connection)
+        class_service = ClassManagementService(connection, school_id=service.school_id)
+        classes = class_service.get_active_classes()
+        scales = service.get_all_grading_scales()
+        return render_template(
+            'assign_class_grading.html',
+            classes=classes,
+            scales=scales,
+        )
+    finally:
+        connection.close()
 
 @exams_bp.route('/admin/grading-scales/save-assignments', methods=['POST'])
 @login_required
@@ -134,11 +222,18 @@ def assign_class_grading():
 def save_class_grading_assignments():
     connection = get_db_connection(); service = ExamManagementService(connection)
     try:
-        for key, val in request.form.items():
-            if key.startswith('class_'):
-                cid = _required_int(key.split('_')[1], 'class_id')
-                sid = _required_int(val, 'scale_id') if val else None
-                service.assign_scale_to_class(cid, sid)
+        assignments = {}
+        for key, value in request.form.items():
+            if not key.startswith('scale_'):
+                continue
+            class_id = _required_int(key[len('scale_'):], 'class_id')
+            scale_id = _required_int(value, 'scale_id') if value else None
+            if class_id in assignments:
+                raise ExamManagementError(
+                    f"Class {class_id} was submitted more than once."
+                )
+            assignments[class_id] = scale_id
+        service.assign_scales_to_classes(assignments)
         flash("Grading scales assigned to classes.", "success")
     except (ValueError, ExamManagementError) as e: flash(str(e), "error")
     except Exception as e: flash(str(e), "error")
@@ -421,27 +516,56 @@ def import_marks_csv(exam_id, class_id, subject_id):
         service.get_exam_series(exam_id)
         service.get_exam_class_info(exam_id, class_id)
         service.get_exam_subject(exam_id, class_id, subject_id)
-        reader = csv.DictReader(
-            io.TextIOWrapper(uploaded_file.stream, encoding='utf-8-sig', newline='')
-        )
+        headers, csv_rows = _parse_marks_csv(uploaded_file)
         required_columns = {'student_id', 'mark', 'is_absent'}
-        if not reader.fieldnames or not required_columns.issubset(reader.fieldnames):
+        if not required_columns.issubset(headers):
             raise ExamManagementError(
                 "CSV must include student_id, mark, and is_absent columns. "
+                "Accepted aliases include admission number, score, and absent. "
                 "Use the downloaded template."
             )
 
         marks = []
-        for line_number, row in enumerate(reader, start=2):
+        seen_student_ids = set()
+        for line_number, row in csv_rows:
+            student_id = row.get('student_id', '').strip()
+            if not student_id:
+                raise ExamManagementError(
+                    f"CSV row {line_number} is missing a student ID."
+                )
+            if student_id in seen_student_ids:
+                raise ExamManagementError(
+                    f"CSV row {line_number} duplicates student ID {student_id}."
+                )
+            seen_student_ids.add(student_id)
+
             absent_value = (row.get('is_absent') or '').strip().casefold()
+            if not absent_value:
+                absent_value = 'false'
             if absent_value not in {'true', 'false', '1', '0', 'yes', 'no'}:
                 raise ExamManagementError(
                     f"Invalid is_absent value on CSV row {line_number}."
                 )
+            mark_value = row.get('mark', '').strip()
+            if absent_value in {'true', '1', 'yes'} and mark_value:
+                raise ExamManagementError(
+                    f"CSV row {line_number} has both a score and is_absent=true."
+                )
+            if mark_value:
+                try:
+                    numeric_mark = float(mark_value)
+                except ValueError as exc:
+                    raise ExamManagementError(
+                        f"CSV row {line_number} has an invalid score."
+                    ) from exc
+                if not 0 <= numeric_mark <= 100:
+                    raise ExamManagementError(
+                        f"CSV row {line_number} score must be between 0 and 100."
+                    )
             marks.append({
-                'student_id': row.get('student_id', '').strip(),
+                'student_id': student_id,
                 'subject_id': subject_id,
-                'mark': row.get('mark', '').strip(),
+                'mark': mark_value,
                 'is_absent': absent_value in {'true', '1', 'yes'},
                 'remarks': row.get('remarks', ''),
                 'ct_remarks': row.get('ct_remarks', ''),
@@ -514,6 +638,31 @@ def exam_series_report(exam_id):
             class_rankings.append({'class_name': cls['display_name'], 'students': service.get_exam_rankings(exam_id, class_id=cls['classID'], limit=3)})
         return render_template('exam_series_report.html', exam=exam, class_rankings=class_rankings, overall_top_3=service.get_exam_rankings(exam_id, limit=3), subject_winners=service.get_subject_winners(exam_id), most_improved=service.get_most_improved(exam_id))
     finally: connection.close()
+
+
+@exams_bp.route('/admin/exams/analytics', methods=['GET'])
+@login_required
+@admin_required
+def exam_analytics_dashboard():
+    connection = get_db_connection()
+    try:
+        service = ExamManagementService(connection)
+        exams = service.get_all_exams()
+        selected_exam_id = request.args.get('exam_id', type=int)
+        overview = None
+        if selected_exam_id is not None:
+            if not service.get_exam_series(selected_exam_id):
+                abort(404)
+            overview = service.get_exam_analytics_overview(selected_exam_id)
+        return render_template(
+            'exam_analytics_dashboard.html',
+            exams=exams,
+            selected_exam_id=selected_exam_id,
+            overview=overview,
+        )
+    finally:
+        connection.close()
+
 
 @exams_bp.route('/admin/exams/<int:exam_id>/class/<int:class_id>/reports', methods=['GET'])
 @login_required
