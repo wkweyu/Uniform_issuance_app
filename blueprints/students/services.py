@@ -384,11 +384,14 @@ class StudentService:
                    s.stream
             FROM studentinfo s
             LEFT JOIN (
-                SELECT admno, pName, phone1, hometown, school_id
-                FROM parentinfo
-                WHERE id IN (
-                    SELECT MAX(id) FROM parentinfo WHERE school_id = %s GROUP BY admno
-                )
+                SELECT p1.admno, p1.pName, p1.phone1, p1.hometown, p1.school_id
+                FROM parentinfo p1
+                INNER JOIN (
+                    SELECT admno, school_id, MAX(parentid) as max_pid
+                    FROM parentinfo
+                    WHERE school_id = %s
+                    GROUP BY admno, school_id
+                ) p2 ON p1.admno = p2.admno AND p1.school_id = p2.school_id AND p1.parentid = p2.max_pid
             ) p ON s.AdmNo = p.admno AND s.school_id = p.school_id
             LEFT JOIN class_allocation modern_ca ON s.AdmNo = modern_ca.student_id AND modern_ca.is_current = TRUE AND s.school_id = modern_ca.school_id
             LEFT JOIN classes c_current ON modern_ca.class_id = c_current.classID AND modern_ca.school_id = c_current.school_id
@@ -396,7 +399,7 @@ class StudentService:
                 SELECT AdmNo, MAX(classID) as classID, school_id
                 FROM classallocation
                 WHERE school_id = %s
-                GROUP BY AdmNo
+                GROUP BY AdmNo, school_id
             ) legacy_ca ON s.AdmNo = legacy_ca.AdmNo AND s.school_id = legacy_ca.school_id
             LEFT JOIN classes c_legacy ON legacy_ca.classID = c_legacy.classID AND legacy_ca.school_id = c_legacy.school_id
             WHERE s.school_id = %s
@@ -439,11 +442,14 @@ class StudentService:
                    COALESCE(modern_ca.academic_year_id, legacy_ca.thisYear) as thisYear
             FROM studentinfo s
             LEFT JOIN (
-                SELECT admno, pName, phone1, school_id
-                FROM parentinfo
-                WHERE id IN (
-                    SELECT MAX(id) FROM parentinfo WHERE school_id = %s GROUP BY admno
-                )
+                SELECT p1.admno, p1.pName, p1.phone1, p1.school_id
+                FROM parentinfo p1
+                INNER JOIN (
+                    SELECT admno, school_id, MAX(parentid) as max_pid
+                    FROM parentinfo
+                    WHERE school_id = %s
+                    GROUP BY admno, school_id
+                ) p2 ON p1.admno = p2.admno AND p1.school_id = p2.school_id AND p1.parentid = p2.max_pid
             ) p ON s.AdmNo = p.admno AND s.school_id = p.school_id
             LEFT JOIN class_allocation modern_ca ON s.AdmNo = modern_ca.student_id AND modern_ca.is_current = TRUE AND s.school_id = modern_ca.school_id
             LEFT JOIN classes c_current ON modern_ca.class_id = c_current.classID AND modern_ca.school_id = c_current.school_id
@@ -451,7 +457,7 @@ class StudentService:
                 SELECT AdmNo, MAX(classID) as classID, MAX(thisYear) as thisYear, school_id
                 FROM classallocation
                 WHERE school_id = %s
-                GROUP BY AdmNo
+                GROUP BY AdmNo, school_id
             ) legacy_ca ON s.AdmNo = legacy_ca.AdmNo AND s.school_id = legacy_ca.school_id
             LEFT JOIN classes c_legacy ON legacy_ca.classID = c_legacy.classID AND legacy_ca.school_id = c_legacy.school_id
             WHERE s.school_id = %s
