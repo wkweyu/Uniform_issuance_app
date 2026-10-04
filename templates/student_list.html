@@ -132,11 +132,11 @@
             <div class="md:col-span-3">
                 <select id="classFilter" onchange="filterTable()" class="w-full py-2.5 px-3 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500">
                     <option value="">All Classes / Streams</option>
-                    {% for s in students %}
-                        {% if s.class_name %}
-                            <option value="{{ s.class_name }}">{{ s.class_name }}</option>
-                        {% endif %}
-                    {% endfor %}
+                    {% if classes %}
+                        {% for c in classes %}
+                            <option value="{{ c.display_name or c.class_name }}">{{ c.display_name or c.class_name }}</option>
+                        {% endfor %}
+                    {% endif %}
                 </select>
             </div>
 
@@ -159,7 +159,7 @@
             <div>
                 <h1 class="text-xl font-bold uppercase text-blue-900 tracking-wide">SCHOOL MANAGEMENT SYSTEM</h1>
                 <h2 class="text-base font-semibold text-gray-800 mt-1">OFFICIAL STUDENT DIRECTORY REPORT</h2>
-                <p class="text-xs text-gray-600">Generated on: {{ now.strftime('%Y-%m-%d %H:%M') if now is defined and now.strftime is defined else datetime.now().strftime('%Y-%m-%d %H:%M') }}</p>
+                <p class="text-xs text-gray-600">Generated on: {{ now.strftime('%Y-%m-%d %H:%M') if now is defined and now and now.strftime is defined else '' }}</p>
             </div>
             <div class="text-right text-xs text-gray-600">
                 <p>CONFIDENTIAL STUDENT RECORDS</p>
