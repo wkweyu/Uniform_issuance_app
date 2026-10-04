@@ -11,21 +11,6 @@ import io
 
 students_bp = Blueprint('students', __name__)
 
-@students_bp.route('/students/')
-@login_required
-def students_list_slash():
-    return redirect(url_for('students.students_list'))
-
-@students_bp.route('/students/admission-book/')
-@login_required
-def admission_book_slash():
-    return redirect(url_for('students.admission_book'))
-
-@students_bp.route('/students/parents/')
-@login_required
-def parents_register_slash():
-    return redirect(url_for('students.parents_register'))
-
 def get_db_connection():
     from core.db import get_db_connection
     return get_db_connection()
@@ -50,7 +35,6 @@ def admit_student():
         class_id = request.form.get('class_id')
         class_data = service.get_class_details(class_id)
 
-        cat = request.form.get('category', 'Day')
         student_data = {
             'admno': request.form.get('admno').strip(),
             'fname': request.form.get('fname').strip(),
@@ -60,10 +44,10 @@ def admit_student():
             'dob': request.form.get('dob'),
             'birth_cert': request.form.get('birth_cert', '').strip(),
             'religion': request.form.get('religion', 'Christianity'),
-            'category': cat,
-            'boarding': 'YES' if 'Boarding' in cat else 'NO',
+            'category': request.form.get('category', 'Day'),
+            'boarding': 'YES' if request.form.get('category') == 'Boarding' else 'NO',
             'student_group_id': request.form.get('student_group_id'),
-            'route_id': request.form.get('route_id') if request.form.get('route_id') and 'Transport' in cat else None,
+            'route_id': request.form.get('route_id') if request.form.get('category') == 'Transport' else None,
             'alt_contact': request.form.get('alt_contact', '').strip(),
             'stream': class_data['stream_code'] if class_data else '',
         }
@@ -85,7 +69,7 @@ def admit_student():
                 service.admit_student(student_data, parent_data, class_id, academic_year_id)
 
                 # Handling Fees invoicing if transport
-                if student_data['route_id']:
+                if student_data['category'] == 'Transport' and student_data['route_id']:
                     route_data = service.get_transport_route_by_id(student_data['route_id'])
                     if route_data:
                         votehead_name = f"Transport-{route_data['name']}"
@@ -104,7 +88,7 @@ def admit_student():
                             )
 
                 flash(f"Student admitted successfully. ID: {student_data['admno']}", "success")
-                return redirect(url_for('students.print_admission_form', admno=student_data['admno']))
+                return redirect(url_for('print_admission_form', admno=student_data['admno']))
         except Exception as e:
             flash(f"Error during admission: {str(e)}", "error")
 
@@ -222,39 +206,6 @@ def edit_student(admno):
     connection.close()
     return render_template('edit_student.html', student=student, classes=classes, current_class_id=current_class_id)
 
-@students_bp.route('/students/parents')
-@login_required
-def parents_register():
-    connection = get_db_connection()
-    service = StudentService(connection)
-    q = request.args.get('q', '').strip()
-    parents = service.get_parents_register(query=q if q else None)
-    connection.close()
-    return render_template('parents_register.html', parents=parents, q=q)
-
-@students_bp.route('/students/admission-book')
-@login_required
-def admission_book():
-    connection = get_db_connection()
-    service = StudentService(connection)
-    q = request.args.get('q', '').strip()
-    class_id = request.args.get('class_id', '').strip()
-    date_from = request.args.get('date_from', '').strip()
-    date_to = request.args.get('date_to', '').strip()
-    year_filter = request.args.get('year', '').strip()
-
-    students = service.get_admission_book(
-        query=q if q else None,
-        class_filter=class_id if class_id else None,
-        date_from=date_from if date_from else None,
-        date_to=date_to if date_to else None,
-        year_filter=year_filter if year_filter else None
-    )
-    classes = service.get_classes()
-    connection.close()
-    return render_template('admission_book.html', students=students, classes=classes,
-                           q=q, current_class_id=class_id, date_from=date_from, date_to=date_to, current_year_filter=year_filter)
-
 @students_bp.route('/students')
 @login_required
 def students_list():
@@ -262,78 +213,30 @@ def students_list():
     service = StudentService(connection)
     term_cur, year_cur = get_current_term_and_year()
     q = request.args.get('q', '').strip()
-    class_id = request.args.get('class_id', '').strip()
-    status = request.args.get('status', '').strip()
-    gender = request.args.get('gender', '').strip()
-
-    students = service.get_students_list(
-        query=q if q else None,
-        class_filter=class_id if class_id else None,
-        status_filter=status if status else None,
-        year_cur=year_cur
-    )
-    classes = service.get_classes()
+    students = service.get_students_list(query=q if q else None, year_cur=year_cur)
     connection.close()
-    return render_template('student_list.html', students=students, classes=classes, q=q, current_class_id=class_id, current_status=status, current_gender=gender)
+    return render_template('student_list.html', students=students, q=q)
 
-@students_bp.route('/students/bulk_action', methods=['POST'])
-@admin_required
-def bulk_students_action():
-    action = request.form.get('action')
-    admnos = request.form.getlist('student_admnos')
-
-    if not admnos:
-        flash("No students selected.", "warning")
-        return redirect(url_for('students.students_list'))
-
+@students_bp.route('/students/admission-book')
+@login_required
+def admission_book():
     connection = get_db_connection()
     service = StudentService(connection)
-    try:
-        if action == 'block':
-            cursor = connection.cursor()
-            for admno in admnos:
-                cursor.execute("UPDATE studentinfo SET blocked = 'YES' WHERE AdmNo = %s AND school_id = %s", (admno, service.school_id))
-            connection.commit()
-            flash(f"Successfully blocked {len(admnos)} student(s).", "success")
-        elif action == 'unblock':
-            cursor = connection.cursor()
-            for admno in admnos:
-                cursor.execute("UPDATE studentinfo SET blocked = 'NO' WHERE AdmNo = %s AND school_id = %s", (admno, service.school_id))
-            connection.commit()
-            flash(f"Successfully unblocked {len(admnos)} student(s).", "success")
-        elif action == 'export_csv':
-            cursor = connection.cursor()
-            format_strings = ','.join(['%s'] * len(admnos))
-            cursor.execute(f"""
-                SELECT si.AdmNo, si.FName, si.MName, si.SName, si.Sex, si.blocked,
-                       c.display_name as class_name, p.pName, p.phone1
-                FROM studentinfo si
-                LEFT JOIN class_allocation ca ON si.AdmNo = ca.student_id AND ca.is_current = TRUE AND si.school_id = ca.school_id
-                LEFT JOIN classes c ON ca.class_id = c.classID AND ca.school_id = c.school_id
-                LEFT JOIN parentinfo p ON si.AdmNo = p.admno AND si.school_id = p.school_id
-                WHERE si.AdmNo IN ({format_strings}) AND si.school_id = %s
-            """, tuple(admnos) + (service.school_id,))
-            rows = cursor.fetchall()
+    q = request.args.get('q', '').strip()
+    term_cur, year_cur = get_current_term_and_year()
+    students = service.get_students_list(query=q if q else None, year_cur=year_cur)
+    connection.close()
+    return render_template('admission_book.html', students=students, q=q)
 
-            output = io.StringIO()
-            writer = csv.writer(output)
-            writer.writerow(['AdmNo', 'First Name', 'Middle Name', 'Last Name', 'Gender', 'Status', 'Class', 'Parent Name', 'Parent Phone'])
-            for r in rows:
-                writer.writerow([r['AdmNo'], r['FName'], r['MName'], r['SName'], r['Sex'], 'Blocked' if r['blocked'] == 'YES' else 'Active', r['class_name'] or '', r['pName'] or '', r['phone1'] or ''])
-
-            response = current_app.response_class(
-                output.getvalue(),
-                mimetype='text/csv',
-                headers={"Content-disposition": "attachment; filename=students_export.csv"}
-            )
-            connection.close()
-            return response
-    except Exception as e:
-        flash(f"Error performing bulk action: {str(e)}", "error")
-    finally:
-        connection.close()
-
-    return redirect(url_for('students.students_list'))
+@students_bp.route('/students/parents')
+@login_required
+def parents_list():
+    connection = get_db_connection()
+    service = StudentService(connection)
+    q = request.args.get('q', '').strip()
+    parents = service.get_parents_register(query=q if q else None)
+    connection.close()
+    return render_template('parents_register.html', parents=parents, q=q)
 
 @students_bp.route('/student/<int:admno>')
 @login_required
@@ -356,26 +259,23 @@ def student_profile(admno):
     subjects = service.get_enrolled_subjects(admno)
     siblings = service.get_siblings(student.get('parent_phone'), admno) if student.get('parent_phone') else []
 
-    ledger_summary = service.get_fee_summary(admno) or {}
-    total_billed = ledger_summary.get('total_billed') or 0
-    total_paid = ledger_summary.get('total_paid') or 0
-    outstanding_balance = ledger_summary.get('current_balance') or 0
+    ledger_summary = service.get_fee_summary(admno)
+    total_billed = ledger_summary['total_billed'] or 0
+    total_paid = ledger_summary['total_paid'] or 0
+    outstanding_balance = ledger_summary['current_balance'] or 0
     fee_history = service.get_payment_history(admno)
-    fee_statement = service.get_fee_ledger_statement(admno)
 
     exam_summaries = service.get_exam_summaries(admno)
     exam_service = ExamManagementService(connection, service.school_id)
-    current_class_id = student.get('classID')
     for summary in exam_summaries:
-        scale_id = exam_service.get_class_grading_scale_id(current_class_id) if current_class_id else None
-        grade_rec = exam_service.get_grade_for_mark(summary['mean_mark'], scale_id) if scale_id else None
+        scale_id = exam_service.get_class_grading_scale_id(student.get('classID'))
+        grade_rec = exam_service.get_grade_for_mark(summary['mean_mark'], scale_id)
         summary['mean_grade'] = grade_rec['grade'] if grade_rec else '-'
 
     connection.close()
     return render_template('student_profile.html',
                          student=student, academic_history=academic_history, issuance_history=issuance_history,
-                         subjects=subjects, siblings=siblings, fee_history=fee_history, fee_statement=fee_statement,
-                         exam_summaries=exam_summaries,
+                         subjects=subjects, siblings=siblings, fee_history=fee_history, exam_summaries=exam_summaries,
                          total_paid=total_paid, total_billed=total_billed, outstanding_balance=outstanding_balance)
 
 @students_bp.route('/api/detect-siblings')

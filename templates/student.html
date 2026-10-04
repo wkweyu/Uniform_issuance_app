@@ -1,558 +1,461 @@
 {% extends "base.html" %}
+
+{% block title %}Admit New Student - School Management System{% endblock %}
+
 {% block content %}
+<style>
+    .wizard-step-active {
+        background-color: #2563eb;
+        color: #ffffff;
+        box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
+    }
+    .wizard-step-done {
+        background-color: #059669;
+        color: #ffffff;
+    }
+    .wizard-step-inactive {
+        background-color: #f1f5f9;
+        color: #64748b;
+    }
+</style>
 
-<div class="max-w-5xl mx-auto px-4 py-8">
-  <!-- Top Title Header -->
-  <div class="mb-8 text-center no-print">
-    <div class="inline-flex items-center justify-center w-16 h-16 bg-blue-100 text-blue-600 rounded-2xl mb-3 shadow-sm">
-      <i class="fas fa-user-plus text-2xl"></i>
+<div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <!-- Header -->
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+        <div>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">📝 Admit New Student</h1>
+            <p class="text-sm text-gray-500 mt-1">Guided multi-step student admission & guardian auto-linking process.</p>
+        </div>
+        <div>
+            <a href="{{ url_for('students.bulk_admit_students') }}"
+               class="inline-flex items-center px-4 py-2.5 bg-white border border-gray-200 text-gray-700 text-sm font-semibold rounded-xl hover:bg-gray-50 transition shadow-sm">
+                <i class="fas fa-file-import text-blue-600 mr-2"></i> Bulk CSV Import
+            </a>
+        </div>
     </div>
-    <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight">Admit New Student</h1>
-    <p class="text-gray-500 mt-1 text-sm font-medium">Guided administrative student onboarding wizard</p>
-  </div>
 
-  <!-- Wizard Progress Bar Header -->
-  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8 no-print">
-    <div class="flex items-center justify-between relative">
-      <div class="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-gray-100 w-full -z-0"></div>
-      <div id="wizard-progress-line" class="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-blue-600 transition-all duration-300 w-0 -z-0"></div>
+    <!-- Wizard Progress Tracker Bar -->
+    <div class="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-gray-200 mb-8">
+        <div class="flex justify-between items-center relative max-w-2xl mx-auto">
+            <div class="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-gray-200 -z-0"></div>
+            <div id="progressLine" class="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-blue-600 transition-all duration-300 -z-0" style="width: 0%;"></div>
 
-      <!-- Step 1 Indicator -->
-      <div class="relative z-10 flex flex-col items-center cursor-pointer" onclick="goToStep(1)">
-        <div id="step-node-1" class="w-10 h-10 rounded-full bg-blue-600 text-white font-extrabold flex items-center justify-center text-sm shadow-md transition-all">
-          1
-        </div>
-        <span class="text-xs font-bold text-gray-800 mt-2">Identity</span>
-      </div>
-
-      <!-- Step 2 Indicator -->
-      <div class="relative z-10 flex flex-col items-center cursor-pointer" onclick="goToStep(2)">
-        <div id="step-node-2" class="w-10 h-10 rounded-full bg-gray-100 text-gray-400 font-extrabold flex items-center justify-center text-sm border-2 border-white transition-all">
-          2
-        </div>
-        <span class="text-xs font-bold text-gray-500 mt-2">Placement</span>
-      </div>
-
-      <!-- Step 3 Indicator -->
-      <div class="relative z-10 flex flex-col items-center cursor-pointer" onclick="goToStep(3)">
-        <div id="step-node-3" class="w-10 h-10 rounded-full bg-gray-100 text-gray-400 font-extrabold flex items-center justify-center text-sm border-2 border-white transition-all">
-          3
-        </div>
-        <span class="text-xs font-bold text-gray-500 mt-2">Parent / Guardian</span>
-      </div>
-
-      <!-- Step 4 Indicator -->
-      <div class="relative z-10 flex flex-col items-center cursor-pointer" onclick="goToStep(4)">
-        <div id="step-node-4" class="w-10 h-10 rounded-full bg-gray-100 text-gray-400 font-extrabold flex items-center justify-center text-sm border-2 border-white transition-all">
-          4
-        </div>
-        <span class="text-xs font-bold text-gray-500 mt-2">Review & Submit</span>
-      </div>
-    </div>
-  </div>
-
-  <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
-    <!-- Main Form Container -->
-    <div class="lg:col-span-8">
-      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <form method="POST" id="admit-form" class="p-8">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-
-          <!-- STEP 1: STUDENT IDENTITY -->
-          <div id="wizard-step-1" class="wizard-step-panel space-y-6">
-            <div class="border-b border-gray-100 pb-4 mb-6">
-              <h2 class="text-lg font-bold text-gray-900 flex items-center">
-                <i class="fas fa-id-card text-blue-600 mr-2.5"></i> Step 1: Student Identity & Personal Info
-              </h2>
-              <p class="text-xs text-gray-500 mt-0.5">Enter primary biological and identification details for the student.</p>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div>
-                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                  Admission No <span class="text-red-500">*</span>
-                </label>
-                <div class="relative">
-                  <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400 font-mono font-bold text-sm">#</span>
-                  <input type="text" name="admno" id="input_admno" required
-                         class="w-full pl-8 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition font-mono font-bold text-base text-gray-900"
-                         placeholder="e.g. 2026/001">
+            <!-- Step 1 Indicator -->
+            <div class="relative z-10 text-center cursor-pointer" onclick="goToStep(1)">
+                <div id="stepDot1" class="w-10 h-10 mx-auto rounded-full flex items-center justify-center font-bold text-sm wizard-step-active transition-all">
+                    1
                 </div>
-              </div>
-
-              <div>
-                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Birth Certificate No</label>
-                <input type="text" name="birth_cert" id="input_birth_cert"
-                       class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition text-sm font-medium"
-                       placeholder="BC-12345678">
-              </div>
+                <span class="text-xs font-semibold text-gray-700 mt-2 block">1. Identity</span>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                  First Name <span class="text-red-500">*</span>
-                </label>
-                <input type="text" name="fname" id="input_fname" required
-                       class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition text-sm font-medium"
-                       placeholder="John">
-              </div>
-
-              <div>
-                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Middle Name</label>
-                <input type="text" name="mname" id="input_mname"
-                       class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition text-sm font-medium"
-                       placeholder="Paul">
-              </div>
-
-              <div>
-                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                  Last Name <span class="text-red-500">*</span>
-                </label>
-                <input type="text" name="lname" id="input_lname" required
-                       class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition text-sm font-medium"
-                       placeholder="Doe">
-              </div>
+            <!-- Step 2 Indicator -->
+            <div class="relative z-10 text-center cursor-pointer" onclick="goToStep(2)">
+                <div id="stepDot2" class="w-10 h-10 mx-auto rounded-full flex items-center justify-center font-bold text-sm wizard-step-inactive transition-all">
+                    2
+                </div>
+                <span class="text-xs font-semibold text-gray-700 mt-2 block">2. Placement</span>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Date of Birth</label>
-                <input type="date" name="dob" id="input_dob"
-                       class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition text-sm font-medium">
-              </div>
+            <!-- Step 3 Indicator -->
+            <div class="relative z-10 text-center cursor-pointer" onclick="goToStep(3)">
+                <div id="stepDot3" class="w-10 h-10 mx-auto rounded-full flex items-center justify-center font-bold text-sm wizard-step-inactive transition-all">
+                    3
+                </div>
+                <span class="text-xs font-semibold text-gray-700 mt-2 block">3. Guardian</span>
+            </div>
+        </div>
+    </div>
 
-              <div>
-                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Religion</label>
-                <select name="religion" id="input_religion" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition bg-white text-sm font-medium">
-                  <option value="Christianity">Christianity</option>
-                  <option value="Islam">Islam</option>
-                  <option value="Hinduism">Hinduism</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <!-- Main Form Card -->
+        <div class="lg:col-span-2">
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                <form method="POST" id="admissionForm" class="p-6 sm:p-8">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-              <div>
-                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Gender <span class="text-red-500">*</span></label>
-                <div class="flex gap-2">
-                  <label class="flex-1 cursor-pointer">
-                    <input type="radio" name="gender" value="M" required class="peer sr-only">
-                    <div class="w-full py-2 text-center border-2 border-gray-100 rounded-xl peer-checked:border-blue-600 peer-checked:bg-blue-50 peer-checked:text-blue-700 transition font-bold text-xs text-gray-600">
-                      Male
+                    <!-- STEP 1: STUDENT IDENTITY -->
+                    <div id="wizardStep1" class="wizard-section space-y-6">
+                        <div class="border-b border-gray-100 pb-4">
+                            <h2 class="text-lg font-bold text-gray-900">Step 1: Student Identity & Demographics</h2>
+                            <p class="text-xs text-gray-500">Enter official identification details and personal information.</p>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Admission Number <span class="text-red-500">*</span></label>
+                                <div class="relative">
+                                    <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400 font-mono text-sm">#</span>
+                                    <input type="text" name="admno" id="admno" required
+                                           class="w-full pl-8 pr-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm font-mono font-bold text-gray-900 focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                                           placeholder="e.g. 2026001">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Birth Certificate No.</label>
+                                <input type="text" name="birth_cert"
+                                       class="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                                       placeholder="BC-12345678">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">First Name <span class="text-red-500">*</span></label>
+                                <input type="text" name="fname" id="fname" required
+                                       class="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                                       placeholder="John">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Middle Name</label>
+                                <input type="text" name="mname"
+                                       class="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                                       placeholder="Paul">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Last / Surname <span class="text-red-500">*</span></label>
+                                <input type="text" name="lname" id="lname" required
+                                       class="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                                       placeholder="Doe">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Gender <span class="text-red-500">*</span></label>
+                                <div class="flex gap-2">
+                                    <label class="flex-1 cursor-pointer">
+                                        <input type="radio" name="gender" value="M" required class="peer sr-only">
+                                        <div class="w-full py-2 text-center border border-gray-300 rounded-xl text-xs font-bold text-gray-700 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition">
+                                            Male (M)
+                                        </div>
+                                    </label>
+                                    <label class="flex-1 cursor-pointer">
+                                        <input type="radio" name="gender" value="F" class="peer sr-only">
+                                        <div class="w-full py-2 text-center border border-gray-300 rounded-xl text-xs font-bold text-gray-700 peer-checked:bg-pink-600 peer-checked:text-white peer-checked:border-pink-600 transition">
+                                            Female (F)
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Date of Birth</label>
+                                <input type="date" name="dob"
+                                       class="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:bg-white">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Religion</label>
+                                <select name="religion" class="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm text-gray-900 focus:ring-2 focus:ring-blue-500">
+                                    <option value="Christianity">Christianity</option>
+                                    <option value="Islam">Islam</option>
+                                    <option value="Hinduism">Hinduism</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="pt-4 flex justify-end">
+                            <button type="button" onclick="nextStep(2)" class="px-6 py-2.5 bg-blue-600 text-white font-semibold text-sm rounded-xl hover:bg-blue-700 transition">
+                                Continue to Step 2 <i class="fas fa-arrow-right ml-1"></i>
+                            </button>
+                        </div>
                     </div>
-                  </label>
-                  <label class="flex-1 cursor-pointer">
-                    <input type="radio" name="gender" value="F" class="peer sr-only">
-                    <div class="w-full py-2 text-center border-2 border-gray-100 rounded-xl peer-checked:border-pink-600 peer-checked:bg-pink-50 peer-checked:text-pink-700 transition font-bold text-xs text-gray-600">
-                      Female
+
+                    <!-- STEP 2: PLACEMENT & CATEGORY -->
+                    <div id="wizardStep2" class="wizard-section space-y-6 hidden">
+                        <div class="border-b border-gray-100 pb-4">
+                            <h2 class="text-lg font-bold text-gray-900">Step 2: Placement & Fee Classification</h2>
+                            <p class="text-xs text-gray-500">Assign student class stream, category, and fee group.</p>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Class & Stream <span class="text-red-500">*</span></label>
+                                <select name="class_id" id="class_id" required class="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 font-medium">
+                                    <option value="" disabled selected>-- Select Class & Stream --</option>
+                                    {% for c in classes %}
+                                    <option value="{{ c.classID }}">{{ c.display_name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Boarding Category <span class="text-red-500">*</span></label>
+                                <select name="category" id="student_category" required class="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 font-medium">
+                                    <option value="Day">Day Scholar</option>
+                                    <option value="Boarding">Boarding</option>
+                                    <option value="Transport">Day + Transport</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Student Billing Group</label>
+                            <select name="student_group_id" class="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm text-gray-900 focus:ring-2 focus:ring-blue-500">
+                                <option value="">— Standard / Default Group —</option>
+                                {% for g in student_groups %}
+                                <option value="{{ g.id }}">{{ g.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Dynamic Transport Section -->
+                        <div id="route_selection" class="hidden p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                            <h3 class="text-xs font-bold text-blue-900 uppercase tracking-wider mb-2 flex items-center">
+                                <i class="fas fa-bus text-blue-600 mr-2"></i> Transport Route Assignment
+                            </h3>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-700 mb-1">Route</label>
+                                    <select name="route_id" class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs">
+                                        <option value="">-- Select Route --</option>
+                                        {% for r in routes %}
+                                        <option value="{{ r.id }}">{{ r.name }} (KES {{ r.amount|currency }})</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="text-xs text-blue-800 flex items-center">
+                                    <p>Transport route charges will automatically apply to the student's fee statement.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Emergency Alternate Contact</label>
+                            <input type="text" name="alt_contact"
+                                   class="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm text-gray-900 focus:ring-2 focus:ring-blue-500"
+                                   placeholder="Relationship & Phone (e.g. Uncle - 0722000000)">
+                        </div>
+
+                        <div class="pt-4 flex justify-between">
+                            <button type="button" onclick="goToStep(1)" class="px-5 py-2.5 bg-gray-100 text-gray-700 font-semibold text-sm rounded-xl hover:bg-gray-200 transition">
+                                <i class="fas fa-arrow-left mr-1"></i> Back
+                            </button>
+                            <button type="button" onclick="nextStep(3)" class="px-6 py-2.5 bg-blue-600 text-white font-semibold text-sm rounded-xl hover:bg-blue-700 transition">
+                                Continue to Step 3 <i class="fas fa-arrow-right ml-1"></i>
+                            </button>
+                        </div>
                     </div>
-                  </label>
-                </div>
-              </div>
+
+                    <!-- STEP 3: PARENT & GUARDIAN INFORMATION -->
+                    <div id="wizardStep3" class="wizard-section space-y-6 hidden">
+                        <div class="border-b border-gray-100 pb-4">
+                            <h2 class="text-lg font-bold text-gray-900">Step 3: Parent & Guardian Details</h2>
+                            <p class="text-xs text-gray-500">Phone number enables automatic sibling matching across school records.</p>
+                        </div>
+
+                        <div class="bg-indigo-50 border border-indigo-100 p-4 rounded-xl">
+                            <label class="block text-xs font-bold text-indigo-900 uppercase tracking-wider mb-1">Primary Guardian Phone Number <span class="text-red-500">*</span></label>
+                            <div class="relative">
+                                <input type="text" name="parent_phone" id="p_phone" required
+                                       class="w-full px-4 py-2.5 bg-white border border-indigo-300 rounded-xl text-sm font-bold text-gray-900 focus:ring-2 focus:ring-indigo-500"
+                                       placeholder="e.g. 0712345678">
+                                <div id="phoneSpinner" class="absolute right-3 top-1/2 -translate-y-1/2 hidden">
+                                    <i class="fas fa-spinner fa-spin text-indigo-500"></i>
+                                </div>
+                            </div>
+                            <div id="siblingAlert" class="mt-2 text-xs font-bold text-emerald-700 hidden flex items-center">
+                                <i class="fas fa-link mr-1"></i> Match found! Existing guardian details loaded.
+                            </div>
+                        </div>
+
+                        <!-- Detected Siblings List -->
+                        <div id="siblingBox" class="hidden p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                            <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Linked Siblings in School</h4>
+                            <div id="siblingItems" class="space-y-1 text-xs"></div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Guardian Full Name</label>
+                                <input type="text" name="parent_name" id="p_name"
+                                       class="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm text-gray-900 focus:ring-2 focus:ring-blue-500"
+                                       placeholder="Jane Doe">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">National ID Number</label>
+                                <input type="text" name="parent_id_no" id="p_id"
+                                       class="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm text-gray-900 focus:ring-2 focus:ring-blue-500"
+                                       placeholder="12345678">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Email Address</label>
+                                <input type="email" name="parent_email" id="p_email"
+                                       class="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm text-gray-900 focus:ring-2 focus:ring-blue-500"
+                                       placeholder="parent@example.com">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Residential Town / Area</label>
+                                <input type="text" name="residency" id="p_town"
+                                       class="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm text-gray-900 focus:ring-2 focus:ring-blue-500"
+                                       placeholder="Kilimani, Nairobi">
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Postal Address</label>
+                            <input type="text" name="home_address" id="p_address"
+                                   class="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm text-gray-900 focus:ring-2 focus:ring-blue-500"
+                                   placeholder="P.O. Box 100-00100">
+                        </div>
+
+                        <div class="pt-6 border-t border-gray-100 flex justify-between items-center">
+                            <button type="button" onclick="goToStep(2)" class="px-5 py-2.5 bg-gray-100 text-gray-700 font-semibold text-sm rounded-xl hover:bg-gray-200 transition">
+                                <i class="fas fa-arrow-left mr-1"></i> Back
+                            </button>
+                            <button type="submit" class="px-8 py-3 bg-emerald-600 text-white font-bold text-sm rounded-xl hover:bg-emerald-700 shadow-lg shadow-emerald-600/20 transition flex items-center">
+                                <i class="fas fa-check-circle mr-2"></i> Finalize Admission
+                            </button>
+                        </div>
+                    </div>
+                </form>
             </div>
-          </div>
+        </div>
 
-          <!-- STEP 2: PLACEMENT & CATEGORY -->
-          <div id="wizard-step-2" class="wizard-step-panel hidden space-y-6">
-            <div class="border-b border-gray-100 pb-4 mb-6">
-              <h2 class="text-lg font-bold text-gray-900 flex items-center">
-                <i class="fas fa-graduation-cap text-blue-600 mr-2.5"></i> Step 2: Academic Placement & Services
-              </h2>
-              <p class="text-xs text-gray-500 mt-0.5">Assign the student to a class, boarding category, and transport route.</p>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div>
-                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Class & Stream <span class="text-red-500">*</span></label>
-                <select name="class_id" id="input_class_id" required
-                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition bg-white text-sm font-semibold text-gray-800">
-                  <option value="" disabled selected>-- Select Class & Stream --</option>
-                  {% for c in classes %}
-                  <option value="{{ c.classID }}">{{ c.display_name }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-
-              <div>
-                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Category <span class="text-red-500">*</span></label>
-                <select name="category" id="student_category" required
-                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition bg-white text-sm font-semibold text-gray-800">
-                  <option value="Day">Day Scholar</option>
-                  <option value="Boarding">Boarding</option>
-                  <option value="Transport">Day + Transport</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div>
-                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Student Group</label>
-                <select name="student_group_id" id="input_student_group_id" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition bg-white text-sm font-medium">
-                  <option value="">— Standard / Default —</option>
-                  {% for g in student_groups %}
-                  <option value="{{ g.id }}">{{ g.name }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-
-              <div>
-                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Emergency Contact / Relationship</label>
-                <input type="text" name="alt_contact" id="input_alt_contact"
-                       class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition text-sm font-medium"
-                       placeholder="e.g. Uncle - 0722000000">
-              </div>
-            </div>
-
-            <!-- Dynamic Transport Route Selection -->
-            <div id="route_selection" class="hidden animate-in fade-in duration-200">
-              <div class="bg-blue-50/70 p-5 rounded-2xl border border-blue-100 space-y-3">
-                <div class="flex items-center text-blue-800 font-bold text-xs uppercase tracking-wider">
-                  <i class="fas fa-bus mr-2 text-blue-600"></i> Transport Route Assignment
-                </div>
-                <div>
-                  <select name="route_id" id="input_route_id" class="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none">
-                    <option value="">-- Choose Transport Route --</option>
-                    {% for route in routes %}
-                    <option value="{{ route.id }}" data-amount="{{ route.amount }}">
-                      {{ route.name }} (KES {{ route.amount|currency }})
-                    </option>
-                    {% endfor %}
-                  </select>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- STEP 3: PARENT & GUARDIAN DETAILS -->
-          <div id="wizard-step-3" class="wizard-step-panel hidden space-y-6">
-            <div class="border-b border-gray-100 pb-4 mb-6">
-              <h2 class="text-lg font-bold text-gray-900 flex items-center">
-                <i class="fas fa-users text-blue-600 mr-2.5"></i> Step 3: Parent & Guardian Details
-              </h2>
-              <p class="text-xs text-gray-500 mt-0.5">Primary guardian contacts and automated sibling linking.</p>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div>
-                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                  Primary Mobile Phone <span class="text-red-500">*</span>
-                </label>
-                <div class="relative">
-                  <input type="text" name="parent_phone" id="p_phone" required
-                         class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition text-sm font-bold text-gray-900"
-                         placeholder="0712345678">
-                  <div id="phoneStatus" class="absolute right-3.5 top-1/2 -translate-y-1/2 hidden">
-                    <i class="fas fa-spinner fa-spin text-blue-500"></i>
-                  </div>
-                </div>
-                <div id="siblingAlert" class="mt-2 text-xs font-bold text-green-700 hidden flex items-center">
-                   <i class="fas fa-link mr-1.5"></i> Existing parent record matched!
-                </div>
-              </div>
-
-              <div>
-                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Parent / Guardian Full Name</label>
-                <input type="text" name="parent_name" id="p_name"
-                       class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition text-sm font-medium"
-                       placeholder="Jane Doe">
-              </div>
+        <!-- Sidebar Tips Drawer -->
+        <div class="lg:col-span-1 space-y-6">
+            <div class="bg-blue-900 text-white rounded-2xl p-6 shadow-sm">
+                <h3 class="font-bold text-sm flex items-center mb-2 text-blue-200">
+                    <i class="fas fa-lightbulb text-yellow-400 mr-2"></i> Admission Best Practices
+                </h3>
+                <p class="text-xs text-blue-100 leading-relaxed">
+                    Always verify the student's Admission Number before finalizing. Using standardized formats like <code class="bg-blue-800 px-1 py-0.5 rounded text-white">2026/001</code> ensures smooth financial ledger tracking.
+                </p>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div>
-                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Email Address</label>
-                <input type="email" name="parent_email" id="p_email"
-                       class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition text-sm font-medium"
-                       placeholder="parent@example.com">
-              </div>
-
-              <div>
-                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">National ID No</label>
-                <input type="text" name="parent_id_no" id="p_id"
-                       class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition text-sm font-medium"
-                       placeholder="12345678">
-              </div>
+            <div class="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
+                <h3 class="font-bold text-xs text-gray-500 uppercase tracking-wider mb-3">Workflow After Admission</h3>
+                <ul class="space-y-3 text-xs text-gray-600">
+                    <li class="flex items-start">
+                        <i class="fas fa-check text-emerald-500 mt-0.5 mr-2"></i>
+                        <span>Auto-generates official printable admission receipt.</span>
+                    </li>
+                    <li class="flex items-start">
+                        <i class="fas fa-check text-emerald-500 mt-0.5 mr-2"></i>
+                        <span>Invoices transport and standard fee structure items.</span>
+                    </li>
+                    <li class="flex items-start">
+                        <i class="fas fa-check text-emerald-500 mt-0.5 mr-2"></i>
+                        <span>Enables uniform issuance tracking.</span>
+                    </li>
+                </ul>
             </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div>
-                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Residential Estate / Town</label>
-                <input type="text" name="residency" id="p_town"
-                       class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition text-sm font-medium"
-                       placeholder="Kilimani, Nairobi">
-              </div>
-
-              <div>
-                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Postal Address</label>
-                <input type="text" name="home_address" id="p_address"
-                       class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition text-sm font-medium"
-                       placeholder="P.O Box 123-00100">
-              </div>
-            </div>
-          </div>
-
-          <!-- STEP 4: REVIEW & SUBMIT -->
-          <div id="wizard-step-4" class="wizard-step-panel hidden space-y-6">
-            <div class="border-b border-gray-100 pb-4 mb-6">
-              <h2 class="text-lg font-bold text-gray-900 flex items-center">
-                <i class="fas fa-check-circle text-green-600 mr-2.5"></i> Step 4: Verify Admission Summary
-              </h2>
-              <p class="text-xs text-gray-500 mt-0.5">Please review all details prior to committing the student record.</p>
-            </div>
-
-            <div class="bg-gray-50 rounded-2xl p-6 border border-gray-200/80 space-y-4">
-              <div class="grid grid-cols-2 md:grid-cols-3 gap-4 text-xs">
-                <div>
-                  <span class="text-gray-400 font-bold uppercase tracking-wider block">Admission No</span>
-                  <span id="summary_admno" class="font-mono font-bold text-blue-600 text-sm">—</span>
-                </div>
-                <div>
-                  <span class="text-gray-400 font-bold uppercase tracking-wider block">Full Name</span>
-                  <span id="summary_fullname" class="font-bold text-gray-800 text-sm">—</span>
-                </div>
-                <div>
-                  <span class="text-gray-400 font-bold uppercase tracking-wider block">Gender & DOB</span>
-                  <span id="summary_gender_dob" class="font-semibold text-gray-700">—</span>
-                </div>
-                <div>
-                  <span class="text-gray-400 font-bold uppercase tracking-wider block">Assigned Class</span>
-                  <span id="summary_class" class="font-bold text-gray-800">—</span>
-                </div>
-                <div>
-                  <span class="text-gray-400 font-bold uppercase tracking-wider block">Category</span>
-                  <span id="summary_category" class="font-semibold text-gray-700">—</span>
-                </div>
-                <div>
-                  <span class="text-gray-400 font-bold uppercase tracking-wider block">Parent Contact</span>
-                  <span id="summary_parent" class="font-semibold text-gray-800">—</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Wizard Action Bar Footer -->
-          <div class="pt-6 mt-8 border-t border-gray-100 flex items-center justify-between gap-4">
-            <button type="button" id="btn-prev" onclick="prevStep()" class="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-bold text-xs transition hidden">
-              <i class="fas fa-arrow-left mr-1.5"></i> Previous
-            </button>
-
-            <div class="flex items-center gap-3 ml-auto">
-              <a href="{{ url_for('students.students_list') }}" class="px-5 py-2.5 text-gray-500 hover:text-gray-700 rounded-xl font-bold text-xs transition">
-                Cancel
-              </a>
-              <button type="button" id="btn-next" onclick="nextStep()" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs transition shadow-md shadow-blue-500/20">
-                Next Step <i class="fas fa-arrow-right ml-1.5"></i>
-              </button>
-              <button type="submit" id="btn-submit" class="px-8 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-extrabold text-xs transition shadow-md shadow-green-500/20 hidden">
-                <i class="fas fa-check-circle mr-1.5"></i> Complete Admission
-              </button>
-            </div>
-          </div>
-        </form>
-      </div>
+        </div>
     </div>
-
-    <!-- Side Guidance Panel -->
-    <div class="lg:col-span-4 space-y-6">
-      <!-- Sibling Matches Panel -->
-      <div id="siblingList" class="hidden bg-white rounded-2xl p-6 border border-blue-100 shadow-sm">
-        <h3 class="text-xs font-bold text-blue-600 uppercase tracking-wider mb-3 flex items-center">
-          <i class="fas fa-users mr-2"></i> Siblings in School
-        </h3>
-        <div id="siblingItems" class="space-y-2"></div>
-      </div>
-
-      <!-- Expert Tip -->
-      <div class="bg-gradient-to-br from-indigo-900 to-blue-900 rounded-2xl p-6 text-white shadow-md">
-        <h3 class="font-bold flex items-center text-sm mb-2 text-indigo-200">
-          <i class="fas fa-lightbulb text-amber-300 mr-2"></i> Administrative Tip
-        </h3>
-        <p class="text-xs text-indigo-100 leading-relaxed">
-          Entering the primary parent's mobile phone number automatically queries existing records. If siblings are matched, guardian information is auto-populated to maintain family data consistency.
-        </p>
-      </div>
-    </div>
-  </div>
 </div>
 
 <script>
-let currentStep = 1;
+    let currentStep = 1;
 
-function updateWizardUI() {
-  // Hide all step panels
-  document.querySelectorAll('.wizard-step-panel').forEach(el => el.classList.add('hidden'));
-  document.getElementById(`wizard-step-${currentStep}`).classList.remove('hidden');
+    function goToStep(step) {
+        if (step < 1 || step > 3) return;
 
-  // Update progress bar
-  const percent = ((currentStep - 1) / 3) * 100;
-  document.getElementById('wizard-progress-line').style.width = `${percent}%`;
+        // Hide all steps
+        document.querySelectorAll('.wizard-section').forEach(sec => sec.classList.add('hidden'));
+        document.getElementById(`wizardStep${step}`).classList.remove('hidden');
 
-  // Update step nodes
-  for (let i = 1; i <= 4; i++) {
-    const node = document.getElementById(`step-node-${i}`);
-    if (i < currentStep) {
-      node.className = "w-10 h-10 rounded-full bg-green-500 text-white font-extrabold flex items-center justify-center text-sm shadow-md transition-all";
-      node.innerHTML = '<i class="fas fa-check"></i>';
-    } else if (i === currentStep) {
-      node.className = "w-10 h-10 rounded-full bg-blue-600 text-white font-extrabold flex items-center justify-center text-sm shadow-md transition-all";
-      node.innerHTML = i;
-    } else {
-      node.className = "w-10 h-10 rounded-full bg-gray-100 text-gray-400 font-extrabold flex items-center justify-center text-sm border-2 border-white transition-all";
-      node.innerHTML = i;
+        // Update dot states
+        for (let i = 1; i <= 3; i++) {
+            const dot = document.getElementById(`stepDot${i}`);
+            dot.className = "w-10 h-10 mx-auto rounded-full flex items-center justify-center font-bold text-sm transition-all ";
+            if (i < step) {
+                dot.className += "wizard-step-done";
+            } else if (i === step) {
+                dot.className += "wizard-step-active";
+            } else {
+                dot.className += "wizard-step-inactive";
+            }
+        }
+
+        // Progress line percentage
+        const pct = (step - 1) * 50;
+        document.getElementById('progressLine').style.width = `${pct}%`;
+        currentStep = step;
     }
-  }
 
-  // Update Buttons
-  const btnPrev = document.getElementById('btn-prev');
-  const btnNext = document.getElementById('btn-next');
-  const btnSubmit = document.getElementById('btn-submit');
-
-  if (currentStep === 1) {
-    btnPrev.classList.add('hidden');
-  } else {
-    btnPrev.classList.remove('hidden');
-  }
-
-  if (currentStep === 4) {
-    btnNext.classList.add('hidden');
-    btnSubmit.classList.remove('hidden');
-    populateSummary();
-  } else {
-    btnNext.classList.remove('hidden');
-    btnSubmit.classList.add('hidden');
-  }
-}
-
-function validateCurrentStep() {
-  if (currentStep === 1) {
-    const adm = document.getElementById('input_admno').value.trim();
-    const fn = document.getElementById('input_fname').value.trim();
-    const ln = document.getElementById('input_lname').value.trim();
-    const gender = document.querySelector('input[name="gender"]:checked');
-
-    if (!adm || !fn || !ln || !gender) {
-      alert("Please fill in all required fields (Admission #, First Name, Last Name, and Gender).");
-      return false;
+    function nextStep(targetStep) {
+        if (currentStep === 1) {
+            const adm = document.getElementById('admno').value.trim();
+            const fn = document.getElementById('fname').value.trim();
+            const ln = document.getElementById('lname').value.trim();
+            const gender = document.querySelector('input[name="gender"]:checked');
+            if (!adm || !fn || !ln || !gender) {
+                alert("Please fill in all required fields in Step 1 (Admission No, First/Last Name, Gender).");
+                return;
+            }
+        } else if (currentStep === 2) {
+            const cls = document.getElementById('class_id').value;
+            if (!cls) {
+                alert("Please select a Class & Stream.");
+                return;
+            }
+        }
+        goToStep(targetStep);
     }
-  } else if (currentStep === 2) {
-    const cls = document.getElementById('input_class_id').value;
-    if (!cls) {
-      alert("Please select a Class Assignment.");
-      return false;
-    }
-  } else if (currentStep === 3) {
-    const phone = document.getElementById('p_phone').value.trim();
-    if (!phone) {
-      alert("Please enter a Primary Mobile Phone number for parent/guardian.");
-      return false;
-    }
-  }
-  return true;
-}
 
-function nextStep() {
-  if (validateCurrentStep()) {
-    if (currentStep < 4) {
-      currentStep++;
-      updateWizardUI();
-    }
-  }
-}
-
-function prevStep() {
-  if (currentStep > 1) {
-    currentStep--;
-    updateWizardUI();
-  }
-}
-
-function goToStep(step) {
-  if (step < currentStep || validateCurrentStep()) {
-    currentStep = step;
-    updateWizardUI();
-  }
-}
-
-function populateSummary() {
-  const adm = document.getElementById('input_admno').value.trim();
-  const fn = document.getElementById('input_fname').value.trim();
-  const mn = document.getElementById('input_mname').value.trim();
-  const ln = document.getElementById('input_lname').value.trim();
-  const dob = document.getElementById('input_dob').value;
-  const genderRadio = document.querySelector('input[name="gender"]:checked');
-  const gender = genderRadio ? (genderRadio.value === 'M' ? 'Male' : 'Female') : '';
-  const classSelect = document.getElementById('input_class_id');
-  const className = classSelect.options[classSelect.selectedIndex]?.text || '';
-  const cat = document.getElementById('student_category').value;
-  const pName = document.getElementById('p_name').value.trim();
-  const pPhone = document.getElementById('p_phone').value.trim();
-
-  document.getElementById('summary_admno').innerText = adm ? `#${adm}` : '—';
-  document.getElementById('summary_fullname').innerText = `${fn} ${mn} ${ln}`.trim();
-  document.getElementById('summary_gender_dob').innerText = `${gender} ${dob ? '• ' + dob : ''}`;
-  document.getElementById('summary_class').innerText = className;
-  document.getElementById('summary_category').innerText = cat;
-  document.getElementById('summary_parent').innerText = `${pName || 'Guardian'} (${pPhone})`;
-}
-
-document.addEventListener('DOMContentLoaded', function() {
-  const categorySelect = document.getElementById('student_category');
-  const routeSelection = document.getElementById('route_selection');
-
-  categorySelect.addEventListener('change', function() {
-    if (this.value === 'Transport') {
-      routeSelection.classList.remove('hidden');
-    } else {
-      routeSelection.classList.add('hidden');
-    }
-  });
-
-  // Sibling lookup on phone input
-  const pPhone = document.getElementById('p_phone');
-  let phoneTimeout;
-
-  pPhone.addEventListener('input', function() {
-    clearTimeout(phoneTimeout);
-    const phone = this.value.trim();
-    if (phone.length < 9) return;
-
-    document.getElementById('phoneStatus').classList.remove('hidden');
-    phoneTimeout = setTimeout(() => {
-      fetch(`/api/detect-siblings?phone=${encodeURIComponent(phone)}`)
-        .then(res => res.json())
-        .then(data => {
-          document.getElementById('phoneStatus').classList.add('hidden');
-          if (data.parent) {
-            document.getElementById('p_name').value = data.parent.pName || '';
-            document.getElementById('p_email').value = data.parent.email || '';
-            document.getElementById('p_id').value = data.parent.nationalID || '';
-            document.getElementById('p_town').value = data.parent.hometown || '';
-            document.getElementById('p_address').value = data.parent.address || '';
-            document.getElementById('siblingAlert').classList.remove('hidden');
-          }
-
-          if (data.siblings && data.siblings.length > 0) {
-            const list = document.getElementById('siblingList');
-            const items = document.getElementById('siblingItems');
-            items.innerHTML = '';
-            data.siblings.forEach(s => {
-              const div = document.createElement('div');
-              div.className = "flex items-center justify-between text-xs p-2 bg-blue-50/50 rounded-lg border border-blue-100";
-              div.innerHTML = `
-                <span class="font-bold text-gray-800">${s.FName} ${s.LName || ''}</span>
-                <span class="font-mono text-blue-600 font-bold">#${s.AdmNo}</span>
-              `;
-              items.appendChild(div);
-            });
-            list.classList.remove('hidden');
-          }
-        })
-        .catch(err => {
-          document.getElementById('phoneStatus').classList.add('hidden');
+    // Transport category listener
+    document.addEventListener('DOMContentLoaded', function() {
+        const catSelect = document.getElementById('student_category');
+        const routeSec = document.getElementById('route_selection');
+        catSelect.addEventListener('change', function() {
+            if (this.value === 'Transport') {
+                routeSec.classList.remove('hidden');
+            } else {
+                routeSec.classList.add('hidden');
+            }
         });
-    }, 500);
-  });
-});
-</script>
 
+        // Sibling auto-lookup
+        const phoneInput = document.getElementById('p_phone');
+        const phoneSpinner = document.getElementById('phoneSpinner');
+        const siblingAlert = document.getElementById('siblingAlert');
+        const siblingBox = document.getElementById('siblingBox');
+        const siblingItems = document.getElementById('siblingItems');
+        let timer;
+
+        phoneInput.addEventListener('input', function() {
+            clearTimeout(timer);
+            const val = this.value.trim();
+            if (val.length < 8) {
+                siblingAlert.classList.add('hidden');
+                siblingBox.classList.add('hidden');
+                return;
+            }
+
+            phoneSpinner.classList.remove('hidden');
+            timer = setTimeout(() => {
+                fetch(`/api/detect-siblings?phone=${encodeURIComponent(val)}`)
+                    .then(r => r.json())
+                    .then(data => {
+                        phoneSpinner.classList.add('hidden');
+                        if (data.parent) {
+                            document.getElementById('p_name').value = data.parent.pName || '';
+                            document.getElementById('p_email').value = data.parent.email || '';
+                            document.getElementById('p_id').value = data.parent.nationalID || '';
+                            document.getElementById('p_town').value = data.parent.hometown || '';
+                            document.getElementById('p_address').value = data.parent.address || '';
+                            siblingAlert.classList.remove('hidden');
+                        } else {
+                            siblingAlert.classList.add('hidden');
+                        }
+
+                        if (data.siblings && data.siblings.length > 0) {
+                            siblingItems.innerHTML = '';
+                            data.siblings.forEach(s => {
+                                const d = document.createElement('div');
+                                d.className = "flex justify-between items-center py-1 border-b border-slate-200 last:border-0";
+                                d.innerHTML = `<span class="font-bold text-gray-800">${s.FName} ${s.LName || ''}</span> <span class="text-blue-600 font-mono">#${s.AdmNo} (${s.class_name || 'N/A'})</span>`;
+                                siblingItems.appendChild(d);
+                            });
+                            siblingBox.classList.remove('hidden');
+                        } else {
+                            siblingBox.classList.add('hidden');
+                        }
+                    })
+                    .catch(() => phoneSpinner.classList.add('hidden'));
+            }, 400);
+        });
+    });
+</script>
 {% endblock %}
