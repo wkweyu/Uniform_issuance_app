@@ -191,6 +191,25 @@ def voucher_register():
         date_to=date_to,
     )
 
+@transport_bp.route('/fleet/transport_assignments')
+@login_required
+def transport_assignments():
+    connection = get_db_connection()
+    service = TransportService(connection)
+    try:
+        route_id = request.args.get('route_id')
+        route_id_int = int(route_id) if route_id and route_id.isdigit() else None
+        routes = service.get_routes()
+        assignments = service.get_transport_assignments(route_id=route_id_int)
+        return render_template(
+            'transport_assignments.html',
+            assignments=assignments,
+            routes=routes,
+            selected_route_id=route_id_int
+        )
+    finally:
+        connection.close()
+
 @transport_bp.route('/fleet/routes', methods=['GET', 'POST'])
 @login_required
 @admin_required

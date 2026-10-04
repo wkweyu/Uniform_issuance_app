@@ -135,6 +135,29 @@ class TransportService:
         self.cursor.execute("SELECT * FROM transport_routes WHERE school_id = %s ORDER BY name", (self.school_id,))
         return self.cursor.fetchall()
 
+    def get_transport_assignments(self, route_id: Optional[int] = None) -> List[Dict]:
+        query = """
+            SELECT s.AdmNo, CONCAT_WS(' ', COALESCE(s.FName, ''), COALESCE(s.MName, ''), COALESCE(s.SName, '')) as student_name,
+                   s.Sex as gender, s.category, r.id as route_id, r.name as route_name, r.amount as route_amount,
+                   COALESCE(c_current.display_name, c_legacy.class_name, 'Unassigned') as class_name,
+                   p.pName as parent_name, p.phone1 as parent_phone
+            FROM studentinfo s
+            JOIN transport_routes r ON s.route_id = r.id AND s.school_id = r.school_id
+            LEFT JOIN class_allocation modern_ca ON s.AdmNo = modern_ca.student_id AND modern_ca.is_current = TRUE AND s.school_id = modern_ca.school_id
+            LEFT JOIN classes c_current ON modern_ca.class_id = c_current.classID AND modern_ca.school_id = c_current.school_id
+            LEFT JOIN classallocation legacy_ca ON s.AdmNo = legacy_ca.AdmNo AND s.school_id = legacy_ca.school_id
+            LEFT JOIN classes c_legacy ON legacy_ca.classID = c_legacy.classID AND legacy_ca.school_id = c_legacy.school_id
+            LEFT JOIN parentinfo p ON s.AdmNo = p.admno AND s.school_id = p.school_id
+            WHERE s.school_id = %s
+        """
+        params = [self.school_id]
+        if route_id:
+            query += " AND s.route_id = %s"
+            params.append(route_id)
+        query += " GROUP BY s.AdmNo ORDER BY r.name, s.FName, s.SName"
+        self.cursor.execute(query, params)
+        return self.cursor.fetchall()
+
     @audit_log('add_route')
     def add_route(self, data: Dict):
         self.cursor.execute("""

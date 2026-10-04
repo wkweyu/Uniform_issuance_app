@@ -378,20 +378,38 @@ class StudentService:
             self.connection.rollback()
             raise e
 
-    def get_students_list(self, query=None, class_filter=None, year_cur=None):
+    def get_students_list(self, query=None, class_filter=None, status_filter=None, route_filter=None, start_date=None, end_date=None, year_cur=None):
         cursor = self.connection.cursor()
-        params = [self.school_id, self.school_id, self.school_id, self.school_id, self.school_id]
 
         where_clauses = ["s.school_id = %s"]
-        params_where = [self.school_id]
+        full_params = [self.school_id]
 
         if query:
             where_clauses.append("(s.AdmNo LIKE %s OR CONCAT_WS(' ', COALESCE(s.FName, ''), COALESCE(s.MName, ''), COALESCE(s.SName, '')) LIKE %s)")
-            params_where.extend([f"%{query}%", f"%{query}%"])
+            full_params.extend([f"%{query}%", f"%{query}%"])
+
+        if status_filter:
+            if status_filter.upper() == 'ACTIVE':
+                where_clauses.append("(s.blocked = 'NO' OR s.blocked IS NULL)")
+            elif status_filter.upper() == 'BLOCKED':
+                where_clauses.append("s.blocked = 'YES'")
+
+        if route_filter:
+            where_clauses.append("s.route_id = %s")
+            full_params.append(route_filter)
+
+        if start_date:
+            where_clauses.append("DATE(s.Date_Adm) >= %s")
+            full_params.append(start_date)
+
+        if end_date:
+            where_clauses.append("DATE(s.Date_Adm) <= %s")
+            full_params.append(end_date)
 
         sql = f"""
             SELECT
                 s.AdmNo, s.FName, s.MName, s.SName AS LName, s.Sex AS Gender, s.blocked AS Status,
+                s.Date_Adm, tr.name as route_name,
                 COALESCE(
                     c_current.display_name,
                     c_current.class_name,
@@ -411,10 +429,9 @@ class StudentService:
                 LIMIT 1
             )
             LEFT JOIN classes c_legacy ON legacy_ca.classID = c_legacy.classID AND legacy_ca.school_id = c_legacy.school_id
+            LEFT JOIN transport_routes tr ON s.route_id = tr.id AND s.school_id = tr.school_id
             WHERE {" AND ".join(where_clauses)}
         """
-
-        full_params = params_where
 
         if class_filter:
             sql += """ AND (
@@ -427,7 +444,7 @@ class StudentService:
 
         sql += " ORDER BY s.FName, s.SName"
 
-        if not query and not class_filter:
+        if not query and not class_filter and not status_filter and not route_filter and not start_date and not end_date:
             sql += " LIMIT 500"
 
         cursor.execute(sql, tuple(full_params))
@@ -719,10 +736,14 @@ class StudentService:
         cursor = self.connection.cursor()
         cursor.execute("SELECT id FROM uniform_term_dates WHERE CURDATE() BETWEEN start_date AND end_date AND school_id = %s LIMIT 1", (self.school_id,))
         term_res = cursor.fetchone()
+        if term_res:
+            return term_res['id']
+        cursor.execute("SELECT id FROM uniform_term_dates WHERE school_id = %s ORDER BY year DESC, term_number DESC LIMIT 1", (self.school_id,))
+        term_res = cursor.fetchone()
         return term_res['id'] if term_res else None
 
     @audit_log('bulk_import_students')
-    def bulk_import_students(self, data):
+    def bulk_import_students(self, data, user_id=None):
         admnos = data.get('admno[]', [])
         fnames = data.get('fname[]', [])
         mnames = data.get('mname[]', [])
@@ -731,6 +752,7 @@ class StudentService:
         dobs = data.get('dob[]', [])
         religions = data.get('religion[]', [])
         categories = data.get('category[]', [])
+        route_ids = data.get('route_id[]', [])
         class_ids = data.get('class_id[]', [])
         p_names = data.get('parent_name[]', [])
         p_phones = data.get('parent_phone[]', [])
@@ -754,7 +776,7 @@ class StudentService:
                     error_count += 1
                     continue
 
-                class_id = class_ids[i]
+                class_id = class_ids[i] if i < len(class_ids) else None
                 if not class_id:
                     error_count += 1
                     continue
@@ -764,7 +786,7 @@ class StudentService:
                     error_count += 1
                     continue
 
-                p_phone = p_phones[i].strip()
+                p_phone = p_phones[i].strip() if i < len(p_phones) else ''
                 final_parent_id = 0
                 if p_phone:
                     existing_p = self.get_parent_by_phone(p_phone)
@@ -776,23 +798,29 @@ class StudentService:
 
                 self.connection.begin()
 
-                cat = categories[i]
+                cat = categories[i] if i < len(categories) else 'Day'
+                r_id = route_ids[i] if i < len(route_ids) and route_ids[i] else None
+                route_id = int(r_id) if r_id and str(r_id).isdigit() else None
 
                 cursor.execute("""
                     INSERT INTO studentinfo (
                         AdmNo, parentID, FName, MName, SName, Sex, DoB, Religion,
-                        boarding, category, stream, blocked, Date_Adm, school_id
+                        boarding, category, route_id, stream, blocked, Date_Adm, school_id
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, NOW(), %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, NOW(), %s)
                 """, (
-                    admno, final_parent_id, fnames[i], mnames[i], lnames[i],
-                    genders[i][:1].upper() if genders[i] else 'M',
-                    dobs[i] if dobs[i] else None, religions[i],
-                    'YES' if cat == 'Boarding' else 'NO', cat, class_info['stream_code'],
-                    self.school_id
+                    admno, final_parent_id,
+                    fnames[i] if i < len(fnames) else '',
+                    mnames[i] if i < len(mnames) else '',
+                    lnames[i] if i < len(lnames) else '',
+                    genders[i][:1].upper() if i < len(genders) and genders[i] else 'M',
+                    dobs[i] if i < len(dobs) and dobs[i] else None,
+                    religions[i] if i < len(religions) and religions[i] else 'Christianity',
+                    'YES' if cat == 'Boarding' else 'NO', cat, route_id,
+                    class_info['stream_code'], self.school_id
                 ))
 
-                pn = p_names[i].strip()
+                pn = p_names[i].strip() if i < len(p_names) else ''
                 if pn:
                     cursor.execute(
                         "SELECT parentid FROM parentinfo WHERE admno = %s AND school_id = %s LIMIT 1",
@@ -805,15 +833,24 @@ class StudentService:
                             SET pName = %s, phone1 = %s, email = %s, nationalID = %s, address = %s, hometown = %s
                             WHERE admno = %s AND school_id = %s
                         """, (
-                            pn, p_phone, p_emails[i], p_ids[i], p_addresses[i], p_residencies[i], admno, self.school_id
+                            pn, p_phone,
+                            p_emails[i] if i < len(p_emails) else '',
+                            p_ids[i] if i < len(p_ids) else '',
+                            p_addresses[i] if i < len(p_addresses) else '',
+                            p_residencies[i] if i < len(p_residencies) else '',
+                            admno, self.school_id
                         ))
                     else:
                         cursor.execute("""
                             INSERT INTO parentinfo (parentid, admno, pName, phone1, email, nationalID, address, hometown, regDate, school_id)
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s)
                         """, (
-                            final_parent_id, admno, pn, p_phone, p_emails[i],
-                            p_ids[i], p_addresses[i], p_residencies[i], self.school_id
+                            final_parent_id, admno, pn, p_phone,
+                            p_emails[i] if i < len(p_emails) else '',
+                            p_ids[i] if i < len(p_ids) else '',
+                            p_addresses[i] if i < len(p_addresses) else '',
+                            p_residencies[i] if i < len(p_residencies) else '',
+                            self.school_id
                         ))
 
                 self._sync_legacy_classallocation(cursor, admno, class_id, class_info['academic_year_id'])
@@ -822,6 +859,25 @@ class StudentService:
                     INSERT INTO class_allocation (student_id, class_id, academic_year_id, school_id, allocation_date, is_current)
                     VALUES (%s, %s, %s, %s, NOW(), TRUE)
                 """, (admno, class_id, class_info['academic_year_id'], self.school_id))
+
+                # Handle Fee Invoicing if category == 'Transport' and route_id
+                if cat == 'Transport' and route_id:
+                    route_data = self.get_transport_route_by_id(route_id)
+                    if route_data:
+                        votehead_name = "Transport"
+                        votehead_id = self.get_or_create_votehead(votehead_name, "Standard Transport Charges")
+                        term_id = self.get_current_term_id()
+                        if class_info['academic_year_id'] and term_id:
+                            from blueprints.fees.services import FeesService
+                            fees_service = FeesService(self.connection, school_id=self.school_id)
+                            fees_service.invoice_student(
+                                admno=admno,
+                                year_id=class_info['academic_year_id'],
+                                term_id=term_id,
+                                structure_id=0,
+                                user_id=user_id or 1,
+                                custom_items=[{'votehead_id': votehead_id, 'votehead_name': votehead_name, 'amount': route_data['amount']}]
+                            )
 
                 self.connection.commit()
                 success_count += 1

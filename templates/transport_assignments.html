@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Transport Assignments Report - School Management System{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <!-- Header -->
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 print-hide">
+        <div>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">🚌 Transport Route Assignments</h1>
+            <p class="text-sm text-gray-500 mt-1">Students assigned to transport routes and associated billing charges.</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <a href="{{ url_for('transport.manage_transport_routes') }}" class="px-4 py-2.5 bg-white border border-gray-200 text-gray-700 text-sm font-semibold rounded-xl hover:bg-gray-50 transition shadow-sm">
+                <i class="fas fa-route text-blue-600 mr-2"></i> Manage Routes
+            </a>
+            <button onclick="window.print()" class="px-4 py-2.5 bg-gray-900 text-white text-sm font-semibold rounded-xl hover:bg-black transition shadow-sm">
+                <i class="fas fa-print mr-2"></i> Print Report
+            </button>
+        </div>
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6 print-hide">
+        <form method="GET" action="{{ url_for('transport.transport_assignments') }}" class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+            <div class="md:col-span-8">
+                <label class="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-1">Filter by Transport Route</label>
+                <select name="route_id" onchange="this.form.submit()" class="w-full py-2.5 px-3 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500">
+                    <option value="">-- All Transport Routes --</option>
+                    {% for r in routes %}
+                    <option value="{{ r.id }}" {% if selected_route_id == r.id %}selected{% endif %}>
+                        {{ r.name }} (KES {{ r.amount|currency }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="md:col-span-4 flex gap-2 pt-5">
+                <button type="submit" class="flex-1 py-2.5 bg-blue-600 text-white font-semibold text-sm rounded-lg hover:bg-blue-700 transition shadow-sm">
+                    Apply Filter
+                </button>
+                {% if selected_route_id %}
+                <a href="{{ url_for('transport.transport_assignments') }}" class="px-4 py-2.5 bg-gray-100 text-gray-700 font-semibold text-sm rounded-lg hover:bg-gray-200 transition text-center">
+                    Reset
+                </a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
+    <!-- Table -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+                <thead class="bg-slate-50 border-b border-gray-200">
+                    <tr>
+                        <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase">Adm No</th>
+                        <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase">Student Name</th>
+                        <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase">Class</th>
+                        <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase">Route Name</th>
+                        <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase text-right">Route Fee</th>
+                        <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase">Guardian Contact</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 bg-white">
+                    {% for a in assignments %}
+                    <tr class="hover:bg-slate-50 transition">
+                        <td class="px-4 py-3.5 font-mono text-xs font-bold text-blue-700">#{{ a.AdmNo }}</td>
+                        <td class="px-4 py-3.5 text-sm font-bold text-gray-900">
+                            <a href="{{ url_for('students.student_profile', admno=a.AdmNo) }}" class="hover:text-blue-600 hover:underline">
+                                {{ a.student_name }}
+                            </a>
+                        </td>
+                        <td class="px-4 py-3.5 text-xs font-semibold text-gray-700">{{ a.class_name }}</td>
+                        <td class="px-4 py-3.5 text-xs font-bold text-purple-700">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full bg-purple-50 border border-purple-200">
+                                <i class="fas fa-bus mr-1.5 text-purple-500"></i> {{ a.route_name }}
+                            </span>
+                        </td>
+                        <td class="px-4 py-3.5 text-xs font-mono font-bold text-right text-gray-900">KES {{ a.route_amount|currency }}</td>
+                        <td class="px-4 py-3.5 text-xs text-gray-600">
+                            {% if a.parent_name or a.parent_phone %}
+                            <div><strong class="text-gray-800">{{ a.parent_name or 'Guardian' }}</strong></div>
+                            <div class="font-mono text-gray-500">{{ a.parent_phone or '-' }}</div>
+                            {% else %}
+                            <span class="text-gray-400 italic">No parent info</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="px-6 py-12 text-center text-gray-400 text-sm">
+                            <i class="fas fa-bus-alt text-3xl mb-2 text-gray-300 block"></i>
+                            No students currently assigned to this transport route.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="px-6 py-3 bg-slate-50 border-t border-gray-200 text-xs text-gray-500 flex justify-between items-center">
+            <span>Total Assigned Students: <strong class="text-gray-900">{{ assignments|length }}</strong></span>
+        </div>
+    </div>
+</div>
+{% endblock %}

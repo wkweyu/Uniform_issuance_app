@@ -7,9 +7,17 @@
     <link href="{{ url_for('static', filename='css/tailwind.min.css') }}" rel="stylesheet">
     <style>
         @media print {
-            .no-print { display: none; }
-            body { background: white; padding: 0; }
-            .print-border { border: 1px solid #e5e7eb; }
+            @page {
+                size: A4 portrait;
+                margin: 10mm;
+            }
+            .no-print { display: none !important; }
+            body { background: white !important; padding: 0 !important; }
+            .print-border { border: 1px solid #cbd5e1 !important; box-shadow: none !important; }
+            section, .grid, div {
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
         }
         .watermark {
             position: absolute;
@@ -183,5 +191,13 @@
 
     <!-- Scripts -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script>
+        window.addEventListener('DOMContentLoaded', () => {
+            // Auto trigger print dialog on page load
+            setTimeout(() => {
+                window.print();
+            }, 300);
+        });
+    </script>
 </body>
 </html>

@@ -66,11 +66,40 @@
         </div>
     </div>
 
+    <!-- Flash / Error Alerts -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="space-y-3 mb-6">
+          {% for category, message in messages %}
+            <div class="p-4 rounded-xl text-sm font-semibold flex items-center justify-between shadow-sm {% if category == 'error' or category == 'danger' %}bg-red-50 text-red-800 border border-red-200{% elif category == 'warning' %}bg-amber-50 text-amber-800 border border-amber-200{% else %}bg-emerald-50 text-emerald-800 border border-emerald-200{% endif %}">
+              <div class="flex items-center">
+                <i class="fas {% if category == 'error' or category == 'danger' %}fa-exclamation-circle text-red-500{% elif category == 'warning' %}fa-exclamation-triangle text-amber-500{% else %}fa-check-circle text-emerald-500{% endif %} text-lg mr-3"></i>
+                <span>{{ message }}</span>
+              </div>
+              <button type="button" onclick="this.parentElement.remove()" class="text-gray-400 hover:text-gray-600 ml-4">
+                <i class="fas fa-times"></i>
+              </button>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <div id="clientErrorAlert" class="hidden p-4 mb-6 rounded-xl text-sm font-semibold bg-red-50 text-red-800 border border-red-200 shadow-sm flex items-center justify-between">
+        <div class="flex items-center">
+            <i class="fas fa-exclamation-circle text-red-500 text-lg mr-3"></i>
+            <span id="clientErrorMessage"></span>
+        </div>
+        <button type="button" onclick="document.getElementById('clientErrorAlert').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 ml-4">
+            <i class="fas fa-times"></i>
+        </button>
+    </div>
+
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <!-- Main Form Card -->
         <div class="lg:col-span-2">
             <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-                <form method="POST" id="admissionForm" class="p-6 sm:p-8">
+                <form method="POST" id="admissionForm" class="p-6 sm:p-8" onsubmit="return validateFinalSubmit(event)">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
                     <!-- STEP 1: STUDENT IDENTITY -->
@@ -88,6 +117,9 @@
                                     <input type="text" name="admno" id="admno" required
                                            class="w-full pl-8 pr-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm font-mono font-bold text-gray-900 focus:ring-2 focus:ring-blue-500 focus:bg-white"
                                            placeholder="e.g. 2026001">
+                                </div>
+                                <div id="admnoAlert" class="mt-1 text-xs font-bold text-red-600 hidden flex items-center">
+                                    <i class="fas fa-exclamation-circle mr-1"></i> Admission number already exists!
                                 </div>
                             </div>
                             <div>
@@ -347,6 +379,19 @@
 
 <script>
     let currentStep = 1;
+    let isAdmnoDuplicate = false;
+
+    function showError(msg) {
+        const box = document.getElementById('clientErrorAlert');
+        const text = document.getElementById('clientErrorMessage');
+        text.textContent = msg;
+        box.classList.remove('hidden');
+        box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function hideError() {
+        document.getElementById('clientErrorAlert').classList.add('hidden');
+    }
 
     function goToStep(step) {
         if (step < 1 || step > 3) return;
@@ -375,23 +420,62 @@
     }
 
     function nextStep(targetStep) {
-        if (currentStep === 1) {
-            const adm = document.getElementById('admno').value.trim();
-            const fn = document.getElementById('fname').value.trim();
-            const ln = document.getElementById('lname').value.trim();
-            const gender = document.querySelector('input[name="gender"]:checked');
-            if (!adm || !fn || !ln || !gender) {
-                alert("Please fill in all required fields in Step 1 (Admission No, First/Last Name, Gender).");
-                return;
-            }
-        } else if (currentStep === 2) {
-            const cls = document.getElementById('class_id').value;
-            if (!cls) {
-                alert("Please select a Class & Stream.");
-                return;
+        hideError();
+        if (targetStep > currentStep) {
+            if (currentStep === 1) {
+                const adm = document.getElementById('admno').value.trim();
+                const fn = document.getElementById('fname').value.trim();
+                const ln = document.getElementById('lname').value.trim();
+                const gender = document.querySelector('input[name="gender"]:checked');
+                if (!adm) {
+                    showError("Admission Number is required.");
+                    return;
+                }
+                if (isAdmnoDuplicate) {
+                    showError("Admission Number already exists in the system. Please enter a unique Admission Number.");
+                    return;
+                }
+                if (!fn || !ln) {
+                    showError("First Name and Last / Surname are required.");
+                    return;
+                }
+                if (!gender) {
+                    showError("Gender selection is required.");
+                    return;
+                }
+            } else if (currentStep === 2) {
+                const cls = document.getElementById('class_id').value;
+                const cat = document.getElementById('student_category').value;
+                const routeSelect = document.querySelector('select[name="route_id"]');
+                if (!cls) {
+                    showError("Please select a Class & Stream.");
+                    return;
+                }
+                if (cat === 'Transport' && (!routeSelect || !routeSelect.value)) {
+                    showError("Please select a Transport Route when Boarding Category is Day + Transport.");
+                    return;
+                }
             }
         }
         goToStep(targetStep);
+    }
+
+    function validateFinalSubmit(e) {
+        hideError();
+        const phone = document.getElementById('p_phone').value.trim();
+        if (!phone) {
+            e.preventDefault();
+            showError("Primary Guardian Phone Number is required.");
+            goToStep(3);
+            return false;
+        }
+        if (isAdmnoDuplicate) {
+            e.preventDefault();
+            showError("Cannot submit form: Admission Number already exists in the system.");
+            goToStep(1);
+            return false;
+        }
+        return true;
     }
 
     // Transport category listener
@@ -404,6 +488,38 @@
             } else {
                 routeSec.classList.add('hidden');
             }
+        });
+
+        // Duplicate AdmNo Checker
+        const admInput = document.getElementById('admno');
+        const admnoAlert = document.getElementById('admnoAlert');
+        let admTimer;
+
+        admInput.addEventListener('input', function() {
+            clearTimeout(admTimer);
+            const val = this.value.trim();
+            if (!val) {
+                admnoAlert.classList.add('hidden');
+                isAdmnoDuplicate = false;
+                return;
+            }
+            admTimer = setTimeout(() => {
+                fetch(`{{ url_for('students.check_admno') }}?admno=${encodeURIComponent(val)}`)
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data && data.exists) {
+                            isAdmnoDuplicate = true;
+                            admnoAlert.classList.remove('hidden');
+                        } else {
+                            isAdmnoDuplicate = false;
+                            admnoAlert.classList.add('hidden');
+                        }
+                    })
+                    .catch(() => {
+                        isAdmnoDuplicate = false;
+                        admnoAlert.classList.add('hidden');
+                    });
+            }, 300);
         });
 
         // Sibling auto-lookup

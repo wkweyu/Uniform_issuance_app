@@ -119,37 +119,72 @@
 
     <!-- Search & Quick Filters Toolbar -->
     <div class="print-hide bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
-        <form method="GET" action="{{ url_for('students.students_list') }}" class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
-            <div class="md:col-span-6 relative">
-                <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
-                    <i class="fas fa-search"></i>
+        <form method="GET" action="{{ url_for('students.students_list') }}" class="space-y-3">
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                <!-- Text Search -->
+                <div class="md:col-span-5 relative">
+                    <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                        <i class="fas fa-search"></i>
+                    </div>
+                    <input type="text" name="q" id="searchInput" value="{{ q or '' }}"
+                           placeholder="Search by Admission No, Student Name..."
+                           class="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white transition">
                 </div>
-                <input type="text" name="q" id="searchInput" value="{{ q or '' }}"
-                       placeholder="Search by Admission No, Student Name, or Guardian..."
-                       class="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white transition">
+
+                <!-- Class Filter -->
+                <div class="md:col-span-3">
+                    <select name="class_filter" id="classFilter" onchange="this.form.submit()" class="w-full py-2.5 px-3 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500">
+                        <option value="">All Classes / Streams</option>
+                        {% if classes %}
+                            {% for c in classes %}
+                                {% set c_val = c.display_name or c.class_name %}
+                                <option value="{{ c_val }}" {% if selected_class == c_val %}selected{% endif %}>{{ c_val }}</option>
+                            {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
+
+                <!-- Status Filter -->
+                <div class="md:col-span-2">
+                    <select name="status" onchange="this.form.submit()" class="w-full py-2.5 px-3 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500">
+                        <option value="">All Statuses</option>
+                        <option value="Active" {% if status_filter == 'Active' %}selected{% endif %}>Active</option>
+                        <option value="Blocked" {% if status_filter == 'Blocked' %}selected{% endif %}>Blocked</option>
+                    </select>
+                </div>
+
+                <!-- Transport Route Filter -->
+                <div class="md:col-span-2">
+                    <select name="route_id" onchange="this.form.submit()" class="w-full py-2.5 px-3 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500">
+                        <option value="">All Routes</option>
+                        {% if routes %}
+                            {% for r in routes %}
+                                <option value="{{ r.id }}" {% if selected_route_id == r.id %}selected{% endif %}>{{ r.name }}</option>
+                            {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
             </div>
 
-            <div class="md:col-span-3">
-                <select name="class_filter" id="classFilter" onchange="this.form.submit()" class="w-full py-2.5 px-3 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500">
-                    <option value="">All Classes / Streams</option>
-                    {% if classes %}
-                        {% for c in classes %}
-                            {% set c_val = c.display_name or c.class_name %}
-                            <option value="{{ c_val }}" {% if selected_class == c_val %}selected{% endif %}>{{ c_val }}</option>
-                        {% endfor %}
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center pt-1 border-t border-gray-100">
+                <!-- Admission Date Range -->
+                <div class="md:col-span-4 flex items-center gap-2">
+                    <span class="text-xs font-bold text-gray-500 uppercase whitespace-nowrap">Adm Date:</span>
+                    <input type="date" name="start_date" value="{{ start_date or '' }}" class="w-full py-1.5 px-2 bg-gray-50 border border-gray-300 rounded-lg text-xs text-gray-900">
+                    <span class="text-xs text-gray-400">to</span>
+                    <input type="date" name="end_date" value="{{ end_date or '' }}" class="w-full py-1.5 px-2 bg-gray-50 border border-gray-300 rounded-lg text-xs text-gray-900">
+                </div>
+
+                <div class="md:col-span-8 flex justify-end gap-2">
+                    <button type="submit" class="px-6 py-2 bg-gray-900 text-white font-semibold text-xs rounded-lg hover:bg-black transition shadow-sm">
+                        Filter Results
+                    </button>
+                    {% if q or selected_class or status_filter or selected_route_id or start_date or end_date %}
+                    <a href="{{ url_for('students.students_list') }}" class="px-4 py-2 bg-gray-100 text-gray-700 font-semibold text-xs rounded-lg hover:bg-gray-200 transition text-center">
+                        Reset Filters
+                    </a>
                     {% endif %}
-                </select>
-            </div>
-
-            <div class="md:col-span-3 flex gap-2">
-                <button type="submit" class="flex-1 py-2.5 bg-gray-900 text-white font-semibold text-sm rounded-lg hover:bg-black transition shadow-sm">
-                    Search
-                </button>
-                {% if q or selected_class %}
-                <a href="{{ url_for('students.students_list') }}" class="px-4 py-2.5 bg-gray-100 text-gray-700 font-semibold text-sm rounded-lg hover:bg-gray-200 transition text-center">
-                    Reset
-                </a>
-                {% endif %}
+                </div>
             </div>
         </form>
     </div>
@@ -181,8 +216,8 @@
                     <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase tracking-wider">Student Name</th>
                     <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase tracking-wider">Gender</th>
                     <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase tracking-wider">Class / Stream</th>
-                    <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase tracking-wider">Group</th>
-                    <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase tracking-wider text-center">Year</th>
+                    <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase tracking-wider">Route</th>
+                    <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase tracking-wider text-center">Date Adm</th>
                     <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase tracking-wider text-center">Status</th>
                     <th class="col-action px-4 py-3.5 text-xs font-bold text-gray-600 uppercase tracking-wider text-right print-hide">Actions</th>
                 </tr>
@@ -209,16 +244,18 @@
                             <span class="text-gray-400 italic">Unassigned</span>
                         {% endif %}
                     </td>
-                    <td class="px-4 py-3.5 text-xs">
-                        {% if s.class_group %}
-                            <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200 font-medium">
-                                {{ s.class_group }}
+                    <td class="px-4 py-3.5 text-xs font-semibold">
+                        {% if s.route_name %}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200">
+                                <i class="fas fa-bus mr-1 text-purple-500"></i> {{ s.route_name }}
                             </span>
                         {% else %}
                             <span class="text-gray-300">—</span>
                         {% endif %}
                     </td>
-                    <td class="px-4 py-3.5 text-center text-xs font-mono text-gray-600">{{ s.thisYear or '-' }}</td>
+                    <td class="px-4 py-3.5 text-center text-xs font-mono text-gray-600">
+                        {{ s.Date_Adm.strftime('%Y-%m-%d') if s.Date_Adm and s.Date_Adm.strftime is defined else (s.Date_Adm or '-') }}
+                    </td>
                     <td class="px-4 py-3.5 text-center">
                         {% if s.blocked == 'YES' or s.Status == 'YES' %}
                             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-800 print:text-black">

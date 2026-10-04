@@ -72,8 +72,8 @@ def admit_student():
                 if student_data['category'] == 'Transport' and student_data['route_id']:
                     route_data = service.get_transport_route_by_id(student_data['route_id'])
                     if route_data:
-                        votehead_name = f"Transport-{route_data['name']}"
-                        votehead_id = service.get_or_create_votehead(votehead_name, f"Charges for route: {route_data['name']}")
+                        votehead_name = "Transport"
+                        votehead_id = service.get_or_create_votehead(votehead_name, "Standard Transport Charges")
                         term_id = service.get_current_term_id()
 
                         if academic_year_id and term_id:
@@ -88,7 +88,7 @@ def admit_student():
                             )
 
                 flash(f"Student admitted successfully. ID: {student_data['admno']}", "success")
-                return redirect(url_for('print_admission_form', admno=student_data['admno']))
+                return redirect(url_for('students.print_admission_form', admno=student_data['admno']))
         except Exception as e:
             flash(f"Error during admission: {str(e)}", "error")
 
@@ -105,7 +105,7 @@ def bulk_admit_students():
     connection = get_db_connection()
     service = StudentService(connection)
     if request.method == 'POST':
-        file = request.files.get('csv_file')
+        file = request.files.get('file') or request.files.get('csv_file')
         if not file:
             flash("No file uploaded", "error")
             return redirect(url_for('students.bulk_admit_students'))
@@ -113,11 +113,86 @@ def bulk_admit_students():
         try:
             stream = io.StringIO(file.stream.read().decode("UTF-8"), newline=None)
             reader = csv.DictReader(stream)
-            students = [row for row in reader]
+            raw_students = [row for row in reader]
             classes = service.get_classes()
+            routes = service.get_transport_routes()
+
+            route_map = {r['name'].strip().lower(): r['id'] for r in routes if r.get('name')}
+            class_map = {}
+            for c in classes:
+                if c.get('display_name'):
+                    class_map[c['display_name'].strip().lower()] = c['classID']
+                if c.get('class_name'):
+                    class_map[c['class_name'].strip().lower()] = c['classID']
+
+            processed_rows = []
+            for row in raw_students:
+                admno = (row.get('admno') or row.get('AdmNo') or row.get('AdmissionNo') or '').strip()
+                fname = (row.get('fname') or row.get('FName') or row.get('FirstName') or '').strip()
+                mname = (row.get('mname') or row.get('MName') or row.get('MiddleName') or '').strip()
+                lname = (row.get('lname') or row.get('LName') or row.get('LastName') or row.get('SName') or '').strip()
+                gender = (row.get('gender') or row.get('Gender') or row.get('Sex') or 'M').strip()
+                dob = (row.get('dob') or row.get('DoB') or row.get('DateOfBirth') or '').strip()
+                category = (row.get('category') or row.get('Category') or 'Day').strip()
+                raw_class = (row.get('class_name') or row.get('class') or row.get('Class') or '').strip()
+                raw_route = (row.get('transport_route') or row.get('route') or row.get('Route') or '').strip()
+
+                p_name = (row.get('parent_name') or row.get('pName') or row.get('GuardianName') or '').strip()
+                p_phone = (row.get('parent_phone') or row.get('phone1') or row.get('GuardianPhone') or '').strip()
+                p_email = (row.get('parent_email') or row.get('email') or '').strip()
+                p_id = (row.get('parent_id_no') or row.get('nationalID') or '').strip()
+                p_address = (row.get('home_address') or row.get('address') or '').strip()
+                p_town = (row.get('residency') or row.get('hometown') or '').strip()
+
+                validation_errors = []
+                if not admno:
+                    validation_errors.append("Missing AdmNo")
+                elif service.check_admno_exists(admno):
+                    validation_errors.append("exists")
+
+                matched_class_id = class_map.get(raw_class.lower())
+                if not matched_class_id and raw_class.isdigit():
+                    matched_class_id = int(raw_class)
+
+                matched_route_id = route_map.get(raw_route.lower())
+                if not matched_route_id and raw_route.isdigit():
+                    matched_route_id = int(raw_route)
+
+                has_sibling = False
+                if p_phone:
+                    siblings, parent_info = service.get_parent_info_and_siblings_by_phone(p_phone)
+                    if siblings:
+                        has_sibling = True
+                    if parent_info and not p_name:
+                        p_name = parent_info.get('pName', '')
+
+                processed_rows.append({
+                    'admno': admno,
+                    'fname': fname,
+                    'mname': mname,
+                    'lname': lname,
+                    'gender': gender,
+                    'dob': dob,
+                    'category': category,
+                    'class_id': matched_class_id,
+                    'class_name': raw_class,
+                    'route_id': matched_route_id,
+                    'transport_route': raw_route,
+                    'parent_name': p_name,
+                    'parent_phone': p_phone,
+                    'parent_email': p_email,
+                    'parent_id_no': p_id,
+                    'home_address': p_address,
+                    'residency': p_town,
+                    'is_valid': len(validation_errors) == 0,
+                    'validation_errors': validation_errors,
+                    'has_sibling': has_sibling
+                })
+
             connection.close()
-            return render_template('bulk_admit_verify.html', students=students, classes=classes)
+            return render_template('bulk_import_preview.html', data=processed_rows, available_classes=classes, routes=routes)
         except Exception as e:
+            connection.close()
             flash(f"Error reading file: {str(e)}", "error")
 
     classes = service.get_classes()
@@ -131,13 +206,27 @@ def finalize_bulk_import():
     connection = get_db_connection()
     service = StudentService(connection)
     try:
-        success_count, error_count = service.bulk_import_students(data)
+        success_count, error_count = service.bulk_import_students(data, user_id=session.get('userNo'))
         flash(f"Success: {success_count} students admitted. {error_count} skipped/failed.", "success" if error_count == 0 else "warning")
     except Exception as e:
         flash(f"Major error during processing: {str(e)}", "error")
     finally:
         connection.close()
     return redirect(url_for('students.students_list'))
+
+@students_bp.route('/api/check_admno')
+@login_required
+def check_admno():
+    admno = request.args.get('admno', '').strip()
+    if not admno:
+        return jsonify({'exists': False})
+    connection = get_db_connection()
+    service = StudentService(connection)
+    try:
+        exists = service.check_admno_exists(admno)
+        return jsonify({'exists': bool(exists)})
+    finally:
+        connection.close()
 
 @students_bp.route('/api/search_students')
 @login_required
@@ -214,19 +303,36 @@ def students_list():
     term_cur, year_cur = get_current_term_and_year()
     q = request.args.get('q', '').strip()
     class_filter = request.args.get('class_filter', '').strip()
+    status_filter = request.args.get('status', '').strip()
+    route_filter = request.args.get('route_id', '').strip()
+    start_date = request.args.get('start_date', '').strip()
+    end_date = request.args.get('end_date', '').strip()
+
+    route_id_int = int(route_filter) if route_filter and route_filter.isdigit() else None
+
     students = service.get_students_list(
         query=q if q else None,
         class_filter=class_filter if class_filter else None,
+        status_filter=status_filter if status_filter else None,
+        route_filter=route_id_int,
+        start_date=start_date if start_date else None,
+        end_date=end_date if end_date else None,
         year_cur=year_cur
     )
     classes = service.get_classes()
+    routes = service.get_transport_routes()
     connection.close()
     return render_template(
         'student_list.html',
         students=students,
         classes=classes,
+        routes=routes,
         q=q,
-        selected_class=class_filter
+        selected_class=class_filter,
+        status_filter=status_filter,
+        selected_route_id=route_id_int,
+        start_date=start_date,
+        end_date=end_date
     )
 
 @students_bp.route('/students/admission-book')
