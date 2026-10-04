@@ -104,8 +104,8 @@
                <i class="fas fa-book-open mr-2"></i> Admission Book
             </a>
             <a href="{{ url_for('students.parents_list') }}"
-               class="inline-flex items-center px-4 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition font-semibold shadow-sm text-sm">
-               <i class="fas fa-users-rectangle mr-2"></i> Parents Register
+               class="inline-flex items-center px-4 py-2.5 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition font-semibold shadow-sm text-sm">
+               <i class="fas fa-address-book mr-2"></i> Parent-book
             </a>
             <a href="{{ url_for('students.bulk_admit_students') }}"
                class="inline-flex items-center px-4 py-2.5 bg-gray-100 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-200 transition font-semibold text-sm">
@@ -130,11 +130,12 @@
             </div>
 
             <div class="md:col-span-3">
-                <select id="classFilter" onchange="filterTable()" class="w-full py-2.5 px-3 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500">
+                <select name="class_filter" id="classFilter" onchange="this.form.submit()" class="w-full py-2.5 px-3 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500">
                     <option value="">All Classes / Streams</option>
                     {% if classes %}
                         {% for c in classes %}
-                            <option value="{{ c.display_name or c.class_name }}">{{ c.display_name or c.class_name }}</option>
+                            {% set c_val = c.display_name or c.class_name %}
+                            <option value="{{ c_val }}" {% if selected_class == c_val %}selected{% endif %}>{{ c_val }}</option>
                         {% endfor %}
                     {% endif %}
                 </select>
@@ -144,7 +145,7 @@
                 <button type="submit" class="flex-1 py-2.5 bg-gray-900 text-white font-semibold text-sm rounded-lg hover:bg-black transition shadow-sm">
                     Search
                 </button>
-                {% if q %}
+                {% if q or selected_class %}
                 <a href="{{ url_for('students.students_list') }}" class="px-4 py-2.5 bg-gray-100 text-gray-700 font-semibold text-sm rounded-lg hover:bg-gray-200 transition text-center">
                     Reset
                 </a>

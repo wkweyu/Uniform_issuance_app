@@ -59,21 +59,30 @@
         <!-- Left Column: Key Student Identity & Contact Card -->
         <div class="lg:col-span-1 space-y-6">
             <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-                <div class="h-28 bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-800"></div>
-                <div class="px-6 pb-6">
-                    <div class="relative flex justify-center mt-[-3rem] mb-3">
-                        <div class="w-20 h-20 bg-white rounded-2xl p-1 shadow-md">
+                <div class="h-32 bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-800"></div>
+                <div class="px-6 pb-6 pt-0">
+                    <div class="relative flex justify-center -mt-12 mb-4">
+                        <div class="w-24 h-20 bg-white rounded-2xl p-1.5 shadow-lg border border-gray-100">
                             <div class="w-full h-full bg-blue-50 text-blue-700 rounded-xl flex items-center justify-center font-black text-2xl">
-                                {{ student.FName[0] }}{{ (student.SName or student.LName or 'S')[0] }}
+                                {{ (student.FName or 'S')[0] }}{{ (student.SName or student.LName or 'S')[0] }}
                             </div>
                         </div>
                     </div>
 
-                    <div class="text-center mb-6">
-                        <h2 class="text-xl font-bold text-gray-900">{{ student.FName }} {% if student.MName %}{{ student.MName }} {% endif %}{{ student.SName or student.LName or '' }}</h2>
-                        <p class="text-blue-600 font-mono font-bold text-sm mt-0.5">#{{ student.AdmNo }}</p>
-                        <div class="mt-2 inline-flex items-center px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-xs font-bold">
-                            <i class="fas fa-venus-mars mr-1.5 text-slate-400"></i> {{ 'Male' if student.Sex == 'M' else 'Female' }}
+                    <div class="text-center mb-6 px-2">
+                        <h2 class="text-xl font-bold text-gray-900 leading-tight">
+                            {{ student.FName or '' }} {% if student.MName %}{{ student.MName }} {% endif %}{{ student.SName or student.LName or '' }}
+                        </h2>
+                        <div class="flex items-center justify-center gap-2 mt-2 flex-wrap">
+                            <span class="text-blue-700 font-mono font-bold text-xs bg-blue-50 px-2.5 py-1 rounded-md border border-blue-100">#{{ student.AdmNo }}</span>
+                            <span class="inline-flex items-center px-2.5 py-1 bg-slate-100 text-slate-700 rounded-md text-xs font-bold">
+                                <i class="fas fa-venus-mars mr-1 text-slate-400 text-[10px]"></i> {{ 'Male' if student.Sex == 'M' else ('Female' if student.Sex == 'F' else (student.Sex or 'N/A')) }}
+                            </span>
+                            {% if student.blocked == 'YES' %}
+                                <span class="px-2.5 py-1 bg-red-100 text-red-800 rounded-md font-bold text-xs">Blocked</span>
+                            {% else %}
+                                <span class="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-md font-bold text-xs">Active</span>
+                            {% endif %}
                         </div>
                     </div>
 
@@ -85,24 +94,34 @@
                             </span>
                         </div>
                         <div class="flex justify-between items-center">
+                            <span class="text-gray-500">Class Group</span>
+                            <span class="font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-100">
+                                {{ student.class_group or 'N/A' }}
+                            </span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-500">Age</span>
+                            <span class="font-bold text-gray-800">
+                                {{ student.age ~ ' yrs' if student.age is defined and student.age is not none else 'N/A' }}
+                            </span>
+                        </div>
+                        <div class="flex justify-between items-center">
                             <span class="text-gray-500">Category</span>
                             <span class="font-bold text-gray-800">{{ student.category or 'Day' }}</span>
                         </div>
                         <div class="flex justify-between items-center">
+                            <span class="text-gray-500">Transport Info</span>
+                            <span class="font-bold text-indigo-700">
+                                {{ student.transport_info or ('Route #' ~ student.route_id if student.route_id else 'N/A') }}
+                            </span>
+                        </div>
+                        <div class="flex justify-between items-center">
                             <span class="text-gray-500">Academic Year</span>
-                            <span class="font-bold text-gray-800">{{ student.thisYear or now.year if now is defined else '2026' }}</span>
+                            <span class="font-bold text-gray-800">{{ student.thisYear or (now.year if now is defined else '2026') }}</span>
                         </div>
                         <div class="flex justify-between items-center">
                             <span class="text-gray-500">Admission Date</span>
                             <span class="font-bold text-gray-700">{{ student.Date_Adm or '—' }}</span>
-                        </div>
-                        <div class="flex justify-between items-center">
-                            <span class="text-gray-500">Account Status</span>
-                            {% if student.blocked == 'YES' %}
-                                <span class="px-2 py-0.5 bg-red-100 text-red-800 rounded font-bold text-[10px]">Blocked</span>
-                            {% else %}
-                                <span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold text-[10px]">Active</span>
-                            {% endif %}
                         </div>
                     </div>
 
@@ -231,23 +250,81 @@
             <!-- Tab 2: Fees -->
             <div id="tab-fees" class="tab-pane hidden">
                 <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-6">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-gray-100 pb-4">
+                        <div>
+                            <h3 class="font-bold text-gray-900 text-base">Academic Fees Statement</h3>
+                            <p class="text-xs text-gray-500 mt-0.5">Termly aggregated fee breakdown and payment summary</p>
+                        </div>
+                        <a href="{{ url_for('students.student_fee_statement', admno=student.AdmNo) }}"
+                           class="inline-flex items-center px-3.5 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-xl hover:bg-blue-100 font-semibold text-xs transition">
+                            <i class="fas fa-external-link-alt mr-1.5"></i> Detailed Statement
+                        </a>
+                    </div>
+
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div class="p-4 bg-slate-50 border border-slate-200 rounded-xl">
                             <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Total Billed</span>
-                            <span class="text-lg font-extrabold text-gray-900">KES {{ total_billed|currency }}</span>
+                            <span class="text-lg font-extrabold text-gray-900">KES {{ (total_billed or 0)|currency }}</span>
                         </div>
                         <div class="p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
                             <span class="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block mb-1">Total Paid</span>
-                            <span class="text-lg font-extrabold text-emerald-800">KES {{ total_paid|currency }}</span>
+                            <span class="text-lg font-extrabold text-emerald-800">KES {{ (total_paid or 0)|currency }}</span>
                         </div>
                         <div class="p-4 bg-rose-50 border border-rose-200 rounded-xl">
                             <span class="text-[10px] font-bold text-rose-700 uppercase tracking-wider block mb-1">Outstanding Balance</span>
-                            <span class="text-lg font-extrabold text-rose-800">KES {{ outstanding_balance|currency }}</span>
+                            <span class="text-lg font-extrabold text-rose-800">KES {{ (outstanding_balance or 0)|currency }}</span>
                         </div>
                     </div>
 
+                    <!-- Termly Aggregated Statement Breakdown -->
                     <div>
-                        <h4 class="font-bold text-xs text-gray-700 uppercase tracking-wider mb-3">Recent Payments</h4>
+                        <h4 class="font-bold text-xs text-gray-700 uppercase tracking-wider mb-3 flex items-center justify-between">
+                            <span>Academic Year Termly Balance Breakdown</span>
+                            <span class="text-[10px] text-gray-400 font-normal">Aggregated by Year & Term</span>
+                        </h4>
+                        {% if termly_fee_statement %}
+                        <div class="overflow-x-auto border border-gray-200 rounded-xl">
+                            <table class="w-full text-left text-xs">
+                                <thead class="bg-gray-50 border-b border-gray-200">
+                                    <tr>
+                                        <th class="p-3 font-bold text-gray-600">Academic Period</th>
+                                        <th class="p-3 font-bold text-gray-600 text-right">Billed / Charges</th>
+                                        <th class="p-3 font-bold text-gray-600 text-right">Paid</th>
+                                        <th class="p-3 font-bold text-gray-600 text-right">Waivers / Credits</th>
+                                        <th class="p-3 font-bold text-gray-600 text-right">Term Balance</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100">
+                                    {% for term_rec in termly_fee_statement %}
+                                    <tr class="hover:bg-gray-50 transition">
+                                        <td class="p-3">
+                                            <span class="font-bold text-gray-900 block">{{ term_rec.academic_year or 'Year' }}</span>
+                                            <span class="text-[10px] font-semibold text-blue-600">Term {{ term_rec.term_number or '-' }}</span>
+                                        </td>
+                                        <td class="p-3 text-right font-medium text-gray-900">
+                                            KES {{ ((term_rec.charges or 0) + (term_rec.debits or 0))|currency }}
+                                        </td>
+                                        <td class="p-3 text-right font-semibold text-emerald-700">
+                                            KES {{ (term_rec.payments or 0)|currency }}
+                                        </td>
+                                        <td class="p-3 text-right font-medium text-purple-700">
+                                            KES {{ ((term_rec.waivers or 0) + (term_rec.credits or 0))|currency }}
+                                        </td>
+                                        <td class="p-3 text-right font-bold {% if (term_rec.closing_balance or 0) > 0 %}text-rose-700{% else %}text-emerald-700{% endif %}">
+                                            KES {{ (term_rec.closing_balance or 0)|currency }}
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <p class="text-xs text-gray-400 italic">No termly fee records found for this student.</p>
+                        {% endif %}
+                    </div>
+
+                    <div>
+                        <h4 class="font-bold text-xs text-gray-700 uppercase tracking-wider mb-3">Recent Payments Posted</h4>
                         {% if fee_history %}
                         <div class="overflow-x-auto border border-gray-200 rounded-xl">
                             <table class="w-full text-left text-xs">
@@ -262,17 +339,17 @@
                                 <tbody class="divide-y divide-gray-100">
                                     {% for fee in fee_history %}
                                     <tr>
-                                        <td class="p-3 font-mono font-bold text-blue-700">{{ fee.rcptno }}</td>
-                                        <td class="p-3 text-gray-600">{{ fee.date_of_payment }}</td>
+                                        <td class="p-3 font-mono font-bold text-blue-700">{{ fee.rcptno or fee.receipt_no or '-' }}</td>
+                                        <td class="p-3 text-gray-600">{{ fee.date_of_payment or fee.date or '-' }}</td>
                                         <td class="p-3 font-medium text-gray-700">{{ fee.payment_mode or 'Cash' }}</td>
-                                        <td class="p-3 font-bold text-emerald-700 text-right">KES {{ (fee.amount_paid or 0)|currency }}</td>
+                                        <td class="p-3 font-bold text-emerald-700 text-right">KES {{ (fee.amount_paid or fee.amount or 0)|currency }}</td>
                                     </tr>
                                     {% endfor %}
                                 </tbody>
                             </table>
                         </div>
                         {% else %}
-                        <p class="text-xs text-gray-400 italic">No payments posted for this student record.</p>
+                        <p class="text-xs text-gray-400 italic">No payment receipts posted for this student record.</p>
                         {% endif %}
                     </div>
                 </div>

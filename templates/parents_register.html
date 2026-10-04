@@ -52,15 +52,15 @@
     /* Dedicated Print Report Styles */
     @media print {
         @page {
-            size: A4 portrait;
-            margin: 12mm 10mm 12mm 10mm;
+            size: A4 landscape;
+            margin: 10mm 10mm 10mm 10mm;
         }
 
         body {
             background-color: #ffffff !important;
             color: #000000 !important;
             font-family: Arial, Helvetica, sans-serif !important;
-            font-size: 10pt !important;
+            font-size: 9pt !important;
         }
 
         nav, header, footer, sidebar, .no-print, .print-hide {
@@ -75,25 +75,33 @@
             border: none !important;
             box-shadow: none !important;
             border-radius: 0 !important;
+            overflow: visible !important;
         }
 
         .parents-table {
             width: 100% !important;
             border-collapse: collapse !important;
+            table-layout: auto !important;
+        }
+
+        .parents-table tr {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
         }
 
         .parents-table th {
             background-color: #f1f5f9 !important;
             color: #000000 !important;
-            border: 1px solid #cbd5e1 !important;
-            padding: 6px 8px !important;
-            font-size: 9pt !important;
+            border: 1px solid #94a3b8 !important;
+            padding: 5px 6px !important;
+            font-size: 8.5pt !important;
+            text-transform: uppercase;
         }
 
         .parents-table td {
             border: 1px solid #cbd5e1 !important;
-            padding: 6px 8px !important;
-            font-size: 8.5pt !important;
+            padding: 5px 6px !important;
+            font-size: 8pt !important;
         }
 
         .child-badge {
@@ -102,7 +110,7 @@
             color: #000000 !important;
             padding: 0 !important;
             margin: 0 4px 0 0 !important;
-            font-size: 8.5pt !important;
+            font-size: 8pt !important;
             font-weight: normal !important;
         }
 
@@ -123,8 +131,8 @@
         .print-header {
             display: block !important;
             border-bottom: 2px solid #1e3a8a;
-            padding-bottom: 12px;
-            margin-bottom: 16px;
+            padding-bottom: 8px;
+            margin-bottom: 12px;
         }
     }
 </style>
@@ -151,23 +159,39 @@
         </div>
     </div>
 
-    <!-- Search Toolbar -->
+    <!-- Search Toolbar & Filtering -->
     <div class="print-hide bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
-        <form method="GET" action="{{ url_for('students.parents_list') }}" class="flex flex-col sm:flex-row gap-3">
-            <div class="relative flex-grow">
-                <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
-                    <i class="fas fa-search"></i>
+        <form method="GET" action="{{ url_for('students.parents_list') }}" class="flex flex-col lg:flex-row gap-3 items-end">
+            <div class="relative flex-grow w-full">
+                <label class="block text-xs font-semibold text-gray-500 mb-1">Search Keyword</label>
+                <div class="relative">
+                    <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                        <i class="fas fa-search text-xs"></i>
+                    </div>
+                    <input type="text" name="q" value="{{ q or '' }}"
+                           placeholder="Parent Name, Student Name, Phone, ID..."
+                           class="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white transition">
                 </div>
-                <input type="text" name="q" value="{{ q or '' }}"
-                       placeholder="Search parent name, phone, national ID, or student name..."
-                       class="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white transition">
             </div>
-            <div class="flex gap-2">
-                <button type="submit" class="px-5 py-2.5 bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-black transition shadow-sm">
-                    Search
+
+            <div class="w-full lg:w-44">
+                <label class="block text-xs font-semibold text-gray-500 mb-1">Registered From</label>
+                <input type="date" name="start_date" value="{{ start_date or '' }}"
+                       class="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white transition">
+            </div>
+
+            <div class="w-full lg:w-44">
+                <label class="block text-xs font-semibold text-gray-500 mb-1">Registered To</label>
+                <input type="date" name="end_date" value="{{ end_date or '' }}"
+                       class="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white transition">
+            </div>
+
+            <div class="flex gap-2 w-full lg:w-auto">
+                <button type="submit" class="px-5 py-2 bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-black transition shadow-sm flex-1 lg:flex-none">
+                    Filter
                 </button>
-                {% if q %}
-                <a href="{{ url_for('students.parents_list') }}" class="px-4 py-2.5 bg-gray-100 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-200 transition text-center">
+                {% if q or start_date or end_date %}
+                <a href="{{ url_for('students.parents_list') }}" class="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-200 transition text-center flex-1 lg:flex-none">
                     Reset
                 </a>
                 {% endif %}
@@ -180,12 +204,20 @@
         <div class="flex justify-between items-start">
             <div>
                 <h1 class="text-xl font-bold uppercase text-blue-900 tracking-wide">SCHOOL MANAGEMENT SYSTEM</h1>
-                <h2 class="text-base font-semibold text-gray-800 mt-1">OFFICIAL PARENTS & GUARDIANS REGISTER</h2>
-                <p class="text-xs text-gray-600">Generated on: {{ now.strftime('%Y-%m-%d %H:%M') if now is defined and now and now.strftime is defined else '' }}</p>
+                <h2 class="text-base font-semibold text-gray-800 mt-0.5">OFFICIAL PARENTS & GUARDIANS REGISTER</h2>
+                {% if q or start_date or end_date %}
+                <p class="text-xs text-gray-700 font-medium mt-1">
+                    Filters Applied:
+                    {% if q %}Keyword: "{{ q }}" {% endif %}
+                    {% if start_date %}From: {{ start_date }} {% endif %}
+                    {% if end_date %}To: {{ end_date }} {% endif %}
+                </p>
+                {% endif %}
+                <p class="text-xs text-gray-600 mt-0.5">Generated on: {{ now.strftime('%Y-%m-%d %H:%M') if now is defined and now and now.strftime is defined else '' }}</p>
             </div>
             <div class="text-right text-xs text-gray-600">
-                <p>CONFIDENTIAL & PROPRIETARY</p>
-                <p>Total Records: {{ parents|length }}</p>
+                <p class="font-bold text-gray-800">CONFIDENTIAL & PROPRIETARY</p>
+                <p class="mt-0.5">Total Records: {{ parents|length }}</p>
             </div>
         </div>
     </div>
@@ -196,13 +228,13 @@
             <table class="parents-table w-full text-left border-collapse">
                 <thead>
                     <tr>
-                        <th class="w-12 text-center">#</th>
-                        <th>Parent / Guardian Name</th>
-                        <th>Primary Phone</th>
-                        <th>National ID</th>
-                        <th>Email</th>
-                        <th>Residency</th>
-                        <th>Enrolled Children</th>
+                        <th style="width: 4%;" class="text-center">#</th>
+                        <th style="width: 22%;">Parent / Guardian Name</th>
+                        <th style="width: 14%;">Primary Phone</th>
+                        <th style="width: 12%;">National ID</th>
+                        <th style="width: 18%;">Email</th>
+                        <th style="width: 12%;">Residency</th>
+                        <th style="width: 18%;">Enrolled Children</th>
                     </tr>
                 </thead>
                 <tbody>
