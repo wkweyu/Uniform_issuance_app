@@ -18,7 +18,6 @@ CREATE TABLE IF NOT EXISTS `exam_user_roles` (
     FOREIGN KEY (`granted_by`) REFERENCES `users` (`userNo`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-
 CREATE TABLE IF NOT EXISTS `exam_access_grants` (
   `id` BIGINT NOT NULL AUTO_INCREMENT,
   `school_id` INT NOT NULL,
@@ -36,20 +35,17 @@ CREATE TABLE IF NOT EXISTS `exam_access_grants` (
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `reviewed_at` DATETIME NULL,
   PRIMARY KEY (`id`),
-  KEY `idx_exam_access_grant_user`
-      (`school_id`,`user_id`,`status`,`expires_at`),
-  KEY `idx_exam_access_grant_scope`
-      (`school_id`,`exam_id`,`class_id`,`subject_id`),
+  KEY `idx_exam_access_grant_user` (`school_id`, `user_id`, `status`, `expires_at`),
+  KEY `idx_exam_access_grant_scope` (`school_id`, `exam_id`, `class_id`, `subject_id`),
   CONSTRAINT `fk_exam_access_grants_school`
-      FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`) ON DELETE CASCADE,
+    FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_exam_access_grants_user`
-      FOREIGN KEY (`user_id`) REFERENCES `users` (`userNo`) ON DELETE CASCADE,
+    FOREIGN KEY (`user_id`) REFERENCES `users` (`userNo`) ON DELETE CASCADE,
   CONSTRAINT `fk_exam_access_grants_requester`
-      FOREIGN KEY (`requested_by`) REFERENCES `users` (`userNo`) ON DELETE RESTRICT,
+    FOREIGN KEY (`requested_by`) REFERENCES `users` (`userNo`) ON DELETE RESTRICT,
   CONSTRAINT `fk_exam_access_grants_reviewer`
-      FOREIGN KEY (`reviewed_by`) REFERENCES `users` (`userNo`) ON DELETE SET NULL
+    FOREIGN KEY (`reviewed_by`) REFERENCES `users` (`userNo`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
 
 CREATE TABLE IF NOT EXISTS `exam_audit_events` (
   `id` BIGINT NOT NULL AUTO_INCREMENT,
@@ -64,14 +60,11 @@ CREATE TABLE IF NOT EXISTS `exam_audit_events` (
   `request_id` VARCHAR(80) NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  KEY `idx_exam_audit_school_time`
-      (`school_id`,`created_at`),
-  KEY `idx_exam_audit_entity`
-      (`school_id`,`entity_type`,`entity_id`,`created_at`),
-  KEY `idx_exam_audit_actor`
-      (`school_id`,`actor_user_id`,`created_at`),
+  KEY `idx_exam_audit_school_time` (`school_id`, `created_at`),
+  KEY `idx_exam_audit_entity` (`school_id`, `entity_type`, `entity_id`, `created_at`),
+  KEY `idx_exam_audit_actor` (`school_id`, `actor_user_id`, `created_at`),
   CONSTRAINT `fk_exam_audit_school`
-      FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`) ON DELETE CASCADE,
+    FOREIGN KEY (`school_id`) REFERENCES `schools` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_exam_audit_actor`
-      FOREIGN KEY (`actor_user_id`) REFERENCES `users` (`userNo`) ON DELETE SET NULL
+    FOREIGN KEY (`actor_user_id`) REFERENCES `users` (`userNo`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
