@@ -213,9 +213,73 @@ def students_list():
     service = StudentService(connection)
     term_cur, year_cur = get_current_term_and_year()
     q = request.args.get('q', '').strip()
+    class_id = request.args.get('class_id', '').strip()
+    status = request.args.get('status', '').strip()
+    gender = request.args.get('gender', '').strip()
+
     students = service.get_students_list(query=q if q else None, year_cur=year_cur)
+    classes = service.get_classes()
     connection.close()
-    return render_template('student_list.html', students=students, q=q)
+    return render_template('student_list.html', students=students, classes=classes, q=q, current_class_id=class_id, current_status=status, current_gender=gender)
+
+@students_bp.route('/students/bulk_action', methods=['POST'])
+@admin_required
+def bulk_students_action():
+    action = request.form.get('action')
+    admnos = request.form.getlist('student_admnos')
+
+    if not admnos:
+        flash("No students selected.", "warning")
+        return redirect(url_for('students.students_list'))
+
+    connection = get_db_connection()
+    service = StudentService(connection)
+    try:
+        if action == 'block':
+            cursor = connection.cursor()
+            for admno in admnos:
+                cursor.execute("UPDATE studentinfo SET blocked = 'YES' WHERE AdmNo = %s AND school_id = %s", (admno, service.school_id))
+            connection.commit()
+            flash(f"Successfully blocked {len(admnos)} student(s).", "success")
+        elif action == 'unblock':
+            cursor = connection.cursor()
+            for admno in admnos:
+                cursor.execute("UPDATE studentinfo SET blocked = 'NO' WHERE AdmNo = %s AND school_id = %s", (admno, service.school_id))
+            connection.commit()
+            flash(f"Successfully unblocked {len(admnos)} student(s).", "success")
+        elif action == 'export_csv':
+            cursor = connection.cursor()
+            format_strings = ','.join(['%s'] * len(admnos))
+            cursor.execute(f"""
+                SELECT si.AdmNo, si.FName, si.MName, si.SName, si.Sex, si.blocked,
+                       c.display_name as class_name, p.pName, p.phone1
+                FROM studentinfo si
+                LEFT JOIN class_allocation ca ON si.AdmNo = ca.student_id AND ca.is_current = TRUE AND si.school_id = ca.school_id
+                LEFT JOIN classes c ON ca.class_id = c.classID AND ca.school_id = c.school_id
+                LEFT JOIN parentinfo p ON si.AdmNo = p.admno AND si.school_id = p.school_id
+                WHERE si.AdmNo IN ({format_strings}) AND si.school_id = %s
+            """, tuple(admnos) + (service.school_id,))
+            rows = cursor.fetchall()
+
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow(['AdmNo', 'First Name', 'Middle Name', 'Last Name', 'Gender', 'Status', 'Class', 'Parent Name', 'Parent Phone'])
+            for r in rows:
+                writer.writerow([r['AdmNo'], r['FName'], r['MName'], r['SName'], r['Sex'], 'Blocked' if r['blocked'] == 'YES' else 'Active', r['class_name'] or '', r['pName'] or '', r['phone1'] or ''])
+
+            response = current_app.response_class(
+                output.getvalue(),
+                mimetype='text/csv',
+                headers={"Content-disposition": "attachment; filename=students_export.csv"}
+            )
+            connection.close()
+            return response
+    except Exception as e:
+        flash(f"Error performing bulk action: {str(e)}", "error")
+    finally:
+        connection.close()
+
+    return redirect(url_for('students.students_list'))
 
 @students_bp.route('/student/<int:admno>')
 @login_required
