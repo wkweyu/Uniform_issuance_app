@@ -664,10 +664,10 @@ class StudentService:
         cursor = self.connection.cursor()
         cursor.execute("""
             SELECT fl.id, fl.date_posted, fl.type, fl.description, fl.amount, fl.balance_after,
-                   ay.year as academic_year, t.term_name
+                   ay.year as academic_year, utd.term_number as term_name
             FROM fee_ledger fl
             LEFT JOIN academic_years ay ON fl.academic_year_id = ay.id AND fl.school_id = ay.school_id
-            LEFT JOIN terms t ON fl.term_id = t.id AND fl.school_id = t.school_id
+            LEFT JOIN uniform_term_dates utd ON fl.term_id = utd.id AND fl.school_id = utd.school_id
             WHERE fl.admno = %s AND fl.school_id = %s
             ORDER BY fl.date_posted ASC, fl.id ASC
         """, (admno, self.school_id))
