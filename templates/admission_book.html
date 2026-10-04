@@ -69,7 +69,7 @@
                             <span class="font-semibold text-gray-800">{{ s.class_name or 'Unassigned' }}</span>
                         </td>
                         <td class="px-4 py-2.5 text-gray-600 font-mono">
-                            {{ s.Date_Adm.strftime('%d/%m/%Y') if s.Date_Adm else '-' }}
+                            {{ s.Date_Adm.strftime('%d/%m/%Y') if (s.Date_Adm and s.Date_Adm.strftime is defined) else (s.Date_Adm or '-') }}
                         </td>
                         <td class="px-4 py-2.5 font-semibold text-gray-800">
                             {{ s.parent_name or '-' }}

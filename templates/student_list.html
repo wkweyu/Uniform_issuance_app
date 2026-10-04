@@ -202,10 +202,10 @@
                             {{ s.parent_phone or '-' }}
                         </td>
                         <td class="col-dob-cell hidden px-4 py-3 text-xs text-gray-600">
-                            {{ s.DoB.strftime('%Y-%m-%d') if s.DoB else '-' }}
+                            {{ s.DoB.strftime('%Y-%m-%d') if (s.DoB and s.DoB.strftime is defined) else (s.DoB or '-') }}
                         </td>
                         <td class="col-admdate-cell hidden px-4 py-3 text-xs text-gray-600">
-                            {{ s.Date_Adm.strftime('%Y-%m-%d') if s.Date_Adm else '-' }}
+                            {{ s.Date_Adm.strftime('%Y-%m-%d') if (s.Date_Adm and s.Date_Adm.strftime is defined) else (s.Date_Adm or '-') }}
                         </td>
                         <td class="px-4 py-3">
                             {% if s.class_group %}
