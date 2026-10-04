@@ -165,7 +165,7 @@
                     {% for ex in exam_summaries %}
                     <tr>
                         <td class="p-1 border-r border-gray-200 font-bold">{{ ex.exam_name }} ({{ ex.academic_year }})</td>
-                        <td class="p-1 border-r border-gray-200 text-center font-mono">{{ "%.1f"|format(ex.mean_mark) }}%</td>
+                        <td class="p-1 border-r border-gray-200 text-center font-mono">{{ "%.1f"|format(ex.mean_mark or 0) }}%</td>
                         <td class="p-1 text-center font-extrabold">{{ ex.mean_grade }}</td>
                     </tr>
                     {% else %}
@@ -343,12 +343,12 @@
                 {% if siblings %}
                 <div class="space-y-2">
                     {% for sib in siblings %}
-                    <a href="{{ url_for('students.student_profile', admno=sib.AdmNo) }}" class="flex items-center justify-between p-2.5 rounded-xl border border-gray-100 hover:bg-blue-50/50 transition group">
+                <a href="{{ url_for('students.student_profile', admno=sib.AdmNo or sib.admno) }}" class="flex items-center justify-between p-2.5 rounded-xl border border-gray-100 hover:bg-blue-50/50 transition group">
                         <div>
-                            <div class="text-xs font-bold text-gray-800 group-hover:text-blue-600">{{ sib.FName }} {{ sib.LName }}</div>
+                        <div class="text-xs font-bold text-gray-800 group-hover:text-blue-600">{{ sib.FName }} {{ sib.LName or sib.Fullname }}</div>
                             <div class="text-[10px] text-gray-400 uppercase font-semibold">{{ sib.class_name or 'No Class' }}</div>
                         </div>
-                        <span class="font-mono text-xs font-bold text-blue-600">#{{ sib.AdmNo }}</span>
+                    <span class="font-mono text-xs font-bold text-blue-600">#{{ sib.AdmNo or sib.admno }}</span>
                     </a>
                     {% endfor %}
                 </div>
@@ -537,7 +537,7 @@
                                     <div class="font-bold text-gray-800">{{ res.exam_name }}</div>
                                     <div class="text-[10px] text-gray-400">{{ res.academic_year }} | Term {{ res.term }}</div>
                                 </td>
-                                <td class="px-6 py-3 text-center font-bold text-gray-700">{{ "%.2f"|format(res.mean_mark) }}%</td>
+                                <td class="px-6 py-3 text-center font-bold text-gray-700">{{ "%.2f"|format(res.mean_mark or 0) }}%</td>
                                 <td class="px-6 py-3 text-center">
                                     <span class="px-2.5 py-0.5 bg-blue-100 text-blue-800 rounded font-black text-[10px]">{{ res.mean_grade }}</span>
                                 </td>
