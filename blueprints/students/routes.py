@@ -213,10 +213,21 @@ def students_list():
     service = StudentService(connection)
     term_cur, year_cur = get_current_term_and_year()
     q = request.args.get('q', '').strip()
-    students = service.get_students_list(query=q if q else None, year_cur=year_cur)
+    class_filter = request.args.get('class_filter', '').strip()
+    students = service.get_students_list(
+        query=q if q else None,
+        class_filter=class_filter if class_filter else None,
+        year_cur=year_cur
+    )
     classes = service.get_classes()
     connection.close()
-    return render_template('student_list.html', students=students, classes=classes, q=q)
+    return render_template(
+        'student_list.html',
+        students=students,
+        classes=classes,
+        q=q,
+        selected_class=class_filter
+    )
 
 @students_bp.route('/students/admission-book')
 @login_required
@@ -235,9 +246,21 @@ def parents_list():
     connection = get_db_connection()
     service = StudentService(connection)
     q = request.args.get('q', '').strip()
-    parents = service.get_parents_register(query=q if q else None)
+    start_date = request.args.get('start_date', '').strip() or None
+    end_date = request.args.get('end_date', '').strip() or None
+    parents = service.get_parents_register(
+        query=q if q else None,
+        start_date=start_date,
+        end_date=end_date
+    )
     connection.close()
-    return render_template('parents_register.html', parents=parents, q=q)
+    return render_template(
+        'parents_register.html',
+        parents=parents,
+        q=q,
+        start_date=start_date or '',
+        end_date=end_date or ''
+    )
 
 @students_bp.route('/student/<int:admno>')
 @login_required
@@ -255,16 +278,41 @@ def student_profile(admno):
     if class_info:
         student.update(class_info)
 
+    # Derived Age calculation
+    dob = student.get('DoB') or student.get('dob')
+    if dob:
+        try:
+            if isinstance(dob, (datetime, date)):
+                dob_dt = dob
+            else:
+                dob_dt = datetime.strptime(str(dob).split(' ')[0], '%Y-%m-%d').date()
+            today = date.today()
+            student['age'] = today.year - dob_dt.year - ((today.month, today.day) < (dob_dt.month, dob_dt.day))
+        except Exception:
+            student['age'] = None
+    else:
+        student['age'] = None
+
+    # Transport Route Info
+    if student.get('route_id'):
+        route_data = service.get_transport_route_by_id(student['route_id'])
+        if route_data:
+            student['transport_info'] = route_data.get('name')
+
     academic_history = service.get_student_academic_history(admno)
     issuance_history = service.get_uniform_history(admno)
     subjects = service.get_enrolled_subjects(admno)
     siblings = service.get_siblings(student.get('parent_phone'), admno) if student.get('parent_phone') else []
 
     ledger_summary = service.get_fee_summary(admno)
-    total_billed = ledger_summary['total_billed'] or 0
-    total_paid = ledger_summary['total_paid'] or 0
-    outstanding_balance = ledger_summary['current_balance'] or 0
+    total_billed = (ledger_summary['total_billed'] if ledger_summary else 0) or 0
+    total_paid = (ledger_summary['total_paid'] if ledger_summary else 0) or 0
+    outstanding_balance = (ledger_summary['current_balance'] if ledger_summary else 0) or 0
     fee_history = service.get_payment_history(admno)
+
+    # Aggregated termly fee statement
+    fees_service = FeesService(connection, school_id=service.school_id)
+    termly_fee_statement = fees_service.get_student_statement_summary(admno)
 
     exam_summaries = service.get_exam_summaries(admno)
     exam_service = ExamManagementService(connection, service.school_id)
@@ -277,7 +325,8 @@ def student_profile(admno):
     return render_template('student_profile.html',
                          student=student, academic_history=academic_history, issuance_history=issuance_history,
                          subjects=subjects, siblings=siblings, fee_history=fee_history, exam_summaries=exam_summaries,
-                         total_paid=total_paid, total_billed=total_billed, outstanding_balance=outstanding_balance)
+                         total_paid=total_paid, total_billed=total_billed, outstanding_balance=outstanding_balance,
+                         termly_fee_statement=termly_fee_statement)
 
 @students_bp.route('/api/detect-siblings')
 @login_required
