@@ -14,7 +14,7 @@ class StudentService:
 
     def get_classes(self):
         cursor = self.connection.cursor()
-        cursor.execute("SELECT classID, display_name FROM classes WHERE is_active = TRUE AND school_id = %s ORDER BY display_name", (self.school_id,))
+        cursor.execute("SELECT DISTINCT classID, display_name FROM classes WHERE is_active = TRUE AND school_id = %s ORDER BY display_name", (self.school_id,))
         return cursor.fetchall()
 
     def get_transport_routes(self):
@@ -61,7 +61,7 @@ class StudentService:
                    sg.name as student_group_name
             FROM studentinfo s
             LEFT JOIN parentinfo p ON s.AdmNo = p.admno AND s.school_id = p.school_id
-            LEFT JOIN parentinfo p_shared ON ((s.parentID != 0 AND s.parentID = p_shared.parentid) OR (p.phone1 IS NOT NULL AND p.phone1 = p_shared.phone1))
+            LEFT JOIN parentinfo p_shared ON ((s.parentID != 0 AND s.parentID = p_shared.parentid) OR (p.phone1 IS NOT NULL AND p.phone1 != '' AND p.phone1 = p_shared.phone1))
                  AND s.school_id = p_shared.school_id
                  AND (p_shared.pName IS NOT NULL AND p_shared.pName != '')
             LEFT JOIN student_groups sg ON s.student_group_id = sg.id AND s.school_id = sg.school_id
@@ -375,21 +375,57 @@ class StudentService:
             self.connection.rollback()
             raise e
 
-    def get_admission_book(self):
+    def get_admission_book(self, query=None, class_filter=None, date_from=None, date_to=None, year_filter=None):
         cursor = self.connection.cursor()
-        cursor.execute("""
+        sql = """
             SELECT s.AdmNo, s.FName, s.MName, s.SName AS LName, s.Sex AS Gender, s.DoB, s.Date_Adm, s.category, s.boarding,
                    p.pName AS parent_name, p.phone1 AS parent_phone, p.hometown,
-                   COALESCE(c_current.display_name, c_legacy.display_name, c_current.class_name, c_legacy.class_name) as class_name
+                   COALESCE(c_current.display_name, c_current.class_name, c_legacy.display_name, c_legacy.class_name) as class_name,
+                   s.stream
             FROM studentinfo s
-            LEFT JOIN parentinfo p ON s.AdmNo = p.admno AND s.school_id = p.school_id
+            LEFT JOIN (
+                SELECT admno, pName, phone1, hometown, school_id
+                FROM parentinfo
+                WHERE id IN (
+                    SELECT MAX(id) FROM parentinfo WHERE school_id = %s GROUP BY admno
+                )
+            ) p ON s.AdmNo = p.admno AND s.school_id = p.school_id
             LEFT JOIN class_allocation modern_ca ON s.AdmNo = modern_ca.student_id AND modern_ca.is_current = TRUE AND s.school_id = modern_ca.school_id
             LEFT JOIN classes c_current ON modern_ca.class_id = c_current.classID AND modern_ca.school_id = c_current.school_id
-            LEFT JOIN classallocation legacy_ca ON s.AdmNo = legacy_ca.AdmNo AND s.school_id = legacy_ca.school_id
+            LEFT JOIN (
+                SELECT AdmNo, MAX(classID) as classID, school_id
+                FROM classallocation
+                WHERE school_id = %s
+                GROUP BY AdmNo
+            ) legacy_ca ON s.AdmNo = legacy_ca.AdmNo AND s.school_id = legacy_ca.school_id
             LEFT JOIN classes c_legacy ON legacy_ca.classID = c_legacy.classID AND legacy_ca.school_id = c_legacy.school_id
             WHERE s.school_id = %s
-            ORDER BY CAST(s.AdmNo AS UNSIGNED) ASC, s.AdmNo ASC
-        """, (self.school_id,))
+        """
+        params = [self.school_id, self.school_id, self.school_id]
+
+        if query:
+            sql += " AND (s.AdmNo LIKE %s OR CONCAT_WS(' ', s.FName, s.MName, s.SName) LIKE %s OR p.pName LIKE %s OR p.phone1 LIKE %s)"
+            params.extend([f"%{query}%", f"%{query}%", f"%{query}%", f"%{query}%"])
+
+        if class_filter:
+            sql += " AND (c_current.display_name = %s OR c_current.class_name = %s OR CAST(c_current.classID AS CHAR) = %s OR c_legacy.display_name = %s OR c_legacy.class_name = %s OR CAST(c_legacy.classID AS CHAR) = %s)"
+            params.extend([class_filter, class_filter, class_filter, class_filter, class_filter, class_filter])
+
+        if date_from:
+            sql += " AND s.Date_Adm >= %s"
+            params.append(date_from)
+
+        if date_to:
+            sql += " AND s.Date_Adm <= %s"
+            params.append(f"{date_to} 23:59:59")
+
+        if year_filter:
+            sql += " AND YEAR(s.Date_Adm) = %s"
+            params.append(year_filter)
+
+        sql += " ORDER BY s.Date_Adm DESC, CAST(s.AdmNo AS UNSIGNED) DESC, s.AdmNo DESC"
+
+        cursor.execute(sql, tuple(params))
         return cursor.fetchall()
 
     def get_students_list(self, query=None, class_filter=None, status_filter=None, year_cur=None, limit=500):
@@ -398,25 +434,36 @@ class StudentService:
             SELECT s.AdmNo, s.FName, s.MName, s.SName AS LName, s.Sex AS Gender, s.blocked AS Status,
                    s.DoB, s.Date_Adm,
                    p.phone1 AS parent_phone, p.pName AS parent_name,
-                   COALESCE(c_current.display_name, c_legacy.display_name, c_current.class_name, c_legacy.class_name) as class_name,
+                   COALESCE(c_current.display_name, c_current.class_name, c_legacy.display_name, c_legacy.class_name) as class_name,
                    COALESCE(c_current.class_group, c_legacy.class_group) as class_group,
                    COALESCE(modern_ca.academic_year_id, legacy_ca.thisYear) as thisYear
             FROM studentinfo s
-            LEFT JOIN parentinfo p ON s.AdmNo = p.admno AND s.school_id = p.school_id
+            LEFT JOIN (
+                SELECT admno, pName, phone1, school_id
+                FROM parentinfo
+                WHERE id IN (
+                    SELECT MAX(id) FROM parentinfo WHERE school_id = %s GROUP BY admno
+                )
+            ) p ON s.AdmNo = p.admno AND s.school_id = p.school_id
             LEFT JOIN class_allocation modern_ca ON s.AdmNo = modern_ca.student_id AND modern_ca.is_current = TRUE AND s.school_id = modern_ca.school_id
             LEFT JOIN classes c_current ON modern_ca.class_id = c_current.classID AND modern_ca.school_id = c_current.school_id
-            LEFT JOIN classallocation legacy_ca ON s.AdmNo = legacy_ca.AdmNo AND s.school_id = legacy_ca.school_id
+            LEFT JOIN (
+                SELECT AdmNo, MAX(classID) as classID, MAX(thisYear) as thisYear, school_id
+                FROM classallocation
+                WHERE school_id = %s
+                GROUP BY AdmNo
+            ) legacy_ca ON s.AdmNo = legacy_ca.AdmNo AND s.school_id = legacy_ca.school_id
             LEFT JOIN classes c_legacy ON legacy_ca.classID = c_legacy.classID AND legacy_ca.school_id = c_legacy.school_id
             WHERE s.school_id = %s
         """
-        params = [self.school_id]
+        params = [self.school_id, self.school_id, self.school_id]
 
         if query:
-            sql += " AND (s.AdmNo LIKE %s OR CONCAT_WS(' ', s.FName, s.MName, s.SName) LIKE %s)"
-            params.extend([f"%{query}%", f"%{query}%"])
+            sql += " AND (s.AdmNo LIKE %s OR CONCAT_WS(' ', s.FName, s.MName, s.SName) LIKE %s OR p.pName LIKE %s OR p.phone1 LIKE %s)"
+            params.extend([f"%{query}%", f"%{query}%", f"%{query}%", f"%{query}%"])
 
         if class_filter:
-            sql += " AND (c_current.display_name = %s OR c_legacy.display_name = %s OR c_current.class_name = %s OR c_legacy.class_name = %s OR CAST(c_current.classID AS CHAR) = %s OR CAST(c_legacy.classID AS CHAR) = %s)"
+            sql += " AND (c_current.display_name = %s OR c_current.class_name = %s OR CAST(c_current.classID AS CHAR) = %s OR (modern_ca.id IS NULL AND (c_legacy.display_name = %s OR c_legacy.class_name = %s OR CAST(c_legacy.classID AS CHAR) = %s)))"
             params.extend([class_filter, class_filter, class_filter, class_filter, class_filter, class_filter])
 
         if status_filter:
@@ -426,7 +473,7 @@ class StudentService:
                 sql += " AND s.blocked = 'YES'"
 
         # Default sorting: Latest admitted students first
-        sql += " ORDER BY s.Date_Adm DESC, s.AdmNo DESC LIMIT %s"
+        sql += " ORDER BY s.Date_Adm DESC, CAST(s.AdmNo AS UNSIGNED) DESC, s.AdmNo DESC LIMIT %s"
         params.append(limit)
 
         cursor.execute(sql, tuple(params))
@@ -521,6 +568,34 @@ class StudentService:
               AND school_id = %s
             LIMIT 10
         """, (f"%{query}%", f"%{query}%", f"%{query}%", self.school_id))
+        return cursor.fetchall()
+
+    def get_parents_register(self, query=None):
+        cursor = self.connection.cursor()
+        sql = """
+            SELECT
+                p.parentid,
+                COALESCE(NULLIF(p.pName, ''), 'Guardian') as pName,
+                p.phone1,
+                p.email,
+                p.nationalID,
+                p.address,
+                p.hometown,
+                GROUP_CONCAT(DISTINCT CONCAT(s.FName, ' ', COALESCE(s.SName, ''), ' (#', s.AdmNo, ')') SEPARATOR ', ') as children_list,
+                COUNT(DISTINCT s.AdmNo) as children_count
+            FROM parentinfo p
+            LEFT JOIN studentinfo s ON (p.admno = s.AdmNo OR (s.parentID != 0 AND s.parentID = p.parentid)) AND s.school_id = p.school_id
+            WHERE p.school_id = %s
+        """
+        params = [self.school_id]
+
+        if query:
+            sql += " AND (p.pName LIKE %s OR p.phone1 LIKE %s OR p.nationalID LIKE %s OR s.FName LIKE %s OR s.SName LIKE %s OR s.AdmNo LIKE %s)"
+            params.extend([f"%{query}%", f"%{query}%", f"%{query}%", f"%{query}%", f"%{query}%", f"%{query}%"])
+
+        sql += " GROUP BY p.parentid, p.pName, p.phone1, p.email, p.nationalID, p.address, p.hometown ORDER BY p.pName ASC"
+
+        cursor.execute(sql, tuple(params))
         return cursor.fetchall()
 
     def get_parent_info_and_siblings_by_phone(self, phone):

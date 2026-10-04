@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block content %}
+
+<!-- Print Header -->
+<div class="print-only mb-6 text-center border-b-2 border-gray-900 pb-4">
+    <div class="flex items-center justify-between">
+        <div class="text-left">
+            <h1 class="text-2xl font-black uppercase tracking-wider text-gray-900">{{ school.school_name|default('GREENWOOD INTERNATIONAL SCHOOL') }}</h1>
+            <p class="text-xs text-gray-700 uppercase font-bold tracking-wide">OFFICIAL PARENT & GUARDIAN REGISTER</p>
+            <p class="text-[10px] text-gray-500 mt-0.5">Printed on: {{ now.strftime('%d %B %Y, %H:%M') }} | SkoolTrack Enterprise System</p>
+        </div>
+        <div class="text-right">
+            <div class="text-xs font-bold text-gray-900">Total Parents Registered: {{ parents|length }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="max-w-7xl mx-auto px-4 py-6">
+    <!-- Web Action Header -->
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 no-print">
+        <div>
+            <div class="flex items-center gap-3">
+                <a href="{{ url_for('students.students_list') }}" class="w-10 h-10 rounded-xl bg-gray-100 text-gray-600 flex items-center justify-center hover:bg-gray-200 transition">
+                    <i class="fas fa-arrow-left"></i>
+                </a>
+                <div>
+                    <h1 class="text-2xl font-extrabold text-gray-900 tracking-tight">Parents & Guardians Register</h1>
+                    <p class="text-xs text-gray-500 font-medium">Directory of all registered parents and linked student dependents</p>
+                </div>
+            </div>
+        </div>
+        <div class="flex items-center gap-3">
+            <button onclick="window.print()" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition font-bold text-sm shadow-md shadow-blue-500/20">
+                <i class="fas fa-print mr-2"></i> Print Register
+            </button>
+        </div>
+    </div>
+
+    <!-- Search & Filter Controls -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-6 no-print">
+        <form method="GET" class="flex gap-3">
+            <div class="flex-1 relative">
+                <i class="fas fa-search absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                <input type="text" name="q" value="{{ q }}" placeholder="Search parent name, phone, ID or student name..."
+                       class="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition font-medium">
+            </div>
+            <button type="submit" class="px-6 py-2 bg-gray-900 text-white rounded-xl hover:bg-black transition font-bold text-sm shadow-sm">
+                Search
+            </button>
+            {% if q %}
+            <a href="{{ url_for('students.parents_register') }}" class="px-4 py-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition font-bold text-sm flex items-center">
+                Reset
+            </a>
+            {% endif %}
+        </form>
+    </div>
+
+    <!-- Table Card -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+                <thead class="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                        <th class="px-3 py-3.5 font-extrabold text-gray-800 text-xs uppercase tracking-wider text-center w-12">#</th>
+                        <th class="px-4 py-3.5 font-extrabold text-gray-800 text-xs uppercase tracking-wider">Parent / Guardian Name</th>
+                        <th class="px-4 py-3.5 font-extrabold text-gray-800 text-xs uppercase tracking-wider">Primary Phone</th>
+                        <th class="px-4 py-3.5 font-extrabold text-gray-800 text-xs uppercase tracking-wider">National ID</th>
+                        <th class="px-4 py-3.5 font-extrabold text-gray-800 text-xs uppercase tracking-wider">Email</th>
+                        <th class="px-4 py-3.5 font-extrabold text-gray-800 text-xs uppercase tracking-wider">Residency</th>
+                        <th class="px-4 py-3.5 font-extrabold text-gray-800 text-xs uppercase tracking-wider">Enrolled Children</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 text-xs font-medium text-gray-800">
+                    {% for p in parents %}
+                    <tr class="hover:bg-blue-50/30 transition">
+                        <td class="px-3 py-3 text-center text-xs font-bold text-gray-400 font-mono">
+                            {{ loop.index }}
+                        </td>
+                        <td class="px-4 py-3 font-bold text-gray-900 text-sm">
+                            {{ p.pName or 'Guardian' }}
+                        </td>
+                        <td class="px-4 py-3 font-mono font-bold text-blue-600 text-sm">
+                            {{ p.phone1 or '-' }}
+                        </td>
+                        <td class="px-4 py-3 font-mono text-gray-700">
+                            {{ p.nationalID or '-' }}
+                        </td>
+                        <td class="px-4 py-3 text-gray-600">
+                            {{ p.email or '-' }}
+                        </td>
+                        <td class="px-4 py-3 text-gray-600">
+                            {{ p.hometown or p.address or '-' }}
+                        </td>
+                        <td class="px-4 py-3">
+                            {% if p.children_list %}
+                                <div class="font-bold text-gray-800">{{ p.children_list }}</div>
+                                <div class="text-[10px] text-gray-400 font-semibold">{{ p.children_count }} student(s) linked</div>
+                            {% else %}
+                                <span class="text-gray-400 italic">No active children</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="px-6 py-12 text-center text-gray-400">
+                            No parent records found.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
