@@ -11,6 +11,21 @@ import io
 
 students_bp = Blueprint('students', __name__)
 
+@students_bp.route('/students/')
+@login_required
+def students_list_slash():
+    return redirect(url_for('students.students_list'))
+
+@students_bp.route('/students/admission-book/')
+@login_required
+def admission_book_slash():
+    return redirect(url_for('students.admission_book'))
+
+@students_bp.route('/students/parents/')
+@login_required
+def parents_register_slash():
+    return redirect(url_for('students.parents_register'))
+
 def get_db_connection():
     from core.db import get_db_connection
     return get_db_connection()
