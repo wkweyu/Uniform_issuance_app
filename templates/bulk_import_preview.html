@@ -8,13 +8,13 @@
       <p class="text-gray-500 mt-2">Check for errors and potential sibling links before finalising indices.</p>
     </div>
     <div class="flex gap-4">
-      <a href="{{ url_for('bulk_admit_students') }}" class="px-6 py-2 bg-gray-100 text-gray-600 rounded-xl font-bold hover:bg-gray-200 transition">
+      <a href="{{ url_for('students.bulk_admit_students') }}" class="px-6 py-2 bg-gray-100 text-gray-600 rounded-xl font-bold hover:bg-gray-200 transition">
         Cancel & Re-upload
       </a>
     </div>
   </div>
 
-  <form action="{{ url_for('finalize_bulk_import') }}" method="POST">
+  <form action="{{ url_for('students.finalize_bulk_import') }}" method="POST">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     
     <div class="bg-white rounded-2xl shadow-xl shadow-gray-200/50 border border-gray-100 overflow-hidden">
@@ -27,6 +27,7 @@
               <th class="px-4 py-4">Student Name</th>
               <th class="px-4 py-4">Class Allocation</th>
               <th class="px-4 py-4">Category</th>
+              <th class="px-4 py-4">Transport Route</th>
               <th class="px-4 py-4">Parent Details</th>
               <th class="px-4 py-4">Action</th>
             </tr>
@@ -95,6 +96,16 @@
                   <option value="Transport" {{ 'selected' if row.category == 'Transport' }}>Transport</option>
                 </select>
                 <input type="hidden" name="religion[]" value="{{ row.religion or 'Christianity' }}">
+              </td>
+              <td class="px-4 py-4">
+                <select name="route_id[]" class="text-sm border border-gray-200 rounded px-2 py-1 w-40">
+                  <option value="">-- Select Route --</option>
+                  {% for r in routes %}
+                  <option value="{{ r.id }}" {{ 'selected' if row.route_id == r.id }}>
+                    {{ r.name }}
+                  </option>
+                  {% endfor %}
+                </select>
               </td>
               <td class="px-4 py-4">
                 <div class="space-y-1">
