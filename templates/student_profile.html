@@ -1,570 +1,437 @@
 {% extends "base.html" %}
+
+{% block title %}Student Profile: {{ student.FName }} {{ student.SName }} - School Management System{% endblock %}
+
 {% block content %}
+<style>
+    /* Dedicated Formal Print Sheet */
+    @media print {
+        @page {
+            size: A4 portrait;
+            margin: 12mm 10mm;
+        }
 
-<!-- Print-Only Executive Official Student Profile Sheet (Renders all student data sequentially for physical filing) -->
-<div class="print-only max-w-4xl mx-auto p-4 text-gray-900 leading-tight">
-    <!-- Letterhead -->
-    <div class="flex items-center justify-between border-b-2 border-gray-900 pb-3 mb-4">
-        <div>
-            <h1 class="text-2xl font-black uppercase tracking-wider text-gray-900">{{ school.school_name|default('GREENWOOD INTERNATIONAL SCHOOL') }}</h1>
-            <p class="text-xs font-bold uppercase tracking-widest text-gray-700">PERMANENT STUDENT RECORD FILE & PROFILE SHEET</p>
-            <p class="text-[10px] text-gray-500">Generated: {{ now.strftime('%d %B %Y, %H:%M') }} | Official Confidential Document</p>
-        </div>
-        <div class="text-right border-l-2 border-gray-800 pl-4">
-            <div class="text-xs font-bold text-gray-500 uppercase">Admission #</div>
-            <div class="text-2xl font-black font-mono text-blue-900">#{{ student.AdmNo }}</div>
-            <div class="text-xs font-bold text-gray-800 uppercase">{{ student.category or 'Day Scholar' }}</div>
+        body {
+            background-color: #ffffff !important;
+            color: #000000 !important;
+            font-family: Arial, Helvetica, sans-serif !important;
+            font-size: 10pt !important;
+        }
+
+        nav, header, footer, sidebar, .no-print, .print-hide, .tab-content {
+            display: none !important;
+        }
+
+        .print-student-sheet {
+            display: block !important;
+        }
+    }
+
+    .print-student-sheet {
+        display: none;
+    }
+</style>
+
+<!-- WEB UI STUDENT PROFILE -->
+<div class="print-hide max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <!-- Breadcrumbs & Quick Action Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <nav class="flex text-sm text-gray-500" aria-label="Breadcrumb">
+            <ol class="flex items-center space-x-2">
+                <li><a href="{{ url_for('index') }}" class="hover:text-blue-600">Home</a></li>
+                <li><i class="fas fa-chevron-right text-[10px] mx-1 text-gray-400"></i></li>
+                <li><a href="{{ url_for('students.students_list') }}" class="hover:text-blue-600">Students</a></li>
+                <li><i class="fas fa-chevron-right text-[10px] mx-1 text-gray-400"></i></li>
+                <li class="font-bold text-gray-900">#{{ student.AdmNo }} {{ student.FName }} {{ student.SName }}</li>
+            </ol>
+        </nav>
+        <div class="flex items-center space-x-2">
+            <button onclick="window.print()" class="px-4 py-2 bg-gray-900 text-white text-xs font-semibold rounded-xl hover:bg-black transition shadow-sm">
+                <i class="fas fa-print mr-1.5"></i> Print Official Record Sheet
+            </button>
+            <a href="{{ url_for('students.edit_student', admno=student.AdmNo) }}" class="px-4 py-2 bg-blue-600 text-white text-xs font-semibold rounded-xl hover:bg-blue-700 transition shadow-sm">
+                <i class="fas fa-edit mr-1.5"></i> Edit Profile
+            </a>
         </div>
     </div>
 
-    <!-- Student & Parent Details Summary Box -->
-    <div class="grid grid-cols-2 gap-3 border border-gray-400 p-2.5 rounded mb-3 text-xs bg-gray-50/30">
-        <div>
-            <h3 class="font-extrabold uppercase tracking-wider text-[10px] text-gray-700 border-b border-gray-300 pb-1 mb-1.5">Student Personal Details</h3>
-            <div class="grid grid-cols-12 gap-1 text-[11px] leading-tight">
-                <div class="col-span-8"><span class="font-bold text-gray-600">Name:</span> <span class="font-extrabold text-gray-900">{{ student.FName }} {% if student.MName %}{{ student.MName }} {% endif %}{{ student.SName }}</span></div>
-                <div class="col-span-4 text-right"><span class="font-bold text-gray-600">Sex:</span> <span class="font-bold text-gray-900">{{ 'Male' if student.Sex == 'M' else 'Female' }}</span></div>
-                <div class="col-span-6"><span class="font-bold text-gray-600">Class:</span> <span class="font-bold text-blue-900">{{ student.class_name or 'Unassigned' }}</span></div>
-                <div class="col-span-6 text-right"><span class="font-bold text-gray-600">Stream:</span> {{ student.stream or '-' }}</div>
-                <div class="col-span-6"><span class="font-bold text-gray-600">DOB:</span> {{ student.DoB or '—' }}</div>
-                <div class="col-span-6 text-right"><span class="font-bold text-gray-600">Adm Date:</span> {{ student.Date_Adm or '—' }}</div>
-                <div class="col-span-12"><span class="font-bold text-gray-600">Birth Cert:</span> {{ student.birth or '—' }}</div>
-            </div>
-        </div>
-        <div>
-            <h3 class="font-extrabold uppercase tracking-wider text-[10px] text-gray-700 border-b border-gray-300 pb-1 mb-1.5">Guardian & Contact Details</h3>
-            <div class="grid grid-cols-12 gap-1 text-[11px] leading-tight">
-                <div class="col-span-12"><span class="font-bold text-gray-600">Guardian:</span> <span class="font-bold text-gray-900">{{ student.parent_name or '—' }}</span></div>
-                <div class="col-span-6"><span class="font-bold text-gray-600">Phone:</span> <span class="font-mono font-bold">{{ student.parent_phone or '—' }}</span></div>
-                <div class="col-span-6 text-right"><span class="font-bold text-gray-600">ID:</span> {{ student.parent_id or '—' }}</div>
-                <div class="col-span-12"><span class="font-bold text-gray-600">Email:</span> {{ student.parent_email or '—' }}</div>
-                <div class="col-span-12"><span class="font-bold text-gray-600">Hometown/Address:</span> {{ student.residency or student.home_address or '—' }}</div>
-            </div>
-        </div>
-    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <!-- Left Column: Key Student Identity & Contact Card -->
+        <div class="lg:col-span-1 space-y-6">
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="h-28 bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-800"></div>
+                <div class="px-6 pb-6">
+                    <div class="relative flex justify-center mt-[-3rem] mb-3">
+                        <div class="w-20 h-20 bg-white rounded-2xl p-1 shadow-md">
+                            <div class="w-full h-full bg-blue-50 text-blue-700 rounded-xl flex items-center justify-center font-black text-2xl">
+                                {{ student.FName[0] }}{{ (student.SName or student.LName or 'S')[0] }}
+                            </div>
+                        </div>
+                    </div>
 
-    <!-- Section 1: Linked Siblings -->
-    {% if siblings %}
-    <div class="mb-4">
-        <h3 class="font-extrabold text-xs uppercase tracking-wider text-gray-800 border-b border-gray-400 pb-1 mb-2">1. Linked Sibling Records</h3>
-        <div class="grid grid-cols-2 gap-2 text-xs">
-            {% for sib in siblings %}
-            <div class="border border-gray-200 p-1.5 rounded flex justify-between items-center">
-                <div>
-                    <span class="font-bold">{{ sib.FName }} {{ sib.LName }}</span>
-                    <span class="text-[10px] text-gray-500 block">{{ sib.class_name or 'Unassigned' }}</span>
+                    <div class="text-center mb-6">
+                        <h2 class="text-xl font-bold text-gray-900">{{ student.FName }} {% if student.MName %}{{ student.MName }} {% endif %}{{ student.SName or student.LName or '' }}</h2>
+                        <p class="text-blue-600 font-mono font-bold text-sm mt-0.5">#{{ student.AdmNo }}</p>
+                        <div class="mt-2 inline-flex items-center px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-xs font-bold">
+                            <i class="fas fa-venus-mars mr-1.5 text-slate-400"></i> {{ 'Male' if student.Sex == 'M' else 'Female' }}
+                        </div>
+                    </div>
+
+                    <div class="space-y-3 pt-4 border-t border-gray-100 text-xs">
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-500">Current Class</span>
+                            <span class="font-bold text-gray-900 bg-blue-50 text-blue-800 px-2.5 py-1 rounded-lg border border-blue-100">
+                                {{ student.class_name or 'Unassigned' }} {{ '(' + student.stream + ')' if student.stream else '' }}
+                            </span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-500">Category</span>
+                            <span class="font-bold text-gray-800">{{ student.category or 'Day' }}</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-500">Academic Year</span>
+                            <span class="font-bold text-gray-800">{{ student.thisYear or now.year if now is defined else '2026' }}</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-500">Admission Date</span>
+                            <span class="font-bold text-gray-700">{{ student.Date_Adm or '—' }}</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-500">Account Status</span>
+                            {% if student.blocked == 'YES' %}
+                                <span class="px-2 py-0.5 bg-red-100 text-red-800 rounded font-bold text-[10px]">Blocked</span>
+                            {% else %}
+                                <span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold text-[10px]">Active</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="mt-6 pt-4 border-t border-gray-100">
+                        <form action="{{ url_for('students.toggle_student_status', admno=student.AdmNo) }}" method="POST">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            {% if student.blocked == 'YES' %}
+                                <button type="submit" class="w-full py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl hover:bg-emerald-100 font-semibold text-xs transition">
+                                    <i class="fas fa-check-circle mr-1.5"></i> Activate Student Record
+                                </button>
+                            {% else %}
+                                <button type="submit" class="w-full py-2 bg-red-50 text-red-700 border border-red-200 rounded-xl hover:bg-red-100 font-semibold text-xs transition">
+                                    <i class="fas fa-ban mr-1.5"></i> Block Student Record
+                                </button>
+                            {% endif %}
+                        </form>
+                    </div>
                 </div>
-                <span class="font-mono font-bold">#{{ sib.AdmNo }}</span>
             </div>
-            {% endfor %}
-        </div>
-    </div>
-    {% endif %}
 
-    <!-- Section 2: Academic History & Allocation -->
-    <div class="mb-4">
-        <h3 class="font-extrabold text-xs uppercase tracking-wider text-gray-800 border-b border-gray-400 pb-1 mb-2">2. Academic Progression & Class History</h3>
-        <table class="w-full text-left border border-gray-300 text-xs">
-            <thead class="bg-gray-100 uppercase font-bold text-[10px] text-gray-600">
-                <tr>
-                    <th class="p-1.5 border-b border-r border-gray-300">Academic Year</th>
-                    <th class="p-1.5 border-b border-r border-gray-300">Allocated Class</th>
-                    <th class="p-1.5 border-b border-r border-gray-300">Class Group</th>
-                    <th class="p-1.5 border-b border-gray-300">Allocation Date</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200 font-medium">
-                {% for record in academic_history %}
-                <tr>
-                    <td class="p-1.5 border-r border-gray-200 font-bold font-mono">{{ record.thisYear }}</td>
-                    <td class="p-1.5 border-r border-gray-200 font-bold text-gray-900">{{ record.class_name }}</td>
-                    <td class="p-1.5 border-r border-gray-200">{{ record.class_group or '—' }}</td>
-                    <td class="p-1.5 font-mono text-gray-600">{{ record.AllcDate or '-' }}</td>
-                </tr>
-                {% else %}
-                <tr><td colspan="4" class="p-2 text-center text-gray-400 italic">No historical class records.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
-    <!-- Section 3: Full Fee Ledger Statement -->
-    <div class="mb-4">
-        <div class="flex justify-between items-end border-b border-gray-400 pb-1 mb-2">
-            <h3 class="font-extrabold text-xs uppercase tracking-wider text-gray-800">3. Fee Ledger & Financial Statement</h3>
-            <div class="text-xs font-bold">
-                <span>Total Billed: {{ total_billed | currency }}</span> |
-                <span>Total Paid: {{ total_paid | currency }}</span> |
-                <span class="text-red-800">Current Balance: {{ outstanding_balance | currency }}</span>
-            </div>
-        </div>
-        <table class="w-full text-left border border-gray-300 text-[11px]">
-            <thead class="bg-gray-100 uppercase font-bold text-[9px] text-gray-600">
-                <tr>
-                    <th class="p-1 border-b border-r border-gray-300">Date</th>
-                    <th class="p-1 border-b border-r border-gray-300">Type</th>
-                    <th class="p-1 border-b border-r border-gray-300">Description</th>
-                    <th class="p-1 border-b border-r border-gray-300 text-right">Amount (KES)</th>
-                    <th class="p-1 border-b border-gray-300 text-right">Running Balance</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200 font-medium">
-                {% for item in fee_statement %}
-                <tr>
-                    <td class="p-1 border-r border-gray-200 font-mono">{{ item.date_posted }}</td>
-                    <td class="p-1 border-r border-gray-200 font-bold uppercase text-[9px]">{{ item.type }}</td>
-                    <td class="p-1 border-r border-gray-200">{{ item.description }}</td>
-                    <td class="p-1 border-r border-gray-200 text-right font-bold {% if item.type == 'CHARGE' %}text-red-900{% else %}text-green-900{% endif %}">
-                        {{ item.amount | currency }}
-                    </td>
-                    <td class="p-1 text-right font-bold font-mono">{{ item.balance_after | currency }}</td>
-                </tr>
-                {% else %}
-                <tr><td colspan="5" class="p-2 text-center text-gray-400 italic">No fee ledger entries.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
-    <!-- Section 4: Uniform Receipts & Exam Summaries -->
-    <div class="grid grid-cols-2 gap-4 mb-4">
-        <div>
-            <h3 class="font-extrabold text-xs uppercase tracking-wider text-gray-800 border-b border-gray-400 pb-1 mb-2">4. Uniform Issuance Summary</h3>
-            <table class="w-full text-left border border-gray-300 text-[10px]">
-                <thead class="bg-gray-100 font-bold uppercase text-[9px]">
-                    <tr>
-                        <th class="p-1 border-b border-r border-gray-300">Receipt #</th>
-                        <th class="p-1 border-b border-r border-gray-300">Date</th>
-                        <th class="p-1 border-b border-gray-300 text-right">Amount</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-200 font-medium">
-                    {% for u in issuance_history %}
-                    <tr>
-                        <td class="p-1 border-r border-gray-200 font-mono font-bold">{{ u.receipt_no }}</td>
-                        <td class="p-1 border-r border-gray-200">{{ u.issued_on }}</td>
-                        <td class="p-1 text-right font-bold">{{ u.total | currency }}</td>
-                    </tr>
-                    {% else %}
-                    <tr><td colspan="3" class="p-2 text-center text-gray-400 italic">No uniform receipts.</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        <div>
-            <h3 class="font-extrabold text-xs uppercase tracking-wider text-gray-800 border-b border-gray-400 pb-1 mb-2">5. Examination Summaries</h3>
-            <table class="w-full text-left border border-gray-300 text-[10px]">
-                <thead class="bg-gray-100 font-bold uppercase text-[9px]">
-                    <tr>
-                        <th class="p-1 border-b border-r border-gray-300">Series</th>
-                        <th class="p-1 border-b border-r border-gray-300 text-center">Mean %</th>
-                        <th class="p-1 border-b border-gray-300 text-center">Grade</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-200 font-medium">
-                    {% for ex in exam_summaries %}
-                    <tr>
-                        <td class="p-1 border-r border-gray-200 font-bold">{{ ex.exam_name }} ({{ ex.academic_year }})</td>
-                        <td class="p-1 border-r border-gray-200 text-center font-mono">{{ "%.1f"|format(ex.mean_mark or 0) }}%</td>
-                        <td class="p-1 text-center font-extrabold">{{ ex.mean_grade }}</td>
-                    </tr>
-                    {% else %}
-                    <tr><td colspan="3" class="p-2 text-center text-gray-400 italic">No exam summaries.</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <!-- Official Sign-off Footer -->
-    <div class="pt-6 border-t border-gray-800 grid grid-cols-2 gap-8 text-[10px]">
-        <div>
-            <div class="border-b border-gray-800 w-48 mb-1"></div>
-            <p class="font-bold text-gray-600 uppercase">School Administrative Registrar Signature</p>
-        </div>
-        <div class="text-right">
-            <div class="border-b border-gray-800 w-48 mb-1 ml-auto"></div>
-            <p class="font-bold text-gray-600 uppercase">Official School Rubber Stamp & Date</p>
-        </div>
-    </div>
-</div>
-
-<!-- Web Interactive Interface -->
-<div class="no-print max-w-7xl mx-auto px-4 py-6 space-y-6">
-    <!-- Breadcrumbs -->
-    <nav class="flex text-xs text-gray-500" aria-label="Breadcrumb">
-        <ol class="flex items-center space-x-2">
-            <li><a href="{{ url_for('index') }}" class="hover:text-blue-600">Home</a></li>
-            <li><i class="fas fa-chevron-right text-[9px] mx-1"></i></li>
-            <li><a href="{{ url_for('students.students_list') }}" class="hover:text-blue-600">Students</a></li>
-            <li><i class="fas fa-chevron-right text-[9px] mx-1"></i></li>
-            <li class="font-bold text-gray-800">Profile: {{ student.FName }} {{ student.SName }}</li>
-        </ol>
-    </nav>
-
-    <!-- Header Card -->
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden relative">
-        <div class="h-28 bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-800"></div>
-        <div class="px-6 pb-6 pt-0">
-            <div class="flex flex-col md:flex-row md:items-end justify-between gap-4 -mt-10 mb-4">
-                <div class="flex items-end space-x-4">
-                    <div class="w-20 h-20 bg-white rounded-2xl p-1 shadow-lg ring-4 ring-white shrink-0">
-                        <div class="w-full h-full bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center text-2xl font-black uppercase">
-                            {{ student.FName[0] }}{{ student.SName[0] }}
+            <!-- Parent & Emergency Details Card -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+                <h3 class="font-bold text-gray-900 text-sm mb-4 flex items-center">
+                    <i class="fas fa-users text-blue-600 mr-2"></i> Parent & Guardian Information
+                </h3>
+                <div class="space-y-3.5 text-xs">
+                    <div>
+                        <span class="text-gray-400 block font-semibold mb-0.5 uppercase tracking-wider text-[10px]">Guardian Name</span>
+                        <span class="font-bold text-gray-900 text-sm">{{ student.parent_name or student.pName or 'Not Recorded' }}</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <span class="text-gray-400 block font-semibold mb-0.5 uppercase tracking-wider text-[10px]">Phone Number</span>
+                            <span class="font-mono font-bold text-blue-600">{{ student.parent_phone or student.phone1 or '—' }}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-400 block font-semibold mb-0.5 uppercase tracking-wider text-[10px]">National ID</span>
+                            <span class="font-mono font-bold text-gray-800">{{ student.parent_id or student.nationalID or '—' }}</span>
                         </div>
                     </div>
                     <div>
-                        <div class="flex items-center gap-2">
-                            <h1 class="text-2xl font-black text-gray-900 tracking-tight">{{ student.FName }} {% if student.MName %}{{ student.MName }} {% endif %}{{ student.SName }}</h1>
-                            {% if student.blocked == 'NO' %}
-                                <span class="px-2.5 py-0.5 bg-green-100 text-green-800 text-[10px] font-black rounded-full uppercase border border-green-200">Active</span>
-                            {% else %}
-                                <span class="px-2.5 py-0.5 bg-red-100 text-red-800 text-[10px] font-black rounded-full uppercase border border-red-200">Blocked</span>
-                            {% endif %}
-                        </div>
-                        <div class="flex flex-wrap items-center gap-3 text-xs text-gray-500 mt-1 font-medium">
-                            <span class="font-mono font-bold text-blue-600">#{{ student.AdmNo }}</span>
-                            <span>&bull;</span>
-                            <span>{{ 'Male' if student.Sex == 'M' else 'Female' }}</span>
-                            <span>&bull;</span>
-                            <span class="font-bold text-gray-800">{{ student.class_name or 'Unassigned' }}</span>
-                            <span>&bull;</span>
-                            <span class="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md font-bold uppercase text-[10px]">{{ student.category or 'Day' }}</span>
-                        </div>
+                        <span class="text-gray-400 block font-semibold mb-0.5 uppercase tracking-wider text-[10px]">Email Address</span>
+                        <span class="font-medium text-gray-700">{{ student.parent_email or student.email or '—' }}</span>
                     </div>
-                </div>
-
-                <!-- Quick Action Buttons -->
-                <div class="flex items-center gap-2">
-                    <a href="{{ url_for('students.edit_student', admno=student.AdmNo) }}" class="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition font-bold text-xs shadow-md shadow-blue-500/20 flex items-center">
-                        <i class="fas fa-edit mr-1.5"></i> Edit Profile
-                    </a>
-                    <button onclick="window.print()" class="px-4 py-2 bg-white text-gray-700 border border-gray-200 rounded-xl hover:bg-gray-50 transition font-bold text-xs shadow-xs flex items-center">
-                        <i class="fas fa-print mr-1.5 text-gray-500"></i> Print Record Sheet
-                    </button>
-                    <form action="{{ url_for('students.toggle_student_status', admno=student.AdmNo) }}" method="POST" class="inline">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        {% if student.blocked == 'NO' %}
-                            <button type="submit" class="p-2 border border-red-200 text-red-600 rounded-xl hover:bg-red-50 transition font-bold text-xs" title="Block Student">
-                                <i class="fas fa-ban"></i>
-                            </button>
-                        {% else %}
-                            <button type="submit" class="p-2 bg-green-100 text-green-700 rounded-xl hover:bg-green-200 transition font-bold text-xs" title="Unblock Student">
-                                <i class="fas fa-check"></i>
-                            </button>
-                        {% endif %}
-                    </form>
-                </div>
-            </div>
-
-            <!-- Key Quick Metrics Cards Bar -->
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 pt-4 border-t border-gray-100">
-                <div class="bg-gray-50/80 p-3 rounded-xl border border-gray-100">
-                    <div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Fee Balance</div>
-                    <div class="text-base font-black {% if (outstanding_balance or 0) > 0 %}text-red-600{% else %}text-green-600{% endif %}">
-                        {{ (outstanding_balance or 0) | currency }}
-                    </div>
-                </div>
-                <div class="bg-gray-50/80 p-3 rounded-xl border border-gray-100">
-                    <div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Billed</div>
-                    <div class="text-base font-black text-gray-800">{{ (total_billed or 0) | currency }}</div>
-                </div>
-                <div class="bg-gray-50/80 p-3 rounded-xl border border-gray-100">
-                    <div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Paid</div>
-                    <div class="text-base font-black text-green-700">{{ (total_paid or 0) | currency }}</div>
-                </div>
-                <div class="bg-gray-50/80 p-3 rounded-xl border border-gray-100">
-                    <div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Exams Recorded</div>
-                    <div class="text-base font-black text-purple-700">{{ exam_summaries|length }} Series</div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Main Content Layout Grid -->
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <!-- Sidebar Column -->
-        <div class="lg:col-span-4 space-y-6">
-            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-                <h3 class="text-xs font-black text-gray-800 uppercase tracking-wider mb-4 flex items-center">
-                    <i class="fas fa-address-card text-blue-600 mr-2"></i> Student Details
-                </h3>
-                <div class="space-y-3 text-xs">
-                    <div class="flex justify-between py-1.5 border-b border-gray-50">
-                        <span class="text-gray-400 font-medium">Date of Birth</span>
-                        <span class="font-bold text-gray-800">{{ student.DoB or '—' }}</span>
-                    </div>
-                    <div class="flex justify-between py-1.5 border-b border-gray-50">
-                        <span class="text-gray-400 font-medium">Religion</span>
-                        <span class="font-bold text-gray-800">{{ student.Religion or '—' }}</span>
-                    </div>
-                    <div class="flex justify-between py-1.5 border-b border-gray-50">
-                        <span class="text-gray-400 font-medium">Birth Cert #</span>
-                        <span class="font-mono font-bold text-gray-800">{{ student.birth or '—' }}</span>
-                    </div>
-                    <div class="flex justify-between py-1.5 border-b border-gray-50">
-                        <span class="text-gray-400 font-medium">Admission Date</span>
-                        <span class="font-semibold text-gray-800">{{ student.Date_Adm or '—' }}</span>
-                    </div>
-                    <div class="flex justify-between py-1.5">
-                        <span class="text-gray-400 font-medium">Emergency Alt Contact</span>
-                        <span class="font-bold text-gray-800">{{ student.alt_contact or '—' }}</span>
-                    </div>
-                </div>
-
-                <h3 class="text-xs font-black text-gray-800 uppercase tracking-wider mt-6 mb-4 flex items-center pt-4 border-t border-gray-100">
-                    <i class="fas fa-users text-blue-600 mr-2"></i> Parent / Guardian
-                </h3>
-                <div class="space-y-3 text-xs">
-                    <div class="flex justify-between py-1.5 border-b border-gray-50">
-                        <span class="text-gray-400 font-medium">Full Name</span>
-                        <span class="font-bold text-gray-800">{{ student.parent_name or '—' }}</span>
-                    </div>
-                    <div class="flex justify-between py-1.5 border-b border-gray-50">
-                        <span class="text-gray-400 font-medium">Primary Phone</span>
-                        <span class="font-bold text-blue-600">{{ student.parent_phone or '—' }}</span>
-                    </div>
-                    <div class="flex justify-between py-1.5 border-b border-gray-50">
-                        <span class="text-gray-400 font-medium">Email</span>
-                        <span class="font-semibold text-gray-700 truncate max-w-[150px]">{{ student.parent_email or '—' }}</span>
-                    </div>
-                    <div class="flex justify-between py-1.5">
-                        <span class="text-gray-400 font-medium">National ID</span>
-                        <span class="font-mono font-bold text-gray-800">{{ student.parent_id or '—' }}</span>
+                    <div>
+                        <span class="text-gray-400 block font-semibold mb-0.5 uppercase tracking-wider text-[10px]">Residence / Town</span>
+                        <span class="font-medium text-gray-700">{{ student.hometown or student.home_address or '—' }}</span>
                     </div>
                 </div>
             </div>
 
-            <!-- Linked Siblings Card -->
-            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-                <h3 class="text-xs font-black text-gray-800 uppercase tracking-wider mb-3 flex items-center">
-                    <i class="fas fa-link text-indigo-600 mr-2"></i> Linked Siblings ({{ siblings|length }})
+            <!-- Family & Siblings Card -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+                <h3 class="font-bold text-gray-900 text-sm mb-3 flex items-center">
+                    <i class="fas fa-child text-indigo-600 mr-2"></i> Enrolled Family Siblings
                 </h3>
                 {% if siblings %}
                 <div class="space-y-2">
                     {% for sib in siblings %}
-                <a href="{{ url_for('students.student_profile', admno=sib.AdmNo or sib.admno) }}" class="flex items-center justify-between p-2.5 rounded-xl border border-gray-100 hover:bg-blue-50/50 transition group">
+                    <a href="{{ url_for('students.student_profile', admno=sib.AdmNo) }}" class="flex items-center justify-between p-2.5 bg-gray-50 border border-gray-200 rounded-xl hover:bg-blue-50 hover:border-blue-200 transition">
                         <div>
-                        <div class="text-xs font-bold text-gray-800 group-hover:text-blue-600">{{ sib.FName }} {{ sib.LName or sib.Fullname }}</div>
-                            <div class="text-[10px] text-gray-400 uppercase font-semibold">{{ sib.class_name or 'No Class' }}</div>
+                            <div class="font-bold text-xs text-gray-900">{{ sib.FName }} {{ sib.LName or sib.SName or '' }}</div>
+                            <div class="text-[10px] text-gray-500">{{ sib.class_name or 'N/A' }}</div>
                         </div>
-                    <span class="font-mono text-xs font-bold text-blue-600">#{{ sib.AdmNo or sib.admno }}</span>
+                        <span class="font-mono text-xs font-bold text-blue-600">#{{ sib.AdmNo }}</span>
                     </a>
                     {% endfor %}
                 </div>
                 {% else %}
-                <p class="text-xs text-gray-400 italic">No linked siblings identified under this guardian phone number.</p>
+                <p class="text-xs text-gray-400 italic">No other enrolled siblings detected for this guardian phone number.</p>
                 {% endif %}
             </div>
         </div>
 
-        <!-- Main Column: Tabbed Information Views -->
-        <div class="lg:col-span-8 space-y-6">
-            <!-- Tabs Navigation Bar -->
-            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-1 flex overflow-x-auto">
-                <button onclick="switchTab('fees')" id="tab-fees-btn" class="flex-1 min-w-[100px] py-2.5 rounded-xl font-bold text-xs transition bg-blue-50 text-blue-700">
-                    <i class="fas fa-hand-holding-dollar mr-1.5 text-green-600"></i> Fee Ledger
+        <!-- Right Column: Navigation Tabs & Information Sections -->
+        <div class="lg:col-span-2 space-y-6">
+            <!-- Navigation Tabs Bar -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-1 flex overflow-x-auto space-x-1">
+                <button onclick="switchTab('academic')" id="tab-academic-btn" class="flex-1 py-2.5 px-3 rounded-xl font-bold text-xs transition bg-blue-600 text-white shadow-sm whitespace-nowrap">
+                    <i class="fas fa-graduation-cap mr-1.5"></i> Academic
                 </button>
-                <button onclick="switchTab('academic')" id="tab-academic-btn" class="flex-1 min-w-[100px] py-2.5 rounded-xl font-bold text-xs transition text-gray-500 hover:bg-gray-50">
-                    <i class="fas fa-graduation-cap mr-1.5"></i> Academic History
+                <button onclick="switchTab('fees')" id="tab-fees-btn" class="flex-1 py-2.5 px-3 rounded-xl font-bold text-xs transition text-gray-600 hover:bg-gray-100 whitespace-nowrap">
+                    <i class="fas fa-file-invoice-dollar mr-1.5 text-emerald-600"></i> Fee Statement
                 </button>
-                <button onclick="switchTab('uniform')" id="tab-uniform-btn" class="flex-1 min-w-[100px] py-2.5 rounded-xl font-bold text-xs transition text-gray-500 hover:bg-gray-50">
-                    <i class="fas fa-tshirt mr-1.5 text-indigo-600"></i> Uniforms
+                <button onclick="switchTab('uniform')" id="tab-uniform-btn" class="flex-1 py-2.5 px-3 rounded-xl font-bold text-xs transition text-gray-600 hover:bg-gray-100 whitespace-nowrap">
+                    <i class="fas fa-shirt mr-1.5 text-indigo-600"></i> Uniforms
                 </button>
-                <button onclick="switchTab('subjects')" id="tab-subjects-btn" class="flex-1 min-w-[100px] py-2.5 rounded-xl font-bold text-xs transition text-gray-500 hover:bg-gray-50">
+                <button onclick="switchTab('subjects')" id="tab-subjects-btn" class="flex-1 py-2.5 px-3 rounded-xl font-bold text-xs transition text-gray-600 hover:bg-gray-100 whitespace-nowrap">
                     <i class="fas fa-book-open mr-1.5 text-purple-600"></i> Subjects
                 </button>
-                <button onclick="switchTab('exams')" id="tab-exams-btn" class="flex-1 min-w-[100px] py-2.5 rounded-xl font-bold text-xs transition text-gray-500 hover:bg-gray-50">
-                    <i class="fas fa-file-signature mr-1.5 text-red-600"></i> Exams
+                <button onclick="switchTab('exams')" id="tab-exams-btn" class="flex-1 py-2.5 px-3 rounded-xl font-bold text-xs transition text-gray-600 hover:bg-gray-100 whitespace-nowrap">
+                    <i class="fas fa-chart-line mr-1.5 text-red-600"></i> Exams
                 </button>
             </div>
 
-            <!-- Tab Content: Fee Ledger Statement -->
-            <div id="tab-fees" class="tab-content">
-                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                    <div class="px-6 py-4 border-b border-gray-50 flex justify-between items-center">
-                        <div>
-                            <h3 class="font-extrabold text-sm text-gray-900">Fee Ledger & Running Statement</h3>
-                            <p class="text-[10px] text-gray-400">Complete debit charges and payment credits log</p>
-                        </div>
-                        <a href="{{ url_for('students.student_fee_statement', admno=student.AdmNo) }}" target="_blank" class="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold hover:bg-blue-100 transition">
-                            <i class="fas fa-file-invoice mr-1"></i> Full Statement
-                        </a>
-                    </div>
-                    {% if fee_statement %}
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left text-xs">
-                            <thead class="bg-gray-50 font-bold text-gray-400 uppercase tracking-wider">
-                                <tr>
-                                    <th class="px-4 py-3">Date</th>
-                                    <th class="px-3 py-3">Type</th>
-                                    <th class="px-4 py-3">Description</th>
-                                    <th class="px-4 py-3 text-right">Amount</th>
-                                    <th class="px-4 py-3 text-right">Balance</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-gray-50">
-                                {% for item in fee_statement %}
-                                <tr class="hover:bg-gray-50/50">
-                                    <td class="px-4 py-3 font-mono text-gray-600">{{ item.date_posted }}</td>
-                                    <td class="px-3 py-3">
-                                        {% if item.type == 'CHARGE' %}
-                                            <span class="px-2 py-0.5 bg-red-100 text-red-800 rounded font-bold text-[9px]">CHARGE</span>
-                                        {% else %}
-                                            <span class="px-2 py-0.5 bg-green-100 text-green-800 rounded font-bold text-[9px]">PAYMENT</span>
-                                        {% endif %}
-                                    </td>
-                                    <td class="px-4 py-3 font-medium text-gray-800">{{ item.description }}</td>
-                                    <td class="px-4 py-3 text-right font-bold {% if item.type == 'CHARGE' %}text-red-600{% else %}text-green-700{% endif %}">
-                                        {{ item.amount | currency }}
-                                    </td>
-                                    <td class="px-4 py-3 text-right font-bold font-mono text-gray-900">{{ item.balance_after | currency }}</td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    {% else %}
-                    <div class="p-8 text-center text-xs text-gray-400 italic">No fee transactions logged in statement.</div>
-                    {% endif %}
-                </div>
-            </div>
-
-            <!-- Tab Content: Academic History -->
-            <div id="tab-academic" class="tab-content hidden">
-                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                    <div class="px-6 py-4 border-b border-gray-50 flex justify-between items-center">
-                        <h3 class="font-extrabold text-sm text-gray-900">Academic History & Class Allocations</h3>
-                        <span class="text-xs font-bold text-gray-400">{{ academic_history|length }} Allocations</span>
-                    </div>
+            <!-- Tab 1: Academic History -->
+            <div id="tab-academic" class="tab-pane">
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+                    <h3 class="font-bold text-gray-900 text-sm mb-4">Class Allocations & History</h3>
                     {% if academic_history %}
-                    <div class="divide-y divide-gray-50">
+                    <div class="space-y-3">
                         {% for record in academic_history %}
-                        <div class="px-6 py-3.5 flex items-center justify-between hover:bg-gray-50/50 transition">
+                        <div class="flex items-center justify-between p-3.5 bg-gray-50 border border-gray-200 rounded-xl">
                             <div class="flex items-center space-x-3">
-                                <div class="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs">
-                                    {{ record.thisYear }}
+                                <div class="w-8 h-8 bg-blue-100 text-blue-700 font-bold rounded-lg flex items-center justify-center text-xs">
+                                    {{ record.thisYear|string|last }}
                                 </div>
                                 <div>
-                                    <div class="font-bold text-gray-800 text-xs">{{ record.class_name }}</div>
-                                    <div class="text-[10px] text-gray-400 font-semibold">{{ record.class_group or 'Standard Stream' }}</div>
+                                    <div class="font-bold text-xs text-gray-900">{{ record.class_name }}</div>
+                                    <div class="text-[10px] text-gray-500">{{ record.class_group or 'Standard' }}</div>
                                 </div>
                             </div>
                             <div class="text-right text-xs">
-                                <div class="font-bold text-gray-700">Academic Year {{ record.thisYear }}</div>
-                                <div class="text-[10px] text-gray-400">Date: {{ record.AllcDate }}</div>
+                                <span class="font-bold text-gray-900 block">{{ record.thisYear }}</span>
+                                <span class="text-gray-400 text-[10px]">{{ record.AllcDate }}</span>
                             </div>
                         </div>
                         {% endfor %}
                     </div>
                     {% else %}
-                    <div class="p-8 text-center text-xs text-gray-400 italic">No historical class allocations found.</div>
+                    <p class="text-xs text-gray-400 italic">No historical class allocations recorded.</p>
                     {% endif %}
                 </div>
             </div>
 
-            <!-- Tab Content: Uniform Issuance -->
-            <div id="tab-uniform" class="tab-content hidden">
-                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                    <div class="px-6 py-4 border-b border-gray-50 flex justify-between items-center">
-                        <h3 class="font-extrabold text-sm text-gray-900">Uniform Issuance History</h3>
+            <!-- Tab 2: Fees -->
+            <div id="tab-fees" class="tab-pane hidden">
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-6">
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div class="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                            <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Total Billed</span>
+                            <span class="text-lg font-extrabold text-gray-900">KES {{ total_billed|currency }}</span>
+                        </div>
+                        <div class="p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+                            <span class="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block mb-1">Total Paid</span>
+                            <span class="text-lg font-extrabold text-emerald-800">KES {{ total_paid|currency }}</span>
+                        </div>
+                        <div class="p-4 bg-rose-50 border border-rose-200 rounded-xl">
+                            <span class="text-[10px] font-bold text-rose-700 uppercase tracking-wider block mb-1">Outstanding Balance</span>
+                            <span class="text-lg font-extrabold text-rose-800">KES {{ outstanding_balance|currency }}</span>
+                        </div>
                     </div>
+
+                    <div>
+                        <h4 class="font-bold text-xs text-gray-700 uppercase tracking-wider mb-3">Recent Payments</h4>
+                        {% if fee_history %}
+                        <div class="overflow-x-auto border border-gray-200 rounded-xl">
+                            <table class="w-full text-left text-xs">
+                                <thead class="bg-gray-50 border-b border-gray-200">
+                                    <tr>
+                                        <th class="p-3 font-bold text-gray-600">Receipt #</th>
+                                        <th class="p-3 font-bold text-gray-600">Date</th>
+                                        <th class="p-3 font-bold text-gray-600">Mode</th>
+                                        <th class="p-3 font-bold text-gray-600 text-right">Amount</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100">
+                                    {% for fee in fee_history %}
+                                    <tr>
+                                        <td class="p-3 font-mono font-bold text-blue-700">{{ fee.rcptno }}</td>
+                                        <td class="p-3 text-gray-600">{{ fee.date_of_payment }}</td>
+                                        <td class="p-3 font-medium text-gray-700">{{ fee.payment_mode or 'Cash' }}</td>
+                                        <td class="p-3 font-bold text-emerald-700 text-right">KES {{ (fee.amount_paid or 0)|currency }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <p class="text-xs text-gray-400 italic">No payments posted for this student record.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 3: Uniforms -->
+            <div id="tab-uniform" class="tab-pane hidden">
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+                    <h3 class="font-bold text-gray-900 text-sm mb-4">Uniform Issuance History</h3>
                     {% if issuance_history %}
-                    <table class="w-full text-left text-xs">
-                        <thead class="bg-gray-50 font-bold text-gray-400 uppercase tracking-wider">
-                            <tr>
-                                <th class="px-6 py-3">Receipt #</th>
-                                <th class="px-6 py-3">Date</th>
-                                <th class="px-6 py-3 text-right">Total Amount</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-50">
-                            {% for receipt in issuance_history %}
-                            <tr class="hover:bg-gray-50/50">
-                                <td class="px-6 py-3 font-mono font-bold text-indigo-600">{{ receipt.receipt_no }}</td>
-                                <td class="px-6 py-3 text-gray-600">{{ receipt.issued_on }}</td>
-                                <td class="px-6 py-3 font-bold text-gray-800 text-right">{{ (receipt.total or 0) | currency }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                    {% else %}
-                    <div class="p-8 text-center text-xs text-gray-400 italic">No uniform issuance records found.</div>
-                    {% endif %}
-                </div>
-            </div>
-
-            <!-- Tab Content: Enrolled Subjects -->
-            <div id="tab-subjects" class="tab-content hidden">
-                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                    <div class="px-6 py-4 border-b border-gray-50 flex justify-between items-center">
-                        <h3 class="font-extrabold text-sm text-gray-900">Enrolled Subjects</h3>
-                    </div>
-                    {% if subjects %}
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 p-5">
-                        {% for subj in subjects %}
-                        <div class="p-3 bg-gray-50 rounded-xl border border-gray-100 flex items-center justify-between text-xs">
-                            <span class="font-bold text-gray-800">{{ subj.subject_name }}</span>
-                            <span class="font-mono text-gray-400 font-bold">Code: {{ subj.subject_code }}</span>
+                    <div class="space-y-2">
+                        {% for receipt in issuance_history %}
+                        <div class="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs">
+                            <div>
+                                <span class="font-mono font-bold text-indigo-700 block">Receipt: {{ receipt.receipt_no }}</span>
+                                <span class="text-gray-500 text-[10px]">Issued on {{ receipt.issued_on }}</span>
+                            </div>
+                            <span class="font-bold text-gray-900">KES {{ (receipt.total or 0)|currency }}</span>
                         </div>
                         {% endfor %}
                     </div>
                     {% else %}
-                    <div class="p-8 text-center text-xs text-gray-400 italic">No active subject enrollments for current year.</div>
+                    <p class="text-xs text-gray-400 italic">No uniform issuance records found.</p>
                     {% endif %}
                 </div>
             </div>
 
-            <!-- Tab Content: Exam Results -->
-            <div id="tab-exams" class="tab-content hidden">
-                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                    <div class="px-6 py-4 border-b border-gray-50 flex justify-between items-center">
-                        <h3 class="font-extrabold text-sm text-gray-900">Exam Results & Performance Snapshot</h3>
+            <!-- Tab 4: Subjects -->
+            <div id="tab-subjects" class="tab-pane hidden">
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+                    <h3 class="font-bold text-gray-900 text-sm mb-4">Enrolled Academic Subjects</h3>
+                    {% if subjects %}
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {% for subj in subjects %}
+                        <div class="p-3 bg-purple-50 border border-purple-100 rounded-xl text-xs flex items-center space-x-2">
+                            <i class="fas fa-book text-purple-600"></i>
+                            <div>
+                                <span class="font-bold text-purple-900 block">{{ subj.subject_name }}</span>
+                                <span class="text-[10px] text-purple-600">Code: {{ subj.subject_code }}</span>
+                            </div>
+                        </div>
+                        {% endfor %}
                     </div>
-                    {% if exam_summaries %}
-                    <table class="w-full text-left text-xs">
-                        <thead class="bg-gray-50 font-bold text-gray-400 uppercase tracking-wider">
-                            <tr>
-                                <th class="px-6 py-3">Exam Series</th>
-                                <th class="px-6 py-3 text-center">Mean (%)</th>
-                                <th class="px-6 py-3 text-center">Grade</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-50">
-                            {% for res in exam_summaries %}
-                            <tr class="hover:bg-gray-50/50">
-                                <td class="px-6 py-3">
-                                    <div class="font-bold text-gray-800">{{ res.exam_name }}</div>
-                                    <div class="text-[10px] text-gray-400">{{ res.academic_year }} | Term {{ res.term }}</div>
-                                </td>
-                                <td class="px-6 py-3 text-center font-bold text-gray-700">{{ "%.2f"|format(res.mean_mark or 0) }}%</td>
-                                <td class="px-6 py-3 text-center">
-                                    <span class="px-2.5 py-0.5 bg-blue-100 text-blue-800 rounded font-black text-[10px]">{{ res.mean_grade }}</span>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
                     {% else %}
-                    <div class="p-8 text-center text-xs text-gray-400 italic">No examination results recorded.</div>
+                    <p class="text-xs text-gray-400 italic">No subjects enrolled for current academic term.</p>
                     {% endif %}
                 </div>
             </div>
+
+            <!-- Tab 5: Exams -->
+            <div id="tab-exams" class="tab-pane hidden">
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+                    <h3 class="font-bold text-gray-900 text-sm mb-4">Exam Performance Summary</h3>
+                    {% if exam_summaries %}
+                    <div class="space-y-3">
+                        {% for ex in exam_summaries %}
+                        <div class="p-3.5 bg-gray-50 border border-gray-200 rounded-xl flex items-center justify-between text-xs">
+                            <div>
+                                <span class="font-bold text-gray-900 block">{{ ex.exam_name }}</span>
+                                <span class="text-gray-500 text-[10px]">{{ ex.academic_year }} - Term {{ ex.term }}</span>
+                            </div>
+                            <div class="text-right">
+                                <span class="font-bold text-blue-700 block">Mean: {{ "%.1f"|format(ex.mean_mark) }}%</span>
+                                <span class="px-2 py-0.5 bg-blue-100 text-blue-800 font-bold rounded text-[10px]">{{ ex.mean_grade }}</span>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-xs text-gray-400 italic">No exam records uploaded for this student.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- PRINTABLE FORMAL OFFICIAL STUDENT RECORD SHEET -->
+<div class="print-student-sheet">
+    <div style="border-bottom: 2px solid #1e3a8a; padding-bottom: 10px; margin-bottom: 15px;" class="flex justify-between items-start">
+        <div>
+            <h1 style="font-size: 16pt; font-weight: bold; color: #1e3a8a; margin: 0;">SCHOOL MANAGEMENT SYSTEM</h1>
+            <h2 style="font-size: 12pt; font-weight: bold; margin: 4px 0 0 0;">OFFICIAL STUDENT CUMULATIVE RECORD SHEET</h2>
+            <p style="font-size: 8pt; color: #475569; margin: 2px 0 0 0;">Generated on: {{ now.strftime('%Y-%m-%d %H:%M') if now is defined and now.strftime is defined else datetime.now().strftime('%Y-%m-%d %H:%M') }}</p>
+        </div>
+        <div style="text-align: right; font-size: 8pt; color: #475569;">
+            <p style="font-weight: bold; margin: 0;">OFFICIAL FILE RECORD</p>
+            <p style="margin: 2px 0 0 0;">Adm No: #{{ student.AdmNo }}</p>
+        </div>
+    </div>
+
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 9pt;">
+        <tr>
+            <td style="padding: 6px; border: 1px solid #cbd5e1; background-color: #f8fafc; font-weight: bold; width: 20%;">Student Full Name:</td>
+            <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold; width: 30%;">{{ student.FName }} {{ student.MName or '' }} {{ student.SName or student.LName or '' }}</td>
+            <td style="padding: 6px; border: 1px solid #cbd5e1; background-color: #f8fafc; font-weight: bold; width: 20%;">Admission No:</td>
+            <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: font-bold; width: 30%;">#{{ student.AdmNo }}</td>
+        </tr>
+        <tr>
+            <td style="padding: 6px; border: 1px solid #cbd5e1; background-color: #f8fafc; font-weight: bold;">Gender:</td>
+            <td style="padding: 6px; border: 1px solid #cbd5e1;">{{ 'Male' if student.Sex == 'M' else 'Female' }}</td>
+            <td style="padding: 6px; border: 1px solid #cbd5e1; background-color: #f8fafc; font-weight: bold;">Class / Stream:</td>
+            <td style="padding: 6px; border: 1px solid #cbd5e1;">{{ student.class_name or 'Unassigned' }} {{ '(' + student.stream + ')' if student.stream else '' }}</td>
+        </tr>
+        <tr>
+            <td style="padding: 6px; border: 1px solid #cbd5e1; background-color: #f8fafc; font-weight: bold;">Date of Birth:</td>
+            <td style="padding: 6px; border: 1px solid #cbd5e1;">{{ student.DoB or 'N/A' }}</td>
+            <td style="padding: 6px; border: 1px solid #cbd5e1; background-color: #f8fafc; font-weight: bold;">Category:</td>
+            <td style="padding: 6px; border: 1px solid #cbd5e1;">{{ student.category or 'Day' }}</td>
+        </tr>
+        <tr>
+            <td style="padding: 6px; border: 1px solid #cbd5e1; background-color: #f8fafc; font-weight: bold;">Guardian Name:</td>
+            <td style="padding: 6px; border: 1px solid #cbd5e1;">{{ student.parent_name or student.pName or 'N/A' }}</td>
+            <td style="padding: 6px; border: 1px solid #cbd5e1; background-color: #f8fafc; font-weight: bold;">Guardian Contact:</td>
+            <td style="padding: 6px; border: 1px solid #cbd5e1;">{{ student.parent_phone or student.phone1 or 'N/A' }}</td>
+        </tr>
+        <tr>
+            <td style="padding: 6px; border: 1px solid #cbd5e1; background-color: #f8fafc; font-weight: bold;">National ID No:</td>
+            <td style="padding: 6px; border: 1px solid #cbd5e1;">{{ student.parent_id or student.nationalID or 'N/A' }}</td>
+            <td style="padding: 6px; border: 1px solid #cbd5e1; background-color: #f8fafc; font-weight: bold;">Residency:</td>
+            <td style="padding: 6px; border: 1px solid #cbd5e1;">{{ student.hometown or student.home_address or 'N/A' }}</td>
+        </tr>
+    </table>
+
+    <h3 style="font-size: 10pt; font-weight: bold; border-bottom: 1px solid #000; padding-bottom: 3px; margin: 12px 0 8px 0;">FINANCIAL SUMMARY STATEMENT</h3>
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 8.5pt;">
+        <tr style="background-color: #f1f5f9;">
+            <th style="padding: 5px; border: 1px solid #cbd5e1; text-align: left;">Total Billed</th>
+            <th style="padding: 5px; border: 1px solid #cbd5e1; text-align: left;">Total Paid</th>
+            <th style="padding: 5px; border: 1px solid #cbd5e1; text-align: left;">Current Outstanding Balance</th>
+        </tr>
+        <tr>
+            <td style="padding: 5px; border: 1px solid #cbd5e1;">KES {{ total_billed|currency }}</td>
+            <td style="padding: 5px; border: 1px solid #cbd5e1;">KES {{ total_paid|currency }}</td>
+            <td style="padding: 5px; border: 1px solid #cbd5e1; font-weight: bold;">KES {{ outstanding_balance|currency }}</td>
+        </tr>
+    </table>
+
+    <div style="margin-top: 30px; display: flex; justify-content: space-between; font-size: 8.5pt;">
+        <div>
+            <p style="margin: 0; font-weight: bold;">Prepared By: ___________________________</p>
+            <p style="margin: 2px 0 0 0; color: #64748b;">Class Teacher / Administrator</p>
+        </div>
+        <div style="text-align: right;">
+            <p style="margin: 0; font-weight: bold;">Approved By: ___________________________</p>
+            <p style="margin: 2px 0 0 0; color: #64748b;">School Headteacher / Principal</p>
         </div>
     </div>
 </div>
 
 <script>
-function switchTab(tabName) {
-    document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
-    document.querySelectorAll('[id$="-btn"]').forEach(btn => {
-        btn.className = "flex-1 min-w-[100px] py-2.5 rounded-xl font-bold text-xs transition text-gray-500 hover:bg-gray-50";
-    });
+    function switchTab(tabId) {
+        document.querySelectorAll('.tab-pane').forEach(el => el.classList.add('hidden'));
+        document.getElementById(`tab-${tabId}`).classList.remove('hidden');
 
-    document.getElementById(`tab-${tabName}`).classList.remove('hidden');
-    const activeBtn = document.getElementById(`tab-${tabName}-btn`);
-    activeBtn.className = "flex-1 min-w-[100px] py-2.5 rounded-xl font-bold text-xs transition bg-blue-50 text-blue-700";
-}
+        document.querySelectorAll('[id$="-btn"]').forEach(btn => {
+            btn.className = "flex-1 py-2.5 px-3 rounded-xl font-bold text-xs transition text-gray-600 hover:bg-gray-100 whitespace-nowrap";
+        });
+        document.getElementById(`tab-${tabId}-btn`).className = "flex-1 py-2.5 px-3 rounded-xl font-bold text-xs transition bg-blue-600 text-white shadow-sm whitespace-nowrap";
+    }
 </script>
-
 {% endblock %}
