@@ -663,13 +663,13 @@ class StudentService:
     def get_fee_ledger_statement(self, admno):
         cursor = self.connection.cursor()
         cursor.execute("""
-            SELECT fl.id, fl.date_posted, fl.type, fl.description, fl.amount, fl.balance_after,
+            SELECT fl.id, COALESCE(fl.transaction_date, fl.created_at) as date_posted, fl.type, fl.description, fl.amount, fl.balance_after,
                    ay.year as academic_year, utd.term_number as term_name
             FROM fee_ledger fl
             LEFT JOIN academic_years ay ON fl.academic_year_id = ay.id AND fl.school_id = ay.school_id
             LEFT JOIN uniform_term_dates utd ON fl.term_id = utd.id AND fl.school_id = utd.school_id
             WHERE fl.admno = %s AND fl.school_id = %s
-            ORDER BY fl.date_posted ASC, fl.id ASC
+            ORDER BY COALESCE(fl.transaction_date, fl.created_at) ASC, fl.id ASC
         """, (admno, self.school_id))
         return cursor.fetchall()
 
