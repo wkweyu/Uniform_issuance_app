@@ -26,7 +26,7 @@
                 </a>
                 <div>
                     <h1 class="text-2xl font-extrabold text-gray-900 tracking-tight">Student Admission Register</h1>
-                    <p class="text-xs text-gray-500 font-medium">Permanent Administrative Admission Log (Ordered strictly by Admission Number)</p>
+                    <p class="text-xs text-gray-500 font-medium">Permanent Administrative Admission Log (Newest to Oldest)</p>
                 </div>
             </div>
         </div>
@@ -37,13 +37,55 @@
         </div>
     </div>
 
+    <!-- Search & Filter Controls -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-6 no-print">
+        <form method="GET" class="grid grid-cols-1 md:grid-cols-12 gap-3">
+            <div class="md:col-span-3 relative">
+                <i class="fas fa-search absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                <input type="text" name="q" value="{{ q }}" placeholder="Search student or parent..."
+                       class="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition font-medium">
+            </div>
+
+            <div class="md:col-span-3">
+                <select name="class_id" class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:bg-white focus:border-blue-500 outline-none transition font-medium text-gray-700">
+                    <option value="">All Classes</option>
+                    {% for c in classes %}
+                    <option value="{{ c.display_name }}" {% if current_class_id == c.display_name %}selected{% endif %}>{{ c.display_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="md:col-span-2">
+                <input type="date" name="date_from" value="{{ date_from }}" title="From Date"
+                       class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:bg-white focus:border-blue-500 outline-none transition font-medium text-gray-700">
+            </div>
+
+            <div class="md:col-span-2">
+                <input type="date" name="date_to" value="{{ date_to }}" title="To Date"
+                       class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:bg-white focus:border-blue-500 outline-none transition font-medium text-gray-700">
+            </div>
+
+            <div class="md:col-span-2 flex items-center gap-2">
+                <button type="submit" class="flex-1 py-2 bg-gray-900 text-white rounded-xl hover:bg-black transition font-bold text-sm shadow-sm">
+                    Filter
+                </button>
+                {% if q or current_class_id or date_from or date_to %}
+                <a href="{{ url_for('students.admission_book') }}" class="px-3 py-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition font-bold text-sm">
+                    Reset
+                </a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
     <!-- Table Card -->
     <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div class="overflow-x-auto">
             <table class="w-full text-left border-collapse">
                 <thead class="bg-gray-50 border-b border-gray-200">
                     <tr>
-                        <th class="px-4 py-3 font-extrabold text-gray-800 text-xs uppercase tracking-wider text-center border-r border-gray-200 w-16">Adm #</th>
+                        <th class="px-3 py-3 font-extrabold text-gray-800 text-xs uppercase tracking-wider text-center w-12">#</th>
+                        <th class="px-4 py-3 font-extrabold text-gray-800 text-xs uppercase tracking-wider text-center border-r border-gray-200 w-20">Adm #</th>
                         <th class="px-4 py-3 font-extrabold text-gray-800 text-xs uppercase tracking-wider">Student Full Name</th>
                         <th class="px-3 py-3 font-extrabold text-gray-800 text-xs uppercase tracking-wider text-center">Gender</th>
                         <th class="px-4 py-3 font-extrabold text-gray-800 text-xs uppercase tracking-wider">Initial Class</th>
@@ -56,8 +98,11 @@
                 <tbody class="divide-y divide-gray-200 text-xs font-medium text-gray-800">
                     {% for s in students %}
                     <tr class="hover:bg-blue-50/30 transition">
+                        <td class="px-3 py-2.5 text-center text-xs font-bold text-gray-400 font-mono">
+                            {{ loop.index }}
+                        </td>
                         <td class="px-4 py-2.5 text-center font-mono font-bold text-blue-700 border-r border-gray-200 bg-gray-50/50">
-                            {{ s.AdmNo }}
+                            #{{ s.AdmNo }}
                         </td>
                         <td class="px-4 py-2.5 font-bold text-gray-900">
                             {{ s.FName }} {% if s.MName %}{{ s.MName }} {% endif %}{{ s.LName }}

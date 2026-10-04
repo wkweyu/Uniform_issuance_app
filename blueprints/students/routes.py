@@ -89,7 +89,7 @@ def admit_student():
                             )
 
                 flash(f"Student admitted successfully. ID: {student_data['admno']}", "success")
-                return redirect(url_for('print_admission_form', admno=student_data['admno']))
+                return redirect(url_for('students.print_admission_form', admno=student_data['admno']))
         except Exception as e:
             flash(f"Error during admission: {str(e)}", "error")
 
@@ -207,14 +207,38 @@ def edit_student(admno):
     connection.close()
     return render_template('edit_student.html', student=student, classes=classes, current_class_id=current_class_id)
 
+@students_bp.route('/students/parents')
+@login_required
+def parents_register():
+    connection = get_db_connection()
+    service = StudentService(connection)
+    q = request.args.get('q', '').strip()
+    parents = service.get_parents_register(query=q if q else None)
+    connection.close()
+    return render_template('parents_register.html', parents=parents, q=q)
+
 @students_bp.route('/students/admission-book')
 @login_required
 def admission_book():
     connection = get_db_connection()
     service = StudentService(connection)
-    students = service.get_admission_book()
+    q = request.args.get('q', '').strip()
+    class_id = request.args.get('class_id', '').strip()
+    date_from = request.args.get('date_from', '').strip()
+    date_to = request.args.get('date_to', '').strip()
+    year_filter = request.args.get('year', '').strip()
+
+    students = service.get_admission_book(
+        query=q if q else None,
+        class_filter=class_id if class_id else None,
+        date_from=date_from if date_from else None,
+        date_to=date_to if date_to else None,
+        year_filter=year_filter if year_filter else None
+    )
+    classes = service.get_classes()
     connection.close()
-    return render_template('admission_book.html', students=students)
+    return render_template('admission_book.html', students=students, classes=classes,
+                           q=q, current_class_id=class_id, date_from=date_from, date_to=date_to, current_year_filter=year_filter)
 
 @students_bp.route('/students')
 @login_required
@@ -317,18 +341,19 @@ def student_profile(admno):
     subjects = service.get_enrolled_subjects(admno)
     siblings = service.get_siblings(student.get('parent_phone'), admno) if student.get('parent_phone') else []
 
-    ledger_summary = service.get_fee_summary(admno)
-    total_billed = ledger_summary['total_billed'] or 0
-    total_paid = ledger_summary['total_paid'] or 0
-    outstanding_balance = ledger_summary['current_balance'] or 0
+    ledger_summary = service.get_fee_summary(admno) or {}
+    total_billed = ledger_summary.get('total_billed') or 0
+    total_paid = ledger_summary.get('total_paid') or 0
+    outstanding_balance = ledger_summary.get('current_balance') or 0
     fee_history = service.get_payment_history(admno)
     fee_statement = service.get_fee_ledger_statement(admno)
 
     exam_summaries = service.get_exam_summaries(admno)
     exam_service = ExamManagementService(connection, service.school_id)
+    current_class_id = student.get('classID')
     for summary in exam_summaries:
-        scale_id = exam_service.get_class_grading_scale_id(student.get('classID'))
-        grade_rec = exam_service.get_grade_for_mark(summary['mean_mark'], scale_id)
+        scale_id = exam_service.get_class_grading_scale_id(current_class_id) if current_class_id else None
+        grade_rec = exam_service.get_grade_for_mark(summary['mean_mark'], scale_id) if scale_id else None
         summary['mean_grade'] = grade_rec['grade'] if grade_rec else '-'
 
     connection.close()

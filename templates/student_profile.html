@@ -18,25 +18,27 @@
     </div>
 
     <!-- Student & Parent Details Summary Box -->
-    <div class="grid grid-cols-2 gap-4 border border-gray-300 p-3 rounded mb-4 text-xs">
+    <div class="grid grid-cols-2 gap-3 border border-gray-400 p-2.5 rounded mb-3 text-xs bg-gray-50/30">
         <div>
-            <h3 class="font-extrabold uppercase tracking-wider text-[10px] text-gray-500 border-b border-gray-200 pb-1 mb-2">Student Personal Information</h3>
-            <div class="space-y-1">
-                <div><span class="font-bold text-gray-600">Full Name:</span> <span class="font-extrabold text-gray-900 text-sm">{{ student.FName }} {% if student.MName %}{{ student.MName }} {% endif %}{{ student.SName }}</span></div>
-                <div><span class="font-bold text-gray-600">Gender / DOB:</span> {{ 'Male' if student.Sex == 'M' else 'Female' }} | {{ student.DoB or '—' }}</div>
-                <div><span class="font-bold text-gray-600">Current Class & Stream:</span> <span class="font-bold text-blue-900">{{ student.class_name or 'Unassigned' }} ({{ student.stream or '-' }})</span></div>
-                <div><span class="font-bold text-gray-600">Birth Cert / ID:</span> {{ student.birth or '—' }}</div>
-                <div><span class="font-bold text-gray-600">Admission Date:</span> {{ student.Date_Adm or '—' }}</div>
+            <h3 class="font-extrabold uppercase tracking-wider text-[10px] text-gray-700 border-b border-gray-300 pb-1 mb-1.5">Student Personal Details</h3>
+            <div class="grid grid-cols-12 gap-1 text-[11px] leading-tight">
+                <div class="col-span-8"><span class="font-bold text-gray-600">Name:</span> <span class="font-extrabold text-gray-900">{{ student.FName }} {% if student.MName %}{{ student.MName }} {% endif %}{{ student.SName }}</span></div>
+                <div class="col-span-4 text-right"><span class="font-bold text-gray-600">Sex:</span> <span class="font-bold text-gray-900">{{ 'Male' if student.Sex == 'M' else 'Female' }}</span></div>
+                <div class="col-span-6"><span class="font-bold text-gray-600">Class:</span> <span class="font-bold text-blue-900">{{ student.class_name or 'Unassigned' }}</span></div>
+                <div class="col-span-6 text-right"><span class="font-bold text-gray-600">Stream:</span> {{ student.stream or '-' }}</div>
+                <div class="col-span-6"><span class="font-bold text-gray-600">DOB:</span> {{ student.DoB or '—' }}</div>
+                <div class="col-span-6 text-right"><span class="font-bold text-gray-600">Adm Date:</span> {{ student.Date_Adm or '—' }}</div>
+                <div class="col-span-12"><span class="font-bold text-gray-600">Birth Cert:</span> {{ student.birth or '—' }}</div>
             </div>
         </div>
         <div>
-            <h3 class="font-extrabold uppercase tracking-wider text-[10px] text-gray-500 border-b border-gray-200 pb-1 mb-2">Guardian & Contact Details</h3>
-            <div class="space-y-1">
-                <div><span class="font-bold text-gray-600">Primary Guardian:</span> <span class="font-bold text-gray-900">{{ student.parent_name or '—' }}</span></div>
-                <div><span class="font-bold text-gray-600">Contact Phone:</span> <span class="font-mono font-bold">{{ student.parent_phone or '—' }}</span></div>
-                <div><span class="font-bold text-gray-600">National ID / Email:</span> {{ student.parent_id or '—' }} | {{ student.parent_email or '—' }}</div>
-                <div><span class="font-bold text-gray-600">Residency / Hometown:</span> {{ student.residency or '—' }}</div>
-                <div><span class="font-bold text-gray-600">Home Address:</span> {{ student.home_address or '—' }}</div>
+            <h3 class="font-extrabold uppercase tracking-wider text-[10px] text-gray-700 border-b border-gray-300 pb-1 mb-1.5">Guardian & Contact Details</h3>
+            <div class="grid grid-cols-12 gap-1 text-[11px] leading-tight">
+                <div class="col-span-12"><span class="font-bold text-gray-600">Guardian:</span> <span class="font-bold text-gray-900">{{ student.parent_name or '—' }}</span></div>
+                <div class="col-span-6"><span class="font-bold text-gray-600">Phone:</span> <span class="font-mono font-bold">{{ student.parent_phone or '—' }}</span></div>
+                <div class="col-span-6 text-right"><span class="font-bold text-gray-600">ID:</span> {{ student.parent_id or '—' }}</div>
+                <div class="col-span-12"><span class="font-bold text-gray-600">Email:</span> {{ student.parent_email or '—' }}</div>
+                <div class="col-span-12"><span class="font-bold text-gray-600">Hometown/Address:</span> {{ student.residency or student.home_address or '—' }}</div>
             </div>
         </div>
     </div>
