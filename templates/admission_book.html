@@ -145,7 +145,7 @@
         <div class="flex justify-between items-start">
             <div>
                 <h1 class="text-xl font-bold uppercase text-purple-900 tracking-wide">OFFICIAL STATUTORY ADMISSION REGISTER</h1>
-                <p class="text-xs text-gray-600">Generated on: {{ now.strftime('%Y-%m-%d %H:%M') if now is defined and now.strftime is defined else datetime.now().strftime('%Y-%m-%d %H:%M') }}</p>
+                <p class="text-xs text-gray-600">Generated on: {{ now.strftime('%Y-%m-%d %H:%M') if now is defined and now and now.strftime is defined else '' }}</p>
             </div>
             <div class="text-right text-xs text-gray-600">
                 <p>CONFIDENTIAL ADMINISTRATIVE RECORD</p>

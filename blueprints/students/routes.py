@@ -214,8 +214,9 @@ def students_list():
     term_cur, year_cur = get_current_term_and_year()
     q = request.args.get('q', '').strip()
     students = service.get_students_list(query=q if q else None, year_cur=year_cur)
+    classes = service.get_classes()
     connection.close()
-    return render_template('student_list.html', students=students, q=q)
+    return render_template('student_list.html', students=students, classes=classes, q=q)
 
 @students_bp.route('/students/admission-book')
 @login_required

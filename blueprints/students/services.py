@@ -578,7 +578,7 @@ class StudentService:
                 MAX(p.address) AS address,
                 {'MAX(p.regDate)' if has_regdate else 'NULL'} AS regDate,
                 GROUP_CONCAT(
-                    CONCAT(s.FName, ' ', COALESCE(s.SName, s.LName, ''), ' (#', s.AdmNo, ')')
+                    CONCAT(s.FName, ' ', COALESCE(s.SName, ''), ' (#', s.AdmNo, ')')
                     ORDER BY s.AdmNo ASC
                     SEPARATOR '||'
                 ) AS children_concat

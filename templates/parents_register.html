@@ -181,7 +181,7 @@
             <div>
                 <h1 class="text-xl font-bold uppercase text-blue-900 tracking-wide">SCHOOL MANAGEMENT SYSTEM</h1>
                 <h2 class="text-base font-semibold text-gray-800 mt-1">OFFICIAL PARENTS & GUARDIANS REGISTER</h2>
-                <p class="text-xs text-gray-600">Generated on: {{ now.strftime('%Y-%m-%d %H:%M') if now is defined and now.strftime is defined else datetime.now().strftime('%Y-%m-%d %H:%M') }}</p>
+                <p class="text-xs text-gray-600">Generated on: {{ now.strftime('%Y-%m-%d %H:%M') if now is defined and now and now.strftime is defined else '' }}</p>
             </div>
             <div class="text-right text-xs text-gray-600">
                 <p>CONFIDENTIAL & PROPRIETARY</p>
