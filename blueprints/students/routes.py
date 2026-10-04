@@ -35,6 +35,7 @@ def admit_student():
         class_id = request.form.get('class_id')
         class_data = service.get_class_details(class_id)
 
+        cat = request.form.get('category', 'Day')
         student_data = {
             'admno': request.form.get('admno').strip(),
             'fname': request.form.get('fname').strip(),
@@ -44,10 +45,10 @@ def admit_student():
             'dob': request.form.get('dob'),
             'birth_cert': request.form.get('birth_cert', '').strip(),
             'religion': request.form.get('religion', 'Christianity'),
-            'category': request.form.get('category', 'Day'),
-            'boarding': 'YES' if request.form.get('category') == 'Boarding' else 'NO',
+            'category': cat,
+            'boarding': 'YES' if 'Boarding' in cat else 'NO',
             'student_group_id': request.form.get('student_group_id'),
-            'route_id': request.form.get('route_id') if request.form.get('category') == 'Transport' else None,
+            'route_id': request.form.get('route_id') if request.form.get('route_id') and 'Transport' in cat else None,
             'alt_contact': request.form.get('alt_contact', '').strip(),
             'stream': class_data['stream_code'] if class_data else '',
         }
@@ -69,7 +70,7 @@ def admit_student():
                 service.admit_student(student_data, parent_data, class_id, academic_year_id)
 
                 # Handling Fees invoicing if transport
-                if student_data['category'] == 'Transport' and student_data['route_id']:
+                if student_data['route_id']:
                     route_data = service.get_transport_route_by_id(student_data['route_id'])
                     if route_data:
                         votehead_name = f"Transport-{route_data['name']}"
@@ -206,6 +207,15 @@ def edit_student(admno):
     connection.close()
     return render_template('edit_student.html', student=student, classes=classes, current_class_id=current_class_id)
 
+@students_bp.route('/students/admission-book')
+@login_required
+def admission_book():
+    connection = get_db_connection()
+    service = StudentService(connection)
+    students = service.get_admission_book()
+    connection.close()
+    return render_template('admission_book.html', students=students)
+
 @students_bp.route('/students')
 @login_required
 def students_list():
@@ -217,7 +227,12 @@ def students_list():
     status = request.args.get('status', '').strip()
     gender = request.args.get('gender', '').strip()
 
-    students = service.get_students_list(query=q if q else None, year_cur=year_cur)
+    students = service.get_students_list(
+        query=q if q else None,
+        class_filter=class_id if class_id else None,
+        status_filter=status if status else None,
+        year_cur=year_cur
+    )
     classes = service.get_classes()
     connection.close()
     return render_template('student_list.html', students=students, classes=classes, q=q, current_class_id=class_id, current_status=status, current_gender=gender)
@@ -307,6 +322,7 @@ def student_profile(admno):
     total_paid = ledger_summary['total_paid'] or 0
     outstanding_balance = ledger_summary['current_balance'] or 0
     fee_history = service.get_payment_history(admno)
+    fee_statement = service.get_fee_ledger_statement(admno)
 
     exam_summaries = service.get_exam_summaries(admno)
     exam_service = ExamManagementService(connection, service.school_id)
@@ -318,7 +334,8 @@ def student_profile(admno):
     connection.close()
     return render_template('student_profile.html',
                          student=student, academic_history=academic_history, issuance_history=issuance_history,
-                         subjects=subjects, siblings=siblings, fee_history=fee_history, exam_summaries=exam_summaries,
+                         subjects=subjects, siblings=siblings, fee_history=fee_history, fee_statement=fee_statement,
+                         exam_summaries=exam_summaries,
                          total_paid=total_paid, total_billed=total_billed, outstanding_balance=outstanding_balance)
 
 @students_bp.route('/api/detect-siblings')

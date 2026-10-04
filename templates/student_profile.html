@@ -1,25 +1,196 @@
 {% extends "base.html" %}
 {% block content %}
 
-<!-- Print-Only Official Record Header -->
-<div class="print-only mb-6 text-center border-b-2 border-gray-900 pb-4">
-    <div class="flex items-center justify-between">
-        <div class="text-left">
+<!-- Print-Only Executive Official Student Profile Sheet (Renders all student data sequentially for physical filing) -->
+<div class="print-only max-w-4xl mx-auto p-4 text-gray-900 leading-tight">
+    <!-- Letterhead -->
+    <div class="flex items-center justify-between border-b-2 border-gray-900 pb-3 mb-4">
+        <div>
             <h1 class="text-2xl font-black uppercase tracking-wider text-gray-900">{{ school.school_name|default('GREENWOOD INTERNATIONAL SCHOOL') }}</h1>
-            <p class="text-xs text-gray-600 uppercase font-bold">Official Student Administrative Record Sheet</p>
-            <p class="text-[10px] text-gray-500 mt-0.5">Confidential File • Printed: {{ now.strftime('%d %B %Y') }}</p>
+            <p class="text-xs font-bold uppercase tracking-widest text-gray-700">PERMANENT STUDENT RECORD FILE & PROFILE SHEET</p>
+            <p class="text-[10px] text-gray-500">Generated: {{ now.strftime('%d %B %Y, %H:%M') }} | Official Confidential Document</p>
         </div>
-        <div class="text-right border-l border-gray-300 pl-4">
-            <div class="text-sm font-black font-mono text-blue-900">#{{ student.AdmNo }}</div>
-            <div class="text-xs font-bold text-gray-800">{{ student.FName }} {% if student.MName %}{{ student.MName }} {% endif %}{{ student.SName }}</div>
-            <div class="text-[10px] text-gray-600 font-semibold">{{ student.class_name or 'Unassigned' }}</div>
+        <div class="text-right border-l-2 border-gray-800 pl-4">
+            <div class="text-xs font-bold text-gray-500 uppercase">Admission #</div>
+            <div class="text-2xl font-black font-mono text-blue-900">#{{ student.AdmNo }}</div>
+            <div class="text-xs font-bold text-gray-800 uppercase">{{ student.category or 'Day Scholar' }}</div>
+        </div>
+    </div>
+
+    <!-- Student & Parent Details Summary Box -->
+    <div class="grid grid-cols-2 gap-4 border border-gray-300 p-3 rounded mb-4 text-xs">
+        <div>
+            <h3 class="font-extrabold uppercase tracking-wider text-[10px] text-gray-500 border-b border-gray-200 pb-1 mb-2">Student Personal Information</h3>
+            <div class="space-y-1">
+                <div><span class="font-bold text-gray-600">Full Name:</span> <span class="font-extrabold text-gray-900 text-sm">{{ student.FName }} {% if student.MName %}{{ student.MName }} {% endif %}{{ student.SName }}</span></div>
+                <div><span class="font-bold text-gray-600">Gender / DOB:</span> {{ 'Male' if student.Sex == 'M' else 'Female' }} | {{ student.DoB or '—' }}</div>
+                <div><span class="font-bold text-gray-600">Current Class & Stream:</span> <span class="font-bold text-blue-900">{{ student.class_name or 'Unassigned' }} ({{ student.stream or '-' }})</span></div>
+                <div><span class="font-bold text-gray-600">Birth Cert / ID:</span> {{ student.birth or '—' }}</div>
+                <div><span class="font-bold text-gray-600">Admission Date:</span> {{ student.Date_Adm or '—' }}</div>
+            </div>
+        </div>
+        <div>
+            <h3 class="font-extrabold uppercase tracking-wider text-[10px] text-gray-500 border-b border-gray-200 pb-1 mb-2">Guardian & Contact Details</h3>
+            <div class="space-y-1">
+                <div><span class="font-bold text-gray-600">Primary Guardian:</span> <span class="font-bold text-gray-900">{{ student.parent_name or '—' }}</span></div>
+                <div><span class="font-bold text-gray-600">Contact Phone:</span> <span class="font-mono font-bold">{{ student.parent_phone or '—' }}</span></div>
+                <div><span class="font-bold text-gray-600">National ID / Email:</span> {{ student.parent_id or '—' }} | {{ student.parent_email or '—' }}</div>
+                <div><span class="font-bold text-gray-600">Residency / Hometown:</span> {{ student.residency or '—' }}</div>
+                <div><span class="font-bold text-gray-600">Home Address:</span> {{ student.home_address or '—' }}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 1: Linked Siblings -->
+    {% if siblings %}
+    <div class="mb-4">
+        <h3 class="font-extrabold text-xs uppercase tracking-wider text-gray-800 border-b border-gray-400 pb-1 mb-2">1. Linked Sibling Records</h3>
+        <div class="grid grid-cols-2 gap-2 text-xs">
+            {% for sib in siblings %}
+            <div class="border border-gray-200 p-1.5 rounded flex justify-between items-center">
+                <div>
+                    <span class="font-bold">{{ sib.FName }} {{ sib.LName }}</span>
+                    <span class="text-[10px] text-gray-500 block">{{ sib.class_name or 'Unassigned' }}</span>
+                </div>
+                <span class="font-mono font-bold">#{{ sib.AdmNo }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Section 2: Academic History & Allocation -->
+    <div class="mb-4">
+        <h3 class="font-extrabold text-xs uppercase tracking-wider text-gray-800 border-b border-gray-400 pb-1 mb-2">2. Academic Progression & Class History</h3>
+        <table class="w-full text-left border border-gray-300 text-xs">
+            <thead class="bg-gray-100 uppercase font-bold text-[10px] text-gray-600">
+                <tr>
+                    <th class="p-1.5 border-b border-r border-gray-300">Academic Year</th>
+                    <th class="p-1.5 border-b border-r border-gray-300">Allocated Class</th>
+                    <th class="p-1.5 border-b border-r border-gray-300">Class Group</th>
+                    <th class="p-1.5 border-b border-gray-300">Allocation Date</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 font-medium">
+                {% for record in academic_history %}
+                <tr>
+                    <td class="p-1.5 border-r border-gray-200 font-bold font-mono">{{ record.thisYear }}</td>
+                    <td class="p-1.5 border-r border-gray-200 font-bold text-gray-900">{{ record.class_name }}</td>
+                    <td class="p-1.5 border-r border-gray-200">{{ record.class_group or '—' }}</td>
+                    <td class="p-1.5 font-mono text-gray-600">{{ record.AllcDate or '-' }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="p-2 text-center text-gray-400 italic">No historical class records.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Section 3: Full Fee Ledger Statement -->
+    <div class="mb-4">
+        <div class="flex justify-between items-end border-b border-gray-400 pb-1 mb-2">
+            <h3 class="font-extrabold text-xs uppercase tracking-wider text-gray-800">3. Fee Ledger & Financial Statement</h3>
+            <div class="text-xs font-bold">
+                <span>Total Billed: {{ total_billed | currency }}</span> |
+                <span>Total Paid: {{ total_paid | currency }}</span> |
+                <span class="text-red-800">Current Balance: {{ outstanding_balance | currency }}</span>
+            </div>
+        </div>
+        <table class="w-full text-left border border-gray-300 text-[11px]">
+            <thead class="bg-gray-100 uppercase font-bold text-[9px] text-gray-600">
+                <tr>
+                    <th class="p-1 border-b border-r border-gray-300">Date</th>
+                    <th class="p-1 border-b border-r border-gray-300">Type</th>
+                    <th class="p-1 border-b border-r border-gray-300">Description</th>
+                    <th class="p-1 border-b border-r border-gray-300 text-right">Amount (KES)</th>
+                    <th class="p-1 border-b border-gray-300 text-right">Running Balance</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 font-medium">
+                {% for item in fee_statement %}
+                <tr>
+                    <td class="p-1 border-r border-gray-200 font-mono">{{ item.date_posted }}</td>
+                    <td class="p-1 border-r border-gray-200 font-bold uppercase text-[9px]">{{ item.type }}</td>
+                    <td class="p-1 border-r border-gray-200">{{ item.description }}</td>
+                    <td class="p-1 border-r border-gray-200 text-right font-bold {% if item.type == 'CHARGE' %}text-red-900{% else %}text-green-900{% endif %}">
+                        {{ item.amount | currency }}
+                    </td>
+                    <td class="p-1 text-right font-bold font-mono">{{ item.balance_after | currency }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="p-2 text-center text-gray-400 italic">No fee ledger entries.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Section 4: Uniform Receipts & Exam Summaries -->
+    <div class="grid grid-cols-2 gap-4 mb-4">
+        <div>
+            <h3 class="font-extrabold text-xs uppercase tracking-wider text-gray-800 border-b border-gray-400 pb-1 mb-2">4. Uniform Issuance Summary</h3>
+            <table class="w-full text-left border border-gray-300 text-[10px]">
+                <thead class="bg-gray-100 font-bold uppercase text-[9px]">
+                    <tr>
+                        <th class="p-1 border-b border-r border-gray-300">Receipt #</th>
+                        <th class="p-1 border-b border-r border-gray-300">Date</th>
+                        <th class="p-1 border-b border-gray-300 text-right">Amount</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200 font-medium">
+                    {% for u in issuance_history %}
+                    <tr>
+                        <td class="p-1 border-r border-gray-200 font-mono font-bold">{{ u.receipt_no }}</td>
+                        <td class="p-1 border-r border-gray-200">{{ u.issued_on }}</td>
+                        <td class="p-1 text-right font-bold">{{ u.total | currency }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="3" class="p-2 text-center text-gray-400 italic">No uniform receipts.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div>
+            <h3 class="font-extrabold text-xs uppercase tracking-wider text-gray-800 border-b border-gray-400 pb-1 mb-2">5. Examination Summaries</h3>
+            <table class="w-full text-left border border-gray-300 text-[10px]">
+                <thead class="bg-gray-100 font-bold uppercase text-[9px]">
+                    <tr>
+                        <th class="p-1 border-b border-r border-gray-300">Series</th>
+                        <th class="p-1 border-b border-r border-gray-300 text-center">Mean %</th>
+                        <th class="p-1 border-b border-gray-300 text-center">Grade</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200 font-medium">
+                    {% for ex in exam_summaries %}
+                    <tr>
+                        <td class="p-1 border-r border-gray-200 font-bold">{{ ex.exam_name }} ({{ ex.academic_year }})</td>
+                        <td class="p-1 border-r border-gray-200 text-center font-mono">{{ "%.1f"|format(ex.mean_mark) }}%</td>
+                        <td class="p-1 text-center font-extrabold">{{ ex.mean_grade }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="3" class="p-2 text-center text-gray-400 italic">No exam summaries.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Official Sign-off Footer -->
+    <div class="pt-6 border-t border-gray-800 grid grid-cols-2 gap-8 text-[10px]">
+        <div>
+            <div class="border-b border-gray-800 w-48 mb-1"></div>
+            <p class="font-bold text-gray-600 uppercase">School Administrative Registrar Signature</p>
+        </div>
+        <div class="text-right">
+            <div class="border-b border-gray-800 w-48 mb-1 ml-auto"></div>
+            <p class="font-bold text-gray-600 uppercase">Official School Rubber Stamp & Date</p>
         </div>
     </div>
 </div>
 
-<div class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+<!-- Web Interactive Interface -->
+<div class="no-print max-w-7xl mx-auto px-4 py-6 space-y-6">
     <!-- Breadcrumbs -->
-    <nav class="flex text-xs text-gray-500 no-print" aria-label="Breadcrumb">
+    <nav class="flex text-xs text-gray-500" aria-label="Breadcrumb">
         <ol class="flex items-center space-x-2">
             <li><a href="{{ url_for('index') }}" class="hover:text-blue-600">Home</a></li>
             <li><i class="fas fa-chevron-right text-[9px] mx-1"></i></li>
@@ -29,7 +200,7 @@
         </ol>
     </nav>
 
-    <!-- Sticky Summary Header Card -->
+    <!-- Header Card -->
     <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden relative">
         <div class="h-28 bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-800"></div>
         <div class="px-6 pb-6 pt-0">
@@ -62,12 +233,12 @@
                 </div>
 
                 <!-- Quick Action Buttons -->
-                <div class="flex items-center gap-2 no-print">
+                <div class="flex items-center gap-2">
                     <a href="{{ url_for('students.edit_student', admno=student.AdmNo) }}" class="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition font-bold text-xs shadow-md shadow-blue-500/20 flex items-center">
                         <i class="fas fa-edit mr-1.5"></i> Edit Profile
                     </a>
                     <button onclick="window.print()" class="px-4 py-2 bg-white text-gray-700 border border-gray-200 rounded-xl hover:bg-gray-50 transition font-bold text-xs shadow-xs flex items-center">
-                        <i class="fas fa-print mr-1.5 text-gray-500"></i> Print Sheet
+                        <i class="fas fa-print mr-1.5 text-gray-500"></i> Print Record Sheet
                     </button>
                     <form action="{{ url_for('students.toggle_student_status', admno=student.AdmNo) }}" method="POST" class="inline">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -87,7 +258,7 @@
             <!-- Key Quick Metrics Cards Bar -->
             <div class="grid grid-cols-2 md:grid-cols-4 gap-3 pt-4 border-t border-gray-100">
                 <div class="bg-gray-50/80 p-3 rounded-xl border border-gray-100">
-                    <div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Fee Ledger Balance</div>
+                    <div class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Fee Balance</div>
                     <div class="text-base font-black {% if (outstanding_balance or 0) > 0 %}text-red-600{% else %}text-green-600{% endif %}">
                         {{ (outstanding_balance or 0) | currency }}
                     </div>
@@ -110,7 +281,7 @@
 
     <!-- Main Content Layout Grid -->
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <!-- Sidebar Column: Student & Parent Core Details -->
+        <!-- Sidebar Column -->
         <div class="lg:col-span-4 space-y-6">
             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
                 <h3 class="text-xs font-black text-gray-800 uppercase tracking-wider mb-4 flex items-center">
@@ -188,12 +359,12 @@
         <!-- Main Column: Tabbed Information Views -->
         <div class="lg:col-span-8 space-y-6">
             <!-- Tabs Navigation Bar -->
-            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-1 flex overflow-x-auto no-print">
-                <button onclick="switchTab('academic')" id="tab-academic-btn" class="flex-1 min-w-[100px] py-2.5 rounded-xl font-bold text-xs transition bg-blue-50 text-blue-700">
-                    <i class="fas fa-graduation-cap mr-1.5"></i> Academic
-                </button>
-                <button onclick="switchTab('fees')" id="tab-fees-btn" class="flex-1 min-w-[100px] py-2.5 rounded-xl font-bold text-xs transition text-gray-500 hover:bg-gray-50">
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-1 flex overflow-x-auto">
+                <button onclick="switchTab('fees')" id="tab-fees-btn" class="flex-1 min-w-[100px] py-2.5 rounded-xl font-bold text-xs transition bg-blue-50 text-blue-700">
                     <i class="fas fa-hand-holding-dollar mr-1.5 text-green-600"></i> Fee Ledger
+                </button>
+                <button onclick="switchTab('academic')" id="tab-academic-btn" class="flex-1 min-w-[100px] py-2.5 rounded-xl font-bold text-xs transition text-gray-500 hover:bg-gray-50">
+                    <i class="fas fa-graduation-cap mr-1.5"></i> Academic History
                 </button>
                 <button onclick="switchTab('uniform')" id="tab-uniform-btn" class="flex-1 min-w-[100px] py-2.5 rounded-xl font-bold text-xs transition text-gray-500 hover:bg-gray-50">
                     <i class="fas fa-tshirt mr-1.5 text-indigo-600"></i> Uniforms
@@ -206,11 +377,62 @@
                 </button>
             </div>
 
-            <!-- Tab Content: Academic History -->
-            <div id="tab-academic" class="tab-content">
+            <!-- Tab Content: Fee Ledger Statement -->
+            <div id="tab-fees" class="tab-content">
                 <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                     <div class="px-6 py-4 border-b border-gray-50 flex justify-between items-center">
-                        <h3 class="font-extrabold text-sm text-gray-900">Academic History & Allocations</h3>
+                        <div>
+                            <h3 class="font-extrabold text-sm text-gray-900">Fee Ledger & Running Statement</h3>
+                            <p class="text-[10px] text-gray-400">Complete debit charges and payment credits log</p>
+                        </div>
+                        <a href="{{ url_for('students.student_fee_statement', admno=student.AdmNo) }}" target="_blank" class="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold hover:bg-blue-100 transition">
+                            <i class="fas fa-file-invoice mr-1"></i> Full Statement
+                        </a>
+                    </div>
+                    {% if fee_statement %}
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs">
+                            <thead class="bg-gray-50 font-bold text-gray-400 uppercase tracking-wider">
+                                <tr>
+                                    <th class="px-4 py-3">Date</th>
+                                    <th class="px-3 py-3">Type</th>
+                                    <th class="px-4 py-3">Description</th>
+                                    <th class="px-4 py-3 text-right">Amount</th>
+                                    <th class="px-4 py-3 text-right">Balance</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-50">
+                                {% for item in fee_statement %}
+                                <tr class="hover:bg-gray-50/50">
+                                    <td class="px-4 py-3 font-mono text-gray-600">{{ item.date_posted }}</td>
+                                    <td class="px-3 py-3">
+                                        {% if item.type == 'CHARGE' %}
+                                            <span class="px-2 py-0.5 bg-red-100 text-red-800 rounded font-bold text-[9px]">CHARGE</span>
+                                        {% else %}
+                                            <span class="px-2 py-0.5 bg-green-100 text-green-800 rounded font-bold text-[9px]">PAYMENT</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="px-4 py-3 font-medium text-gray-800">{{ item.description }}</td>
+                                    <td class="px-4 py-3 text-right font-bold {% if item.type == 'CHARGE' %}text-red-600{% else %}text-green-700{% endif %}">
+                                        {{ item.amount | currency }}
+                                    </td>
+                                    <td class="px-4 py-3 text-right font-bold font-mono text-gray-900">{{ item.balance_after | currency }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="p-8 text-center text-xs text-gray-400 italic">No fee transactions logged in statement.</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Tab Content: Academic History -->
+            <div id="tab-academic" class="tab-content hidden">
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div class="px-6 py-4 border-b border-gray-50 flex justify-between items-center">
+                        <h3 class="font-extrabold text-sm text-gray-900">Academic History & Class Allocations</h3>
                         <span class="text-xs font-bold text-gray-400">{{ academic_history|length }} Allocations</span>
                     </div>
                     {% if academic_history %}
@@ -223,11 +445,11 @@
                                 </div>
                                 <div>
                                     <div class="font-bold text-gray-800 text-xs">{{ record.class_name }}</div>
-                                    <div class="text-[10px] text-gray-400 font-semibold">{{ record.class_group or 'Standard Group' }}</div>
+                                    <div class="text-[10px] text-gray-400 font-semibold">{{ record.class_group or 'Standard Stream' }}</div>
                                 </div>
                             </div>
                             <div class="text-right text-xs">
-                                <div class="font-bold text-gray-700">Year {{ record.thisYear }}</div>
+                                <div class="font-bold text-gray-700">Academic Year {{ record.thisYear }}</div>
                                 <div class="text-[10px] text-gray-400">Date: {{ record.AllcDate }}</div>
                             </div>
                         </div>
@@ -235,48 +457,6 @@
                     </div>
                     {% else %}
                     <div class="p-8 text-center text-xs text-gray-400 italic">No historical class allocations found.</div>
-                    {% endif %}
-                </div>
-            </div>
-
-            <!-- Tab Content: Fee Ledger -->
-            <div id="tab-fees" class="tab-content hidden">
-                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                    <div class="px-6 py-4 border-b border-gray-50 flex justify-between items-center">
-                        <h3 class="font-extrabold text-sm text-gray-900">Fee Payment History</h3>
-                        <a href="{{ url_for('fees.collect_fees') }}?admno={{ student.AdmNo }}" class="px-3 py-1 bg-green-600 text-white rounded-lg text-xs font-bold hover:bg-green-700 transition no-print">
-                            + Record Payment
-                        </a>
-                    </div>
-                    {% if fee_history %}
-                    <table class="w-full text-left text-xs">
-                        <thead class="bg-gray-50 font-bold text-gray-400 uppercase tracking-wider">
-                            <tr>
-                                <th class="px-6 py-3">Receipt #</th>
-                                <th class="px-6 py-3">Date</th>
-                                <th class="px-6 py-3 text-right">Amount</th>
-                                <th class="px-6 py-3">Mode</th>
-                                <th class="px-6 py-3 text-right no-print">Receipt</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-50">
-                            {% for fee in fee_history %}
-                            <tr class="hover:bg-gray-50/50">
-                                <td class="px-6 py-3 font-mono font-bold text-gray-800">{{ fee.rcptno }}</td>
-                                <td class="px-6 py-3 text-gray-600">{{ fee.date_of_payment }}</td>
-                                <td class="px-6 py-3 font-bold text-right text-green-700">{{ (fee.amount_paid or 0) | currency }}</td>
-                                <td class="px-6 py-3">
-                                    <span class="px-2 py-0.5 bg-gray-100 rounded uppercase font-bold text-[9px] text-gray-600">{{ fee.payment_mode or 'N/A' }}</span>
-                                </td>
-                                <td class="px-6 py-3 text-right no-print">
-                                    <a href="/admin/fees/receipt/{{ fee.payment_id }}" target="_blank" class="text-blue-600 hover:underline font-bold">View</a>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                    {% else %}
-                    <div class="p-8 text-center text-xs text-gray-400 italic">No fee payment receipts recorded.</div>
                     {% endif %}
                 </div>
             </div>
@@ -293,7 +473,7 @@
                             <tr>
                                 <th class="px-6 py-3">Receipt #</th>
                                 <th class="px-6 py-3">Date</th>
-                                <th class="px-6 py-3">Total Amount</th>
+                                <th class="px-6 py-3 text-right">Total Amount</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-50">
@@ -301,7 +481,7 @@
                             <tr class="hover:bg-gray-50/50">
                                 <td class="px-6 py-3 font-mono font-bold text-indigo-600">{{ receipt.receipt_no }}</td>
                                 <td class="px-6 py-3 text-gray-600">{{ receipt.issued_on }}</td>
-                                <td class="px-6 py-3 font-bold text-gray-800">{{ (receipt.total or 0) | currency }}</td>
+                                <td class="px-6 py-3 font-bold text-gray-800 text-right">{{ (receipt.total or 0) | currency }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>
