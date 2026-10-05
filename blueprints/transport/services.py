@@ -139,7 +139,7 @@ class TransportService:
             WHERE r.school_id = %s
             ORDER BY r.name
         """, (self.school_id,))
-        return self.cursor.fetchall()
+        return self.cursor.fetchall() or []
 
     def get_route_by_id(self, route_id: int) -> Optional[Dict]:
         self.cursor.execute("""
@@ -153,7 +153,7 @@ class TransportService:
     def get_transport_assignments(self, route_id: Optional[int] = None, search_query: Optional[str] = None) -> List[Dict]:
         query = """
             SELECT s.AdmNo, CONCAT_WS(' ', COALESCE(s.FName, ''), COALESCE(s.MName, ''), COALESCE(s.SName, '')) as student_name,
-                   s.Sex as gender, s.category, r.id as route_id, r.name as route_name, r.amount as route_amount,
+                   s.Sex as gender, s.category, r.id as route_id, r.name as route_name, COALESCE(r.amount, 0) as route_amount,
                    COALESCE(c_current.display_name, c_legacy.class_name, 'Unassigned') as class_name,
                    p.pName as parent_name, p.phone1 as parent_phone
             FROM studentinfo s
@@ -172,16 +172,18 @@ class TransportService:
         if search_query:
             query += " AND (s.AdmNo LIKE %s OR CONCAT_WS(' ', COALESCE(s.FName, ''), COALESCE(s.MName, ''), COALESCE(s.SName, '')) LIKE %s OR r.name LIKE %s)"
             params.extend([f"%{search_query}%", f"%{search_query}%", f"%{search_query}%"])
-        query += " GROUP BY s.AdmNo ORDER BY r.name, s.FName, s.SName"
+        query += """ GROUP BY s.AdmNo, s.FName, s.MName, s.SName, s.Sex, s.category, r.id, r.name, r.amount,
+                             c_current.display_name, c_legacy.class_name, p.pName, p.phone1
+                    ORDER BY r.name, s.FName, s.SName"""
         self.cursor.execute(query, params)
-        return self.cursor.fetchall()
+        return self.cursor.fetchall() or []
 
     def get_transport_revenue_summary(self) -> List[Dict]:
         query = """
-            SELECT r.id as route_id, r.name as route_name, r.amount as route_charge,
+            SELECT r.id as route_id, r.name as route_name, COALESCE(r.amount, 0) as route_charge,
                    COALESCE(b.reg_no, 'Unassigned') as bus_reg_no, COALESCE(b.driver_name, 'N/A') as driver_name,
                    COUNT(s.AdmNo) as student_count,
-                   (COUNT(s.AdmNo) * r.amount) as expected_revenue,
+                   (COUNT(s.AdmNo) * COALESCE(r.amount, 0)) as expected_revenue,
                    COALESCE(SUM(paid_tbl.paid_amount), 0) as collected_revenue
             FROM transport_routes r
             LEFT JOIN buses b ON r.bus_id = b.id AND r.school_id = b.school_id
@@ -194,11 +196,11 @@ class TransportService:
                 GROUP BY fl.admno, fl.school_id
             ) paid_tbl ON s.AdmNo = paid_tbl.admno AND s.school_id = paid_tbl.school_id
             WHERE r.school_id = %s
-            GROUP BY r.id
+            GROUP BY r.id, r.name, r.amount, b.reg_no, b.driver_name
             ORDER BY r.name
         """
         self.cursor.execute(query, (self.school_id,))
-        return self.cursor.fetchall()
+        return self.cursor.fetchall() or []
 
     def get_unassigned_active_students(self) -> List[Dict]:
         query = """
@@ -210,10 +212,11 @@ class TransportService:
             LEFT JOIN classallocation legacy_ca ON s.AdmNo = legacy_ca.AdmNo AND s.school_id = legacy_ca.school_id
             LEFT JOIN classes c_legacy ON legacy_ca.classID = c_legacy.classID AND legacy_ca.school_id = c_legacy.school_id
             WHERE s.school_id = %s AND (s.route_id IS NULL OR s.route_id = 0) AND (s.blocked = 'NO' OR s.blocked IS NULL)
-            GROUP BY s.AdmNo ORDER BY s.FName, s.SName
+            GROUP BY s.AdmNo, s.FName, s.MName, s.SName, c_current.display_name, c_legacy.class_name
+            ORDER BY s.FName, s.SName
         """
         self.cursor.execute(query, (self.school_id,))
-        return self.cursor.fetchall()
+        return self.cursor.fetchall() or []
 
     @audit_log('assign_student_transport')
     def assign_student_transport(self, admno: int, route_id: int, user_id: int):
