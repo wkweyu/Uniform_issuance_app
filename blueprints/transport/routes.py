@@ -196,21 +196,28 @@ def voucher_register():
 def transport_assignments():
     connection = get_db_connection()
     service = TransportService(connection)
-    try:
-        if request.method == 'POST':
+    route_id = request.args.get('route_id')
+    search_query = (request.args.get('q') or request.args.get('search') or '').strip()
+    route_id_int = int(route_id) if route_id and route_id.isdigit() else None
+
+    if request.method == 'POST':
+        try:
             admno = _required_int(request.form.get('admno'), 'admno')
             route_id = _required_int(request.form.get('route_id'), 'route_id')
             user_id = session.get('userNo', 1)
             service.assign_student_transport(admno=admno, route_id=route_id, user_id=user_id)
             flash("Student successfully assigned to transport route and billed.", "success")
             return redirect(url_for('transport.transport_assignments'))
+        except Exception as e:
+            flash(str(e), "error")
+            return redirect(url_for('transport.transport_assignments'))
+        finally:
+            connection.close()
 
-        route_id = request.args.get('route_id')
-        search_query = (request.args.get('q') or request.args.get('search') or '').strip()
-        route_id_int = int(route_id) if route_id and route_id.isdigit() else None
-        routes = service.get_routes()
-        assignments = service.get_transport_assignments(route_id=route_id_int, search_query=search_query)
-        unassigned_students = service.get_unassigned_active_students()
+    try:
+        routes = service.get_routes() or []
+        assignments = service.get_transport_assignments(route_id=route_id_int, search_query=search_query) or []
+        unassigned_students = service.get_unassigned_active_students() or []
         return render_template(
             'transport_assignments.html',
             assignments=assignments,
@@ -220,8 +227,15 @@ def transport_assignments():
             search_query=search_query
         )
     except Exception as e:
-        flash(str(e), "error")
-        return redirect(url_for('transport.transport_assignments'))
+        flash(f"Unable to load transport assignments: {str(e)}", "error")
+        return render_template(
+            'transport_assignments.html',
+            assignments=[],
+            routes=[],
+            unassigned_students=[],
+            selected_route_id=route_id_int,
+            search_query=search_query
+        )
     finally:
         connection.close()
 

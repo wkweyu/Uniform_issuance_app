@@ -51,12 +51,14 @@
           <td class="px-6 py-4 font-mono font-bold text-blue-600">{{ (route.amount or 0) | currency }}</td>
           <td class="px-6 py-4 text-sm text-gray-500">{{ route.description or '—' }}</td>
           <td class="px-6 py-4 text-center">
-            <span class="px-3 py-1 rounded-full text-[10px] font-bold uppercase {{ 'bg-green-100 text-green-700' if route.is_active else 'bg-red-100 text-red-700' }}">
-              {{ 'Active' if route.is_active else 'Inactive' }}
+            {% set is_active_val = route.get('is_active', 1) if route is mapping else getattr(route, 'is_active', 1) %}
+            {% set is_active_bool = (is_active_val == 1 or is_active_val == True or is_active_val is none) %}
+            <span class="px-3 py-1 rounded-full text-[10px] font-bold uppercase {{ 'bg-green-100 text-green-700' if is_active_bool else 'bg-red-100 text-red-700' }}">
+              {{ 'Active' if is_active_bool else 'Inactive' }}
             </span>
           </td>
           <td class="px-6 py-4 text-right space-x-2">
-            <button onclick="openEditRouteModal({{ route.id }}, '{{ route.name | escape }}', {{ route.amount or 0 }}, '{{ route.description or '' }}', {{ route.bus_id or 'null' }})" class="text-gray-400 hover:text-blue-600 transition" title="Edit Route">
+            <button onclick="openEditRouteModal({{ route.id }}, {{ (route.name or '')|tojson }}, {{ route.amount or 0 }}, {{ (route.description or '')|tojson }}, {{ route.bus_id or 'null' }})" class="text-gray-400 hover:text-blue-600 transition" title="Edit Route">
               <i class="fas fa-edit"></i>
             </button>
             <button onclick="deleteRoute({{ route.id }})" class="text-gray-400 hover:text-red-600 transition" title="Delete Route">

@@ -172,7 +172,11 @@ class TransportService:
         if search_query:
             query += " AND (s.AdmNo LIKE %s OR CONCAT_WS(' ', COALESCE(s.FName, ''), COALESCE(s.MName, ''), COALESCE(s.SName, '')) LIKE %s OR r.name LIKE %s)"
             params.extend([f"%{search_query}%", f"%{search_query}%", f"%{search_query}%"])
-        query += " GROUP BY s.AdmNo ORDER BY r.name, s.FName, s.SName"
+        query += """
+            GROUP BY s.AdmNo, s.FName, s.MName, s.SName, s.Sex, s.category, r.id, r.name, r.amount,
+                     c_current.display_name, c_legacy.class_name, p.pName, p.phone1
+            ORDER BY r.name, s.FName, s.SName
+        """
         self.cursor.execute(query, params)
         return self.cursor.fetchall()
 
@@ -194,7 +198,7 @@ class TransportService:
                 GROUP BY fl.admno, fl.school_id
             ) paid_tbl ON s.AdmNo = paid_tbl.admno AND s.school_id = paid_tbl.school_id
             WHERE r.school_id = %s
-            GROUP BY r.id
+            GROUP BY r.id, r.name, r.amount, b.reg_no, b.driver_name
             ORDER BY r.name
         """
         self.cursor.execute(query, (self.school_id,))
@@ -210,7 +214,8 @@ class TransportService:
             LEFT JOIN classallocation legacy_ca ON s.AdmNo = legacy_ca.AdmNo AND s.school_id = legacy_ca.school_id
             LEFT JOIN classes c_legacy ON legacy_ca.classID = c_legacy.classID AND legacy_ca.school_id = c_legacy.school_id
             WHERE s.school_id = %s AND (s.route_id IS NULL OR s.route_id = 0) AND (s.blocked = 'NO' OR s.blocked IS NULL)
-            GROUP BY s.AdmNo ORDER BY s.FName, s.SName
+            GROUP BY s.AdmNo, s.FName, s.MName, s.SName, c_current.display_name, c_legacy.class_name
+            ORDER BY s.FName, s.SName
         """
         self.cursor.execute(query, (self.school_id,))
         return self.cursor.fetchall()
