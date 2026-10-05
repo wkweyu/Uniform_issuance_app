@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block title %}Transport Reports - School Management System{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <!-- Breadcrumb -->
+    <div class="flex items-center space-x-2 text-sm text-gray-500 mb-6 no-print">
+        <a href="{{ url_for('index') }}" class="hover:text-blue-600">Home</a>
+        <span>&gt;</span>
+        <a href="{{ url_for('fleet_dashboard') }}" class="hover:text-blue-600">Fleet</a>
+        <span>&gt;</span>
+        <span class="text-gray-800 font-semibold">Transport Reports</span>
+    </div>
+
+    <!-- Header -->
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 no-print">
+        <div>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">📊 Transport Reports</h1>
+            <p class="text-sm text-gray-500 mt-1">Route manifests and transport revenue collection analytics.</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <button onclick="window.print()" class="px-4 py-2.5 bg-gray-900 text-white text-sm font-semibold rounded-xl hover:bg-black transition shadow-sm">
+                <i class="fas fa-print mr-2"></i> Print Report
+            </button>
+        </div>
+    </div>
+
+    <!-- Report Type Tabs -->
+    <div class="flex border-b border-gray-200 mb-6 no-print">
+        <a href="{{ url_for('transport.transport_reports', type='manifest', route_id=selected_route_id or '') }}" class="py-3 px-6 text-sm font-bold border-b-2 transition {{ 'border-blue-600 text-blue-600' if report_type == 'manifest' else 'border-transparent text-gray-500 hover:text-gray-700' }}">
+            <i class="fas fa-bus-alt mr-2"></i> Route Manifest (Students Per Route)
+        </a>
+        <a href="{{ url_for('transport.transport_reports', type='revenue', route_id=selected_route_id or '') }}" class="py-3 px-6 text-sm font-bold border-b-2 transition {{ 'border-blue-600 text-blue-600' if report_type == 'revenue' else 'border-transparent text-gray-500 hover:text-gray-700' }}">
+            <i class="fas fa-coins mr-2"></i> Transport Revenue &amp; Collection Summary
+        </a>
+    </div>
+
+    {% if report_type == 'manifest' %}
+    <!-- Route Manifest View -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6 no-print">
+        <form method="GET" action="{{ url_for('transport.transport_reports') }}" class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+            <input type="hidden" name="type" value="manifest">
+            <div class="md:col-span-8">
+                <label class="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-1">Filter Manifest by Route</label>
+                <select name="route_id" onchange="this.form.submit()" class="w-full py-2.5 px-3 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500">
+                    <option value="">-- All Routes --</option>
+                    {% for r in routes or [] %}
+                    <option value="{{ r.id }}" {% if selected_route_id == r.id %}selected{% endif %}>
+                        {{ r.name }} (KES {{ (r.amount or 0)|currency }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="md:col-span-4 flex gap-2 pt-5">
+                <button type="submit" class="flex-1 py-2.5 bg-blue-600 text-white font-semibold text-sm rounded-lg hover:bg-blue-700 transition shadow-sm">
+                    Apply Filter
+                </button>
+                {% if selected_route_id %}
+                <a href="{{ url_for('transport.transport_reports', type='manifest') }}" class="px-4 py-2.5 bg-gray-100 text-gray-700 font-semibold text-sm rounded-lg hover:bg-gray-200 transition text-center">
+                    Reset
+                </a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
+    <!-- Print Header -->
+    <div class="hidden print:block mb-6 text-center border-b pb-4">
+        <h2 class="text-2xl font-bold">{{ school.school_name }}</h2>
+        <h3 class="text-lg font-semibold text-gray-700">TRANSPORT ROUTE MANIFEST</h3>
+        <p class="text-xs text-gray-500">Generated on {{ now.strftime('%d %b %Y, %H:%M') }}</p>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+                <thead class="bg-slate-50 border-b border-gray-200">
+                    <tr>
+                        <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase">#</th>
+                        <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase">Adm No</th>
+                        <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase">Student Name</th>
+                        <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase">Class</th>
+                        <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase">Route</th>
+                        <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase">Guardian Name</th>
+                        <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase">Guardian Phone</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 bg-white">
+                    {% for row in manifest or [] %}
+                    <tr class="hover:bg-slate-50 transition">
+                        <td class="px-4 py-3.5 text-xs text-gray-400 font-mono">{{ loop.index }}</td>
+                        <td class="px-4 py-3.5 font-mono text-xs font-bold text-blue-700">#{{ row.AdmNo }}</td>
+                        <td class="px-4 py-3.5 text-sm font-bold text-gray-900">{{ row.student_name }}</td>
+                        <td class="px-4 py-3.5 text-xs font-semibold text-gray-700">{{ row.class_name or 'Unassigned' }}</td>
+                        <td class="px-4 py-3.5 text-xs font-bold text-purple-700">{{ row.route_name or 'Unassigned' }}</td>
+                        <td class="px-4 py-3.5 text-xs text-gray-800">{{ row.parent_name or 'N/A' }}</td>
+                        <td class="px-4 py-3.5 text-xs font-mono text-gray-600">{{ row.parent_phone or 'N/A' }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="px-6 py-12 text-center text-gray-400 text-sm">
+                            No students found for this route manifest filter.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="px-6 py-3 bg-slate-50 border-t border-gray-200 text-xs text-gray-500 flex justify-between items-center">
+            <span>Total Students: <strong class="text-gray-900">{{ manifest|length if manifest else 0 }}</strong></span>
+        </div>
+    </div>
+
+    {% else %}
+    <!-- Transport Revenue & Collection View -->
+    <div class="hidden print:block mb-6 text-center border-b pb-4">
+        <h2 class="text-2xl font-bold">{{ school.school_name }}</h2>
+        <h3 class="text-lg font-semibold text-gray-700">TRANSPORT REVENUE &amp; FEE COLLECTION SUMMARY</h3>
+        <p class="text-xs text-gray-500">Generated on {{ now.strftime('%d %b %Y, %H:%M') }}</p>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+                <thead class="bg-slate-50 border-b border-gray-200">
+                    <tr>
+                        <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase">Route Name</th>
+                        <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase">Vehicle / Driver</th>
+                        <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase text-right">Route Charge</th>
+                        <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase text-center">Assigned Students</th>
+                        <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase text-right">Expected Revenue</th>
+                        <th class="px-4 py-3.5 text-xs font-bold text-gray-600 uppercase text-right">Collected Revenue</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 bg-white">
+                    {% for rev in revenue_summary or [] %}
+                    <tr class="hover:bg-slate-50 transition">
+                        <td class="px-4 py-3.5 text-sm font-bold text-gray-900">{{ rev.route_name }}</td>
+                        <td class="px-4 py-3.5 text-xs text-gray-600">
+                            <span class="font-semibold text-gray-800">{{ rev.bus_reg_no }}</span>
+                            {% if rev.driver_name != 'N/A' %}
+                            <span class="text-gray-400">({{ rev.driver_name }})</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3.5 text-xs font-mono font-bold text-right text-gray-900">KES {{ (rev.route_charge or 0)|currency }}</td>
+                        <td class="px-4 py-3.5 text-xs font-bold text-center text-blue-600">{{ rev.student_count or 0 }}</td>
+                        <td class="px-4 py-3.5 text-xs font-mono font-bold text-right text-purple-700">KES {{ (rev.expected_revenue or 0)|currency }}</td>
+                        <td class="px-4 py-3.5 text-xs font-mono font-bold text-right text-green-700">KES {{ (rev.collected_revenue or 0)|currency }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="px-6 py-12 text-center text-gray-400 text-sm">
+                            No transport revenue summary data found.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

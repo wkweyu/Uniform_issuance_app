@@ -82,12 +82,28 @@
       </ul>
     </div>
 
-    <!-- Bus Statement Report -->
+    <!-- Transport & Routes -->
     <div
       class="border border-gray-300 rounded-lg p-4 bg-white shadow hover:shadow-md transition"
     >
-      <h3 class="text-xl font-semibold mb-3">📑 Bus Statements</h3>
-      <p class="text-sm text-gray-500">Detailed bus statements are not wired into the current transport blueprint yet.</p>
+      <h3 class="text-xl font-semibold mb-3">🗺️ Transport & Routes</h3>
+      <ul class="space-y-2 text-blue-700">
+        <li>
+          <a href="{{ url_for('transport.manage_transport_routes') }}" class="hover:underline"
+            >📍 Routes Management</a
+          >
+        </li>
+        <li>
+          <a href="{{ url_for('transport.transport_assignments') }}" class="hover:underline"
+            >👥 Student Transport Assignment</a
+          >
+        </li>
+        <li>
+          <a href="{{ url_for('transport.transport_reports') }}" class="hover:underline"
+            >📊 Transport Reports</a
+          >
+        </li>
+      </ul>
     </div>
   </div>
 
