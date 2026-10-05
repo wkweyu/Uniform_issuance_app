@@ -2,12 +2,21 @@
 
 {% block content %}
 <div class="max-w-6xl mx-auto px-4 py-8">
+  <!-- Breadcrumbs -->
+  <div class="flex items-center space-x-2 text-sm text-gray-500 mb-6 no-print">
+    <a href="{{ url_for('index') }}" class="hover:text-blue-600">Home</a>
+    <span>&gt;</span>
+    <a href="{{ url_for('fleet_dashboard') }}" class="hover:text-blue-600">Fleet</a>
+    <span>&gt;</span>
+    <span class="text-gray-800 font-semibold">Routes Management</span>
+  </div>
+
   <div class="flex justify-between items-center mb-8">
     <div>
       <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight">Transport Routes</h1>
-      <p class="text-gray-500 mt-1">Define bus routes and mandatory student charges.</p>
+      <p class="text-gray-500 mt-1">Define bus routes, vehicle/driver assignments, and mandatory charges.</p>
     </div>
-    <button onclick="document.getElementById('addRouteModal').classList.remove('hidden')" 
+    <button onclick="openAddRouteModal()"
             class="bg-blue-600 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-200 flex items-center">
       <i class="fas fa-plus mr-2"></i> New Route
     </button>
@@ -18,6 +27,7 @@
       <thead class="bg-gray-50 text-gray-400 uppercase text-[10px] font-bold tracking-widest">
         <tr>
           <th class="px-6 py-4">Route Name</th>
+          <th class="px-6 py-4">Assigned Vehicle &amp; Driver</th>
           <th class="px-6 py-4">Amount (KES)</th>
           <th class="px-6 py-4">Description</th>
           <th class="px-6 py-4 text-center">Status</th>
@@ -25,10 +35,20 @@
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-50">
-        {% for route in routes %}
+        {% for route in routes or [] %}
         <tr class="hover:bg-gray-50/50 transition">
-          <td class="px-6 py-4 font-bold text-gray-800">{{ route.name }}</td>
-          <td class="px-6 py-4 font-mono font-bold text-blue-600">{{ route.amount | currency }}</td>
+          <td class="px-6 py-4 font-bold text-gray-800">{{ route.name or '—' }}</td>
+          <td class="px-6 py-4 text-sm text-gray-600">
+            {% if route.bus_reg_no %}
+              <div class="font-semibold text-gray-800"><i class="fas fa-bus text-blue-500 mr-1"></i>{{ route.bus_reg_no }}</div>
+              {% if route.driver_name %}
+                <div class="text-xs text-gray-500"><i class="fas fa-user-tie mr-1"></i>{{ route.driver_name }}</div>
+              {% endif %}
+            {% else %}
+              <span class="text-gray-400 italic">Unassigned</span>
+            {% endif %}
+          </td>
+          <td class="px-6 py-4 font-mono font-bold text-blue-600">{{ (route.amount or 0) | currency }}</td>
           <td class="px-6 py-4 text-sm text-gray-500">{{ route.description or '—' }}</td>
           <td class="px-6 py-4 text-center">
             <span class="px-3 py-1 rounded-full text-[10px] font-bold uppercase {{ 'bg-green-100 text-green-700' if route.is_active else 'bg-red-100 text-red-700' }}">
@@ -36,17 +56,17 @@
             </span>
           </td>
           <td class="px-6 py-4 text-right space-x-2">
-            <button onclick="toggleRoute({{ route.id }})" class="text-gray-400 hover:text-blue-600 transition">
-              <i class="fas fa-power-off"></i>
+            <button onclick="openEditRouteModal({{ route.id }}, '{{ route.name | escape }}', {{ route.amount or 0 }}, '{{ route.description or '' }}', {{ route.bus_id or 'null' }})" class="text-gray-400 hover:text-blue-600 transition" title="Edit Route">
+              <i class="fas fa-edit"></i>
             </button>
-            <button onclick="deleteRoute({{ route.id }})" class="text-gray-400 hover:text-red-600 transition">
+            <button onclick="deleteRoute({{ route.id }})" class="text-gray-400 hover:text-red-600 transition" title="Delete Route">
               <i class="fas fa-trash"></i>
             </button>
           </td>
         </tr>
         {% else %}
         <tr>
-          <td colspan="5" class="px-6 py-12 text-center text-gray-400 italic">No transport routes defined yet.</td>
+          <td colspan="6" class="px-6 py-12 text-center text-gray-400 italic">No transport routes defined yet.</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -54,31 +74,41 @@
   </div>
 </div>
 
-<!-- Add Route Modal -->
-<div id="addRouteModal" class="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+<!-- Add/Edit Route Modal -->
+<div id="routeModal" class="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
   <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
     <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-      <h3 class="font-bold text-gray-800">Add New Transport Route</h3>
-      <button onclick="document.getElementById('addRouteModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">
+      <h3 id="modalTitle" class="font-bold text-gray-800">Add New Transport Route</h3>
+      <button onclick="closeRouteModal()" class="text-gray-400 hover:text-gray-600">
         <i class="fas fa-times"></i>
       </button>
     </div>
     <form method="POST" class="p-6 space-y-4">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="action" value="add">
+      <input type="hidden" id="formAction" name="action" value="add">
+      <input type="hidden" id="routeId" name="route_id" value="">
       <div>
         <label class="block text-xs font-bold text-gray-400 uppercase mb-1 tracking-widest">Route Name</label>
-        <input type="text" name="name" required class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none">
+        <input type="text" id="routeName" name="name" required class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none">
       </div>
       <div>
-        <label class="block text-xs font-bold text-gray-400 uppercase mb-1 tracking-widest">Charge Amount (per term)</label>
-        <input type="number" step="0.01" name="amount" required class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none">
+        <label class="block text-xs font-bold text-gray-400 uppercase mb-1 tracking-widest">Assigned Bus / Vehicle</label>
+        <select id="routeBusId" name="bus_id" class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none">
+          <option value="">-- Select Bus (Optional) --</option>
+          {% for bus in buses or [] %}
+            <option value="{{ bus.id }}">{{ bus.reg_no }} {% if bus.driver_name %}(Driver: {{ bus.driver_name }}){% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-gray-400 uppercase mb-1 tracking-widest">Charge Amount (KES per term)</label>
+        <input type="number" step="0.01" id="routeAmount" name="amount" required class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none">
       </div>
       <div>
         <label class="block text-xs font-bold text-gray-400 uppercase mb-1 tracking-widest">Description</label>
-        <textarea name="description" rows="3" class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"></textarea>
+        <textarea id="routeDescription" name="description" rows="3" class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"></textarea>
       </div>
-      <button type="submit" class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition">
+      <button type="submit" id="modalSubmitBtn" class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition">
         Save Route
       </button>
     </form>
@@ -86,30 +116,43 @@
 </div>
 
 <script>
-function deleteRoute(id) {
-    if (confirm('Are you sure you want to delete this route?')) {
-        fetch(`/fleet/delete_route/${id}`, {
-            method: 'POST',
-            headers: { 'X-CSRFToken': '{{ csrf_token() }}' }
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) location.reload();
-            else alert(data.message);
-        });
-    }
+function openAddRouteModal() {
+    document.getElementById('modalTitle').innerText = 'Add New Transport Route';
+    document.getElementById('formAction').value = 'add';
+    document.getElementById('routeId').value = '';
+    document.getElementById('routeName').value = '';
+    document.getElementById('routeBusId').value = '';
+    document.getElementById('routeAmount').value = '';
+    document.getElementById('routeDescription').value = '';
+    document.getElementById('modalSubmitBtn').innerText = 'Save Route';
+    document.getElementById('routeModal').classList.remove('hidden');
 }
 
-function toggleRoute(id) {
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.innerHTML = `
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="action" value="toggle">
-        <input type="hidden" name="route_id" value="${id}">
-    `;
-    document.body.appendChild(form);
-    form.submit();
+function openEditRouteModal(id, name, amount, description, busId) {
+    document.getElementById('modalTitle').innerText = 'Edit Transport Route';
+    document.getElementById('formAction').value = 'edit';
+    document.getElementById('routeId').value = id;
+    document.getElementById('routeName').value = name || '';
+    document.getElementById('routeBusId').value = busId || '';
+    document.getElementById('routeAmount').value = amount || 0;
+    document.getElementById('routeDescription').value = description || '';
+    document.getElementById('modalSubmitBtn').innerText = 'Update Route';
+    document.getElementById('routeModal').classList.remove('hidden');
+}
+
+function closeRouteModal() {
+    document.getElementById('routeModal').classList.add('hidden');
+}
+
+function deleteRoute(id) {
+    if (confirm('Are you sure you want to delete this route?')) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `/fleet/delete_route/${id}`;
+        form.innerHTML = `<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">`;
+        document.body.appendChild(form);
+        form.submit();
+    }
 }
 </script>
 {% endblock %}
