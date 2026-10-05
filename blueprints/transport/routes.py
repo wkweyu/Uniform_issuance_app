@@ -198,19 +198,24 @@ def transport_assignments():
     service = TransportService(connection)
     try:
         if request.method == 'POST':
-            admno = _required_int(request.form.get('admno'), 'admno')
-            route_id = _required_int(request.form.get('route_id'), 'route_id')
-            user_id = session.get('userNo', 1)
-            service.assign_student_transport(admno=admno, route_id=route_id, user_id=user_id)
-            flash("Student successfully assigned to transport route and billed.", "success")
+            try:
+                admno = _required_int(request.form.get('admno'), 'admno')
+                route_id = _required_int(request.form.get('route_id'), 'route_id')
+                user_id = session.get('userNo', 1)
+                service.assign_student_transport(admno=admno, route_id=route_id, user_id=user_id)
+                flash("Student successfully assigned to transport route and billed.", "success")
+            except ValueError as e:
+                flash(str(e), "error")
+            except Exception as e:
+                flash(f"Error assigning student: {str(e)}", "error")
             return redirect(url_for('transport.transport_assignments'))
 
         route_id = request.args.get('route_id')
         search_query = (request.args.get('q') or request.args.get('search') or '').strip()
         route_id_int = int(route_id) if route_id and route_id.isdigit() else None
-        routes = service.get_routes()
-        assignments = service.get_transport_assignments(route_id=route_id_int, search_query=search_query)
-        unassigned_students = service.get_unassigned_active_students()
+        routes = service.get_routes() or []
+        assignments = service.get_transport_assignments(route_id=route_id_int, search_query=search_query) or []
+        unassigned_students = service.get_unassigned_active_students() or []
         return render_template(
             'transport_assignments.html',
             assignments=assignments,
@@ -220,8 +225,15 @@ def transport_assignments():
             search_query=search_query
         )
     except Exception as e:
-        flash(str(e), "error")
-        return redirect(url_for('transport.transport_assignments'))
+        flash(f"Error loading transport assignments: {str(e)}", "error")
+        return render_template(
+            'transport_assignments.html',
+            assignments=[],
+            routes=[],
+            unassigned_students=[],
+            selected_route_id=None,
+            search_query=''
+        )
     finally:
         connection.close()
 
@@ -234,9 +246,9 @@ def transport_reports():
         report_type = request.args.get('type', 'manifest')
         route_id = request.args.get('route_id')
         route_id_int = int(route_id) if route_id and route_id.isdigit() else None
-        routes = service.get_routes()
-        manifest = service.get_transport_assignments(route_id=route_id_int)
-        revenue_summary = service.get_transport_revenue_summary()
+        routes = service.get_routes() or []
+        manifest = service.get_transport_assignments(route_id=route_id_int) or []
+        revenue_summary = service.get_transport_revenue_summary() or []
         return render_template(
             'transport_reports.html',
             report_type=report_type,
@@ -244,6 +256,17 @@ def transport_reports():
             selected_route_id=route_id_int,
             manifest=manifest,
             revenue_summary=revenue_summary,
+            now=datetime.now()
+        )
+    except Exception as e:
+        flash(f"Error loading transport reports: {str(e)}", "error")
+        return render_template(
+            'transport_reports.html',
+            report_type=request.args.get('type', 'manifest'),
+            routes=[],
+            selected_route_id=None,
+            manifest=[],
+            revenue_summary=[],
             now=datetime.now()
         )
     finally:
@@ -254,31 +277,36 @@ def transport_reports():
 @admin_required
 def manage_transport_routes():
     connection = get_db_connection(); service = TransportService(connection)
-    if request.method == 'POST':
-        action = request.form.get('action') or 'add'
-        try:
-            bus_id_raw = request.form.get('bus_id')
-            bus_id = int(bus_id_raw) if bus_id_raw and str(bus_id_raw).isdigit() else None
-            data = {
-                'name': _required_text(request.form.get('name'), 'name'),
-                'amount': _parse_float(request.form.get('amount', 0), 'amount', default=0),
-                'description': (request.form.get('description') or '').strip(),
-                'bus_id': bus_id
-            }
-            if action == 'edit':
-                route_id = _required_int(request.form.get('route_id'), 'route_id')
-                service.update_route(route_id, data)
-                flash("Route updated successfully.", "success")
-            else:
-                service.add_route(data)
-                flash("Route added successfully.", "success")
-        except ValueError as e: flash(str(e), "error")
-        except Exception as e: flash(str(e), "error")
+    try:
+        if request.method == 'POST':
+            action = request.form.get('action') or 'add'
+            try:
+                bus_id_raw = request.form.get('bus_id')
+                bus_id = int(bus_id_raw) if bus_id_raw and str(bus_id_raw).isdigit() else None
+                data = {
+                    'name': _required_text(request.form.get('name'), 'name'),
+                    'amount': _parse_float(request.form.get('amount', 0), 'amount', default=0),
+                    'description': (request.form.get('description') or '').strip(),
+                    'bus_id': bus_id
+                }
+                if action == 'edit':
+                    route_id = _required_int(request.form.get('route_id'), 'route_id')
+                    service.update_route(route_id, data)
+                    flash("Route updated successfully.", "success")
+                else:
+                    service.add_route(data)
+                    flash("Route added successfully.", "success")
+            except ValueError as e: flash(str(e), "error")
+            except Exception as e: flash(str(e), "error")
 
-    routes = service.get_routes()
-    buses = service.get_buses()
-    connection.close()
-    return render_template('manage_routes.html', routes=routes, buses=buses)
+        routes = service.get_routes() or []
+        buses = service.get_buses() or []
+        return render_template('manage_routes.html', routes=routes, buses=buses)
+    except Exception as e:
+        flash(f"Error loading routes: {str(e)}", "error")
+        return render_template('manage_routes.html', routes=[], buses=[])
+    finally:
+        connection.close()
 
 @transport_bp.route('/fleet/delete_route/<int:route_id>', methods=['POST'])
 @login_required
