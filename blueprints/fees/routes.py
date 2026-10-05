@@ -1576,7 +1576,7 @@ def api_fees_student_context():
                     # The term movement and the full ledger are intentionally
                     # different scopes.  Expose their reconciliation so a
                     # carried-forward balance is not mistaken for an error.
-                    'opening_balance': float(balance_value - term_summary['net_due']),
+                    'opening_balance': float(balance_value - float(term_summary['net_due'])),
                 } if term_summary else None
             ),
             'term_invoices': [
