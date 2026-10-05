@@ -4,6 +4,7 @@
 
   <!-- Add New Bus Form -->
   <form method="POST" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div>
       <label class="block text-sm font-medium">Reg Number:</label>
       <input
