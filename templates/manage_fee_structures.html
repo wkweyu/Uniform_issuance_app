@@ -1,11 +1,11 @@
 {% extends 'base.html' %}
 
-{% block title %}Fee Structure Engine{% endblock %}
+{% block title %}Fee Structure Operational Dashboard{% endblock %}
 
 {% block content %}
-<div class="container mx-auto px-4 py-8">
+<div class="container mx-auto px-4 py-8 font-sans">
     <!-- Header with Breadcrumbs -->
-    <div class="mb-8 font-sans">
+    <div class="mb-8">
         <nav class="flex mb-3" aria-label="Breadcrumb">
             <ol class="inline-flex items-center space-x-2 text-sm font-medium text-gray-500">
                 <li><a href="{{ url_for('fees.fees_dashboard') }}" class="hover:text-blue-600">Fees Module</a></li>
@@ -13,307 +13,308 @@
                 <li class="text-gray-900 font-bold">Structure Builder</li>
             </ol>
         </nav>
-            <div class="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-                <div>
-                    <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight">Fee Structure Engine</h1>
-                    <p class="text-gray-600 mt-1">Institutional billing configuration for all academic terms.</p>
-                </div>
-                <div class="flex gap-2">
-                    <a href="{{ url_for('fees.fee_structures_overview') }}" class="bg-blue-50 text-blue-700 px-6 py-3 rounded-2xl text-sm font-black border border-blue-100 hover:bg-blue-100 transition flex items-center shadow-sm">
-                        <i class="fas fa-table mr-2"></i>Matrix Overview
-                    </a>
-                    <a href="{{ url_for('fees.create_yearly_fee_structure_route') }}" class="bg-blue-600 text-white px-8 py-3 rounded-2xl text-sm font-black shadow-xl shadow-blue-500/30 hover:bg-blue-700 transition transform active:scale-95 flex items-center">
-                        <i class="fas fa-wand-magic-sparkles mr-2"></i>Yearly Setup Wizard
-                    </a>
-                </div>
+        <div class="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+            <div>
+                <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight">Fee Structure Operational Dashboard</h1>
+                <p class="text-gray-600 mt-1">Institutional billing configuration and structure coverage for the academic year.</p>
             </div>
+            <div class="flex gap-2">
+                <a href="{{ url_for('fees.fee_structures_overview') }}" class="bg-blue-50 text-blue-700 px-5 py-2.5 rounded-xl text-xs font-bold border border-blue-100 hover:bg-blue-100 transition flex items-center shadow-sm uppercase tracking-wider">
+                    <i class="fas fa-table mr-2"></i>Matrix Overview
+                </a>
+                <a href="{{ url_for('fees.create_yearly_fee_structure_route') }}" class="bg-blue-600 text-white px-6 py-2.5 rounded-xl text-xs font-bold shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition transform active:scale-95 flex items-center uppercase tracking-wider">
+                    <i class="fas fa-wand-magic-sparkles mr-2"></i>Yearly Setup Wizard
+                </a>
+            </div>
+        </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 font-sans">
-        <!-- Sidebar: Active Structures & Filtering (4 Cols) -->
-        <div class="lg:col-span-4 space-y-6">
-            <div class="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden flex flex-col h-[700px]">
-                <div class="p-4 bg-gray-50 border-b border-gray-100 space-y-3">
-                    <form method="GET" action="{{ url_for('fees.manage_fee_structures') }}" class="space-y-2">
-                        <div class="relative">
-                            <input type="text" id="structureSearch" placeholder="Search structures..."
-                                class="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 transition"
-                                onkeyup="filterStructures()">
-                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <i class="fas fa-search text-gray-400 text-xs"></i>
-                            </div>
-                        </div>
-                        <div class="grid grid-cols-2 gap-2">
-                            <select name="academic_year_id" onchange="this.form.submit()" class="bg-white border border-gray-200 rounded-xl text-[11px] px-2 py-1.5 focus:ring-1 focus:ring-blue-500 font-medium text-gray-700">
-                                <option value="">All Years</option>
-                                {% for y in years %}
-                                <option value="{{ y.id }}" {% if selected_year_id == y.id %}selected{% endif %}>{{ y.year }}</option>
-                                {% endfor %}
-                            </select>
-                            <select name="status" onchange="this.form.submit()" class="bg-white border border-gray-200 rounded-xl text-[11px] px-2 py-1.5 focus:ring-1 focus:ring-blue-500 font-medium text-gray-700">
-                                <option value="">All Statuses</option>
-                                <option value="ACTIVE" {% if selected_status == 'ACTIVE' %}selected{% endif %}>ACTIVE</option>
-                                <option value="DRAFT" {% if selected_status == 'DRAFT' %}selected{% endif %}>DRAFT</option>
-                                <option value="ARCHIVED" {% if selected_status == 'ARCHIVED' %}selected{% endif %}>ARCHIVED</option>
-                            </select>
-                        </div>
-                    </form>
-                </div>
+    <!-- Summary Metrics Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+        <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-between">
+            <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Total Classes</span>
+            <div class="text-2xl font-black text-gray-900 mt-2">{{ metrics.total_classes or 0 }}</div>
+            <span class="text-[10px] font-medium text-gray-500 mt-1">Configured: {{ metrics.configured_classes or 0 }}</span>
+        </div>
+        <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-between">
+            <span class="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Active Structures</span>
+            <div class="text-2xl font-black text-emerald-600 mt-2">{{ metrics.active_structures or 0 }}</div>
+            <span class="text-[10px] font-medium text-emerald-700 mt-1">Live Invoicing Ready</span>
+        </div>
+        <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-between">
+            <span class="text-[10px] font-bold text-amber-600 uppercase tracking-widest">Draft Versions</span>
+            <div class="text-2xl font-black text-amber-600 mt-2">{{ metrics.draft_structures or 0 }}</div>
+            <span class="text-[10px] font-medium text-amber-700 mt-1">Pending Approval</span>
+        </div>
+        <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-between">
+            <span class="text-[10px] font-bold text-rose-600 uppercase tracking-widest">Missing Structures</span>
+            <div class="text-2xl font-black text-rose-600 mt-2">{{ metrics.missing_classes_count or 0 }}</div>
+            <span class="text-[10px] font-medium text-rose-700 mt-1">Unconfigured Classes</span>
+        </div>
+        <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-between">
+            <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Archived Versions</span>
+            <div class="text-2xl font-black text-gray-600 mt-2">{{ metrics.archived_structures or 0 }}</div>
+            <span class="text-[10px] font-medium text-gray-500 mt-1">Audit Trail Preserved</span>
+        </div>
+        <div class="bg-gradient-to-br from-indigo-900 to-blue-900 text-white p-5 rounded-2xl shadow-lg flex flex-col justify-between">
+            <span class="text-[10px] font-bold text-indigo-200 uppercase tracking-widest">Action</span>
+            {% if structures %}
+            <a href="{{ url_for('fees.fee_structure_card', year_id=structures[0].academic_year_id, group_code=structures[0].class_group_code, class_id=structures[0].class_id or '', category=structures[0].student_category) }}" target="_blank" class="mt-2 text-xs font-black bg-white text-indigo-900 py-2 px-3 rounded-xl hover:bg-blue-50 transition text-center uppercase tracking-wider flex items-center justify-center gap-1">
+                <i class="fas fa-print"></i> Print Fee Card
+            </a>
+            {% else %}
+            <span class="mt-2 text-[10px] text-indigo-200 italic">No structure selected</span>
+            {% endif %}
+            <span class="text-[9px] text-indigo-300 mt-1">Official Print Report</span>
+        </div>
+    </div>
 
-                <div class="flex-1 overflow-y-auto p-4 space-y-3" id="structureList">
+    <!-- Missing Fee Structures Panel -->
+    {% if missing_structures %}
+    <div class="bg-amber-50/70 border border-amber-200 rounded-2xl p-6 mb-8 shadow-sm">
+        <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 bg-amber-100 text-amber-700 rounded-xl flex items-center justify-center font-bold">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                <div>
+                    <h3 class="font-extrabold text-amber-900 text-base">Missing Fee Structures Detected ({{ missing_structures|length }})</h3>
+                    <p class="text-xs text-amber-800 font-medium">The following active classes do not have an active fee structure configured for the selected academic year.</p>
+                </div>
+            </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {% for m in missing_structures %}
+            <a href="{{ url_for('fees.create_yearly_fee_structure_route') }}?class_id={{ m.classID }}" class="bg-white p-3 rounded-xl border border-amber-200 hover:border-blue-500 hover:shadow-md transition flex justify-between items-center group">
+                <div>
+                    <div class="text-xs font-bold text-gray-900 group-hover:text-blue-600 transition"><i class="fas fa-bookmark text-amber-500 mr-1.5"></i>{{ m.display_name }}</div>
+                    <span class="text-[10px] text-gray-500 font-mono">Stream: {{ m.stream_code or '-' }}</span>
+                </div>
+                <span class="text-[10px] font-black text-blue-600 bg-blue-50 group-hover:bg-blue-600 group-hover:text-white px-2.5 py-1 rounded-lg transition uppercase">
+                    Configure <i class="fas fa-arrow-right ml-1"></i>
+                </span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Filter & Structure Coverage Table -->
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-xl overflow-hidden mb-8">
+        <!-- Filter Bar -->
+        <div class="p-5 bg-gray-50 border-b border-gray-100 flex flex-col lg:flex-row justify-between lg:items-center gap-4">
+            <h3 class="text-lg font-black text-gray-900 tracking-tight flex items-center gap-2">
+                <i class="fas fa-layer-group text-blue-600"></i> Structure Coverage & Version Management
+            </h3>
+            <form method="GET" action="{{ url_for('fees.manage_fee_structures') }}" class="flex flex-wrap items-center gap-3">
+                <div class="relative min-w-[200px]">
+                    <input type="text" id="structureSearch" placeholder="Search scope or category..."
+                        class="w-full pl-9 pr-3 py-2 bg-white border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 transition"
+                        onkeyup="filterTable()">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i class="fas fa-search text-gray-400 text-xs"></i>
+                    </div>
+                </div>
+                <select name="academic_year_id" onchange="this.form.submit()" class="bg-white border border-gray-200 rounded-xl text-xs px-3 py-2 focus:ring-2 focus:ring-blue-500 font-medium text-gray-700">
+                    <option value="">All Academic Years</option>
+                    {% for y in years %}
+                    <option value="{{ y.id }}" {% if selected_year_id == y.id %}selected{% endif %}>{{ y.year }}</option>
+                    {% endfor %}
+                </select>
+                <select name="status" onchange="this.form.submit()" class="bg-white border border-gray-200 rounded-xl text-xs px-3 py-2 focus:ring-2 focus:ring-blue-500 font-medium text-gray-700">
+                    <option value="">All Statuses</option>
+                    <option value="ACTIVE" {% if selected_status == 'ACTIVE' %}selected{% endif %}>ACTIVE</option>
+                    <option value="DRAFT" {% if selected_status == 'DRAFT' %}selected{% endif %}>DRAFT</option>
+                    <option value="ARCHIVED" {% if selected_status == 'ARCHIVED' %}selected{% endif %}>ARCHIVED</option>
+                </select>
+            </form>
+        </div>
+
+        <!-- Coverage Table -->
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse" id="structureCoverageTable">
+                <thead>
+                    <tr class="bg-gray-50/80 text-[11px] font-black text-gray-400 uppercase tracking-wider border-b border-gray-100">
+                        <th class="py-3.5 px-6">Academic Year</th>
+                        <th class="py-3.5 px-6">Scope / Class</th>
+                        <th class="py-3.5 px-6">Billing Group</th>
+                        <th class="py-3.5 px-6 text-center">Version & Status</th>
+                        <th class="py-3.5 px-6 text-right">Annual Total</th>
+                        <th class="py-3.5 px-6 text-center">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 text-xs font-medium text-gray-700">
                     {% for s in structures %}
-                    <div class="structure-card p-4 rounded-xl border border-gray-100 bg-white hover:border-blue-200 hover:shadow-md transition cursor-pointer group"
-                         data-name="{{ s.class_group_code }} {{ s.label or '' }} {{ s.student_category }} {{ s.year_name }} {{ s.status }}">
-                        <div class="flex justify-between items-start">
-                            <div class="flex-1">
-                                <div class="flex items-center gap-2">
-                                    <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{{ s.year_name }}</span>
-                                    <span class="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider
-                                        {% if s.status == 'ACTIVE' %}bg-emerald-100 text-emerald-800
-                                        {% elif s.status == 'DRAFT' %}bg-amber-100 text-amber-800
-                                        {% else %}bg-gray-100 text-gray-600{% endif %}">
-                                        v{{ s.version_number }} ({{ s.status }})
-                                    </span>
-                                </div>
-                                <h4 class="font-black text-gray-900 leading-tight mt-1">
-                                    {% if s.class_id %}
-                                        <span class="text-indigo-600"><i class="fas fa-bookmark mr-1"></i>{{ s.label }}</span>
-                                    {% else %}
-                                        {{ s.class_group_code }}
-                                    {% endif %}
-                                </h4>
-                                <div class="flex flex-wrap gap-1 mt-2">
-                                    {% for t in s.terms|sort %}
-                                    <span class="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[9px] font-black uppercase">Term {{ t }}</span>
-                                    {% endfor %}
-                                    <span class="ml-auto text-[10px] text-gray-400 font-bold uppercase tracking-tight self-center">{{ s.student_category }}</span>
-                                </div>
+                    <tr class="hover:bg-blue-50/30 transition group structure-row"
+                        data-search="{{ s.year_name }} {{ s.label or '' }} {{ s.student_category }} {{ s.status }}">
+                        <td class="py-4 px-6 font-bold text-gray-900">
+                            {{ s.year_name }}
+                        </td>
+                        <td class="py-4 px-6">
+                            <div class="font-extrabold text-gray-900 flex items-center gap-1.5">
+                                {% if s.class_id %}
+                                <i class="fas fa-bookmark text-indigo-600 text-xs"></i> {{ s.label }}
+                                {% else %}
+                                <i class="fas fa-layer-group text-blue-500 text-xs"></i> Group: {{ s.class_group_code }}
+                                {% endif %}
                             </div>
-                            <div class="text-right">
-                                <div class="text-[10px] text-gray-400 font-bold uppercase mb-1">Annual Total</div>
-                                <div class="text-sm font-black text-gray-900">{{ s.total_year | currency }}</div>
+                            <div class="flex gap-1 mt-1">
+                                {% for t in s.terms|sort %}
+                                <span class="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-[9px] font-extrabold">Term {{ t }}</span>
+                                {% endfor %}
                             </div>
-                        </div>
-                        <div class="mt-3 pt-3 border-t border-gray-100 flex justify-between items-center group-hover:bg-gray-50/50 -mx-4 px-4 py-2 transition rounded-b-xl flex-wrap gap-2">
-                             <div class="flex gap-3 flex-wrap">
-                                <a href="{{ url_for('fees.fee_structure_card', year_id=s.academic_year_id, group_code=s.class_group_code, class_id=s.class_id or '', category=s.student_category) }}" class="text-[10px] font-black text-emerald-600 uppercase hover:text-emerald-800 flex items-center">
-                                    <i class="fas fa-print mr-1"></i> Print Card
+                        </td>
+                        <td class="py-4 px-6">
+                            <span class="px-2.5 py-1 bg-gray-100 text-gray-800 rounded-lg text-[10px] font-bold uppercase tracking-wider">
+                                {{ s.student_category }} Profile
+                            </span>
+                        </td>
+                        <td class="py-4 px-6 text-center">
+                            <span class="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1
+                                {% if s.status == 'ACTIVE' %}bg-emerald-100 text-emerald-800 border border-emerald-200
+                                {% elif s.status == 'DRAFT' %}bg-amber-100 text-amber-800 border border-amber-200
+                                {% else %}bg-gray-100 text-gray-600 border border-gray-200{% endif %}">
+                                <span class="w-1.5 h-1.5 rounded-full {% if s.status == 'ACTIVE' %}bg-emerald-500{% elif s.status == 'DRAFT' %}bg-amber-500{% else %}bg-gray-400{% endif %}"></span>
+                                v{{ s.version_number }} ({{ s.status }})
+                            </span>
+                        </td>
+                        <td class="py-4 px-6 text-right font-black text-gray-900 text-sm">
+                            {{ s.total_year | currency }}
+                        </td>
+                        <td class="py-4 px-6 text-center">
+                            <div class="flex items-center justify-center gap-2 flex-wrap">
+                                <button onclick="viewAssignedStudents({{ s.id }}, '{{ s.label }} ({{ s.student_category }})')" title="View assigned students" class="p-2 text-indigo-600 hover:bg-indigo-50 rounded-xl transition font-bold text-xs flex items-center gap-1">
+                                    <i class="fas fa-users"></i> Students
+                                </button>
+                                <a href="{{ url_for('fees.edit_fee_structure', structure_id=s.id) }}" class="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition font-bold text-xs flex items-center gap-1">
+                                    <i class="fas fa-edit"></i> Edit
                                 </a>
-                                <a href="{{ url_for('fees.edit_fee_structure', structure_id=s.id) }}" class="text-[10px] font-black text-blue-600 uppercase hover:text-blue-800 flex items-center">
-                                    <i class="fas fa-edit mr-1"></i> Edit
-                                </a>
-                             </div>
-                             <div class="flex items-center gap-2">
                                 <form action="{{ url_for('fees.clone_fee_structure_version_route', structure_id=s.id) }}" method="POST" class="inline">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                    <button type="submit" title="Clone into new Draft Version" class="text-[10px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded uppercase transition">
-                                        <i class="fas fa-copy mr-1"></i> Clone
+                                    <button type="submit" title="Clone Version" class="p-2 text-indigo-600 hover:bg-indigo-50 rounded-xl transition font-bold text-xs flex items-center gap-1">
+                                        <i class="fas fa-copy"></i> Clone
                                     </button>
                                 </form>
+                                <a href="{{ url_for('fees.fee_structure_card', year_id=s.academic_year_id, group_code=s.class_group_code, class_id=s.class_id or '', category=s.student_category) }}" target="_blank" class="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl transition font-bold text-xs flex items-center gap-1">
+                                    <i class="fas fa-print"></i> Print
+                                </a>
                                 {% if s.status == 'DRAFT' and s.approval_status == 'APPROVED' %}
                                 <form action="{{ url_for('fees.activate_fee_structure_version_route', structure_id=s.id) }}" method="POST" class="inline">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                    <button type="submit" title="Activate structure version" class="text-[10px] font-bold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded uppercase transition">
+                                    <button type="submit" class="p-2 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-xl transition font-extrabold text-xs uppercase">
                                         Activate
                                     </button>
                                 </form>
                                 {% endif %}
-                                <span class="text-[9px] text-gray-400 font-mono">#{{ s.id }}</span>
-                             </div>
-                        </div>
-                    </div>
+                            </div>
+                        </td>
+                    </tr>
                     {% else %}
-                    <div class="flex flex-col items-center justify-center h-full text-center text-gray-400 p-8">
-                        <i class="fas fa-file-invoice text-4xl mb-4 opacity-20"></i>
-                        <p class="text-sm italic">No fee structures match your filter criteria.</p>
-                    </div>
+                    <tr>
+                        <td colspan="6" class="py-12 text-center text-gray-400">
+                            <i class="fas fa-file-invoice text-4xl mb-3 opacity-30"></i>
+                            <p class="text-sm font-medium">No fee structures found for the selected criteria.</p>
+                        </td>
+                    </tr>
                     {% endfor %}
-                </div>
-            </div>
-        </div>
-
-        <!-- Main Content: Canonical Setup Callout & Overview (8 Cols) -->
-        <div class="lg:col-span-8 space-y-6">
-            <div class="bg-gradient-to-r from-blue-900 to-indigo-800 rounded-3xl p-8 text-white shadow-2xl relative overflow-hidden">
-                <i class="fas fa-wand-magic-sparkles absolute -right-6 -bottom-6 text-9xl opacity-10"></i>
-                <div class="relative z-10 max-w-xl">
-                    <span class="px-3 py-1 bg-blue-500/30 text-blue-200 text-xs font-black uppercase tracking-widest rounded-full border border-blue-400/20">Canonical Workflow</span>
-                    <h2 class="text-2xl font-black mt-3 leading-tight">Yearly Fee Structure Setup Wizard</h2>
-                    <p class="text-blue-100 text-xs mt-2 leading-relaxed font-medium">
-                        Configure complete yearly billing templates with automatic termly breakdowns (Term 1, Term 2, and Term 3) in a single unified workflow.
-                    </p>
-                    <div class="mt-6 flex flex-wrap gap-3">
-                        <a href="{{ url_for('fees.create_yearly_fee_structure_route') }}" class="bg-white text-blue-900 px-6 py-3 rounded-2xl text-xs font-black shadow-xl hover:bg-blue-50 transition uppercase tracking-widest flex items-center gap-2">
-                            <i class="fas fa-plus-circle text-blue-600"></i> Launch Setup Wizard
-                        </a>
-                        <a href="{{ url_for('fees.fee_structures_overview') }}" class="bg-blue-800/50 hover:bg-blue-800 text-white px-5 py-3 rounded-2xl text-xs font-bold transition uppercase tracking-widest border border-blue-400/30 flex items-center gap-2">
-                            <i class="fas fa-table"></i> Matrix View
-                        </a>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Guidelines & Policy Card -->
-            <div class="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-                <h3 class="text-sm font-black text-gray-900 uppercase tracking-widest mb-3 flex items-center">
-                    <i class="fas fa-shield-halved text-blue-600 mr-2"></i> Structure Governance & Rules
-                </h3>
-                <ul class="space-y-2 text-xs text-gray-600 font-medium">
-                    <li class="flex items-start gap-2">
-                        <i class="fas fa-check text-emerald-500 mt-0.5"></i>
-                        <span><strong>One Active Structure per Scope:</strong> Each Academic Year + Class + Billing Group maintains exactly one active fee structure definition containing all 3 terms.</span>
-                    </li>
-                    <li class="flex items-start gap-2">
-                        <i class="fas fa-check text-emerald-500 mt-0.5"></i>
-                        <span><strong>Versioning & Immutability:</strong> Historical versions are preserved for audit and reporting. Modify active structures via the Version Control workflow (Clone &rarr; Draft &rarr; Approve &rarr; Activate).</span>
-                    </li>
-                    <li class="flex items-start gap-2">
-                        <i class="fas fa-check text-emerald-500 mt-0.5"></i>
-                        <span><strong>Discounts & Optional Services:</strong> Staff discounts, scholarships, transport, and clubs are configured separately through Discount Profiles and Optional Services rather than multiplying fee structures.</span>
-                    </li>
-                </ul>
-            </div>
+                </tbody>
+            </table>
         </div>
     </div>
 </div>
 
-<!-- Copy Structure Modal -->
-<div id="copyModal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-    <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-slideUp font-sans">
-        <form action="{{ url_for('fees.copy_fee_structure') }}" method="POST">
-            <div class="p-8 bg-indigo-900 text-white text-center">
-                <div class="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <i class="fas fa-copy text-2xl"></i>
-                </div>
-                <h3 class="text-2xl font-bold">Duplicate Structure</h3>
-                <p class="text-indigo-200 text-sm mt-1">Replicate financial components to another period</p>
+<!-- Assigned Students Modal -->
+<div id="studentsModal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+    <div class="bg-white rounded-3xl shadow-2xl w-full max-w-3xl overflow-hidden animate-slideUp font-sans">
+        <div class="p-6 bg-indigo-900 text-white flex justify-between items-center">
+            <div>
+                <h3 class="text-xl font-bold" id="modalScopeTitle">Assigned Students</h3>
+                <p class="text-indigo-200 text-xs mt-0.5" id="modalStudentCount">Loading list...</p>
             </div>
-            
-            <div class="p-8 space-y-6">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="hidden" name="from_structure_id" id="from_structure_id">
-                
-                <div class="bg-gray-50 p-4 rounded-2xl border border-gray-100">
-                    <p class="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1">Source Context</p>
-                    <p id="source_structure_name" class="font-black text-gray-900 text-lg"></p>
-                </div>
-
-                <div class="grid grid-cols-1 gap-4">
-                    <div>
-                        <label class="block text-xs font-bold text-gray-700 mb-1 tracking-tighter uppercase">Target Academic Year</label>
-                        <select name="target_year_id" required class="w-full border-gray-200 rounded-xl focus:ring-indigo-500 bg-gray-50 text-sm py-2">
-                            {% for y in years %}
-                            <option value="{{ y.id }}">{{ y.year }}{% if y.is_current %} (Current){% endif %}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-gray-700 mb-1 tracking-tighter uppercase">Target Term</label>
-                        <select name="target_term_id" required class="w-full border-gray-200 rounded-xl focus:ring-indigo-500 bg-gray-50 text-sm py-2">
-                            {% for t in terms %}
-                            <option value="{{ t.id }}">Term {{ t.term_number }} ({{ t.year }})</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
+            <button onclick="closeStudentsModal()" class="text-indigo-200 hover:text-white text-xl p-2"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="p-6 max-h-[60vh] overflow-y-auto">
+            <div id="studentsLoading" class="text-center py-8 text-gray-400">
+                <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                <p class="text-xs">Fetching assigned student list...</p>
             </div>
-
-            <div class="p-8 pt-0">
-                <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-2xl shadow-xl transition transform active:scale-95 uppercase text-sm">
-                    Run Duplicate Process
-                </button>
-                <button type="button" onclick="document.getElementById('copyModal').classList.add('hidden')" class="w-full mt-3 text-xs font-bold text-gray-400 hover:text-gray-600 uppercase tracking-widest">Close</button>
-            </div>
-        </form>
+            <table class="w-full text-left text-xs border-collapse hidden" id="studentsTable">
+                <thead>
+                    <tr class="border-b border-gray-100 font-black text-gray-400 uppercase tracking-wider">
+                        <th class="py-2.5 px-3">#</th>
+                        <th class="py-2.5 px-3">Adm No</th>
+                        <th class="py-2.5 px-3">Student Name</th>
+                        <th class="py-2.5 px-3">Class</th>
+                        <th class="py-2.5 px-3">Category</th>
+                        <th class="py-2.5 px-3 text-right">Balance</th>
+                    </tr>
+                </thead>
+                <tbody id="studentsTableBody" class="divide-y divide-gray-100 font-medium text-gray-700">
+                </tbody>
+            </table>
+        </div>
+        <div class="p-4 bg-gray-50 border-t border-gray-100 text-right">
+            <button onclick="closeStudentsModal()" class="px-5 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-xl font-bold text-xs uppercase tracking-wider">Close</button>
+        </div>
     </div>
 </div>
 
 <script>
-function calculateTotal() {
-    const inputs = document.querySelectorAll('.vh-amount');
-    let total = 0;
-    inputs.forEach(input => {
-        total += parseFloat(input.value || 0);
-    });
-    
-    const display = document.getElementById('liveTotalDisplay');
-    display.innerText = 'KES ' + total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    
-    const box = document.getElementById('totalBox');
-    if (total > 0) {
-        box.classList.remove('bg-blue-900');
-        box.classList.add('bg-green-600');
-    } else {
-        box.classList.add('bg-blue-900');
-        box.classList.remove('bg-green-600');
-    }
-}
-
-function filterStructures() {
+function filterTable() {
     const query = document.getElementById('structureSearch').value.toLowerCase();
-    const cards = document.querySelectorAll('.structure-card');
-    cards.forEach(card => {
-        const text = card.dataset.name.toLowerCase();
-        if (text.includes(query)) {
-            card.style.display = 'block';
-        } else {
-            card.style.display = 'none';
-        }
+    const rows = document.querySelectorAll('.structure-row');
+    rows.forEach(row => {
+        const text = row.dataset.search.toLowerCase();
+        row.style.display = text.includes(query) ? '' : 'none';
     });
 }
 
-function toggleWizard() {
-    const panel = document.getElementById('wizardPanel');
-    // Minimal effect just to show it's focus
-    window.scrollTo({ top: panel.offsetTop - 50, behavior: 'smooth' });
-}
+function viewAssignedStudents(structureId, scopeName) {
+    document.getElementById('modalScopeTitle').textContent = 'Assigned Students: ' + scopeName;
+    document.getElementById('modalStudentCount').textContent = 'Fetching assigned students...';
+    document.getElementById('studentsLoading').classList.remove('hidden');
+    document.getElementById('studentsTable').classList.add('hidden');
+    document.getElementById('studentsModal').classList.remove('hidden');
 
-function openCopyModal(structureId, name) {
-    document.getElementById('from_structure_id').value = structureId;
-    document.getElementById('source_structure_name').textContent = name;
-    document.getElementById('copyModal').classList.remove('hidden');
-}
-
-document.addEventListener('DOMContentLoaded', function() {
-    calculateTotal();
-    
-    // Conflict Prevention between class groups and specific classes
-    const classCheckboxes = document.querySelectorAll('.class-exception-checkbox');
-    const groupCheckboxes = document.querySelectorAll('input[name="class_groups"]');
-    
-    classCheckboxes.forEach(cb => {
-        cb.addEventListener('change', function() {
-            if (this.checked) {
-                // If a specific class is selected, clear class group checkboxes to prevent conflict
-                groupCheckboxes.forEach(g => {
-                    g.checked = false;
-                    g.disabled = true;
-                    g.parentElement.classList.add('opacity-30', 'grayscale');
-                });
-                
-                // Show a small notice
-                if (!document.getElementById('conflictNotice')) {
-                    const notice = document.createElement('p');
-                    notice.id = 'conflictNotice';
-                    notice.className = 'text-[9px] text-orange-600 font-bold italic mt-1';
-                    notice.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Class groups disabled while specific classes are selected.';
-                    this.closest('.space-y-2').appendChild(notice);
-                }
-            } else {
-                // Check if any other class is still checked
-                const anyChecked = Array.from(classCheckboxes).some(c => c.checked);
-                if (!anyChecked) {
-                    groupCheckboxes.forEach(g => {
-                        g.disabled = false;
-                        g.parentElement.classList.remove('opacity-30', 'grayscale');
+    fetch('/api/fees/structures/' + structureId + '/assigned-students')
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('studentsLoading').classList.add('hidden');
+            if (data.success) {
+                document.getElementById('modalStudentCount').textContent = data.total_count + ' student(s) assigned to this billing scope.';
+                const body = document.getElementById('studentsTableBody');
+                body.innerHTML = '';
+                if (data.students.length === 0) {
+                    body.innerHTML = '<tr><td colspan="6" class="text-center py-6 text-gray-400">No active students assigned to this billing scope.</td></tr>';
+                } else {
+                    data.students.forEach((s, idx) => {
+                        const tr = document.createElement('tr');
+                        tr.className = 'hover:bg-gray-50';
+                        tr.innerHTML = `
+                            <td class="py-2.5 px-3 font-bold text-gray-400">${idx + 1}</td>
+                            <td class="py-2.5 px-3 font-extrabold text-blue-600">${s.AdmNo}</td>
+                            <td class="py-2.5 px-3 font-bold text-gray-900">${s.FName} ${s.MName || ''} ${s.SName}</td>
+                            <td class="py-2.5 px-3">${s.class_name}</td>
+                            <td class="py-2.5 px-3"><span class="px-2 py-0.5 bg-gray-100 rounded text-[10px] font-bold">${s.category || 'Regular'}</span></td>
+                            <td class="py-2.5 px-3 text-right font-black ${s.balance > 0 ? 'text-rose-600' : 'text-emerald-600'}">KES ${parseFloat(s.balance || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                        `;
+                        body.appendChild(tr);
                     });
-                    const notice = document.getElementById('conflictNotice');
-                    if (notice) notice.remove();
                 }
+                document.getElementById('studentsTable').classList.remove('hidden');
+            } else {
+                document.getElementById('modalStudentCount').textContent = 'Error: ' + data.message;
             }
+        })
+        .catch(err => {
+            document.getElementById('studentsLoading').classList.add('hidden');
+            document.getElementById('modalStudentCount').textContent = 'Failed to load student list.';
         });
-    });
-});
+}
+
+function closeStudentsModal() {
+    document.getElementById('studentsModal').classList.add('hidden');
+}
 </script>
 
 <style>

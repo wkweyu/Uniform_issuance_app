@@ -927,6 +927,11 @@ def manage_fee_structures():
 
     terms = service.get_recent_terms()
 
+    # Calculate metrics & missing structures
+    active_year_id = year_filter or (class_service.get_current_academic_year() or {}).get('id')
+    metrics = service.get_fee_structure_dashboard_metrics(active_year_id)
+    missing_structures = service.get_missing_fee_structures(active_year_id) if active_year_id else []
+
     context = {
         'structures': structures,
         'voteheads': service.get_voteheads(),
@@ -939,9 +944,26 @@ def manage_fee_structures():
         'selected_class_id': class_filter,
         'selected_group_code': group_filter,
         'selected_status': status_filter,
+        'metrics': metrics,
+        'missing_structures': missing_structures,
     }
     connection.close()
     return render_template('manage_fee_structures.html', **context)
+
+
+@fees_bp.route('/api/fees/structures/<int:structure_id>/assigned-students')
+@login_required
+@admin_required
+def api_assigned_students_for_structure(structure_id):
+    connection = get_db_connection()
+    service = FeesService(connection)
+    try:
+        students = service.get_assigned_students_for_structure(structure_id)
+        return jsonify({'success': True, 'students': students, 'total_count': len(students)})
+    except FeesError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    finally:
+        connection.close()
 
 @fees_bp.route('/admin/fees/structures/edit/<int:structure_id>', methods=['GET', 'POST'])
 @login_required

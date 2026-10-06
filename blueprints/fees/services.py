@@ -4427,6 +4427,116 @@ FeesService.get_votehead_by_id = get_votehead_by_id
 FeesService.update_votehead = update_votehead
 
 
+def get_fee_structure_dashboard_metrics(self, year_id: Optional[int] = None) -> Dict:
+    """Calculate operational summary metrics for the fee structure dashboard."""
+    if not year_id:
+        self.cursor.execute("SELECT id FROM academic_years WHERE is_current = TRUE AND school_id = %s LIMIT 1", (self.school_id,))
+        res = self.cursor.fetchone()
+        year_id = res['id'] if res else None
+
+    if not year_id:
+        return {
+            'total_classes': 0, 'configured_classes': 0, 'missing_classes_count': 0,
+            'active_structures': 0, 'draft_structures': 0, 'archived_structures': 0
+        }
+
+    # Total active classes in year
+    self.cursor.execute("SELECT COUNT(*) AS total FROM classes WHERE academic_year_id = %s AND is_active = TRUE AND school_id = %s", (year_id, self.school_id))
+    total_classes = self.cursor.fetchone()['total'] or 0
+
+    # Counts by status
+    self.cursor.execute("""
+        SELECT
+            SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) as active_count,
+            SUM(CASE WHEN status = 'DRAFT' THEN 1 ELSE 0 END) as draft_count,
+            SUM(CASE WHEN status = 'ARCHIVED' THEN 1 ELSE 0 END) as archived_count
+        FROM fee_structures
+        WHERE academic_year_id = %s AND school_id = %s
+    """, (year_id, self.school_id))
+    status_row = self.cursor.fetchone() or {}
+    active_structures = status_row.get('active_count') or 0
+    draft_structures = status_row.get('draft_count') or 0
+    archived_structures = status_row.get('archived_count') or 0
+
+    # Classes with active structure
+    self.cursor.execute("""
+        SELECT COUNT(DISTINCT class_id) as configured
+        FROM fee_structures
+        WHERE academic_year_id = %s AND status = 'ACTIVE' AND class_id IS NOT NULL AND class_id > 0 AND school_id = %s
+    """, (year_id, self.school_id))
+    configured_classes = self.cursor.fetchone()['configured'] or 0
+
+    missing_classes_count = max(0, total_classes - configured_classes)
+
+    return {
+        'year_id': year_id,
+        'total_classes': total_classes,
+        'configured_classes': configured_classes,
+        'missing_classes_count': missing_classes_count,
+        'active_structures': active_structures,
+        'draft_structures': draft_structures,
+        'archived_structures': archived_structures
+    }
+
+
+def get_missing_fee_structures(self, year_id: int) -> List[Dict]:
+    """Identify active classes/groups in an academic year that lack an active fee structure."""
+    self.cursor.execute("""
+        SELECT c.classID, c.display_name, c.class_group_code, c.stream_code
+        FROM classes c
+        WHERE c.academic_year_id = %s AND c.is_active = TRUE AND c.school_id = %s
+          AND c.classID NOT IN (
+              SELECT class_id FROM fee_structures
+              WHERE academic_year_id = %s AND status = 'ACTIVE' AND class_id IS NOT NULL AND class_id > 0 AND school_id = %s
+          )
+        ORDER BY c.display_name ASC
+    """, (year_id, self.school_id, year_id, self.school_id))
+    return self.cursor.fetchall()
+
+
+def get_assigned_students_for_structure(self, structure_id: int) -> List[Dict]:
+    """Fetch numbered list of tenant-scoped students assigned to a specific fee structure scope."""
+    self.cursor.execute("SELECT * FROM fee_structures WHERE id = %s AND school_id = %s", (structure_id, self.school_id))
+    struct = self.cursor.fetchone()
+    if not struct:
+        return []
+
+    year_id = struct['academic_year_id']
+    class_id = struct['class_id']
+    group_code = struct['class_group_code']
+    category = struct['student_category']
+
+    query = """
+        SELECT DISTINCT si.AdmNo, si.FName, si.MName, si.SName, si.category, c.display_name as class_name,
+               (SELECT balance_after FROM fee_ledger WHERE admno = si.AdmNo AND school_id = %s ORDER BY id DESC LIMIT 1) as balance
+        FROM studentinfo si
+        JOIN class_allocation ca ON si.AdmNo = ca.student_id AND ca.is_current = TRUE AND si.school_id = ca.school_id
+        JOIN classes c ON ca.class_id = c.classID AND ca.school_id = c.school_id
+        WHERE si.school_id = %s AND ca.academic_year_id = %s AND si.blocked = 'NO'
+    """
+    params = [self.school_id, self.school_id, year_id]
+
+    if class_id:
+        query += " AND ca.class_id = %s"
+        params.append(class_id)
+    elif group_code and group_code != 'all':
+        query += " AND c.class_group_code = %s"
+        params.append(group_code)
+
+    if category and category != 'all':
+        query += " AND si.category = %s"
+        params.append(category)
+
+    query += " ORDER BY c.display_name ASC, si.FName ASC"
+    self.cursor.execute(query, tuple(params))
+    return self.cursor.fetchall()
+
+
+FeesService.get_fee_structure_dashboard_metrics = get_fee_structure_dashboard_metrics
+FeesService.get_missing_fee_structures = get_missing_fee_structures
+FeesService.get_assigned_students_for_structure = get_assigned_students_for_structure
+
+
     # =========================================================================
     # STUDENT BILLING PROFILE ENGINE (PHASE 8 & 9)
     # =========================================================================
