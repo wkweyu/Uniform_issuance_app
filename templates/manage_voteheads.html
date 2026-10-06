@@ -20,6 +20,7 @@
                 </ol>
             </nav>
             <h1 class="text-2xl font-bold text-gray-800">Fee Voteheads</h1>
+            <p class="text-sm text-gray-500 mt-1">Priority defines the order in which payments are automatically allocated across votehead liabilities.</p>
         </div>
     </div>
 
@@ -30,20 +31,23 @@
             <form action="{{ url_for('fees.manage_voteheads') }}" method="POST">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="mb-4">
-                    <label class="block text-gray-700 text-sm font-bold mb-2">Name</label>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Name *</label>
                     <input type="text" name="name" required placeholder="e.g. Tuition Fees" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
                 </div>
                 <div class="mb-4 grid grid-cols-2 gap-4">
                     <div>
-                        <label class="block text-gray-700 text-sm font-bold mb-2">Priority</label>
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Priority *</label>
                         <input type="number" name="priority" min="0" value="99" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
-                        <p class="text-[10px] text-gray-400 mt-1">Lower number = higher priority</p>
+                        <p class="text-[10px] text-gray-400 mt-1">Lower = higher priority</p>
                     </div>
                     <div>
-                        <label class="flex items-center space-x-2 mt-8 cursor-pointer">
-                            <input type="checkbox" name="is_mandatory" value="1" checked class="rounded text-blue-600">
-                            <span class="text-sm font-bold text-gray-700">Mandatory?</span>
-                        </label>
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Student Group</label>
+                        <select name="group_id" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm">
+                            <option value="">All Groups</option>
+                            {% for g in student_groups %}
+                            <option value="{{ g.id }}">{{ g.name }}</option>
+                            {% endfor %}
+                        </select>
                     </div>
                 </div>
                 <div class="mb-4">
@@ -62,8 +66,9 @@
                 <thead class="bg-gray-50">
                     <tr>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Votehead</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rule</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Group</th>
                         <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
+                        <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Rule</th>
                         <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                     </tr>
                 </thead>
@@ -75,20 +80,23 @@
                             <div class="text-[10px] text-gray-400 font-medium">{{ v.description or 'No description' }}</div>
                         </td>
                         <td class="px-6 py-4 text-sm text-gray-500">
+                            {{ v.group_name or 'All' }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-mono text-center font-bold">{{ v.priority }}</td>
+                        <td class="px-6 py-4 text-sm text-center">
                             {% if v.is_mandatory %}
                             <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-[10px] font-black uppercase tracking-widest">Mandatory</span>
                             {% else %}
                             <span class="px-2 py-0.5 bg-gray-100 text-gray-700 rounded-full text-[10px] font-black uppercase tracking-widest">Optional</span>
                             {% endif %}
                         </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-mono text-center">{{ v.priority }}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm">
-                            <span class="text-gray-400">Fixed</span>
+                            <button onclick="openEditModal({{ v|tojson }})" class="text-blue-600 hover:text-blue-900 font-bold text-xs">Edit</button>
                         </td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="3" class="px-6 py-4 text-center text-gray-500 italic">No voteheads defined yet.</td>
+                        <td colspan="5" class="px-6 py-4 text-center text-gray-500 italic">No voteheads defined yet.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -96,4 +104,71 @@
         </div>
     </div>
 </div>
+
+<!-- Edit Votehead Modal -->
+<div id="editModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full flex items-center justify-center">
+    <div class="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-bold text-gray-800">Edit Votehead</h3>
+            <button onclick="closeEditModal()" class="text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button>
+        </div>
+        <form id="editForm" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">Name *</label>
+                <input type="text" id="edit_name" name="name" required class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
+            </div>
+            <div class="mb-4 grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Priority *</label>
+                    <input type="number" id="edit_priority" name="priority" min="0" required class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Student Group</label>
+                    <select id="edit_group_id" name="group_id" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm">
+                        <option value="">All Groups</option>
+                        {% for g in student_groups %}
+                        <option value="{{ g.id }}">{{ g.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="mb-4 grid grid-cols-2 gap-4">
+                <label class="flex items-center space-x-2 cursor-pointer">
+                    <input type="checkbox" id="edit_is_mandatory" name="is_mandatory" value="1" class="rounded text-blue-600">
+                    <span class="text-sm font-bold text-gray-700">Mandatory?</span>
+                </label>
+                <label class="flex items-center space-x-2 cursor-pointer">
+                    <input type="checkbox" id="edit_is_active" name="is_active" value="1" class="rounded text-blue-600">
+                    <span class="text-sm font-bold text-gray-700">Active?</span>
+                </label>
+            </div>
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">Description</label>
+                <textarea id="edit_description" name="description" rows="3" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"></textarea>
+            </div>
+            <div class="flex justify-end space-x-2">
+                <button type="button" onclick="closeEditModal()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded font-bold hover:bg-gray-300">Cancel</button>
+                <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded font-bold hover:bg-blue-700">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openEditModal(votehead) {
+    document.getElementById('editForm').action = "/admin/fees/voteheads/edit/" + votehead.id;
+    document.getElementById('edit_name').value = votehead.name;
+    document.getElementById('edit_priority').value = votehead.priority;
+    document.getElementById('edit_group_id').value = votehead.applicable_student_group_id || '';
+    document.getElementById('edit_is_mandatory').checked = Boolean(votehead.is_mandatory);
+    document.getElementById('edit_is_active').checked = Boolean(votehead.is_active);
+    document.getElementById('edit_description').value = votehead.description || '';
+    document.getElementById('editModal').classList.remove('hidden');
+}
+
+function closeEditModal() {
+    document.getElementById('editModal').classList.add('hidden');
+}
+</script>
 {% endblock %}

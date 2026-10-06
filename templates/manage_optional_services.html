@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+
+{% block title %}Optional Services{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="mb-6 flex justify-between items-center">
+        <div>
+            <nav class="flex mb-2" aria-label="Breadcrumb">
+                <ol class="inline-flex items-center space-x-1 md:space-x-3 text-sm font-medium text-gray-500">
+                    <li><a href="{{ url_for('fees.fees_dashboard') }}" class="hover:text-blue-600">Fees Management</a></li>
+                    <li><span class="mx-2 text-gray-400">/</span><span class="text-gray-700">Optional Services</span></li>
+                </ol>
+            </nav>
+            <h1 class="text-2xl font-bold text-gray-800">Optional Services Catalog</h1>
+            <p class="text-sm text-gray-500 mt-1">Manage a la carte services like Transport, Lunch, Debate Club with flexible billing frequencies and effective dates.</p>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <!-- New Service Form -->
+        <div class="bg-white p-6 rounded-lg shadow-md h-fit">
+            <h2 class="text-lg font-semibold mb-4 text-gray-800">New Optional Service</h2>
+            <form action="{{ url_for('fees.manage_optional_services') }}" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Service Name *</label>
+                    <input type="text" name="name" required placeholder="e.g. Transport Route A" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Votehead *</label>
+                    <select name="votehead_id" required class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
+                        {% for v in voteheads %}
+                        <option value="{{ v.id }}">{{ v.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Default Amount (KES) *</label>
+                    <input type="number" step="0.01" name="default_amount" required placeholder="e.g. 15000" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Billing Frequency *</label>
+                    <select name="billing_frequency" required class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
+                        <option value="TERMLY" selected>Termly (e.g. Transport, Lunch)</option>
+                        <option value="MONTHLY">Monthly</option>
+                        <option value="ONE_TIME">One Time (Registration, Uniform)</option>
+                        <option value="ANNUAL">Annual</option>
+                        <option value="CUSTOM">Custom</option>
+                    </select>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Code / Short Reference</label>
+                    <input type="text" name="code" placeholder="e.g. TR-ROUTE-A" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Description</label>
+                    <textarea name="description" rows="2" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"></textarea>
+                </div>
+
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded transition">
+                    Create Optional Service
+                </button>
+            </form>
+        </div>
+
+        <!-- Services List -->
+        <div class="md:col-span-2 bg-white rounded-lg shadow-md overflow-hidden">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Service Name</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Votehead</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Default Amount</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Frequency</th>
+                        <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for s in services %}
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm font-bold text-gray-900">{{ s.name }}</div>
+                            <div class="text-xs text-gray-500">{{ s.code or '' }}</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                            {{ s.votehead_name }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
+                            KES {{ "%.2f"|format(s.default_amount) }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-600">
+                            <span class="px-2 py-0.5 bg-blue-50 text-blue-700 rounded border border-blue-200 font-semibold">{{ s.billing_frequency }}</span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-center">
+                            {% if s.is_active %}
+                            <span class="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full">ACTIVE</span>
+                            {% else %}
+                            <span class="px-2 py-1 bg-gray-100 text-gray-600 text-xs font-semibold rounded-full">INACTIVE</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="px-6 py-4 text-center text-gray-500 italic">No optional services cataloged yet.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
