@@ -481,14 +481,7 @@ def toggle_student_status(admno):
 @students_bp.route('/student/<int:admno>/statement')
 @login_required
 def student_fee_statement(admno):
-    connection = get_db_connection()
-    fees_service = FeesService(connection, school_id=require_current_school_id())
-    service = StudentService(connection)
-    statement = fees_service.get_student_statement(admno)
-    balance = fees_service.get_student_balance(admno)
-    student = service.get_student_by_admno(admno)
-    connection.close()
-    return render_template('fee_statement.html', statement=statement, balance=balance, student=student)
+    return redirect(url_for('fees.student_statement', admno=admno))
 
 @students_bp.route('/api/search_students_fees')
 @login_required

@@ -1317,18 +1317,230 @@ def api_statement():
 @login_required
 def student_statement(admno):
     connection = get_db_connection()
+    service = FeesService(connection)
+    class_service = ClassManagementService(connection, school_id=service.school_id)
     try:
-        from blueprints.students.services import StudentService
-        service = FeesService(connection)
-        student = StudentService(connection, school_id=service.school_id).get_student_by_admno(admno)
-        if not student:
-            return 'Student not found', 404
-        full_name = ' '.join(filter(None, (student.get('FName'), student.get('MName'), student.get('SName'))))
+        year_id = _optional_int(request.args.get('year_id'), 'year_id')
+        term_id = _optional_int(request.args.get('term_id'), 'term_id')
+
+        statement_data = service.get_student_account_statement_data(admno, year_id=year_id, term_id=term_id)
+        academic_years = class_service.get_all_academic_years()
+        terms = service.get_terms_for_academic_year(year_id) if year_id else service.get_recent_terms()
+
+        # Audit log statement preview
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO audit_logs (user_id, school_id, action, details, ip_address, created_at)
+                    VALUES (%s, %s, %s, %s, %s, NOW())
+                """, (
+                    session.get('userNo', 0),
+                    service.school_id,
+                    'STUDENT_STATEMENT_PREVIEW',
+                    json.dumps({
+                        'report_id': statement_data.get('report_id'),
+                        'admno': admno,
+                        'academic_year_id': year_id,
+                        'term_id': term_id,
+                        'url': request.url,
+                    }),
+                    request.remote_addr,
+                ))
+            connection.commit()
+        except Exception:
+            pass
+
         return render_template(
             'student_statement_summary.html',
             admno=admno,
-            student_full_name=full_name,
+            statement=statement_data,
+            academic_years=academic_years,
+            terms=terms,
+            selected_year_id=year_id,
+            selected_term_id=term_id,
+            now=datetime.now(),
         )
+    except (ValueError, FeesError) as exc:
+        flash(str(exc), 'error')
+        return redirect(url_for('fees.fees_dashboard'))
+    finally:
+        connection.close()
+
+
+@fees_bp.route('/api/fees/student/<int:admno>/account-statement')
+@login_required
+def api_student_account_statement(admno):
+    connection = get_db_connection()
+    service = FeesService(connection)
+    try:
+        year_id = _optional_int(request.args.get('year_id'), 'year_id')
+        term_id = _optional_int(request.args.get('term_id'), 'term_id')
+        data = service.get_student_account_statement_data(admno, year_id=year_id, term_id=term_id)
+        return jsonify({'success': True, 'statement': data})
+    except (ValueError, FeesError) as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    finally:
+        connection.close()
+
+
+@fees_bp.route('/admin/fees/student/<int:admno>/statement/pdf')
+@login_required
+def export_student_statement_pdf(admno):
+    connection = get_db_connection()
+    service = FeesService(connection)
+    class_service = ClassManagementService(connection, school_id=service.school_id)
+    try:
+        year_id = _optional_int(request.args.get('year_id'), 'year_id')
+        term_id = _optional_int(request.args.get('term_id'), 'term_id')
+        include_running_balance = request.args.get('include_running_balance', '1') == '1'
+        include_votehead_breakdown = request.args.get('include_votehead_breakdown', '1') == '1'
+        include_opening_balance = request.args.get('include_opening_balance', '1') == '1'
+        statement_type = request.args.get('statement_type', 'detailed')
+
+        statement_data = service.get_student_account_statement_data(admno, year_id=year_id, term_id=term_id)
+
+        # Audit log PDF request
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO audit_logs (user_id, school_id, action, details, ip_address, created_at)
+                    VALUES (%s, %s, %s, %s, %s, NOW())
+                """, (
+                    session.get('userNo', 0),
+                    service.school_id,
+                    'STUDENT_STATEMENT_PDF_EXPORT',
+                    json.dumps({
+                        'report_id': statement_data.get('report_id'),
+                        'admno': admno,
+                        'academic_year_id': year_id,
+                        'term_id': term_id,
+                        'statement_type': statement_type,
+                    }),
+                    request.remote_addr,
+                ))
+            connection.commit()
+        except Exception:
+            pass
+
+        html = render_template(
+            'student_statement_summary.html',
+            admno=admno,
+            statement=statement_data,
+            academic_years=class_service.get_all_academic_years(),
+            terms=service.get_terms_for_academic_year(year_id) if year_id else service.get_recent_terms(),
+            selected_year_id=year_id,
+            selected_term_id=term_id,
+            is_pdf=True,
+            include_running_balance=include_running_balance,
+            include_votehead_breakdown=include_votehead_breakdown,
+            include_opening_balance=include_opening_balance,
+            statement_type=statement_type,
+            now=datetime.now(),
+        )
+
+        pdf = _render_fee_structure_pdf(html, request.url_root)
+        response = make_response(pdf)
+        response.headers['Content-Type'] = 'application/pdf'
+        disp = 'attachment' if request.args.get('download') == '1' else 'inline'
+        response.headers['Content-Disposition'] = f'{disp}; filename="STUDENT_FEES_STATEMENT_{admno}_{statement_data["report_id"]}.pdf"'
+        return response
+    except Exception:
+        current_app.logger.exception("Failed to generate PDF statement for student %s", admno)
+        flash("Failed to generate statement PDF. Please try again later.", "error")
+        return redirect(url_for('fees.student_statement', admno=admno))
+    finally:
+        connection.close()
+
+
+@fees_bp.route('/admin/fees/student/<int:admno>/statement/email', methods=['POST'])
+@login_required
+@admin_required
+def email_student_statement(admno):
+    connection = get_db_connection()
+    service = FeesService(connection)
+    class_service = ClassManagementService(connection, school_id=service.school_id)
+    try:
+        year_id = _optional_int(request.form.get('year_id'), 'year_id')
+        term_id = _optional_int(request.form.get('term_id'), 'term_id')
+
+        statement_data = service.get_student_account_statement_data(admno, year_id=year_id, term_id=term_id)
+        parent_email = statement_data['student'].get('parent_email')
+
+        if not parent_email or parent_email == 'N/A' or '@' not in parent_email:
+            return jsonify({
+                'success': False,
+                'message': 'No parent email address is registered.',
+            }), 400
+
+        # Render statement PDF to attach/verify pipeline
+        html = render_template(
+            'student_statement_summary.html',
+            admno=admno,
+            statement=statement_data,
+            academic_years=class_service.get_all_academic_years(),
+            terms=service.get_terms_for_academic_year(year_id) if year_id else service.get_recent_terms(),
+            selected_year_id=year_id,
+            selected_term_id=term_id,
+            is_pdf=True,
+            include_running_balance=True,
+            include_votehead_breakdown=True,
+            include_opening_balance=True,
+            statement_type='detailed',
+            now=datetime.now(),
+        )
+        pdf_bytes = _render_fee_structure_pdf(html, request.url_root)
+
+        # Dispatch via Flask-Mail if configured, else log queued status
+        mail_sent = False
+        mail = current_app.extensions.get('mail') if hasattr(current_app, 'extensions') else None
+        if mail and hasattr(current_app, 'config') and current_app.config.get('MAIL_SERVER'):
+            try:
+                from flask_mail import Message
+                msg = Message(
+                    subject=f"STUDENT FEES STATEMENT - {statement_data['student']['full_name']} ({admno})",
+                    recipients=[parent_email],
+                    body=f"Dear Parent/Guardian,\n\nPlease find attached the official Student Fees Statement for {statement_data['student']['full_name']} (Adm No: {admno}).\n\nReport ID: {statement_data['report_id']}\nOverall Student Balance: KES {statement_data['overall_student_balance']:,.2f}\n\nThank you.\nAccounts Office",
+                )
+                msg.attach(f"STUDENT_FEES_STATEMENT_{admno}_{statement_data['report_id']}.pdf", "application/pdf", pdf_bytes)
+                mail.send(msg)
+                mail_sent = True
+            except Exception:
+                current_app.logger.warning("SMTP mail dispatch failed, fall back to queued notification mode.")
+
+        # Audit log Email action
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO audit_logs (user_id, school_id, action, details, ip_address, created_at)
+                    VALUES (%s, %s, %s, %s, %s, NOW())
+                """, (
+                    session.get('userNo', 0),
+                    service.school_id,
+                    'STUDENT_STATEMENT_EMAILED',
+                    json.dumps({
+                        'report_id': statement_data.get('report_id'),
+                        'admno': admno,
+                        'recipient': parent_email,
+                        'academic_year_id': year_id,
+                        'term_id': term_id,
+                        'mail_sent': mail_sent,
+                        'pdf_size_bytes': len(pdf_bytes),
+                    }),
+                    request.remote_addr,
+                ))
+            connection.commit()
+        except Exception:
+            pass
+
+        return jsonify({
+            'success': True,
+            'message': f"Student Fees Statement ({statement_data['report_id']}) has been successfully generated and sent to {parent_email}.",
+        })
+    except (ValueError, FeesError) as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    except Exception:
+        current_app.logger.exception("Failed to email statement for student %s", admno)
+        return jsonify({'success': False, 'message': 'Unable to send email statement. Please try again later.'}), 500
     finally:
         connection.close()
 
