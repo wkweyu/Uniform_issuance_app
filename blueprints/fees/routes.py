@@ -576,7 +576,8 @@ def edit_votehead(votehead_id):
             is_mandatory=request.form.get('is_mandatory') == '1',
             group_id=_optional_int(request.form.get('group_id'), 'group_id'),
             description=request.form.get('description', '').strip(),
-            is_active=request.form.get('is_active') == '1'
+            is_active=request.form.get('is_active') == '1',
+            code=request.form.get('code')
         )
         flash("Votehead updated successfully.", "success")
     except (ValueError, FeesError) as e:
@@ -877,49 +878,52 @@ def manage_fee_refunds():
 @login_required
 @admin_required
 def manage_fee_structures():
+    if request.method == 'POST':
+        return redirect(url_for('fees.create_yearly_fee_structure_route'))
+
     connection = get_db_connection()
     service = FeesService(connection)
     class_service = ClassManagementService(connection, school_id=service.school_id)
 
-    if request.method == 'POST':
-        try:
-            votehead_ids = request.form.getlist('votehead_id')
-            amounts = request.form.getlist('amount')
-            items = _build_fee_structure_items(votehead_ids, amounts)
+    year_filter = _optional_int(request.args.get('academic_year_id'), 'academic_year_id')
+    class_filter = _optional_int(request.args.get('class_id'), 'class_id')
+    group_filter = (request.args.get('class_group_code') or '').strip() or None
+    status_filter = (request.args.get('status') or '').strip().upper() or None
 
-            if not items: flash("Enter at least one votehead amount.", "error")
-            else:
-                results = service.create_bulk_fee_structures(
-                    year_id=_required_int(request.form.get('year_id'), 'year_id'),
-                    term_id=_required_int(request.form.get('term_id'), 'term_id'),
-                    class_groups=request.form.getlist('class_groups'),
-                    categories=request.form.getlist('categories'),
-                    items=items,
-                    user_id=session['userNo'],
-                    class_ids=[_required_int(cid, 'specific_classes') for cid in request.form.getlist('specific_classes')] if request.form.getlist('specific_classes') else None
-                )
-                flash(f"{results['success']} structures created, {results['skipped']} skipped.", "success")
-        except (ValueError, FeesError) as e:
-            flash(str(e), "error")
-        except Exception as e:
-            flash(str(e), "error")
-
-    structures_raw = service.get_fee_structures()
-    # Grouping logic remains in route as it's purely for display
+    structures_raw = service.get_fee_structures(year_id=year_filter)
+    # Grouping logic with filters
     grouped_structures = {}
     for s in structures_raw:
+        if class_filter and s['class_id'] != class_filter:
+            continue
+        if group_filter and s['class_group_code'] != group_filter:
+            continue
+        s_status = (s.get('status') or 'ACTIVE').upper()
+        if status_filter and s_status != status_filter:
+            continue
+
         label = s['specific_class_name'] if s['class_id'] else s['class_group_code']
-        key = (s['academic_year_id'], label, s['student_category'])
+        key = (s['academic_year_id'], label, s['student_category'], s.get('version_number', 1), s_status)
         if key not in grouped_structures:
             grouped_structures[key] = {
-                'id': s['id'], 'year_name': s['year_name'], 'academic_year_id': s['academic_year_id'],
-                'label': label, 'class_id': s['class_id'], 'class_group_code': s['class_group_code'],
-                'student_category': s['student_category'], 'terms': [], 'total_year': 0
+                'id': s['id'],
+                'year_name': s['year_name'],
+                'academic_year_id': s['academic_year_id'],
+                'label': label,
+                'class_id': s['class_id'],
+                'class_group_code': s['class_group_code'],
+                'student_category': s['student_category'],
+                'version_number': s.get('version_number', 1),
+                'status': s_status,
+                'approval_status': s.get('approval_status', 'APPROVED'),
+                'effective_from': s.get('effective_from'),
+                'terms': [],
+                'total_year': 0
             }
         grouped_structures[key]['terms'].append(s['term_number'])
         grouped_structures[key]['total_year'] += float(s['total_amount'])
 
-    structures = sorted(grouped_structures.values(), key=lambda x: (x['year_name'], x['label']), reverse=True)
+    structures = sorted(grouped_structures.values(), key=lambda x: (x['year_name'], x['label'], x['version_number']), reverse=True)
 
     terms = service.get_recent_terms()
 
@@ -930,7 +934,11 @@ def manage_fee_structures():
         'terms': terms,
         'class_groups': [{'code': k, 'name': v['name']} for k, v in class_service.get_class_groups().items()],
         'all_classes': class_service.get_active_classes(),
-        'categories': ['Day', 'Boarding', 'Normal', 'Special', 'Transport', 'all']
+        'categories': ['Day', 'Boarding', 'Normal', 'Special', 'Transport', 'all'],
+        'selected_year_id': year_filter,
+        'selected_class_id': class_filter,
+        'selected_group_code': group_filter,
+        'selected_status': status_filter,
     }
     connection.close()
     return render_template('manage_fee_structures.html', **context)

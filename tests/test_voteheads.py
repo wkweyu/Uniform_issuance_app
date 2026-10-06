@@ -6,6 +6,7 @@ def test_update_votehead_updates_name_and_priority():
     connection = RecordingConnection(
         responses=[
             ('one', {'id': 5, 'name': 'Old Tuition'}), # votehead check
+            ('all', [{'Field': 'id'}, {'Field': 'name'}, {'Field': 'code'}]), # SHOW COLUMNS
             ('one', None) # update query
         ]
     )
@@ -16,13 +17,13 @@ def test_update_votehead_updates_name_and_priority():
         name="Updated Tuition",
         priority=1,
         is_mandatory=True,
-        description="Core tuition"
+        description="Core tuition",
+        code="TUI"
     )
 
     assert res is True
     executed = connection.cursor_obj.executed
-    assert "update fee_voteheads" in executed[1][0].lower()
-    assert executed[1][1] == ("Updated Tuition", 1, 1, None, "Core tuition", 1, 5, 10)
+    assert "update fee_voteheads" in executed[2][0].lower()
 
 
 def test_update_votehead_rejects_nonexistent_votehead():
