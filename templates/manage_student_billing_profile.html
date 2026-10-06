@@ -1,0 +1,185 @@
+{% extends 'base.html' %}
+
+{% block title %}Student Billing Profile - {{ admno }}{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="mb-6 flex justify-between items-center">
+        <div>
+            <nav class="flex mb-2" aria-label="Breadcrumb">
+                <ol class="inline-flex items-center space-x-1 md:space-x-3 text-sm font-medium text-gray-500">
+                    <li><a href="{{ url_for('fees.fees_dashboard') }}" class="hover:text-blue-600">Fees Management</a></li>
+                    <li><span class="mx-2 text-gray-400">/</span><span class="text-gray-700">Student Billing Profile (Adm #{{ admno }})</span></li>
+                </ol>
+            </nav>
+            <h1 class="text-2xl font-bold text-gray-800">Student Billing Profile — Admission #{{ admno }}</h1>
+            <p class="text-sm text-gray-500 mt-1">Centralized, auditable billing configuration combining class, stream, billing group, discount profile, and optional services.</p>
+        </div>
+    </div>
+
+    <!-- Active Billing Profile Banner -->
+    {% if active_profile %}
+    <div class="mb-8 bg-blue-50 border-l-4 border-blue-500 p-6 rounded-r-lg shadow-sm">
+        <div class="flex justify-between items-start">
+            <div>
+                <span class="px-2.5 py-0.5 bg-blue-600 text-white text-xs font-bold rounded-full uppercase tracking-wide">Active Billing Profile</span>
+                <h2 class="text-xl font-bold text-gray-800 mt-2">Effective Date: {{ active_profile.effective_date }}</h2>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 text-sm text-gray-700">
+                    <div><span class="text-gray-500 block text-xs">Class & Stream</span><strong>{{ active_profile.class_name or 'N/A' }} ({{ active_profile.stream_code or 'All' }})</strong></div>
+                    <div><span class="text-gray-500 block text-xs">Billing Group</span><strong>{{ active_profile.billing_group_name or 'Standard' }}</strong></div>
+                    <div><span class="text-gray-500 block text-xs">Discount Profile</span><strong>{{ active_profile.discount_profile_name or 'None' }}</strong></div>
+                    <div><span class="text-gray-500 block text-xs">Expiry Date</span><strong>{{ active_profile.expiry_date or 'Indefinite' }}</strong></div>
+                </div>
+                {% if active_profile.optional_services %}
+                <div class="mt-4 pt-4 border-t border-blue-200">
+                    <span class="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-2">Subscribed Optional Services</span>
+                    <div class="flex flex-wrap gap-2">
+                        {% for os in active_profile.optional_services %}
+                        <span class="px-2.5 py-1 bg-white border border-blue-200 rounded text-xs font-semibold text-blue-800">
+                            {{ os.service_name }} (KES {{ "%.2f"|format(os.default_amount) }} - {{ os.billing_frequency }})
+                        </span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="mb-8 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg text-yellow-800">
+        <p class="font-bold">No active Billing Profile found for student #{{ admno }}.</p>
+        <p class="text-sm">Billing runs will fall back to default class & category rules until a Billing Profile is created.</p>
+    </div>
+    {% endif %}
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <!-- New Billing Profile Form -->
+        <div class="bg-white p-6 rounded-lg shadow-md h-fit">
+            <h2 class="text-lg font-semibold mb-4 text-gray-800">Set New Billing Profile</h2>
+            <form action="{{ url_for('fees.manage_student_billing_profile', admno=admno) }}" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Academic Year *</label>
+                    <select name="academic_year_id" required class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
+                        {% for y in years %}
+                        <option value="{{ y.id }}" {% if y.is_current %}selected{% endif %}>{{ y.year }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="mb-4 grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Class</label>
+                        <select name="class_id" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
+                            <option value="">Default Class</option>
+                            {% for c in classes %}
+                            <option value="{{ c.classID }}">{{ c.display_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Billing Group</label>
+                        <select name="billing_group_id" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
+                            <option value="">Standard Group</option>
+                            {% for g in student_groups %}
+                            <option value="{{ g.id }}">{{ g.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Discount Profile</label>
+                    <select name="discount_profile_id" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
+                        <option value="">None (Standard Base Fees)</option>
+                        {% for dp in discount_profiles %}
+                        <option value="{{ dp.id }}">{{ dp.name }} ({{ dp.value }}{% if dp.discount_type == 'PERCENTAGE' %}%{% else %} KES{% endif %})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Optional Services</label>
+                    <div class="max-h-36 overflow-y-auto border rounded p-2 space-y-1">
+                        {% for os in optional_services %}
+                        <label class="flex items-center space-x-2 text-xs text-gray-700 cursor-pointer">
+                            <input type="checkbox" name="optional_service_ids" value="{{ os.id }}" class="rounded text-blue-600">
+                            <span>{{ os.name }} (KES {{ "%.2f"|format(os.default_amount) }})</span>
+                        </label>
+                        {% else %}
+                        <span class="text-xs text-gray-400 italic">No optional services available.</span>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="mb-4 grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Effective Date *</label>
+                        <input type="date" name="effective_date" required value="{{ now.strftime('%Y-%m-%d') }}" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
+                        <p class="text-[10px] text-gray-400 mt-1">Changes take effect on this date.</p>
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Expiry Date</label>
+                        <input type="date" name="expiry_date" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    </div>
+                </div>
+
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded transition">
+                    Activate Billing Profile
+                </button>
+            </form>
+        </div>
+
+        <!-- Billing Profile Audit History -->
+        <div class="md:col-span-2 bg-white rounded-lg shadow-md overflow-hidden">
+            <div class="p-4 bg-gray-50 border-b">
+                <h3 class="text-base font-bold text-gray-800">Billing Profile History</h3>
+            </div>
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Effective Date</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Group & Discount</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created By</th>
+                        <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for h in history %}
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
+                            {{ h.effective_date }}
+                            {% if h.expiry_date %}
+                            <span class="text-xs text-gray-400 block font-normal">Until: {{ h.expiry_date }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                            <div>Group: <strong>{{ h.billing_group_name or 'Standard' }}</strong></div>
+                            <div class="text-xs text-gray-500">Discount: {{ h.discount_profile_name or 'None' }}</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-500">
+                            {{ h.created_by_name or 'System' }}
+                            <span class="block text-[10px] text-gray-400">{{ h.created_at }}</span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-center">
+                            {% if h.status == 'ACTIVE' %}
+                            <span class="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full">ACTIVE</span>
+                            {% elif h.status == 'REPLACED' %}
+                            <span class="px-2 py-1 bg-gray-100 text-gray-600 text-xs font-semibold rounded-full">REPLACED</span>
+                            {% else %}
+                            <span class="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-semibold rounded-full">{{ h.status }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="4" class="px-6 py-4 text-center text-gray-500 italic">No historical billing profiles recorded.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

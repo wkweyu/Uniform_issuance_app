@@ -547,6 +547,7 @@ def manage_voteheads():
             service.create_votehead(
                 name=_required_text(request.form.get('name'), 'name'),
                 priority=_required_int(request.form.get('priority', 99), 'priority'),
+                group_id=_optional_int(request.form.get('group_id'), 'group_id'),
                 description=request.form.get('description', '').strip()
             )
             flash("Votehead created.", "success")
@@ -555,9 +556,36 @@ def manage_voteheads():
         except Exception as e:
             flash(str(e), "error")
 
-    voteheads = service.get_voteheads()
+    voteheads = service.get_voteheads(active_only=False)
+    student_groups = service.get_student_groups()
     connection.close()
-    return render_template('manage_voteheads.html', voteheads=voteheads)
+    return render_template('manage_voteheads.html', voteheads=voteheads, student_groups=student_groups)
+
+
+@fees_bp.route('/admin/fees/voteheads/edit/<int:votehead_id>', methods=['POST'])
+@login_required
+@admin_required
+def edit_votehead(votehead_id):
+    connection = get_db_connection()
+    service = FeesService(connection)
+    try:
+        service.update_votehead(
+            votehead_id=votehead_id,
+            name=_required_text(request.form.get('name'), 'name'),
+            priority=_required_int(request.form.get('priority', 99), 'priority'),
+            is_mandatory=request.form.get('is_mandatory') == '1',
+            group_id=_optional_int(request.form.get('group_id'), 'group_id'),
+            description=request.form.get('description', '').strip(),
+            is_active=request.form.get('is_active') == '1'
+        )
+        flash("Votehead updated successfully.", "success")
+    except (ValueError, FeesError) as e:
+        flash(str(e), "error")
+    except Exception as e:
+        flash(str(e), "error")
+    finally:
+        connection.close()
+    return redirect(url_for('fees.manage_voteheads'))
 
 @fees_bp.route('/admin/fees/student_groups', methods=['GET', 'POST'])
 @login_required
@@ -1050,6 +1078,54 @@ def copy_fee_structure():
     except Exception as e: flash(str(e), "error")
     finally: connection.close()
     return redirect(url_for('fees.manage_fee_structures'))
+
+
+@fees_bp.route('/admin/fees/structures/clone/<int:structure_id>', methods=['POST'])
+@login_required
+@admin_required
+def clone_fee_structure_version_route(structure_id):
+    connection = get_db_connection()
+    service = FeesService(connection)
+    try:
+        new_id = service.clone_fee_structure_version(structure_id, session['userNo'])
+        flash(f"Cloned into new DRAFT fee structure version #{new_id}.", "success")
+    except FeesError as e:
+        flash(str(e), "error")
+    finally:
+        connection.close()
+    return redirect(request.referrer or url_for('fees.manage_fee_structures'))
+
+
+@fees_bp.route('/admin/fees/structures/approve/<int:structure_id>', methods=['POST'])
+@login_required
+@admin_required
+def approve_fee_structure_version_route(structure_id):
+    connection = get_db_connection()
+    service = FeesService(connection)
+    try:
+        service.approve_fee_structure_version(structure_id, session['userNo'])
+        flash(f"Fee structure version #{structure_id} approved.", "success")
+    except FeesError as e:
+        flash(str(e), "error")
+    finally:
+        connection.close()
+    return redirect(request.referrer or url_for('fees.manage_fee_structures'))
+
+
+@fees_bp.route('/admin/fees/structures/activate/<int:structure_id>', methods=['POST'])
+@login_required
+@admin_required
+def activate_fee_structure_version_route(structure_id):
+    connection = get_db_connection()
+    service = FeesService(connection)
+    try:
+        service.activate_fee_structure_version(structure_id, session['userNo'])
+        flash(f"Fee structure version #{structure_id} activated as active billing template.", "success")
+    except FeesError as e:
+        flash(str(e), "error")
+    finally:
+        connection.close()
+    return redirect(request.referrer or url_for('fees.manage_fee_structures'))
 
 @fees_bp.route('/admin/fees/structures/yearly/create', methods=['GET', 'POST'])
 @login_required
@@ -2070,3 +2146,238 @@ def bulk_invoice():
     context = {'years': class_service.get_all_academic_years(), 'terms': terms, 'classes': class_service.get_active_classes(), 'voteheads': service.get_voteheads()}
     connection.close()
     return render_template('bulk_invoice.html', **context)
+
+
+@fees_bp.route('/admin/fees/discounts', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def manage_discount_profiles():
+    connection = get_db_connection()
+    service = FeesService(connection)
+    try:
+        if request.method == 'POST':
+            name = _required_text(request.form.get('name'), 'name')
+            discount_type = _required_text(request.form.get('discount_type'), 'discount_type').upper()
+            value = _parse_decimal(request.form.get('value'), 'value')
+            votehead_id = _optional_int(request.form.get('votehead_id'), 'votehead_id')
+            effective_from = _required_text(request.form.get('effective_from'), 'effective_from')
+            effective_to = request.form.get('effective_to') or None
+
+            service.create_discount_profile(
+                name=name,
+                discount_type=discount_type,
+                value=value,
+                votehead_id=votehead_id,
+                effective_from=effective_from,
+                effective_to=effective_to,
+                code=request.form.get('code'),
+                description=request.form.get('description', ''),
+                user_id=session.get('userNo')
+            )
+            flash(f"Discount profile '{name}' created successfully.", "success")
+            return redirect(url_for('fees.manage_discount_profiles'))
+
+        profiles = service.get_discount_profiles(active_only=False)
+        voteheads = service.get_voteheads()
+        return render_template('manage_discount_profiles.html', profiles=profiles, voteheads=voteheads, now=datetime.now())
+    except (ValueError, FeesError) as exc:
+        flash(str(exc), "error")
+        return redirect(url_for('fees.manage_discount_profiles'))
+    finally:
+        connection.close()
+
+
+@fees_bp.route('/admin/fees/discounts/assign', methods=['POST'])
+@login_required
+@admin_required
+def assign_discount_profile():
+    connection = get_db_connection()
+    service = FeesService(connection)
+    try:
+        student_id = _required_int(request.form.get('student_id'), 'student_id')
+        discount_profile_id = _required_int(request.form.get('discount_profile_id'), 'discount_profile_id')
+        effective_from = _required_text(request.form.get('effective_from'), 'effective_from')
+        effective_to = request.form.get('effective_to') or None
+
+        service.assign_discount_profile_to_student(
+            student_id=student_id,
+            discount_profile_id=discount_profile_id,
+            effective_from=effective_from,
+            effective_to=effective_to,
+            assigned_by=session.get('userNo')
+        )
+        flash("Discount profile assigned to student successfully.", "success")
+    except (ValueError, FeesError) as exc:
+        flash(str(exc), "error")
+    finally:
+        connection.close()
+    return redirect(request.referrer or url_for('fees.manage_discount_profiles'))
+
+
+@fees_bp.route('/admin/fees/optional-services', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def manage_optional_services():
+    connection = get_db_connection()
+    service = FeesService(connection)
+    try:
+        if request.method == 'POST':
+            name = _required_text(request.form.get('name'), 'name')
+            votehead_id = _required_int(request.form.get('votehead_id'), 'votehead_id')
+            default_amount = _parse_decimal(request.form.get('default_amount'), 'default_amount')
+            billing_frequency = _required_text(request.form.get('billing_frequency', 'TERMLY'), 'billing_frequency')
+
+            service.create_optional_service(
+                name=name,
+                votehead_id=votehead_id,
+                default_amount=default_amount,
+                billing_frequency=billing_frequency,
+                code=request.form.get('code'),
+                description=request.form.get('description', ''),
+                user_id=session.get('userNo')
+            )
+            flash(f"Optional service '{name}' created successfully.", "success")
+            return redirect(url_for('fees.manage_optional_services'))
+
+        services_list = service.get_optional_services(active_only=False)
+        voteheads = service.get_voteheads()
+        return render_template('manage_optional_services.html', services=services_list, voteheads=voteheads, now=datetime.now())
+    except (ValueError, FeesError) as exc:
+        flash(str(exc), "error")
+        return redirect(url_for('fees.manage_optional_services'))
+    finally:
+        connection.close()
+
+
+@fees_bp.route('/admin/fees/optional-services/subscribe', methods=['POST'])
+@login_required
+@admin_required
+def subscribe_optional_service():
+    connection = get_db_connection()
+    service = FeesService(connection)
+    try:
+        student_id = _required_int(request.form.get('student_id'), 'student_id')
+        optional_service_id = _required_int(request.form.get('optional_service_id'), 'optional_service_id')
+        effective_from = _required_text(request.form.get('effective_from'), 'effective_from')
+        effective_to = request.form.get('effective_to') or None
+        custom_amount_str = request.form.get('custom_amount')
+        custom_amount = _parse_decimal(custom_amount_str, 'custom_amount') if custom_amount_str else None
+
+        service.subscribe_student_optional_service(
+            student_id=student_id,
+            optional_service_id=optional_service_id,
+            effective_from=effective_from,
+            effective_to=effective_to,
+            custom_amount=custom_amount,
+            user_id=session.get('userNo')
+        )
+        flash("Student subscribed to optional service successfully.", "success")
+    except (ValueError, FeesError) as exc:
+        flash(str(exc), "error")
+    finally:
+        connection.close()
+    return redirect(request.referrer or url_for('fees.manage_optional_services'))
+
+
+@fees_bp.route('/admin/fees/student/<int:admno>/billing-profile', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def manage_student_billing_profile(admno):
+    connection = get_db_connection()
+    service = FeesService(connection)
+    class_service = ClassManagementService(connection, school_id=service.school_id)
+    try:
+        if request.method == 'POST':
+            academic_year_id = _required_int(request.form.get('academic_year_id'), 'academic_year_id')
+            effective_date = _required_text(request.form.get('effective_date'), 'effective_date')
+            class_id = _optional_int(request.form.get('class_id'), 'class_id')
+            stream_code = request.form.get('stream_code') or None
+            billing_group_id = _optional_int(request.form.get('billing_group_id'), 'billing_group_id')
+            discount_profile_id = _optional_int(request.form.get('discount_profile_id'), 'discount_profile_id')
+            fee_structure_version_id = _optional_int(request.form.get('fee_structure_version_id'), 'fee_structure_version_id')
+            optional_service_ids = [_required_int(oid, 'optional_service') for oid in request.form.getlist('optional_service_ids')] if request.form.getlist('optional_service_ids') else None
+            expiry_date = request.form.get('expiry_date') or None
+
+            profile_id = service.create_student_billing_profile(
+                student_id=admno,
+                academic_year_id=academic_year_id,
+                effective_date=effective_date,
+                class_id=class_id,
+                stream_code=stream_code,
+                billing_group_id=billing_group_id,
+                discount_profile_id=discount_profile_id,
+                fee_structure_version_id=fee_structure_version_id,
+                optional_service_ids=optional_service_ids,
+                expiry_date=expiry_date,
+                user_id=session.get('userNo')
+            )
+            flash(f"Student Billing Profile #{profile_id} created successfully.", "success")
+            return redirect(url_for('fees.manage_student_billing_profile', admno=admno))
+
+        active_profile = service.get_student_active_billing_profile(admno)
+        history = service.get_student_billing_profiles_history(admno)
+        years = class_service.get_all_academic_years()
+        classes = class_service.get_active_classes()
+        student_groups = service.get_student_groups()
+        discount_profiles = service.get_discount_profiles()
+        optional_services = service.get_optional_services()
+
+        return render_template(
+            'manage_student_billing_profile.html',
+            admno=admno,
+            active_profile=active_profile,
+            history=history,
+            years=years,
+            classes=classes,
+            student_groups=student_groups,
+            discount_profiles=discount_profiles,
+            optional_services=optional_services,
+            now=datetime.now()
+        )
+    except (ValueError, FeesError) as exc:
+        flash(str(exc), "error")
+        return redirect(url_for('fees.fees_dashboard'))
+    finally:
+        connection.close()
+
+
+@fees_bp.route('/api/fees/student/<int:admno>/billing-profile')
+@login_required
+def api_student_billing_profile(admno):
+    connection = get_db_connection()
+    service = FeesService(connection)
+    try:
+        value_date = request.args.get('value_date') or None
+        profile = service.get_student_active_billing_profile(admno, value_date=value_date)
+        return jsonify({'success': True, 'profile': profile})
+    except FeesError as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    finally:
+        connection.close()
+
+
+@fees_bp.route('/admin/fees/optional-services/bill', methods=['POST'])
+@login_required
+@admin_required
+def bill_optional_services():
+    connection = get_db_connection()
+    service = FeesService(connection)
+    try:
+        student_id = _required_int(request.form.get('student_id'), 'student_id')
+        academic_year_id = _required_int(request.form.get('academic_year_id'), 'academic_year_id')
+        term_id = _required_int(request.form.get('term_id'), 'term_id')
+        value_date = request.form.get('value_date') or None
+
+        charges = service.bill_optional_service_subscriptions(
+            student_id=student_id,
+            academic_year_id=academic_year_id,
+            term_id=term_id,
+            value_date=value_date,
+            user_id=session.get('userNo')
+        )
+        flash(f"Optional services billed successfully. {len(charges)} charge(s) posted.", "success")
+    except (ValueError, FeesError) as exc:
+        flash(str(exc), "error")
+    finally:
+        connection.close()
+    return redirect(request.referrer or url_for('fees.manage_optional_services'))

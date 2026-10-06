@@ -4074,3 +4074,528 @@ def _get_receivables_class_summary(self) -> List[Dict]:
 
 
 FeesService.get_receivables_class_summary = _get_receivables_class_summary
+
+
+    # =========================================================================
+    # OPTIONAL SERVICES ENGINE (PHASE 5)
+    # =========================================================================
+
+def create_optional_service(
+    self, name: str, votehead_id: int, default_amount: Decimal,
+    billing_frequency: str = 'TERMLY', code: Optional[str] = None,
+    description: str = "", user_id: Optional[int] = None
+) -> int:
+    """Create a new tenant-scoped optional service."""
+    name = (name or '').strip()
+    if not name:
+        raise FeesError("Optional service name is required.")
+    billing_frequency = (billing_frequency or 'TERMLY').strip().upper()
+    if billing_frequency not in ('ONE_TIME', 'MONTHLY', 'TERMLY', 'ANNUAL', 'CUSTOM'):
+        raise FeesError("Invalid billing frequency for optional service.")
+
+    default_amount = Decimal(str(default_amount))
+    if default_amount < 0:
+        raise FeesError("Default amount cannot be negative.")
+
+    self._assert_voteheads_belong_to_school([votehead_id])
+
+    try:
+        self.cursor.execute("""
+            INSERT INTO fee_optional_services
+                (school_id, name, code, votehead_id, default_amount, billing_frequency, description, created_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """, (self.school_id, name, code, votehead_id, default_amount, billing_frequency, description, user_id))
+        self.connection.commit()
+        return self.cursor.lastrowid
+    except pymysql.IntegrityError:
+        self.connection.rollback()
+        raise FeesError(f"Optional service '{name}' already exists.")
+    except Exception as e:
+        self.connection.rollback()
+        raise FeesError(f"Failed to create optional service: {str(e)}")
+
+
+def get_optional_services(self, active_only: bool = True) -> List[Dict]:
+    """Fetch all optional services for the tenant."""
+    query = """
+        SELECT s.*, v.name as votehead_name
+        FROM fee_optional_services s
+        JOIN fee_voteheads v ON s.votehead_id = v.id AND s.school_id = v.school_id
+        WHERE s.school_id = %s
+    """
+    params = [self.school_id]
+    if active_only:
+        query += " AND s.is_active = TRUE"
+    query += " ORDER BY s.name ASC"
+    self.cursor.execute(query, params)
+    return self.cursor.fetchall()
+
+
+def subscribe_student_optional_service(
+    self, student_id: int, optional_service_id: int, effective_from: str,
+    effective_to: Optional[str] = None, custom_amount: Optional[Decimal] = None,
+    user_id: Optional[int] = None
+) -> int:
+    """Subscribe a student to an optional service with effective dates."""
+    self._assert_student_belongs_to_school(student_id)
+
+    self.cursor.execute(
+        "SELECT * FROM fee_optional_services WHERE id = %s AND school_id = %s AND is_active = TRUE",
+        (optional_service_id, self.school_id)
+    )
+    service = self.cursor.fetchone()
+    if not service:
+        raise FeesError("Optional service not found or is inactive.")
+
+    if custom_amount is not None:
+        custom_amount = Decimal(str(custom_amount))
+        if custom_amount < 0:
+            raise FeesError("Custom amount cannot be negative.")
+
+    try:
+        self.connection.begin()
+        self.cursor.execute("""
+            INSERT INTO student_optional_service_subscriptions
+                (school_id, student_id, optional_service_id, effective_from, effective_to, custom_amount, created_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (self.school_id, student_id, optional_service_id, effective_from, effective_to, custom_amount, user_id))
+        sub_id = self.cursor.lastrowid
+        self.connection.commit()
+        return sub_id
+    except Exception as e:
+        self.connection.rollback()
+        raise FeesError(f"Failed to subscribe student to optional service: {str(e)}")
+
+
+def get_student_optional_subscriptions(self, student_id: int, active_only: bool = True) -> List[Dict]:
+    """Fetch optional service subscriptions for a student."""
+    query = """
+        SELECT sub.*, s.name as service_name, s.code as service_code, s.billing_frequency,
+               s.default_amount, v.name as votehead_name, v.id as votehead_id
+        FROM student_optional_service_subscriptions sub
+        JOIN fee_optional_services s ON sub.optional_service_id = s.id AND sub.school_id = s.school_id
+        JOIN fee_voteheads v ON s.votehead_id = v.id AND s.school_id = v.school_id
+        WHERE sub.student_id = %s AND sub.school_id = %s
+    """
+    params = [student_id, self.school_id]
+    if active_only:
+        query += " AND sub.status = 'ACTIVE'"
+    query += " ORDER BY sub.created_at DESC"
+    self.cursor.execute(query, params)
+    return self.cursor.fetchall()
+
+
+def bill_optional_service_subscriptions(
+    self, student_id: int, academic_year_id: int, term_id: int,
+    value_date: Optional[str] = None, user_id: Optional[int] = None
+) -> List[Dict]:
+    """
+    Evaluate and post charges for active optional service subscriptions.
+    Generates deterministic billing_cycle_key to prevent duplicate postings.
+    """
+    self._assert_student_belongs_to_school(student_id)
+    self._assert_academic_year_belongs_to_school(academic_year_id)
+    self._assert_term_belongs_to_school(term_id, academic_year_id)
+
+    if not value_date:
+        value_date = datetime.now().strftime('%Y-%m-%d')
+
+    subscriptions = self.get_student_optional_subscriptions(student_id, active_only=True)
+    posted_charges = []
+
+    try:
+        self.connection.begin()
+        for sub in subscriptions:
+            # Check effective dates
+            eff_from = str(sub['effective_from'])
+            eff_to = str(sub['effective_to']) if sub.get('effective_to') else None
+
+            if eff_from > value_date:
+                continue # Not yet effective
+            if eff_to and eff_to < value_date:
+                continue # Expired
+
+            # Determine billing cycle key
+            sub_id = sub['id']
+            freq = sub['billing_frequency']
+            if freq == 'ONE_TIME':
+                cycle_key = f"ONETIME-{sub_id}"
+            elif freq == 'MONTHLY':
+                month_key = value_date[:7] # YYYY-MM
+                cycle_key = f"MONTHLY-{sub_id}-{month_key}"
+            elif freq == 'TERMLY':
+                cycle_key = f"TERMLY-{sub_id}-{academic_year_id}-{term_id}"
+            elif freq == 'ANNUAL':
+                cycle_key = f"ANNUAL-{sub_id}-{academic_year_id}"
+            else:
+                cycle_key = f"CUSTOM-{sub_id}-{academic_year_id}-{term_id}"
+
+            # Check if already billed
+            self.cursor.execute("""
+                SELECT id FROM student_optional_service_charges
+                WHERE subscription_id = %s AND billing_cycle_key = %s AND school_id = %s
+            """, (sub_id, cycle_key, self.school_id))
+            if self.cursor.fetchone():
+                continue # Already charged for this cycle
+
+            charge_amount = sub['custom_amount'] if sub['custom_amount'] is not None else sub['default_amount']
+            charge_amount = Decimal(str(charge_amount))
+
+            if charge_amount <= 0:
+                continue
+
+            # Post charge to fee_ledger
+            current_bal = self.get_student_balance(student_id)
+            new_bal = current_bal + charge_amount
+            ref_no = f"OPT-{sub_id}-{academic_year_id}-{term_id}"
+            desc = f"Optional Service: {sub['service_name']}"
+
+            self.cursor.execute("""
+                INSERT INTO fee_ledger
+                    (admno, academic_year_id, term_id, type, votehead_id, amount, balance_after, description, reference_no, transaction_date, created_by, school_id)
+                VALUES (%s, %s, %s, 'CHARGE', %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (student_id, academic_year_id, term_id, sub['votehead_id'], charge_amount, new_bal, desc, ref_no, value_date, user_id, self.school_id))
+            ledger_id = self.cursor.lastrowid
+
+            # Record in student_optional_service_charges
+            self.cursor.execute("""
+                INSERT INTO student_optional_service_charges
+                    (school_id, student_id, optional_service_id, academic_year_id, term_id, subscription_id, ledger_id, billing_cycle_key, amount)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (self.school_id, student_id, sub['optional_service_id'], academic_year_id, term_id, sub_id, ledger_id, cycle_key, charge_amount))
+
+            posted_charges.append({
+                'subscription_id': sub_id,
+                'service_name': sub['service_name'],
+                'amount': charge_amount,
+                'billing_cycle_key': cycle_key,
+                'ledger_id': ledger_id
+            })
+
+        self.connection.commit()
+        return posted_charges
+    except Exception as e:
+        self.connection.rollback()
+        raise FeesError(f"Failed to bill optional services: {str(e)}")
+
+
+FeesService.create_optional_service = create_optional_service
+FeesService.get_optional_services = get_optional_services
+FeesService.subscribe_student_optional_service = subscribe_student_optional_service
+FeesService.get_student_optional_subscriptions = get_student_optional_subscriptions
+FeesService.bill_optional_service_subscriptions = bill_optional_service_subscriptions
+
+
+def get_votehead_by_id(self, votehead_id: int) -> Optional[Dict]:
+    """Fetch a single votehead by ID for the tenant."""
+    self.cursor.execute(
+        "SELECT v.*, g.name as group_name FROM fee_voteheads v LEFT JOIN student_groups g ON v.applicable_student_group_id = g.id AND v.school_id = g.school_id WHERE v.id = %s AND v.school_id = %s",
+        (votehead_id, self.school_id)
+    )
+    return self.cursor.fetchone()
+
+
+def update_votehead(
+    self, votehead_id: int, name: str, priority: int = 99,
+    is_mandatory: bool = True, group_id: Optional[int] = None,
+    description: str = "", is_active: bool = True
+) -> bool:
+    """Update an existing votehead."""
+    if group_id:
+        self._assert_student_group_belongs_to_school(group_id)
+    self.cursor.execute(
+        "SELECT id FROM fee_voteheads WHERE id = %s AND school_id = %s",
+        (votehead_id, self.school_id)
+    )
+    if not self.cursor.fetchone():
+        raise FeesError("Votehead not found for active school.")
+
+    name = (name or '').strip()
+    if not name:
+        raise FeesError("Votehead name is required.")
+
+    try:
+        self.cursor.execute("""
+            UPDATE fee_voteheads
+            SET name = %s, priority = %s, is_mandatory = %s, applicable_student_group_id = %s, description = %s, is_active = %s
+            WHERE id = %s AND school_id = %s
+        """, (name, priority, 1 if is_mandatory else 0, group_id, description, 1 if is_active else 0, votehead_id, self.school_id))
+        self.connection.commit()
+        return True
+    except pymysql.IntegrityError:
+        self.connection.rollback()
+        raise FeesError(f"Votehead with name '{name}' already exists.")
+    except Exception as e:
+        self.connection.rollback()
+        raise FeesError(f"Failed to update votehead: {str(e)}")
+
+
+FeesService.get_votehead_by_id = get_votehead_by_id
+FeesService.update_votehead = update_votehead
+
+
+    # =========================================================================
+    # STUDENT BILLING PROFILE ENGINE (PHASE 8 & 9)
+    # =========================================================================
+
+def create_student_billing_profile(
+    self, student_id: int, academic_year_id: int, effective_date: str,
+    class_id: Optional[int] = None, stream_code: Optional[str] = None,
+    billing_group_id: Optional[int] = None, discount_profile_id: Optional[int] = None,
+    fee_structure_version_id: Optional[int] = None,
+    optional_service_ids: Optional[List[int]] = None,
+    expiry_date: Optional[str] = None, user_id: Optional[int] = None
+) -> int:
+    """Create a new auditable Student Billing Profile with an effective date."""
+    self._assert_student_belongs_to_school(student_id)
+    self._assert_academic_year_belongs_to_school(academic_year_id)
+    if class_id:
+        self._assert_class_belongs_to_school(class_id)
+    if billing_group_id:
+        self._assert_student_group_belongs_to_school(billing_group_id)
+
+    if discount_profile_id:
+        self.cursor.execute(
+            "SELECT id FROM fee_discount_profiles WHERE id = %s AND school_id = %s",
+            (discount_profile_id, self.school_id)
+        )
+        if not self.cursor.fetchone():
+            raise FeesError("Discount profile not found for active school.")
+
+    if fee_structure_version_id:
+        self.cursor.execute(
+            "SELECT id FROM fee_structures WHERE id = %s AND school_id = %s",
+            (fee_structure_version_id, self.school_id)
+        )
+        if not self.cursor.fetchone():
+            raise FeesError("Fee structure version not found for active school.")
+
+    try:
+        self.connection.begin()
+
+        # Supersede / expire existing active profile whose effective_date is <= new effective_date
+        self.cursor.execute("""
+            UPDATE student_billing_profiles
+            SET status = 'REPLACED', expiry_date = %s
+            WHERE student_id = %s AND school_id = %s AND status = 'ACTIVE'
+              AND effective_date <= %s
+        """, (effective_date, student_id, self.school_id, effective_date))
+
+        # Insert new billing profile
+        self.cursor.execute("""
+            INSERT INTO student_billing_profiles
+                (school_id, student_id, academic_year_id, class_id, stream_code,
+                 billing_group_id, discount_profile_id, fee_structure_version_id,
+                 effective_date, expiry_date, status, approval_status, created_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'ACTIVE', 'APPROVED', %s)
+        """, (
+            self.school_id, student_id, academic_year_id, class_id, stream_code,
+            billing_group_id, discount_profile_id, fee_structure_version_id,
+            effective_date, expiry_date, user_id
+        ))
+        profile_id = self.cursor.lastrowid
+
+        # Attach optional services
+        if optional_service_ids:
+            for opt_id in optional_service_ids:
+                self.cursor.execute("""
+                    INSERT INTO student_billing_profile_optional_services
+                        (billing_profile_id, optional_service_id, school_id)
+                    VALUES (%s, %s, %s)
+                """, (profile_id, opt_id, self.school_id))
+
+        self.connection.commit()
+        return profile_id
+    except Exception as e:
+        self.connection.rollback()
+        raise FeesError(f"Failed to create student billing profile: {str(e)}")
+
+
+def get_student_active_billing_profile(self, student_id: int, value_date: Optional[str] = None) -> Optional[Dict]:
+    """Retrieve active billing profile for a student as of value_date."""
+    if not value_date:
+        value_date = datetime.now().strftime('%Y-%m-%d')
+
+    self.cursor.execute("""
+        SELECT p.*,
+               dp.name as discount_profile_name, dp.discount_type, dp.value as discount_value,
+               c.display_name as class_name, sg.name as billing_group_name
+        FROM student_billing_profiles p
+        LEFT JOIN fee_discount_profiles dp ON p.discount_profile_id = dp.id AND p.school_id = dp.school_id
+        LEFT JOIN classes c ON p.class_id = c.classID AND p.school_id = c.school_id
+        LEFT JOIN student_groups sg ON p.billing_group_id = sg.id AND p.school_id = sg.school_id
+        WHERE p.student_id = %s AND p.school_id = %s AND p.status = 'ACTIVE'
+          AND p.approval_status = 'APPROVED'
+          AND p.effective_date <= %s
+          AND (p.expiry_date IS NULL OR p.expiry_date >= %s)
+        ORDER BY p.effective_date DESC, p.id DESC
+        LIMIT 1
+    """, (student_id, self.school_id, value_date, value_date))
+    profile = self.cursor.fetchone()
+
+    if profile:
+        self.cursor.execute("""
+            SELECT pos.*, os.name as service_name, os.votehead_id, os.default_amount, os.billing_frequency
+            FROM student_billing_profile_optional_services pos
+            JOIN fee_optional_services os ON pos.optional_service_id = os.id AND pos.school_id = os.school_id
+            WHERE pos.billing_profile_id = %s AND pos.school_id = %s
+        """, (profile['id'], self.school_id))
+        profile['optional_services'] = self.cursor.fetchall()
+
+    return profile
+
+
+def get_student_billing_profiles_history(self, student_id: int) -> List[Dict]:
+    """Fetch complete billing profile audit history for a student."""
+    self.cursor.execute("""
+        SELECT p.*,
+               dp.name as discount_profile_name, c.display_name as class_name, sg.name as billing_group_name,
+               u.username as created_by_name
+        FROM student_billing_profiles p
+        LEFT JOIN fee_discount_profiles dp ON p.discount_profile_id = dp.id AND p.school_id = dp.school_id
+        LEFT JOIN classes c ON p.class_id = c.classID AND p.school_id = c.school_id
+        LEFT JOIN student_groups sg ON p.billing_group_id = sg.id AND p.school_id = sg.school_id
+        LEFT JOIN users u ON p.created_by = u.userNo AND p.school_id = u.school_id
+        WHERE p.student_id = %s AND p.school_id = %s
+        ORDER BY p.effective_date DESC, p.id DESC
+    """, (student_id, self.school_id))
+    return self.cursor.fetchall()
+
+
+FeesService.create_student_billing_profile = create_student_billing_profile
+FeesService.get_student_active_billing_profile = get_student_active_billing_profile
+FeesService.get_student_billing_profiles_history = get_student_billing_profiles_history
+
+
+    # =========================================================================
+    # FEE STRUCTURE VERSIONING ENGINE (PHASE 2 & PHASE 12/13)
+    # =========================================================================
+
+def _generate_scope_key(self, academic_year_id: int, term_id: int, class_id: Optional[int], class_group_code: Optional[str], student_category: str) -> str:
+    c_part = f"C{class_id}" if class_id else f"G{class_group_code or 'all'}"
+    return f"Y{academic_year_id}-T{term_id}-{c_part}-{(student_category or 'REGULAR').strip().upper()}"
+
+
+def clone_fee_structure_version(self, parent_version_id: int, user_id: int) -> int:
+    """
+    Clone an existing fee structure into a new DRAFT version (e.g. Version 2).
+    Enforces workflow: Clone -> Draft -> Approve -> Activate.
+    """
+    self.cursor.execute(
+        "SELECT * FROM fee_structures WHERE id = %s AND school_id = %s",
+        (parent_version_id, self.school_id)
+    )
+    parent = self.cursor.fetchone()
+    if not parent:
+        raise FeesError("Parent fee structure version not found.")
+
+    self.cursor.execute(
+        "SELECT * FROM fee_structure_items WHERE fee_structure_id = %s AND school_id = %s",
+        (parent_version_id, self.school_id)
+    )
+    items = self.cursor.fetchall()
+
+    next_version = (parent.get('version_number') or 1) + 1
+    scope_key = parent.get('scope_key') or self._generate_scope_key(
+        parent['academic_year_id'], parent['term_id'], parent['class_id'], parent['class_group_code'], parent['student_category']
+    )
+
+    try:
+        self.connection.begin()
+        self.cursor.execute("""
+            INSERT INTO fee_structures
+                (academic_year_id, term_id, class_id, class_group_code, student_category,
+                 version_number, status, approval_status, parent_version_id, scope_key,
+                 total_amount, created_by, school_id)
+            VALUES (%s, %s, %s, %s, %s, %s, 'DRAFT', 'PENDING', %s, %s, %s, %s, %s)
+        """, (
+            parent['academic_year_id'], parent['term_id'], parent['class_id'],
+            parent['class_group_code'], parent['student_category'], next_version,
+            parent_version_id, scope_key, parent['total_amount'], user_id, self.school_id
+        ))
+        new_id = self.cursor.lastrowid
+
+        for item in items:
+            self.cursor.execute("""
+                INSERT INTO fee_structure_items (fee_structure_id, votehead_id, amount, school_id)
+                VALUES (%s, %s, %s, %s)
+            """, (new_id, item['votehead_id'], item['amount'], self.school_id))
+
+        self.connection.commit()
+        return new_id
+    except Exception as e:
+        self.connection.rollback()
+        raise FeesError(f"Failed to clone fee structure version: {str(e)}")
+
+
+def approve_fee_structure_version(self, structure_id: int, user_id: int) -> bool:
+    """Approve a DRAFT fee structure version."""
+    self.cursor.execute(
+        "SELECT * FROM fee_structures WHERE id = %s AND school_id = %s",
+        (structure_id, self.school_id)
+    )
+    struct = self.cursor.fetchone()
+    if not struct:
+        raise FeesError("Fee structure version not found.")
+
+    if struct.get('status') != 'DRAFT':
+        raise FeesError("Only DRAFT fee structure versions can be approved.")
+
+    try:
+        self.cursor.execute("""
+            UPDATE fee_structures
+            SET approval_status = 'APPROVED', approved_by = %s, approved_at = NOW()
+            WHERE id = %s AND school_id = %s
+        """, (user_id, structure_id, self.school_id))
+        self.connection.commit()
+        return True
+    except Exception as e:
+        self.connection.rollback()
+        raise FeesError(f"Failed to approve fee structure version: {str(e)}")
+
+
+def activate_fee_structure_version(self, structure_id: int, user_id: int) -> bool:
+    """Activate an APPROVED fee structure version and ARCHIVE previous active versions in the same scope."""
+    self.cursor.execute(
+        "SELECT * FROM fee_structures WHERE id = %s AND school_id = %s",
+        (structure_id, self.school_id)
+    )
+    struct = self.cursor.fetchone()
+    if not struct:
+        raise FeesError("Fee structure version not found.")
+
+    if struct.get('approval_status') != 'APPROVED':
+        raise FeesError("Fee structure version must be APPROVED before activation.")
+
+    scope_key = struct.get('scope_key') or self._generate_scope_key(
+        struct['academic_year_id'], struct['term_id'], struct['class_id'], struct['class_group_code'], struct['student_category']
+    )
+
+    try:
+        self.connection.begin()
+
+        # Archive current ACTIVE versions for this scope
+        self.cursor.execute("""
+            UPDATE fee_structures
+            SET status = 'ARCHIVED'
+            WHERE school_id = %s AND scope_key = %s AND status = 'ACTIVE' AND id != %s
+        """, (self.school_id, scope_key, structure_id))
+
+        # Mark target version ACTIVE
+        self.cursor.execute("""
+            UPDATE fee_structures
+            SET status = 'ACTIVE', effective_from = NOW()
+            WHERE id = %s AND school_id = %s
+        """, (structure_id, scope_key, structure_id) if False else (structure_id, self.school_id))
+
+        self.connection.commit()
+        return True
+    except Exception as e:
+        self.connection.rollback()
+        raise FeesError(f"Failed to activate fee structure version: {str(e)}")
+
+
+FeesService._generate_scope_key = _generate_scope_key
+FeesService.clone_fee_structure_version = clone_fee_structure_version
+FeesService.approve_fee_structure_version = approve_fee_structure_version
+FeesService.activate_fee_structure_version = activate_fee_structure_version

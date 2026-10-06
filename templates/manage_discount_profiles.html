@@ -1,0 +1,130 @@
+{% extends 'base.html' %}
+
+{% block title %}Discount Profiles{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="mb-6 flex justify-between items-center">
+        <div>
+            <nav class="flex mb-2" aria-label="Breadcrumb">
+                <ol class="inline-flex items-center space-x-1 md:space-x-3 text-sm font-medium text-gray-500">
+                    <li><a href="{{ url_for('fees.fees_dashboard') }}" class="hover:text-blue-600">Fees Management</a></li>
+                    <li><span class="mx-2 text-gray-400">/</span><span class="text-gray-700">Discount Profiles</span></li>
+                </ol>
+            </nav>
+            <h1 class="text-2xl font-bold text-gray-800">Discount Profiles</h1>
+            <p class="text-sm text-gray-500 mt-1">Manage staff, sibling, scholarship discounts without altering base fee structures.</p>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <!-- New Profile Form -->
+        <div class="bg-white p-6 rounded-lg shadow-md h-fit">
+            <h2 class="text-lg font-semibold mb-4 text-gray-800">New Discount Profile</h2>
+            <form action="{{ url_for('fees.manage_discount_profiles') }}" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Profile Name *</label>
+                    <input type="text" name="name" required placeholder="e.g. Staff Child 20%" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Discount Type *</label>
+                    <select name="discount_type" required class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
+                        <option value="PERCENTAGE">Percentage (%)</option>
+                        <option value="FIXED_AMOUNT">Fixed Amount (KES)</option>
+                        <option value="VOTEHEAD_SPECIFIC">Votehead Specific (KES)</option>
+                    </select>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Value *</label>
+                    <input type="number" step="0.01" name="value" required placeholder="e.g. 20 or 5000" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Target Votehead (Optional)</label>
+                    <select name="votehead_id" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
+                        <option value="">All Voteheads (General Fee Credit)</option>
+                        {% for v in voteheads %}
+                        <option value="{{ v.id }}">{{ v.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="mb-4 grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Effective From *</label>
+                        <input type="date" name="effective_from" required value="{{ now.strftime('%Y-%m-%d') }}" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Effective To</label>
+                        <input type="date" name="effective_to" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Description</label>
+                    <textarea name="description" rows="2" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"></textarea>
+                </div>
+
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded transition">
+                    Save Discount Profile
+                </button>
+            </form>
+        </div>
+
+        <!-- Profiles List -->
+        <div class="md:col-span-2 bg-white rounded-lg shadow-md overflow-hidden">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Profile Name</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type & Value</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Target</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Validity</th>
+                        <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for p in profiles %}
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm font-bold text-gray-900">{{ p.name }}</div>
+                            <div class="text-xs text-gray-500">{{ p.code or '' }}</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                            {% if p.discount_type == 'PERCENTAGE' %}
+                                <span class="font-bold text-blue-600">{{ p.value }}%</span>
+                            {% else %}
+                                <span class="font-bold text-green-600">KES {{ "%.2f"|format(p.value) }}</span>
+                            {% endif %}
+                            <span class="text-xs text-gray-400 block">{{ p.discount_type }}</span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {{ p.votehead_name or 'General / All Voteheads' }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-500">
+                            <div>From: {{ p.effective_from }}</div>
+                            <div>To: {{ p.effective_to or 'Indefinite' }}</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-center">
+                            {% if p.is_active %}
+                            <span class="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full">ACTIVE</span>
+                            {% else %}
+                            <span class="px-2 py-1 bg-gray-100 text-gray-600 text-xs font-semibold rounded-full">INACTIVE</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="px-6 py-4 text-center text-gray-500 italic">No discount profiles configured yet.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
