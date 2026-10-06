@@ -4383,7 +4383,8 @@ def get_votehead_by_id(self, votehead_id: int) -> Optional[Dict]:
 def update_votehead(
     self, votehead_id: int, name: str, priority: int = 99,
     is_mandatory: bool = True, group_id: Optional[int] = None,
-    description: str = "", is_active: bool = True
+    description: str = "", is_active: bool = True,
+    code: Optional[str] = None
 ) -> bool:
     """Update an existing votehead."""
     if group_id:
@@ -4399,12 +4400,19 @@ def update_votehead(
     if not name:
         raise FeesError("Votehead name is required.")
 
+    has_code = self._table_has_column('fee_voteheads', 'code')
+    code_part = ", code = %s" if has_code else ""
+    params = [name, priority, 1 if is_mandatory else 0, group_id, description, 1 if is_active else 0]
+    if has_code:
+        params.append(code.strip() if code else None)
+    params.extend([votehead_id, self.school_id])
+
     try:
-        self.cursor.execute("""
+        self.cursor.execute(f"""
             UPDATE fee_voteheads
-            SET name = %s, priority = %s, is_mandatory = %s, applicable_student_group_id = %s, description = %s, is_active = %s
+            SET name = %s, priority = %s, is_mandatory = %s, applicable_student_group_id = %s, description = %s, is_active = %s{code_part}
             WHERE id = %s AND school_id = %s
-        """, (name, priority, 1 if is_mandatory else 0, group_id, description, 1 if is_active else 0, votehead_id, self.school_id))
+        """, tuple(params))
         self.connection.commit()
         return True
     except pymysql.IntegrityError:
@@ -4671,7 +4679,7 @@ def activate_fee_structure_version(self, structure_id: int, user_id: int) -> boo
             UPDATE fee_structures
             SET status = 'ACTIVE', effective_from = NOW()
             WHERE id = %s AND school_id = %s
-        """, (structure_id, scope_key, structure_id) if False else (structure_id, self.school_id))
+        """, (structure_id, self.school_id))
 
         self.connection.commit()
         return True

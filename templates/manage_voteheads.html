@@ -118,7 +118,11 @@
                 <label class="block text-gray-700 text-sm font-bold mb-2">Name *</label>
                 <input type="text" id="edit_name" name="name" required class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
             </div>
-            <div class="mb-4 grid grid-cols-2 gap-4">
+            <div class="mb-4 grid grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Code</label>
+                    <input type="text" id="edit_code" name="code" placeholder="e.g. TUI" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
+                </div>
                 <div>
                     <label class="block text-gray-700 text-sm font-bold mb-2">Priority *</label>
                     <input type="number" id="edit_priority" name="priority" min="0" required class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
@@ -159,6 +163,7 @@
 function openEditModal(votehead) {
     document.getElementById('editForm').action = "/admin/fees/voteheads/edit/" + votehead.id;
     document.getElementById('edit_name').value = votehead.name;
+    document.getElementById('edit_code').value = votehead.code || '';
     document.getElementById('edit_priority').value = votehead.priority;
     document.getElementById('edit_group_id').value = votehead.applicable_student_group_id || '';
     document.getElementById('edit_is_mandatory').checked = Boolean(votehead.is_mandatory);
