@@ -4279,6 +4279,91 @@ def bill_optional_service_subscriptions(
         raise FeesError(f"Failed to bill optional services: {str(e)}")
 
 
+def create_discount_profile(
+    self, name: str, discount_type: str, value: Decimal,
+    votehead_id: Optional[int] = None, effective_from: Optional[str] = None,
+    effective_to: Optional[str] = None, code: Optional[str] = None,
+    description: str = "", user_id: Optional[int] = None
+) -> int:
+    """Create a new tenant-scoped discount profile."""
+    name = (name or '').strip()
+    if not name:
+        raise FeesError("Discount profile name is required.")
+    discount_type = (discount_type or 'PERCENTAGE').strip().upper()
+    if discount_type not in ('PERCENTAGE', 'FIXED_AMOUNT', 'VOTEHEAD_SPECIFIC'):
+        raise FeesError("Invalid discount type.")
+
+    value = Decimal(str(value))
+    if value < 0:
+        raise FeesError("Discount value cannot be negative.")
+
+    if votehead_id:
+        self._assert_voteheads_belong_to_school([votehead_id])
+
+    try:
+        self.cursor.execute("""
+            INSERT INTO fee_discount_profiles
+                (school_id, name, code, discount_type, value, votehead_id, effective_from, effective_to, description, created_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (self.school_id, name, code, discount_type, value, votehead_id, effective_from, effective_to, description, user_id))
+        self.connection.commit()
+        return self.cursor.lastrowid
+    except pymysql.IntegrityError:
+        self.connection.rollback()
+        raise FeesError(f"Discount profile '{name}' already exists.")
+    except Exception as e:
+        self.connection.rollback()
+        raise FeesError(f"Failed to create discount profile: {str(e)}")
+
+
+def get_discount_profiles(self, active_only: bool = True) -> List[Dict]:
+    """Fetch all discount profiles for the tenant."""
+    query = """
+        SELECT p.*, v.name as votehead_name
+        FROM fee_discount_profiles p
+        LEFT JOIN fee_voteheads v ON p.votehead_id = v.id AND p.school_id = v.school_id
+        WHERE p.school_id = %s
+    """
+    params = [self.school_id]
+    if active_only:
+        query += " AND p.is_active = TRUE"
+    query += " ORDER BY p.name ASC"
+    self.cursor.execute(query, params)
+    return self.cursor.fetchall()
+
+
+def assign_discount_profile_to_student(
+    self, student_id: int, discount_profile_id: int, effective_from: str,
+    effective_to: Optional[str] = None, assigned_by: Optional[int] = None
+) -> int:
+    """Assign a discount profile to a student."""
+    self._assert_student_belongs_to_school(student_id)
+
+    self.cursor.execute(
+        "SELECT * FROM fee_discount_profiles WHERE id = %s AND school_id = %s AND is_active = TRUE",
+        (discount_profile_id, self.school_id)
+    )
+    profile = self.cursor.fetchone()
+    if not profile:
+        raise FeesError("Discount profile not found or is inactive.")
+
+    try:
+        self.cursor.execute("""
+            INSERT INTO student_discount_profiles
+                (school_id, student_id, discount_profile_id, effective_from, effective_to, assigned_by)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (self.school_id, student_id, discount_profile_id, effective_from, effective_to, assigned_by))
+        assign_id = self.cursor.lastrowid
+        self.connection.commit()
+        return assign_id
+    except Exception as e:
+        self.connection.rollback()
+        raise FeesError(f"Failed to assign discount profile: {str(e)}")
+
+
+FeesService.create_discount_profile = create_discount_profile
+FeesService.get_discount_profiles = get_discount_profiles
+FeesService.assign_discount_profile_to_student = assign_discount_profile_to_student
 FeesService.create_optional_service = create_optional_service
 FeesService.get_optional_services = get_optional_services
 FeesService.subscribe_student_optional_service = subscribe_student_optional_service
