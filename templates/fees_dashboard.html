@@ -113,6 +113,22 @@
                             <p class="text-[10px] text-slate-400 group-hover:text-slate-400 mt-1">Segmented fee policies</p>
                         </a>
 
+                        <a href="{{ url_for('fees.manage_discount_profiles') }}" class="group bg-slate-50 hover:bg-indigo-600 p-6 rounded-2xl transition shadow-sm border border-slate-100">
+                            <div class="bg-white w-10 h-10 rounded-xl flex items-center justify-center text-indigo-600 mb-4 shadow-sm">
+                                <i class="fas fa-percent text-sm"></i>
+                            </div>
+                            <div class="font-black text-slate-900 group-hover:text-white text-xs uppercase tracking-widest">Discount Profiles</div>
+                            <p class="text-[10px] text-slate-400 group-hover:text-indigo-100 mt-1">Staff, sibling & fee discounts</p>
+                        </a>
+
+                        <a href="{{ url_for('fees.manage_optional_services') }}" class="group bg-slate-50 hover:bg-indigo-600 p-6 rounded-2xl transition shadow-sm border border-slate-100">
+                            <div class="bg-white w-10 h-10 rounded-xl flex items-center justify-center text-indigo-600 mb-4 shadow-sm">
+                                <i class="fas fa-bus text-sm"></i>
+                            </div>
+                            <div class="font-black text-slate-900 group-hover:text-white text-xs uppercase tracking-widest">Optional Services</div>
+                            <p class="text-[10px] text-slate-400 group-hover:text-indigo-100 mt-1">Transport, lunch & clubs catalog</p>
+                        </a>
+
                         <a href="{{ url_for('fees.reallocate_fee_payment') }}" class="group bg-slate-50 hover:bg-amber-500 p-6 rounded-2xl transition shadow-sm border border-slate-100">
                             <div class="bg-white w-10 h-10 rounded-xl flex items-center justify-center text-amber-500 mb-4 shadow-sm">
                                 <i class="fas fa-shuffle text-sm"></i>
