@@ -1,286 +1,518 @@
 {% extends 'base.html' %}
 
-{% block title %}Student Fee Statement - {{ student_full_name }}{% endblock %}
+{% block title %}STUDENT FEES STATEMENT - {{ statement.student.full_name if statement and statement.student else admno }}{% endblock %}
 
 {% block content %}
-<div class="bg-slate-50 min-h-screen pb-12">
-    <!-- Header -->
-    <div class="bg-white border-b sticky top-0 z-10 no-print">
-        <div class="container mx-auto px-6 py-6">
-            <div class="flex items-center justify-between">
+<div class="bg-slate-100 min-h-screen pb-12 print:bg-white print:pb-0">
+    <!-- Bursar Interactive Filter Toolbar (Screen Only) -->
+    <div class="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm no-print">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div>
-                    <h1 class="text-3xl font-black text-slate-900">Fee Statement</h1>
-                    <p class="text-sm text-slate-500 mt-1">
-                        {% if student_full_name %}{{ student_full_name }}{% endif %} 
-                        (Adm. No: <span class="font-mono font-bold">{{ admno }}</span>)
-                    </p>
+                    <div class="flex items-center gap-2">
+                        <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800 uppercase tracking-wide">Accounts Receivable</span>
+                        <span class="text-xs font-mono text-slate-500">ID: {{ statement.report_id if statement else 'SFS-PENDING' }}</span>
+                    </div>
+                    <h1 class="text-xl sm:text-2xl font-black text-slate-900 mt-1">Student Account Statement Dashboard</h1>
                 </div>
-                <div class="flex items-center gap-3">
-                    <a href="{{ url_for('fees.fees_dashboard') }}" class="text-sm font-semibold text-blue-700 hover:text-blue-900">Back to Dashboard</a>
-                    <button onclick="window.print()" class="px-4 py-2 bg-slate-100 text-slate-700 font-semibold rounded-lg hover:bg-slate-200 transition no-print">
-                        <i class="fas fa-print mr-2"></i>Print
+
+                <div class="flex flex-wrap items-center gap-2">
+                    <a href="{{ url_for('fees.student_statement', admno=admno) }}" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition">
+                        <i class="fas fa-sync-alt mr-1"></i>Reset Filters
+                    </a>
+                    <button onclick="window.print()" class="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 shadow-sm">
+                        <i class="fas fa-print"></i>Print PDF
                     </button>
+                    <a id="downloadPdfBtn" href="{{ url_for('fees.export_student_statement_pdf', admno=admno, download=1, year_id=selected_year_id or '', term_id=selected_term_id or '') }}" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 shadow-sm">
+                        <i class="fas fa-file-pdf"></i>Download PDF
+                    </a>
+                    <button id="emailParentBtn" onclick="emailStatementToParent()" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 shadow-sm">
+                        <i class="fas fa-envelope"></i>Email Parent
+                    </button>
+                    <a href="{{ url_for('fees.fees_dashboard') }}" class="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold rounded-lg transition">
+                        <i class="fas fa-arrow-left mr-1"></i>Back
+                    </a>
                 </div>
             </div>
+
+            <!-- Dashboard Filter Controls -->
+            <form method="GET" action="{{ url_for('fees.student_statement', admno=admno) }}" class="mt-4 pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 items-end">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Academic Year</label>
+                    <select name="year_id" onchange="this.form.submit()" class="w-full text-xs font-semibold rounded-lg border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <option value="">All Academic Years</option>
+                        {% for y in academic_years or [] %}
+                        <option value="{{ y.id }}" {% if selected_year_id == y.id %}selected{% endif %}>{{ y.year }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Term</label>
+                    <select name="term_id" onchange="this.form.submit()" class="w-full text-xs font-semibold rounded-lg border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <option value="">All Terms</option>
+                        {% for t in terms or [] %}
+                        <option value="{{ t.id }}" {% if selected_term_id == t.id %}selected{% endif %}>Term {{ t.term_number }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">View Type</label>
+                    <div class="flex items-center gap-3 pt-1">
+                        <label class="inline-flex items-center text-xs font-semibold text-slate-700">
+                            <input type="radio" name="statement_type" value="detailed" checked onchange="updateViewOptions()" class="text-blue-600 focus:ring-blue-500">
+                            <span class="ml-1">Detailed</span>
+                        </label>
+                        <label class="inline-flex items-center text-xs font-semibold text-slate-700">
+                            <input type="radio" name="statement_type" value="summary" onchange="updateViewOptions()" class="text-blue-600 focus:ring-blue-500">
+                            <span class="ml-1">Summary</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="sm:col-span-2 flex flex-wrap items-center gap-3 pt-1">
+                    <label class="inline-flex items-center text-xs font-semibold text-slate-700">
+                        <input type="checkbox" id="chkRunningBalance" checked onchange="toggleColumns()" class="rounded text-blue-600 focus:ring-blue-500">
+                        <span class="ml-1">Running Balance</span>
+                    </label>
+                    <label class="inline-flex items-center text-xs font-semibold text-slate-700">
+                        <input type="checkbox" id="chkVoteheadBreakdown" checked onchange="toggleVoteheadBreakdown()" class="rounded text-blue-600 focus:ring-blue-500">
+                        <span class="ml-1">Votehead Breakdown</span>
+                    </label>
+                    <label class="inline-flex items-center text-xs font-semibold text-slate-700">
+                        <input type="checkbox" id="chkOpeningBalance" checked onchange="toggleOpeningBalance()" class="rounded text-blue-600 focus:ring-blue-500">
+                        <span class="ml-1">Opening Balance</span>
+                    </label>
+                </div>
+
+                <div>
+                    <button type="submit" class="w-full px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-lg transition">
+                        <i class="fas fa-filter mr-1"></i>Apply Filters
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 
-    <div class="container mx-auto px-6 py-8">
-        <!-- Per-Term Summary Table -->
-        <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden mb-8">
-            <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
-                <h2 class="text-lg font-black text-slate-900">Fee Statement Summary - By Term</h2>
-                <p class="text-sm text-slate-500 mt-1">Chronological breakdown of charges, payments, and balance movements per term</p>
-            </div>
-            
-            <div class="overflow-x-auto">
-                <table class="w-full divide-y divide-slate-200">
-                    <thead class="bg-slate-100">
-                        <tr>
-                            <th class="px-6 py-3 text-left text-xs font-black text-slate-700 uppercase tracking-wider">Academic Year</th>
-                            <th class="px-6 py-3 text-left text-xs font-black text-slate-700 uppercase tracking-wider">Term</th>
-                            <th class="px-6 py-3 text-right text-xs font-black text-slate-700 uppercase tracking-wider">Opening Balance</th>
-                            <th class="px-6 py-3 text-right text-xs font-black text-slate-700 uppercase tracking-wider">Charges</th>
-                            <th class="px-6 py-3 text-right text-xs font-black text-slate-700 uppercase tracking-wider">Debits</th>
-                            <th class="px-6 py-3 text-right text-xs font-black text-slate-700 uppercase tracking-wider">Payments</th>
-                            <th class="px-6 py-3 text-right text-xs font-black text-slate-700 uppercase tracking-wider">Credits</th>
-                            <th class="px-6 py-3 text-right text-xs font-black text-slate-700 uppercase tracking-wider">Closing Balance</th>
-                            <th class="px-6 py-3 text-center text-xs font-black text-slate-700 uppercase tracking-wider">Transactions</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-200" id="statementTableBody">
-                        <!-- Populated by JavaScript -->
-                        <tr class="text-center text-slate-500 py-6">
-                            <td colspan="9" class="py-8">
-                                <i class="fas fa-spinner fa-spin mr-2"></i>Loading statement data...
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+    <!-- Alert Banner Container for Feedback -->
+    <div id="emailAlert" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4 hidden no-print">
+        <div id="emailAlertBody" class="p-4 rounded-xl text-sm font-bold shadow-sm"></div>
+    </div>
 
-            <!-- Summary Totals (if applicable) -->
-            <div class="px-6 py-4 bg-slate-50 border-t border-slate-200">
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div>
-                        <p class="text-xs text-slate-500 uppercase font-semibold mb-1">Total Charges</p>
-                        <p class="text-2xl font-black text-slate-900" id="totalCharges">KES 0.00</p>
+    <!-- Formal Statement Paper Container -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6 print:mt-0 print:px-0 print:max-w-none">
+        <div class="bg-white rounded-2xl shadow-lg border border-slate-200 p-8 sm:p-10 print:shadow-none print:border-none print:p-0 print:rounded-none">
+            
+            <!-- School Letterhead Header -->
+            <div class="border-b-2 border-slate-900 pb-6 mb-6">
+                <div class="flex flex-row items-center justify-between gap-6">
+                    <div class="flex items-center gap-5">
+                        {% if statement and statement.school and statement.school.logo %}
+                        <img src="{{ statement.school.logo }}" alt="Logo" class="h-20 w-auto max-w-[120px] object-contain">
+                        {% else %}
+                        <div class="h-16 w-16 bg-slate-900 text-white flex items-center justify-center font-black text-2xl rounded-xl uppercase print:border print:border-black">
+                            {{ statement.school.name[:2] if statement and statement.school and statement.school.name else 'AC' }}
+                        </div>
+                        {% endif %}
+                        <div>
+                            <h2 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight uppercase">
+                                {{ statement.school.name if statement and statement.school and statement.school.name else 'ACADEMIC COMPASS SCHOOL' }}
+                            </h2>
+                            <p class="text-xs text-slate-600 font-medium mt-0.5">
+                                {{ statement.school.address or 'P.O. Box 1234' }}{% if statement and statement.school and statement.school.city %}, {{ statement.school.city }}{% endif %}
+                            </p>
+                            <p class="text-xs text-slate-600 font-medium">
+                                Tel: {{ statement.school.phone or '+254 700 000 000' }} | Email: {{ statement.school.email or 'info@school.ac.ke' }}
+                            </p>
+                        </div>
                     </div>
-                    <div>
-                        <p class="text-xs text-slate-500 uppercase font-semibold mb-1">Total Payments</p>
-                        <p class="text-2xl font-black text-blue-700" id="totalPayments">KES 0.00</p>
-                    </div>
-                    <div>
-                        <p class="text-xs text-slate-500 uppercase font-semibold mb-1">Total Credits</p>
-                        <p class="text-2xl font-black text-purple-700" id="totalCredits">KES 0.00</p>
-                    </div>
-                    <div>
-                        <p class="text-xs text-slate-500 uppercase font-semibold mb-1">Current Balance</p>
-                        <p class="text-2xl font-black" id="currentBalance">KES 0.00</p>
+
+                    <div class="text-right">
+                        <div class="inline-block bg-slate-900 text-white px-3 py-1 rounded text-xs font-black tracking-wider uppercase mb-1 print:bg-black print:text-white">
+                            Official Statement
+                        </div>
+                        <h1 class="text-lg sm:text-xl font-black text-slate-900 tracking-tight uppercase">STUDENT FEES STATEMENT</h1>
+                        <p class="text-xs font-mono text-slate-500 font-bold mt-1">Report ID: {{ statement.report_id if statement else 'SFS-000000' }}</p>
+                        <p class="text-xs text-slate-500">Date Printed: <span class="font-bold">{{ statement.generated_on if statement else now.strftime('%Y-%m-%d %H:%M') }}</span></p>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Detailed Transaction History (Optional) -->
-        <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
-            <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
-                <h2 class="text-lg font-black text-slate-900">Detailed Transaction History</h2>
-                <p class="text-sm text-slate-500 mt-1">Individual ledger entries in chronological order</p>
+            <!-- Student Demographics & Metadata Box -->
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-5 mb-8 print:bg-white print:border-slate-300">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-y-4 gap-x-6 text-xs">
+                    <div>
+                        <span class="block text-slate-500 font-bold uppercase tracking-wider text-[10px]">Student Name</span>
+                        <span class="font-black text-slate-900 text-sm block mt-0.5">{{ statement.student.full_name if statement else 'N/A' }}</span>
+                    </div>
+                    <div>
+                        <span class="block text-slate-500 font-bold uppercase tracking-wider text-[10px]">Admission No</span>
+                        <span class="font-mono font-black text-slate-900 text-sm block mt-0.5">{{ statement.student.admno if statement else admno }}</span>
+                    </div>
+                    <div>
+                        <span class="block text-slate-500 font-bold uppercase tracking-wider text-[10px]">Class & Stream</span>
+                        <span class="font-bold text-slate-800 block mt-0.5">{{ statement.student.class_name if statement else 'N/A' }} ({{ statement.student.stream if statement else 'A' }})</span>
+                    </div>
+                    <div>
+                        <span class="block text-slate-500 font-bold uppercase tracking-wider text-[10px]">Student Category</span>
+                        <span class="font-bold text-slate-800 block mt-0.5">{{ statement.student.category if statement else 'Day' }}</span>
+                    </div>
+                    <div>
+                        <span class="block text-slate-500 font-bold uppercase tracking-wider text-[10px]">Parent / Guardian</span>
+                        <span class="font-bold text-slate-800 block mt-0.5">{{ statement.student.parent_name if statement else 'N/A' }}</span>
+                    </div>
+                    <div>
+                        <span class="block text-slate-500 font-bold uppercase tracking-wider text-[10px]">Parent Phone</span>
+                        <span class="font-mono font-bold text-slate-800 block mt-0.5">{{ statement.student.parent_phone if statement else 'N/A' }}</span>
+                    </div>
+                    <div>
+                        <span class="block text-slate-500 font-bold uppercase tracking-wider text-[10px]">Parent Email</span>
+                        <span class="font-bold text-slate-800 block mt-0.5">{{ statement.student.parent_email if statement else 'N/A' }}</span>
+                    </div>
+                    <div>
+                        <span class="block text-slate-500 font-bold uppercase tracking-wider text-[10px]">Account Status</span>
+                        <span class="inline-block px-2 py-0.5 rounded font-black text-[10px] mt-0.5 {{ 'bg-red-100 text-red-800' if statement and statement.student and statement.student.status == 'Blocked' else 'bg-emerald-100 text-emerald-800' }}">
+                            {{ statement.student.status if statement else 'Active' }}
+                        </span>
+                    </div>
+                </div>
             </div>
-            
-            <div class="overflow-x-auto">
-                <table class="w-full divide-y divide-slate-200">
-                    <thead class="bg-slate-100">
-                        <tr>
-                            <th class="px-6 py-3 text-left text-xs font-black text-slate-700 uppercase tracking-wider">Date</th>
-                            <th class="px-6 py-3 text-left text-xs font-black text-slate-700 uppercase tracking-wider">Type</th>
-                            <th class="px-6 py-3 text-left text-xs font-black text-slate-700 uppercase tracking-wider">Description</th>
-                            <th class="px-6 py-3 text-left text-xs font-black text-slate-700 uppercase tracking-wider">Reference</th>
-                            <th class="px-6 py-3 text-right text-xs font-black text-slate-700 uppercase tracking-wider">Amount</th>
-                            <th class="px-6 py-3 text-right text-xs font-black text-slate-700 uppercase tracking-wider">Balance After</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-200" id="detailTableBody">
-                        <!-- Populated by JavaScript -->
-                        <tr class="text-center text-slate-500 py-6">
-                            <td colspan="6" class="py-8">
-                                <i class="fas fa-spinner fa-spin mr-2"></i>Loading transaction details...
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+
+            <!-- Key Financial Summary KPIs Cards (Standardized Terminology) -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                <div class="bg-slate-900 text-white rounded-xl p-5 shadow-sm print:border print:border-black print:bg-white print:text-black">
+                    <span class="text-xs font-bold uppercase tracking-wider text-slate-400 print:text-slate-600 block">Overall Student Balance</span>
+                    <div class="text-2xl sm:text-3xl font-black mt-1 font-mono tracking-tight">
+                        KES {{ "{:,.2f}".format(statement.overall_student_balance if statement else 0.0) }}
+                    </div>
+                    <p class="text-[11px] text-slate-400 print:text-slate-500 mt-1">Cumulative balance across all academic years and terms</p>
+                </div>
+
+                <div class="bg-blue-50 border border-blue-200 text-blue-900 rounded-xl p-5 shadow-sm print:bg-white print:border-slate-300 print:text-black">
+                    <span class="text-xs font-bold uppercase tracking-wider text-blue-700 print:text-slate-600 block">Current Term Outstanding</span>
+                    <div class="text-2xl sm:text-3xl font-black mt-1 font-mono tracking-tight text-blue-950 print:text-black">
+                        KES {{ "{:,.2f}".format(statement.current_term_outstanding if statement else 0.0) }}
+                    </div>
+                    <p class="text-[11px] text-blue-700 print:text-slate-500 mt-1">Balance movement for the selected period only</p>
+                </div>
             </div>
+
+            <!-- Term Summary Section (Bundled View & Drill-down) -->
+            <div class="mb-10">
+                <div class="flex items-center justify-between border-b border-slate-200 pb-3 mb-4">
+                    <h3 class="text-base font-black text-slate-900 uppercase tracking-wide">Termly Account Summaries</h3>
+                    <span class="text-xs font-semibold text-slate-500 no-print">Click on any term row to expand votehead drill-down</span>
+                </div>
+
+                <div class="space-y-4">
+                    {% if statement and statement.term_summaries %}
+                    {% for ts in statement.term_summaries %}
+                    <div class="border border-slate-200 rounded-xl overflow-hidden print:border-slate-300 page-break-inside-avoid">
+                        <!-- Term Header Row -->
+                        <div onclick="toggleTermAccordion('term-acc-{{ loop.index }}')" class="bg-slate-50 hover:bg-slate-100 print:bg-slate-100 p-4 flex flex-wrap items-center justify-between cursor-pointer transition select-none">
+                            <div class="flex items-center gap-3">
+                                <i id="icon-term-acc-{{ loop.index }}" class="fas fa-chevron-right text-xs text-slate-500 transition-transform no-print"></i>
+                                <div>
+                                    <span class="text-sm font-black text-slate-900 uppercase">{{ ts.academic_year }} — Term {{ ts.term_number }}</span>
+                                    <span class="text-xs font-bold text-slate-500 ml-2">({{ ts.entries|length }} transaction{{ 's' if ts.entries|length != 1 else '' }})</span>
+                                </div>
+                            </div>
+
+                            <div class="flex items-center gap-6 text-xs font-mono">
+                                <div class="hidden sm:block opening-bal-col">
+                                    <span class="text-[10px] text-slate-500 font-sans block uppercase font-bold">Opening Bal</span>
+                                    <span class="font-bold text-slate-700">KES {{ "{:,.2f}".format(ts.opening_balance) }}</span>
+                                </div>
+                                <div>
+                                    <span class="text-[10px] text-slate-500 font-sans block uppercase font-bold">Term Charges</span>
+                                    <span class="font-bold text-slate-900">KES {{ "{:,.2f}".format(ts.charges + ts.debits) }}</span>
+                                </div>
+                                <div>
+                                    <span class="text-[10px] text-slate-500 font-sans block uppercase font-bold">Payments / Credits</span>
+                                    <span class="font-bold text-emerald-700">KES {{ "{:,.2f}".format(ts.payments + ts.credits + ts.waivers) }}</span>
+                                </div>
+                                <div>
+                                    <span class="text-[10px] text-slate-500 font-sans block uppercase font-bold">Closing Bal</span>
+                                    <span class="font-black {{ 'text-red-700' if ts.closing_balance > 0 else 'text-emerald-700' }}">KES {{ "{:,.2f}".format(ts.closing_balance) }}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Drill-down Accordion Content -->
+                        <div id="term-acc-{{ loop.index }}" class="votehead-breakdown-panel p-4 bg-white border-t border-slate-200">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <!-- Votehead Breakdown Column -->
+                                <div>
+                                    <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 mb-2 border-b pb-1">▼ Votehead Fee Breakdown</h4>
+                                    <table class="w-full text-xs">
+                                        <tbody class="divide-y divide-slate-100">
+                                            {% for item in ts.votehead_breakdown %}
+                                            <tr>
+                                                <td class="py-1.5 font-medium text-slate-700">{{ item.votehead_name }}</td>
+                                                <td class="py-1.5 text-right font-mono font-bold text-slate-900">KES {{ "{:,.2f}".format(item.amount) }}</td>
+                                            </tr>
+                                            {% endfor %}
+                                            <tr class="bg-slate-50 font-black">
+                                                <td class="py-2 text-slate-900 uppercase">Bundled Term Charges Total</td>
+                                                <td class="py-2 text-right font-mono text-slate-900">KES {{ "{:,.2f}".format(ts.charges) }}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <!-- Financial Movement Summary Column -->
+                                <div>
+                                    <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 mb-2 border-b pb-1">Financial Movement Summary</h4>
+                                    <div class="space-y-1.5 text-xs">
+                                        <div class="flex justify-between py-1 border-b border-slate-100 opening-bal-col">
+                                            <span class="text-slate-600">Opening Balance:</span>
+                                            <span class="font-mono font-bold text-slate-800">KES {{ "{:,.2f}".format(ts.opening_balance) }}</span>
+                                        </div>
+                                        <div class="flex justify-between py-1 border-b border-slate-100">
+                                            <span class="text-slate-600">+ Term Invoices (Charges):</span>
+                                            <span class="font-mono font-bold text-slate-900">KES {{ "{:,.2f}".format(ts.charges) }}</span>
+                                        </div>
+                                        {% if ts.debits > 0 %}
+                                        <div class="flex justify-between py-1 border-b border-slate-100">
+                                            <span class="text-slate-600">+ Debit Notes / Adjustments:</span>
+                                            <span class="font-mono font-bold text-amber-700">KES {{ "{:,.2f}".format(ts.debits) }}</span>
+                                        </div>
+                                        {% endif %}
+                                        <div class="flex justify-between py-1 border-b border-slate-100">
+                                            <span class="text-slate-600">- Fee Payments:</span>
+                                            <span class="font-mono font-bold text-emerald-700">KES {{ "{:,.2f}".format(ts.payments) }}</span>
+                                        </div>
+                                        {% if ts.waivers > 0 %}
+                                        <div class="flex justify-between py-1 border-b border-slate-100">
+                                            <span class="text-slate-600">- Fee Waivers:</span>
+                                            <span class="font-mono font-bold text-blue-700">KES {{ "{:,.2f}".format(ts.waivers) }}</span>
+                                        </div>
+                                        {% endif %}
+                                        {% if ts.credits > 0 %}
+                                        <div class="flex justify-between py-1 border-b border-slate-100">
+                                            <span class="text-slate-600">- Credit Notes / Adjustments:</span>
+                                            <span class="font-mono font-bold text-purple-700">KES {{ "{:,.2f}".format(ts.credits) }}</span>
+                                        </div>
+                                        {% endif %}
+                                        {% if ts.refunds > 0 %}
+                                        <div class="flex justify-between py-1 border-b border-slate-100">
+                                            <span class="text-slate-600">+ Fee Refunds:</span>
+                                            <span class="font-mono font-bold text-indigo-700">KES {{ "{:,.2f}".format(ts.refunds) }}</span>
+                                        </div>
+                                        {% endif %}
+                                        <div class="flex justify-between py-2 bg-slate-100 px-2 rounded font-black text-slate-900 mt-2">
+                                            <span>Term Closing Balance:</span>
+                                            <span class="font-mono">KES {{ "{:,.2f}".format(ts.closing_balance) }}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% else %}
+                    <div class="p-8 text-center text-slate-500 bg-slate-50 rounded-xl border border-dashed border-slate-300">
+                        No financial ledger transactions found for the selected filter criteria.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Detailed Transaction Ledger Table -->
+            <div id="detailedTransactionsSection" class="mb-10">
+                <div class="flex items-center justify-between border-b border-slate-200 pb-3 mb-4">
+                    <h3 class="text-base font-black text-slate-900 uppercase tracking-wide">Chronological Ledger Entries</h3>
+                    <span class="text-xs font-semibold text-slate-500">Sorted by Posting Priority & Sequence</span>
+                </div>
+
+                <div class="overflow-x-auto border border-slate-200 rounded-xl print:border-slate-300">
+                    <table class="w-full text-left text-xs divide-y divide-slate-200">
+                        <thead class="bg-slate-900 text-white print:bg-slate-200 print:text-black">
+                            <tr>
+                                <th class="px-4 py-3 font-black uppercase">Posting Date</th>
+                                <th class="px-4 py-3 font-black uppercase">Document / Ref</th>
+                                <th class="px-4 py-3 font-black uppercase">Type</th>
+                                <th class="px-4 py-3 font-black uppercase">Description</th>
+                                <th class="px-4 py-3 font-black uppercase text-right">Debit (KES)</th>
+                                <th class="px-4 py-3 font-black uppercase text-right">Credit (KES)</th>
+                                <th class="px-4 py-3 font-black uppercase text-right running-bal-col">Running Balance</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 bg-white">
+                            {% if statement and statement.filtered_entries %}
+                            {% for row in statement.filtered_entries %}
+                            <tr class="hover:bg-slate-50 transition page-break-inside-avoid">
+                                <td class="px-4 py-3 font-mono text-slate-700 font-medium whitespace-nowrap">
+                                    {{ row.formatted_date if row.formatted_date else (row.transaction_date or '-') }}
+                                </td>
+                                <td class="px-4 py-3 font-mono font-bold text-slate-900 whitespace-nowrap">
+                                    {{ row.reference_no or '-' }}
+                                </td>
+                                <td class="px-4 py-3 whitespace-nowrap">
+                                    <span class="inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase
+                                        {% if row.type in ['CHARGE', 'DEBIT'] %}bg-red-50 text-red-700
+                                        {% elif row.type == 'PAYMENT' %}bg-emerald-50 text-emerald-700
+                                        {% elif row.type == 'CREDIT' %}bg-purple-50 text-purple-700
+                                        {% elif row.type == 'REFUND' %}bg-indigo-50 text-indigo-700
+                                        {% else %}bg-slate-100 text-slate-800{% endif %}">
+                                        {{ row.type }}
+                                    </span>
+                                </td>
+                                <td class="px-4 py-3 text-slate-800 font-medium max-w-xs">
+                                    {{ row.description or row.votehead_name or 'Ledger Transaction' }}
+                                </td>
+                                <td class="px-4 py-3 font-mono text-right font-bold text-slate-900">
+                                    {% if row.category == 'DEBIT' %}
+                                    {{ "{:,.2f}".format(row.signed_amount) }}
+                                    {% else %}-{% endif %}
+                                </td>
+                                <td class="px-4 py-3 font-mono text-right font-bold text-emerald-700">
+                                    {% if row.category == 'CREDIT' %}
+                                    {{ "{:,.2f}".format(row.signed_amount) }}
+                                    {% else %}-{% endif %}
+                                </td>
+                                <td class="px-4 py-3 font-mono text-right font-black text-slate-900 bg-slate-50 print:bg-transparent running-bal-col">
+                                    KES {{ "{:,.2f}".format(row.running_balance) }}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                            {% else %}
+                            <tr>
+                                <td colspan="7" class="px-4 py-8 text-center text-slate-500">
+                                    No ledger entries recorded for this student statement query.
+                                </td>
+                            </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Certification & Sign-off Footer -->
+            <div class="pt-8 border-t-2 border-slate-200 page-break-inside-avoid">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
+                    <div class="md:col-span-2">
+                        <p class="text-xs font-semibold text-slate-700 italic">
+                            "This statement was generated electronically by Academic Compass ERP and requires no physical signature unless specifically requested."
+                        </p>
+                        <div class="mt-4 flex flex-wrap items-center gap-4 text-[11px] text-slate-500">
+                            <span>System Version: <strong>1.0 Finance-Grade</strong></span>
+                            <span>•</span>
+                            <span>Report ID: <strong class="font-mono">{{ statement.report_id if statement else 'SFS-000000' }}</strong></span>
+                            <span>•</span>
+                            <span>Generated On: <strong>{{ statement.generated_on if statement else now.strftime('%Y-%m-%d %H:%M:%S') }}</strong></span>
+                        </div>
+                    </div>
+
+                    <div class="text-center md:text-right">
+                        <div class="inline-block border-2 border-dashed border-slate-300 rounded-xl p-4 text-center min-w-[180px]">
+                            <span class="block text-[10px] font-black uppercase tracking-wider text-slate-400">Official School Stamp</span>
+                            <div class="h-12 flex items-center justify-center text-xs font-bold text-slate-300 uppercase">
+                                Place Stamp Here
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', async function() {
-    const admnoParam = new URLSearchParams(window.location.search).get('admno') || '{{ admno }}';
-    if (!admnoParam) {
-        document.getElementById('statementTableBody').innerHTML = `
-            <tr class="text-center text-red-500">
-                <td colspan="9" class="py-8">No admission number provided. Please specify &admno=XXX in URL.</td>
-            </tr>
-        `;
-        return;
+function toggleTermAccordion(id) {
+    const el = document.getElementById(id);
+    const icon = document.getElementById('icon-' + id);
+    if (!el) return;
+    if (el.classList.contains('hidden')) {
+        el.classList.remove('hidden');
+        if (icon) icon.style.transform = 'rotate(90deg)';
+    } else {
+        el.classList.add('hidden');
+        if (icon) icon.style.transform = 'rotate(0deg)';
     }
+}
+
+function updateViewOptions() {
+    const isDetailed = document.querySelector('input[name="statement_type"]:checked').value === 'detailed';
+    const detailSec = document.getElementById('detailedTransactionsSection');
+    if (detailSec) {
+        if (isDetailed) {
+            detailSec.classList.remove('hidden');
+        } else {
+            detailSec.classList.add('hidden');
+        }
+    }
+}
+
+function toggleColumns() {
+    const show = document.getElementById('chkRunningBalance').checked;
+    document.querySelectorAll('.running-bal-col').forEach(el => {
+        if (show) el.classList.remove('hidden'); else el.classList.add('hidden');
+    });
+}
+
+function toggleVoteheadBreakdown() {
+    const show = document.getElementById('chkVoteheadBreakdown').checked;
+    document.querySelectorAll('.votehead-breakdown-panel').forEach(el => {
+        if (show) el.classList.remove('hidden'); else el.classList.add('hidden');
+    });
+}
+
+function toggleOpeningBalance() {
+    const show = document.getElementById('chkOpeningBalance').checked;
+    document.querySelectorAll('.opening-bal-col').forEach(el => {
+        if (show) el.classList.remove('hidden'); else el.classList.add('hidden');
+    });
+}
+
+async function emailStatementToParent() {
+    const btn = document.getElementById('emailParentBtn');
+    const alertBox = document.getElementById('emailAlert');
+    const alertBody = document.getElementById('emailAlertBody');
+
+    if (btn) btn.disabled = true;
 
     try {
-        // Fetch summary data
-        const summaryResponse = await fetch(`/api/fees/statement-summary?admno=${admnoParam}`);
-        const summaryData = await summaryResponse.json();
-        
-        if (!Array.isArray(summaryData) || summaryData.length === 0) {
-            document.getElementById('statementTableBody').innerHTML = `
-                <tr class="text-center text-slate-500">
-                    <td colspan="9" class="py-8">No fee statement data found for this student.</td>
-                </tr>
-            `;
-        } else {
-            renderSummaryTable(summaryData);
-        }
+        const formData = new FormData();
+        formData.append('year_id', '{{ selected_year_id or "" }}');
+        formData.append('term_id', '{{ selected_term_id or "" }}');
 
-        // Fetch detailed transaction history
-        const detailResponse = await fetch(`/api/fees/statement?admno=${admnoParam}`);
-        const detailData = await detailResponse.json();
-        
-        if (Array.isArray(detailData) && detailData.length > 0) {
-            renderDetailTable(detailData);
+        const res = await fetch(`/admin/fees/student/{{ admno }}/statement/email`, {
+            method: 'POST',
+            body: formData,
+        });
+
+        const data = await res.json();
+        alertBox.classList.remove('hidden');
+
+        if (data.success) {
+            alertBody.className = 'p-4 rounded-xl text-sm font-bold shadow-sm bg-emerald-100 text-emerald-900 border border-emerald-300';
+            alertBody.innerHTML = `<i class="fas fa-check-circle mr-2"></i> ${data.message}`;
         } else {
-            document.getElementById('detailTableBody').innerHTML = `
-                <tr class="text-center text-slate-500">
-                    <td colspan="6" class="py-8">No transaction details found.</td>
-                </tr>
-            `;
+            alertBody.className = 'p-4 rounded-xl text-sm font-bold shadow-sm bg-amber-100 text-amber-900 border border-amber-300';
+            alertBody.innerHTML = `<i class="fas fa-exclamation-triangle mr-2"></i> ${data.message}`;
         }
-    } catch (error) {
-        console.error('Error loading statement:', error);
-        document.getElementById('statementTableBody').innerHTML = `
-            <tr class="text-center text-red-500">
-                <td colspan="9" class="py-8">Error loading statement data: ${error.message}</td>
-            </tr>
-        `;
+    } catch (err) {
+        alertBox.classList.remove('hidden');
+        alertBody.className = 'p-4 rounded-xl text-sm font-bold shadow-sm bg-red-100 text-red-900 border border-red-300';
+        alertBody.innerHTML = `<i class="fas fa-times-circle mr-2"></i> Failed to email statement: ${err.message}`;
+    } finally {
+        if (btn) btn.disabled = false;
     }
-});
-
-function renderSummaryTable(data) {
-    let totalCharges = 0, totalPayments = 0, totalCredits = 0, currentBalance = 0;
-    
-    const rows = data.map((row, idx) => {
-        totalCharges += parseFloat(row.charges || 0);
-        totalPayments += parseFloat(row.payments || 0);
-        totalCredits += parseFloat(row.credits || 0);
-        currentBalance = parseFloat(row.closing_balance || 0);
-
-        return `
-            <tr class="hover:bg-slate-50 transition">
-                <td class="px-6 py-4 text-sm font-bold text-slate-900">${row.academic_year}</td>
-                <td class="px-6 py-4 text-sm text-slate-700">Term ${row.term_number}</td>
-                <td class="px-6 py-4 text-sm text-right font-mono text-slate-700">
-                    ${formatCurrency(row.opening_balance)}
-                </td>
-                <td class="px-6 py-4 text-sm text-right font-mono text-green-700 font-bold">
-                    ${formatCurrency(row.charges)}
-                </td>
-                <td class="px-6 py-4 text-sm text-right font-mono text-orange-700 font-bold">
-                    ${formatCurrency(row.debits)}
-                </td>
-                <td class="px-6 py-4 text-sm text-right font-mono text-blue-700 font-bold">
-                    ${formatCurrency(row.payments)}
-                </td>
-                <td class="px-6 py-4 text-sm text-right font-mono text-purple-700 font-bold">
-                    ${formatCurrency(row.credits)}
-                </td>
-                <td class="px-6 py-4 text-sm text-right font-mono font-black ${
-                    parseFloat(row.closing_balance) > 0 ? 'text-red-700' : 'text-green-700'
-                }">
-                    ${formatCurrency(row.closing_balance)}
-                </td>
-                <td class="px-6 py-4 text-sm text-center text-slate-700 font-bold">
-                    ${row.transaction_count || 0}
-                </td>
-            </tr>
-        `;
-    }).join('');
-
-    document.getElementById('statementTableBody').innerHTML = rows;
-    document.getElementById('totalCharges').textContent = formatCurrency(totalCharges);
-    document.getElementById('totalPayments').textContent = formatCurrency(totalPayments);
-    document.getElementById('totalCredits').textContent = formatCurrency(totalCredits);
-    const balanceEl = document.getElementById('currentBalance');
-    balanceEl.textContent = formatCurrency(currentBalance);
-    balanceEl.className = currentBalance > 0 ? 'text-2xl font-black text-red-700' : 'text-2xl font-black text-green-700';
-}
-
-function renderDetailTable(data) {
-    const rows = data.map((row) => {
-        const typeColor = {
-            'CHARGE': 'bg-green-50 text-green-700',
-            'PAYMENT': 'bg-blue-50 text-blue-700',
-            'CREDIT': 'bg-purple-50 text-purple-700',
-            'DEBIT': 'bg-orange-50 text-orange-700',
-            'ADJUSTMENT': 'bg-yellow-50 text-yellow-700',
-            'REFUND': 'bg-indigo-50 text-indigo-700'
-        }[row.type] || 'bg-slate-50 text-slate-700';
-
-        return `
-            <tr class="hover:bg-slate-50 transition">
-                <td class="px-6 py-4 text-sm text-slate-700">
-                    ${formatDate(row.transaction_date)}
-                </td>
-                <td class="px-6 py-4 text-sm font-bold">
-                    <span class="inline-block px-2 py-1 rounded text-xs font-black ${typeColor}">
-                        ${row.type}
-                    </span>
-                </td>
-                <td class="px-6 py-4 text-sm text-slate-700">
-                    ${row.description || row.votehead_name || 'N/A'}
-                </td>
-                <td class="px-6 py-4 text-sm text-slate-600 font-mono">
-                    ${row.reference_no || '-'}
-                </td>
-                <td class="px-6 py-4 text-sm text-right font-mono font-bold text-slate-900">
-                    ${formatCurrency(row.amount)}
-                </td>
-                <td class="px-6 py-4 text-sm text-right font-mono font-bold text-slate-900">
-                    ${formatCurrency(row.balance_after)}
-                </td>
-            </tr>
-        `;
-    }).join('');
-
-    document.getElementById('detailTableBody').innerHTML = rows;
-}
-
-function formatCurrency(value) {
-    const num = parseFloat(value || 0);
-    return new Intl.NumberFormat('en-KE', {
-        style: 'currency',
-        currency: 'KES',
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-    }).format(num);
-}
-
-function formatDate(dateStr) {
-    if (!dateStr) return '-';
-    const date = new Date(dateStr);
-    return new Intl.DateTimeFormat('en-KE', {
-        year: 'numeric',
-        month: 'short',
-        day: '2-digit'
-    }).format(date);
 }
 </script>
 
 <style>
     @media print {
-        .no-print { display: none; }
-        body { background: white; }
-        .container { box-shadow: none; }
-        table { page-break-inside: avoid; }
+        .no-print { display: none !important; }
+        body { background-color: white !important; font-size: 11px; }
+        .page-break-inside-avoid { page-break-inside: avoid !important; }
+        table { page-break-inside: auto; }
+        tr { page-break-inside: avoid !important; page-break-after: auto; }
+        thead { display: table-header-group !important; }
+        .votehead-breakdown-panel { display: block !important; }
     }
 </style>
 {% endblock %}

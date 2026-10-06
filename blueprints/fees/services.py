@@ -1672,6 +1672,238 @@ class FeesService:
             raise FeesError(f"Reallocation failed: {str(e)}")
 
 
+    def get_student_account_statement_data(self, admno: int, year_id: Optional[int] = None, term_id: Optional[int] = None) -> Dict:
+        """
+        Build complete finance-grade Student Account Statement data.
+        Consumes authoritative Finance Domain balance & ledger sources.
+        """
+        self._assert_student_belongs_to_school(admno)
+        from blueprints.students.services import StudentService
+        student_svc = StudentService(self.connection, school_id=self.school_id)
+        student = student_svc.get_student_by_admno(admno)
+        if not student:
+            raise FeesError(f"Student with admission number {admno} not found.")
+
+        class_info = student_svc.get_student_class_info(admno) or {}
+
+        # Fetch School information
+        self.cursor.execute("SELECT id, name, code, email, phone, address, city, country, logo FROM schools WHERE id = %s", (self.school_id,))
+        school_row = self.cursor.fetchone() or {}
+
+        # Fetch all ledger entries chronologically
+        type_priority = """
+            CASE fl.type
+                WHEN 'CHARGE' THEN 1
+                WHEN 'DEBIT' THEN 2
+                WHEN 'ADJUSTMENT' THEN 3
+                WHEN 'PAYMENT' THEN 4
+                WHEN 'CREDIT' THEN 5
+                WHEN 'REFUND' THEN 6
+                ELSE 7
+            END
+        """
+        query = f"""
+            SELECT
+                fl.id,
+                fl.admno,
+                fl.academic_year_id,
+                ay.year as academic_year_name,
+                fl.term_id,
+                utd.term_number,
+                fl.type,
+                fl.votehead_id,
+                fv.name as votehead_name,
+                fl.amount,
+                fl.balance_after,
+                fl.description,
+                fl.reference_no,
+                fl.transaction_date,
+                fl.created_at,
+                u.username as created_by_name
+            FROM fee_ledger fl
+            LEFT JOIN academic_years ay ON fl.academic_year_id = ay.id AND fl.school_id = ay.school_id
+            LEFT JOIN uniform_term_dates utd ON fl.term_id = utd.id AND fl.school_id = utd.school_id
+            LEFT JOIN fee_voteheads fv ON fl.votehead_id = fv.id AND fl.school_id = fv.school_id
+            LEFT JOIN users u ON fl.created_by = u.userNo AND fl.school_id = u.school_id
+            WHERE fl.admno = %s AND fl.school_id = %s
+            ORDER BY fl.transaction_date ASC, fl.created_at ASC, {type_priority} ASC, fl.id ASC
+        """
+        self.cursor.execute(query, (admno, self.school_id))
+        all_raw_entries = self.cursor.fetchall()
+
+        # Calculate chronological running balances authoritatively
+        running_bal = Decimal('0.00')
+        processed_entries = []
+        for entry in all_raw_entries:
+            e_type = (entry.get('type') or '').upper()
+            amt = Decimal(str(entry.get('amount') or 0))
+            ref = entry.get('reference_no') or ''
+            desc = entry.get('description') or ''
+
+            # Finance domain posting classification
+            if e_type in ('CHARGE', 'DEBIT', 'REFUND'):
+                running_bal += amt
+                category = 'DEBIT'
+            elif e_type in ('PAYMENT', 'CREDIT'):
+                running_bal -= amt
+                category = 'CREDIT'
+            elif e_type == 'ADJUSTMENT':
+                if 'DEBIT NOTE' in desc.upper() or 'VOID RECEIPT' in desc.upper():
+                    running_bal += amt
+                    category = 'DEBIT'
+                else:
+                    running_bal -= amt
+                    category = 'CREDIT'
+            else:
+                category = 'OTHER'
+
+            tx_date = entry.get('transaction_date')
+            formatted_date = tx_date.strftime('%Y-%m-%d') if hasattr(tx_date, 'strftime') and tx_date else str(tx_date or '-')
+
+            entry_copy = dict(entry)
+            entry_copy['category'] = category
+            entry_copy['signed_amount'] = float(amt)
+            entry_copy['running_balance'] = float(running_bal)
+            entry_copy['formatted_date'] = formatted_date
+            processed_entries.append(entry_copy)
+
+        # Filter by selected year_id and term_id if specified
+        filtered_entries = processed_entries
+        if year_id:
+            filtered_entries = [e for e in filtered_entries if e.get('academic_year_id') == year_id]
+        if term_id:
+            filtered_entries = [e for e in filtered_entries if e.get('term_id') == term_id]
+
+        # Group entries by Academic Year and Term for termly drill-down summary
+        term_map = {}
+        for e in processed_entries:
+            key = (e.get('academic_year_id'), e.get('term_id'))
+            if key not in term_map:
+                term_map[key] = {
+                    'academic_year_id': e.get('academic_year_id'),
+                    'academic_year': e.get('academic_year_name') or 'N/A',
+                    'term_id': e.get('term_id'),
+                    'term_number': e.get('term_number') or 0,
+                    'entries': [],
+                    'charges': Decimal('0.00'),
+                    'debits': Decimal('0.00'),
+                    'payments': Decimal('0.00'),
+                    'credits': Decimal('0.00'),
+                    'waivers': Decimal('0.00'),
+                    'refunds': Decimal('0.00'),
+                    'opening_balance': Decimal('0.00'),
+                    'closing_balance': Decimal('0.00'),
+                }
+            term_map[key]['entries'].append(e)
+
+        # Process each term's summary and votehead breakdown (from Fees Structure or ledger fallback)
+        term_summaries = []
+        for (y_id, t_id), term_data in sorted(term_map.items(), key=lambda x: (x[1]['academic_year'], x[1]['term_number'])):
+            first_term_entry = term_data['entries'][0]
+            first_entry_index = processed_entries.index(first_term_entry)
+            prev_entries = processed_entries[:first_entry_index]
+            opening_bal = Decimal(str(prev_entries[-1]['running_balance'])) if prev_entries else Decimal('0.00')
+            term_data['opening_balance'] = opening_bal
+
+            for e in term_data['entries']:
+                amt = Decimal(str(e['amount']))
+                e_type = (e.get('type') or '').upper()
+                ref = e.get('reference_no') or ''
+                desc = e.get('description') or ''
+
+                if e_type == 'CHARGE':
+                    term_data['charges'] += amt
+                elif e_type == 'DEBIT' or (e_type == 'ADJUSTMENT' and ('DEBIT NOTE' in desc.upper() or 'VOID RECEIPT' in desc.upper())):
+                    term_data['debits'] += amt
+                elif e_type == 'PAYMENT':
+                    term_data['payments'] += amt
+                elif e_type == 'CREDIT' and ref.startswith('WVR-'):
+                    term_data['waivers'] += amt
+                elif e_type == 'CREDIT':
+                    term_data['credits'] += amt
+                elif e_type == 'REFUND':
+                    term_data['refunds'] += amt
+
+            closing_bal = Decimal(str(term_data['entries'][-1]['running_balance']))
+            term_data['closing_balance'] = closing_bal
+
+            structure_items = self.get_student_fee_structure(admno, t_id) if t_id else []
+            votehead_breakdown = []
+            if structure_items and structure_items[0].get('structure_id'):
+                for item in structure_items:
+                    votehead_breakdown.append({
+                        'votehead_name': item['votehead_name'],
+                        'amount': float(item['amount']),
+                    })
+            else:
+                charge_entries = [e for e in term_data['entries'] if e.get('type') == 'CHARGE']
+                vh_grouped = {}
+                for ce in charge_entries:
+                    vh_name = ce.get('votehead_name') or ce.get('description') or 'Tuition / Term Fees'
+                    vh_grouped[vh_name] = vh_grouped.get(vh_name, Decimal('0.00')) + Decimal(str(ce.get('amount') or 0))
+                for vh_name, vh_amt in vh_grouped.items():
+                    votehead_breakdown.append({
+                        'votehead_name': vh_name,
+                        'amount': float(vh_amt),
+                    })
+                if not votehead_breakdown and term_data['charges'] > 0:
+                    votehead_breakdown.append({
+                        'votehead_name': 'Term Fees',
+                        'amount': float(term_data['charges']),
+                    })
+
+            if (not year_id or y_id == year_id) and (not term_id or t_id == term_id):
+                term_summaries.append({
+                    'academic_year_id': y_id,
+                    'academic_year': term_data['academic_year'],
+                    'term_id': t_id,
+                    'term_number': term_data['term_number'],
+                    'opening_balance': float(term_data['opening_balance']),
+                    'charges': float(term_data['charges']),
+                    'debits': float(term_data['debits']),
+                    'payments': float(term_data['payments']),
+                    'credits': float(term_data['credits']),
+                    'waivers': float(term_data['waivers']),
+                    'refunds': float(term_data['refunds']),
+                    'closing_balance': float(term_data['closing_balance']),
+                    'votehead_breakdown': votehead_breakdown,
+                    'entries': term_data['entries'],
+                })
+
+        overall_balance = float(running_bal)
+        selected_term_summary = term_summaries[-1] if term_summaries else None
+        current_term_outstanding = (
+            selected_term_summary['closing_balance'] if selected_term_summary else overall_balance
+        )
+
+        now_str = datetime.now().strftime('%Y%m%d')
+        report_id = f"SFS-{now_str}-{admno:06d}"
+
+        full_name = f"{student.get('FName', '')} {student.get('MName', '') or ''} {student.get('SName', '')}".replace('  ', ' ').strip()
+
+        return {
+            'report_id': report_id,
+            'generated_on': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'school': school_row,
+            'student': {
+                'admno': student.get('AdmNo'),
+                'full_name': full_name,
+                'class_name': class_info.get('class_name') or 'Not Assigned',
+                'stream': class_info.get('stream') or student.get('stream') or 'N/A',
+                'category': student.get('category') or 'Day',
+                'student_group': student.get('student_group_name') or 'N/A',
+                'parent_name': student.get('parent_name') or 'N/A',
+                'parent_phone': student.get('parent_phone') or 'N/A',
+                'parent_email': student.get('parent_email') or 'N/A',
+                'status': 'Blocked' if student.get('blocked') == 'YES' else 'Active',
+            },
+            'overall_student_balance': overall_balance,
+            'current_term_outstanding': current_term_outstanding,
+            'term_summaries': term_summaries,
+            'filtered_entries': filtered_entries,
+            'all_entries': processed_entries,
+        }
+
     def get_student_statement(self, admno: int, year_id: Optional[int] = None) -> List[Dict]:
         """Fetch full transaction history for a student, consolidated by reference."""
         query = """
