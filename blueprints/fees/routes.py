@@ -920,8 +920,9 @@ def manage_fee_structures():
                 'terms': [],
                 'total_year': 0
             }
-        grouped_structures[key]['terms'].append(s['term_number'])
-        grouped_structures[key]['total_year'] += float(s['total_amount'])
+        if s['term_number'] not in grouped_structures[key]['terms']:
+            grouped_structures[key]['terms'].append(s['term_number'])
+            grouped_structures[key]['total_year'] += float(s['total_amount'])
 
     structures = sorted(grouped_structures.values(), key=lambda x: (x['year_name'], x['label'], x['version_number']), reverse=True)
 

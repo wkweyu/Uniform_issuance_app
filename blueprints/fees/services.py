@@ -4722,7 +4722,7 @@ def _generate_scope_key(self, academic_year_id: int, term_id: int, class_id: Opt
 
 def clone_fee_structure_version(self, parent_version_id: int, user_id: int) -> int:
     """
-    Clone an existing fee structure into a new DRAFT version (e.g. Version 2).
+    Clone an existing fee structure version (all terms in the academic year scope) into a new DRAFT version.
     Enforces workflow: Clone -> Draft -> Approve -> Activate.
     """
     self.cursor.execute(
@@ -4733,39 +4733,76 @@ def clone_fee_structure_version(self, parent_version_id: int, user_id: int) -> i
     if not parent:
         raise FeesError("Parent fee structure version not found.")
 
-    self.cursor.execute(
-        "SELECT * FROM fee_structure_items WHERE fee_structure_id = %s AND school_id = %s",
-        (parent_version_id, self.school_id)
-    )
-    items = self.cursor.fetchall()
+    p_year = parent['academic_year_id']
+    p_class = parent['class_id']
+    p_group = parent['class_group_code']
+    p_category = parent['student_category']
+    p_version = parent.get('version_number') or 1
 
-    next_version = (parent.get('version_number') or 1) + 1
-    scope_key = parent.get('scope_key') or self._generate_scope_key(
-        parent['academic_year_id'], parent['term_id'], parent['class_id'], parent['class_group_code'], parent['student_category']
-    )
+    # Fetch all term records for this specific structure version and scope
+    self.cursor.execute("""
+        SELECT * FROM fee_structures
+        WHERE academic_year_id = %s
+          AND (class_id = %s OR (class_id IS NULL AND %s IS NULL))
+          AND class_group_code = %s
+          AND student_category = %s
+          AND (version_number = %s OR id = %s)
+          AND school_id = %s
+    """, (p_year, p_class, p_class, p_group, p_category, p_version, parent_version_id, self.school_id))
+    sibling_terms = self.cursor.fetchall()
 
+    # Determine next version number for this scope
+    self.cursor.execute("""
+        SELECT MAX(version_number) as max_v FROM fee_structures
+        WHERE academic_year_id = %s
+          AND (class_id = %s OR (class_id IS NULL AND %s IS NULL))
+          AND class_group_code = %s
+          AND student_category = %s
+          AND school_id = %s
+    """, (p_year, p_class, p_class, p_group, p_category, self.school_id))
+    max_row = self.cursor.fetchone()
+    next_version = ((max_row.get('max_v') if max_row else None) or p_version or 1) + 1
+
+    first_new_id = None
     try:
         self.connection.begin()
-        self.cursor.execute("""
-            INSERT INTO fee_structures
-                (academic_year_id, term_id, class_id, class_group_code, student_category,
-                 total_amount, created_by, school_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        """, (
-            parent['academic_year_id'], parent['term_id'], parent['class_id'],
-            parent['class_group_code'], parent['student_category'],
-            parent['total_amount'], user_id, self.school_id
-        ))
-        new_id = self.cursor.lastrowid
 
-        for item in items:
+        for t_struct in sibling_terms:
+            t_id = t_struct['id']
+            # Fetch items for this term structure
+            self.cursor.execute(
+                "SELECT * FROM fee_structure_items WHERE fee_structure_id = %s AND school_id = %s",
+                (t_id, self.school_id)
+            )
+            items = self.cursor.fetchall()
+
+            scope_key = t_struct.get('scope_key') or self._generate_scope_key(
+                t_struct['academic_year_id'], t_struct['term_id'], t_struct['class_id'], t_struct['class_group_code'], t_struct['student_category']
+            )
+
             self.cursor.execute("""
-                INSERT INTO fee_structure_items (fee_structure_id, votehead_id, amount, school_id)
-                VALUES (%s, %s, %s, %s)
-            """, (new_id, item['votehead_id'], item['amount'], self.school_id))
+                INSERT INTO fee_structures
+                    (academic_year_id, term_id, class_id, class_group_code, student_category,
+                     version_number, status, approval_status, parent_version_id, scope_key,
+                     total_amount, created_by, school_id)
+                VALUES (%s, %s, %s, %s, %s, %s, 'DRAFT', 'PENDING', %s, %s, %s, %s, %s)
+            """, (
+                t_struct['academic_year_id'], t_struct['term_id'], t_struct['class_id'],
+                t_struct['class_group_code'], t_struct['student_category'], next_version,
+                t_id, scope_key, t_struct['total_amount'], user_id, self.school_id
+            ))
+            new_struct_id = self.cursor.lastrowid
+            if first_new_id is None:
+                first_new_id = new_struct_id
+
+            for item in items:
+                self.cursor.execute("""
+                    INSERT INTO fee_structure_items (fee_structure_id, votehead_id, amount, school_id)
+                    VALUES (%s, %s, %s, %s)
+                """, (new_struct_id, item['votehead_id'], item['amount'], self.school_id))
 
         self.connection.commit()
-        return new_id
+        return first_new_id or parent_version_id
     except Exception as e:
         self.connection.rollback()
         raise FeesError(f"Failed to clone fee structure version: {str(e)}")
