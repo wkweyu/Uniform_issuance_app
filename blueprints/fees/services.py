@@ -4749,13 +4749,12 @@ def clone_fee_structure_version(self, parent_version_id: int, user_id: int) -> i
         self.cursor.execute("""
             INSERT INTO fee_structures
                 (academic_year_id, term_id, class_id, class_group_code, student_category,
-                 version_number, status, approval_status, parent_version_id, scope_key,
                  total_amount, created_by, school_id)
-            VALUES (%s, %s, %s, %s, %s, %s, 'DRAFT', 'PENDING', %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             parent['academic_year_id'], parent['term_id'], parent['class_id'],
-            parent['class_group_code'], parent['student_category'], next_version,
-            parent_version_id, scope_key, parent['total_amount'], user_id, self.school_id
+            parent['class_group_code'], parent['student_category'],
+            parent['total_amount'], user_id, self.school_id
         ))
         new_id = self.cursor.lastrowid
 

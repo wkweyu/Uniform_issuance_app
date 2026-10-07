@@ -972,29 +972,58 @@ def edit_fee_structure(structure_id):
     connection = get_db_connection()
     service = FeesService(connection)
 
-    if request.method == 'POST':
-        try:
-            votehead_ids = request.form.getlist('votehead_id')
-            amounts = request.form.getlist('amount')
-            items = _build_fee_structure_items(votehead_ids, amounts)
-            service.update_fee_structure(structure_id, items, session['userNo'])
-            flash("Fee structure updated successfully.", "success")
-            return redirect(url_for('fees.manage_fee_structures'))
-        except (ValueError, FeesError) as e:
-            flash(str(e), "error")
-        except Exception as e:
-            flash(str(e), "error")
-
     structure = service.get_fee_structure_details(structure_id)
     if not structure:
-        flash("Structure not found.", "error")
+        flash("Fee structure version not found.", "error")
         connection.close()
         return redirect(url_for('fees.manage_fee_structures'))
 
-    voteheads = service.get_voteheads()
-    amount_map = {item['votehead_id']: item['amount'] for item in structure['items']}
+    # Load all 3 terms for this academic year, class/group, and student category
+    year_id = structure['academic_year_id']
+    class_id = structure['class_id']
+    group_code = structure['class_group_code']
+    category = structure['student_category']
+
+    # Fetch all term structures for this exact scope
+    query = """
+        SELECT fs.id, utd.term_number, fsi.votehead_id, fsi.amount
+        FROM fee_structures fs
+        JOIN uniform_term_dates utd ON fs.term_id = utd.id AND fs.school_id = utd.school_id
+        LEFT JOIN fee_structure_items fsi ON fs.id = fsi.fee_structure_id AND fs.school_id = fsi.school_id
+        WHERE fs.academic_year_id = %s
+          AND (fs.class_id = %s OR (fs.class_id IS NULL AND %s IS NULL))
+          AND fs.class_group_code = %s
+          AND fs.student_category = %s
+          AND fs.school_id = %s
+    """
+    service.cursor.execute(query, (year_id, class_id, class_id, group_code, category, service.school_id))
+    term_items = service.cursor.fetchall()
+
+    existing_term_amounts = {}
+    for row in term_items:
+        t_num = row['term_number']
+        vid = row['votehead_id']
+        amt = float(row['amount']) if row['amount'] is not None else 0.0
+        if vid:
+            if vid not in existing_term_amounts:
+                existing_term_amounts[vid] = {}
+            existing_term_amounts[vid][f't{t_num}'] = amt
+
+    class_service = ClassManagementService(connection, school_id=service.school_id)
+    context = {
+        'years': class_service.get_all_academic_years(),
+        'classes': class_service.get_active_classes(),
+        'student_groups': service.get_student_groups(),
+        'voteheads': service.get_voteheads(),
+        'edit_structure': structure,
+        'selected_year_id': year_id,
+        'selected_class_id': class_id,
+        'selected_group_code': group_code,
+        'selected_category': category,
+        'existing_term_amounts': existing_term_amounts
+    }
     connection.close()
-    return render_template('edit_fee_structure.html', s=structure, voteheads=voteheads, amount_map=amount_map)
+    return render_template('create_yearly_fee_structure.html', **context)
 
 @fees_bp.route('/admin/fees/structures/delete/<int:structure_id>', methods=['POST'])
 @login_required

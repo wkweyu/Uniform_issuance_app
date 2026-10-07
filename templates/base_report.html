@@ -10,8 +10,8 @@
     <style>
       @media print {
         @page {
-          size: A4;
-          margin: 10mm 15mm; /* Balanced margins */
+          size: A4 portrait;
+          margin: 15mm;
         }
         .avoid-page-break {
           page-break-inside: avoid;
@@ -26,23 +26,32 @@
           display: block !important;
         }
         body {
-          background: #fff;
-          font-size: 9pt; /* Slightly smaller base font */
-          color: #000;
-          line-height: 1.15;
-          padding: 0;
-          margin: 0;
+          background: #fff !important;
+          font-size: 9pt;
+          color: #000 !important;
+          line-height: 1.25;
+          padding: 0 !important;
+          margin: 0 !important;
+        }
+        .report-paper {
+          box-shadow: none !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          max-width: 100% !important;
+          width: 100% !important;
         }
         table {
-          width: 100%;
-          border-collapse: collapse;
-          margin-bottom: 3mm;
+          width: 100% !important;
+          table-layout: fixed !important;
+          border-collapse: collapse !important;
+          margin-bottom: 4mm;
         }
         th,
         td {
-          border: 0.5pt solid #000; /* Crisp thin borders for printing */
-          padding: 2px 4px;
+          border: 0.5pt solid #cbd5e1 !important;
+          padding: 6px 8px !important;
           text-align: left;
+          word-wrap: break-word !important;
         }
         th {
           background-color: #f3f4f6 !important;
