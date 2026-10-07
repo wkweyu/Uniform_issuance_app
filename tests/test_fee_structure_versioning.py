@@ -1,6 +1,27 @@
 import pytest
+import pymysql
 from blueprints.fees.services import FeesService, FeesError
 from tests.test_exam_fee_isolation import RecordingConnection
+
+def test_table_has_column_handles_missing_table_exception():
+    class ExceptionRaisingCursor:
+        def __init__(self):
+            self.executed = []
+
+        def execute(self, query, params=None):
+            self.executed.append((query, params))
+            raise pymysql.err.ProgrammingError(1146, "Table 'test_db.missing_table' doesn't exist")
+
+        def fetchall(self):
+            return []
+
+    class CustomConnection:
+        def cursor(self, *_args, **_kwargs):
+            return ExceptionRaisingCursor()
+
+    service = FeesService(CustomConnection(), school_id=10)
+    assert service._table_has_column('missing_table', 'some_column') is False
+
 
 def test_clone_fee_structure_version_creates_draft_v2():
     parent_struct = {

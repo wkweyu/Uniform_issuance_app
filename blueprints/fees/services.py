@@ -42,8 +42,11 @@ class FeesService:
     def _table_has_column(self, table_name: str, column_name: str) -> bool:
         """Return True when a table contains a given column (cached per instance)."""
         if table_name not in self._table_columns_cache:
-            self.cursor.execute(f"SHOW COLUMNS FROM {table_name}")
-            self._table_columns_cache[table_name] = {row['Field'] for row in self.cursor.fetchall()}
+            try:
+                self.cursor.execute(f"SHOW COLUMNS FROM {table_name}")
+                self._table_columns_cache[table_name] = {row['Field'] for row in self.cursor.fetchall()}
+            except pymysql.Error:
+                self._table_columns_cache[table_name] = set()
         return column_name in self._table_columns_cache[table_name]
 
     def get_current_term_id(self):
