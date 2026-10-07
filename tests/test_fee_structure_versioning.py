@@ -65,3 +65,62 @@ def test_activate_fee_structure_version_archives_previous_active_version():
     executed = connection.cursor_obj.executed
     assert "status = 'archived'" in executed[1][0].lower()
     assert "status = 'active'" in executed[2][0].lower()
+
+
+def test_get_fee_structure_dashboard_metrics_with_status_column():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {'total': 5}), # total_classes query
+            ('all', [{'Field': 'id'}, {'Field': 'status'}, {'Field': 'school_id'}]), # SHOW COLUMNS FROM fee_structures
+            ('one', {'active_count': 3, 'draft_count': 1, 'archived_count': 1}), # status_row
+            ('one', {'configured': 3}) # configured_classes
+        ]
+    )
+    service = FeesService(connection, school_id=10)
+
+    metrics = service.get_fee_structure_dashboard_metrics(year_id=2026)
+
+    assert metrics['total_classes'] == 5
+    assert metrics['configured_classes'] == 3
+    assert metrics['missing_classes_count'] == 2
+    assert metrics['active_structures'] == 3
+    assert metrics['draft_structures'] == 1
+    assert metrics['archived_structures'] == 1
+
+
+def test_get_fee_structure_dashboard_metrics_fallback_without_status_column():
+    connection = RecordingConnection(
+        responses=[
+            ('one', {'total': 5}), # total_classes query
+            ('all', [{'Field': 'id'}, {'Field': 'school_id'}]), # SHOW COLUMNS FROM fee_structures (NO status column)
+            ('one', {'total_count': 4, 'configured': 3}) # fallback query
+        ]
+    )
+    service = FeesService(connection, school_id=10)
+
+    metrics = service.get_fee_structure_dashboard_metrics(year_id=2026)
+
+    assert metrics['total_classes'] == 5
+    assert metrics['configured_classes'] == 3
+    assert metrics['missing_classes_count'] == 2
+    assert metrics['active_structures'] == 4
+    assert metrics['draft_structures'] == 0
+    assert metrics['archived_structures'] == 0
+
+
+def test_get_missing_fee_structures_fallback_without_status_column():
+    connection = RecordingConnection(
+        responses=[
+            ('all', [{'Field': 'id'}, {'Field': 'school_id'}]), # SHOW COLUMNS FROM fee_structures
+            ('all', [{'classID': 2, 'display_name': 'Class 2', 'class_group_code': 'G1', 'stream_code': 'A'}]) # missing classes query
+        ]
+    )
+    service = FeesService(connection, school_id=10)
+
+    missing = service.get_missing_fee_structures(year_id=2026)
+
+    assert len(missing) == 1
+    assert missing[0]['classID'] == 2
+    executed = connection.cursor_obj.executed
+    # Verify fallback query doesn't filter on status = 'ACTIVE'
+    assert "status = 'active'" not in executed[1][0].lower()
