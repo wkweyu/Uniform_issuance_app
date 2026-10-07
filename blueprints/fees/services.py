@@ -4739,29 +4739,45 @@ def clone_fee_structure_version(self, parent_version_id: int, user_id: int) -> i
     p_category = parent['student_category']
     p_version = parent.get('version_number') or 1
 
-    # Fetch all term records for this specific structure version and scope
-    self.cursor.execute("""
-        SELECT * FROM fee_structures
-        WHERE academic_year_id = %s
-          AND (class_id = %s OR (class_id IS NULL AND %s IS NULL))
-          AND class_group_code = %s
-          AND student_category = %s
-          AND (version_number = %s OR id = %s)
-          AND school_id = %s
-    """, (p_year, p_class, p_class, p_group, p_category, p_version, parent_version_id, self.school_id))
-    sibling_terms = self.cursor.fetchall()
+    # Check if versioning columns exist in fee_structures table
+    has_version_number = 'version_number' in parent
 
-    # Determine next version number for this scope
-    self.cursor.execute("""
-        SELECT MAX(version_number) as max_v FROM fee_structures
-        WHERE academic_year_id = %s
-          AND (class_id = %s OR (class_id IS NULL AND %s IS NULL))
-          AND class_group_code = %s
-          AND student_category = %s
-          AND school_id = %s
-    """, (p_year, p_class, p_class, p_group, p_category, self.school_id))
-    max_row = self.cursor.fetchone()
-    next_version = ((max_row.get('max_v') if max_row else None) or p_version or 1) + 1
+    if has_version_number:
+        self.cursor.execute("""
+            SELECT * FROM fee_structures
+            WHERE academic_year_id = %s
+              AND (class_id = %s OR (class_id IS NULL AND %s IS NULL))
+              AND class_group_code = %s
+              AND student_category = %s
+              AND (version_number = %s OR id = %s)
+              AND school_id = %s
+        """, (p_year, p_class, p_class, p_group, p_category, p_version, parent_version_id, self.school_id))
+        sibling_terms = self.cursor.fetchall()
+
+        self.cursor.execute("""
+            SELECT MAX(version_number) as max_v FROM fee_structures
+            WHERE academic_year_id = %s
+              AND (class_id = %s OR (class_id IS NULL AND %s IS NULL))
+              AND class_group_code = %s
+              AND student_category = %s
+              AND school_id = %s
+        """, (p_year, p_class, p_class, p_group, p_category, self.school_id))
+        max_row = self.cursor.fetchone()
+        next_version = ((max_row.get('max_v') if max_row else None) or p_version or 1) + 1
+    else:
+        self.cursor.execute("""
+            SELECT * FROM fee_structures
+            WHERE academic_year_id = %s
+              AND (class_id = %s OR (class_id IS NULL AND %s IS NULL))
+              AND class_group_code = %s
+              AND student_category = %s
+              AND school_id = %s
+        """, (p_year, p_class, p_class, p_group, p_category, self.school_id))
+        sibling_terms = self.cursor.fetchall()
+        next_version = 2
+
+    if not sibling_terms:
+        sibling_terms = [parent]
 
     first_new_id = None
     try:
@@ -4769,7 +4785,6 @@ def clone_fee_structure_version(self, parent_version_id: int, user_id: int) -> i
 
         for t_struct in sibling_terms:
             t_id = t_struct['id']
-            # Fetch items for this term structure
             self.cursor.execute(
                 "SELECT * FROM fee_structure_items WHERE fee_structure_id = %s AND school_id = %s",
                 (t_id, self.school_id)
@@ -4780,17 +4795,30 @@ def clone_fee_structure_version(self, parent_version_id: int, user_id: int) -> i
                 t_struct['academic_year_id'], t_struct['term_id'], t_struct['class_id'], t_struct['class_group_code'], t_struct['student_category']
             )
 
-            self.cursor.execute("""
-                INSERT INTO fee_structures
-                    (academic_year_id, term_id, class_id, class_group_code, student_category,
-                     version_number, status, approval_status, parent_version_id, scope_key,
-                     total_amount, created_by, school_id)
-                VALUES (%s, %s, %s, %s, %s, %s, 'DRAFT', 'PENDING', %s, %s, %s, %s, %s)
-            """, (
-                t_struct['academic_year_id'], t_struct['term_id'], t_struct['class_id'],
-                t_struct['class_group_code'], t_struct['student_category'], next_version,
-                t_id, scope_key, t_struct['total_amount'], user_id, self.school_id
-            ))
+            if has_version_number:
+                self.cursor.execute("""
+                    INSERT INTO fee_structures
+                        (academic_year_id, term_id, class_id, class_group_code, student_category,
+                         version_number, status, approval_status, parent_version_id, scope_key,
+                         total_amount, created_by, school_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, 'DRAFT', 'PENDING', %s, %s, %s, %s, %s)
+                """, (
+                    t_struct['academic_year_id'], t_struct['term_id'], t_struct['class_id'],
+                    t_struct['class_group_code'], t_struct['student_category'], next_version,
+                    t_id, scope_key, t_struct['total_amount'], user_id, self.school_id
+                ))
+            else:
+                self.cursor.execute("""
+                    INSERT INTO fee_structures
+                        (academic_year_id, term_id, class_id, class_group_code, student_category,
+                         total_amount, created_by, school_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    t_struct['academic_year_id'], t_struct['term_id'], t_struct['class_id'],
+                    t_struct['class_group_code'], t_struct['student_category'],
+                    t_struct['total_amount'], user_id, self.school_id
+                ))
+
             new_struct_id = self.cursor.lastrowid
             if first_new_id is None:
                 first_new_id = new_struct_id
