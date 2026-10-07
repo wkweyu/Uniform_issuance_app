@@ -905,6 +905,7 @@ def manage_fee_structures():
         label = s['specific_class_name'] if s['class_id'] else s['class_group_code']
         key = (s['academic_year_id'], label, s['student_category'], s.get('version_number', 1), s_status)
         if key not in grouped_structures:
+            is_used = service.is_fee_structure_used_for_billing(s['id'])
             grouped_structures[key] = {
                 'id': s['id'],
                 'year_name': s['year_name'],
@@ -917,6 +918,7 @@ def manage_fee_structures():
                 'status': s_status,
                 'approval_status': s.get('approval_status', 'APPROVED'),
                 'effective_from': s.get('effective_from'),
+                'is_used': is_used,
                 'terms': [],
                 'total_year': 0
             }
@@ -985,19 +987,35 @@ def edit_fee_structure(structure_id):
     group_code = structure['class_group_code']
     category = structure['student_category']
 
-    # Fetch all term structures for this exact scope
-    query = """
-        SELECT fs.id, utd.term_number, fsi.votehead_id, fsi.amount
-        FROM fee_structures fs
-        JOIN uniform_term_dates utd ON fs.term_id = utd.id AND fs.school_id = utd.school_id
-        LEFT JOIN fee_structure_items fsi ON fs.id = fsi.fee_structure_id AND fs.school_id = fsi.school_id
-        WHERE fs.academic_year_id = %s
-          AND (fs.class_id = %s OR (fs.class_id IS NULL AND %s IS NULL))
-          AND fs.class_group_code = %s
-          AND fs.student_category = %s
-          AND fs.school_id = %s
-    """
-    service.cursor.execute(query, (year_id, class_id, class_id, group_code, category, service.school_id))
+    # Fetch all term structures for this exact scope and version
+    version_num = structure.get('version_number')
+    if version_num:
+        query = """
+            SELECT fs.id, utd.term_number, fsi.votehead_id, fsi.amount
+            FROM fee_structures fs
+            JOIN uniform_term_dates utd ON fs.term_id = utd.id AND fs.school_id = utd.school_id
+            LEFT JOIN fee_structure_items fsi ON fs.id = fsi.fee_structure_id AND fs.school_id = fsi.school_id
+            WHERE fs.academic_year_id = %s
+              AND (fs.class_id = %s OR (fs.class_id IS NULL AND %s IS NULL))
+              AND fs.class_group_code = %s
+              AND fs.student_category = %s
+              AND (fs.version_number = %s OR fs.id = %s)
+              AND fs.school_id = %s
+        """
+        service.cursor.execute(query, (year_id, class_id, class_id, group_code, category, version_num, structure_id, service.school_id))
+    else:
+        query = """
+            SELECT fs.id, utd.term_number, fsi.votehead_id, fsi.amount
+            FROM fee_structures fs
+            JOIN uniform_term_dates utd ON fs.term_id = utd.id AND fs.school_id = utd.school_id
+            LEFT JOIN fee_structure_items fsi ON fs.id = fsi.fee_structure_id AND fs.school_id = fsi.school_id
+            WHERE fs.academic_year_id = %s
+              AND (fs.class_id = %s OR (fs.class_id IS NULL AND %s IS NULL))
+              AND fs.class_group_code = %s
+              AND fs.student_category = %s
+              AND fs.school_id = %s
+        """
+        service.cursor.execute(query, (year_id, class_id, class_id, group_code, category, service.school_id))
     term_items = service.cursor.fetchall()
 
     existing_term_amounts = {}
@@ -1034,14 +1052,32 @@ def delete_fee_structure(structure_id):
     service = FeesService(connection)
     try:
         service.delete_fee_structure(structure_id)
-        flash("Fee structure deleted.", "info")
+        flash("Fee structure deleted successfully.", "info")
     except FeesError as e:
         flash(str(e), "error")
     except Exception as e:
         flash(str(e), "error")
     finally:
         connection.close()
-    return redirect(url_for('fees.manage_fee_structures'))
+    return redirect(request.referrer or url_for('fees.manage_fee_structures'))
+
+
+@fees_bp.route('/admin/fees/structures/archive/<int:structure_id>', methods=['POST'])
+@login_required
+@admin_required
+def archive_fee_structure_route(structure_id):
+    connection = get_db_connection()
+    service = FeesService(connection)
+    try:
+        service.archive_fee_structure(structure_id)
+        flash("Fee structure version archived successfully. Historical data preserved.", "success")
+    except FeesError as e:
+        flash(str(e), "error")
+    except Exception as e:
+        flash(str(e), "error")
+    finally:
+        connection.close()
+    return redirect(request.referrer or url_for('fees.manage_fee_structures'))
 
 @fees_bp.route('/admin/fees/structures/card')
 @login_required
@@ -1146,6 +1182,7 @@ def copy_fee_structure():
 def clone_fee_structure_version_route(structure_id):
     connection = get_db_connection()
     service = FeesService(connection)
+    new_id = None
     try:
         new_id = service.clone_fee_structure_version(structure_id, session['userNo'])
         flash(f"Cloned into new DRAFT fee structure version #{new_id}.", "success")
@@ -1153,6 +1190,9 @@ def clone_fee_structure_version_route(structure_id):
         flash(str(e), "error")
     finally:
         connection.close()
+
+    if new_id:
+        return redirect(url_for('fees.edit_fee_structure', structure_id=new_id))
     return redirect(request.referrer or url_for('fees.manage_fee_structures'))
 
 

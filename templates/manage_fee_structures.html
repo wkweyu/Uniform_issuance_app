@@ -206,6 +206,22 @@
                                     </button>
                                 </form>
                                 {% endif %}
+                                {% if s.status != 'ARCHIVED' %}
+                                <form action="{{ url_for('fees.archive_fee_structure_route', structure_id=s.id) }}" method="POST" class="inline" onsubmit="return confirm('Archive this fee structure version? Historical data will be preserved, but it will be hidden from active lists.');">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" title="Archive Version" class="p-2 text-amber-600 hover:bg-amber-50 rounded-xl transition font-bold text-xs flex items-center gap-1">
+                                        <i class="fas fa-box-archive"></i> Archive
+                                    </button>
+                                </form>
+                                {% endif %}
+                                {% if not s.is_used %}
+                                <form action="{{ url_for('fees.delete_fee_structure', structure_id=s.id) }}" method="POST" class="inline" onsubmit="return confirm('Delete this unused fee structure version?');">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" title="Delete Version" class="p-2 text-rose-600 hover:bg-rose-50 rounded-xl transition font-bold text-xs flex items-center gap-1">
+                                        <i class="fas fa-trash-can"></i> Delete
+                                    </button>
+                                </form>
+                                {% endif %}
                             </div>
                         </td>
                     </tr>
