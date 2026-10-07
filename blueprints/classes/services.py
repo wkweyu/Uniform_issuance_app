@@ -264,6 +264,14 @@ class ClassManagementService:
         self.cursor.execute("SELECT id, year, name, start_date, end_date, is_current FROM academic_years WHERE school_id = %s ORDER BY year DESC", (self.school_id,))
         return self.cursor.fetchall()
 
+    def get_current_academic_year(self) -> Optional[Dict]:
+        self.cursor.execute("SELECT id, year, name, start_date, end_date, is_current FROM academic_years WHERE is_current = TRUE AND school_id = %s LIMIT 1", (self.school_id,))
+        result = self.cursor.fetchone()
+        if not result:
+            self.cursor.execute("SELECT id, year, name, start_date, end_date, is_current FROM academic_years WHERE school_id = %s ORDER BY year DESC LIMIT 1", (self.school_id,))
+            result = self.cursor.fetchone()
+        return result
+
     def get_class_groups(self) -> Dict[str, Dict]:
         self.cursor.execute("SELECT code, name FROM class_group_settings WHERE school_id = %s ORDER BY code", (self.school_id,))
         results = self.cursor.fetchall()
