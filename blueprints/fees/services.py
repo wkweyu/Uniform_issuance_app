@@ -4444,27 +4444,48 @@ def get_fee_structure_dashboard_metrics(self, year_id: Optional[int] = None) -> 
     self.cursor.execute("SELECT COUNT(*) AS total FROM classes WHERE academic_year_id = %s AND is_active = TRUE AND school_id = %s", (year_id, self.school_id))
     total_classes = self.cursor.fetchone()['total'] or 0
 
-    # Counts by status
-    self.cursor.execute("""
-        SELECT
-            SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) as active_count,
-            SUM(CASE WHEN status = 'DRAFT' THEN 1 ELSE 0 END) as draft_count,
-            SUM(CASE WHEN status = 'ARCHIVED' THEN 1 ELSE 0 END) as archived_count
-        FROM fee_structures
-        WHERE academic_year_id = %s AND school_id = %s
-    """, (year_id, self.school_id))
-    status_row = self.cursor.fetchone() or {}
-    active_structures = status_row.get('active_count') or 0
-    draft_structures = status_row.get('draft_count') or 0
-    archived_structures = status_row.get('archived_count') or 0
+    has_status = self._table_has_column('fee_structures', 'status')
+    if not has_status:
+        logger.warning(
+            "Column 'status' is missing from 'fee_structures' table for school_id %s. "
+            "Please run migration 057_add_fee_structure_versioning_columns.sql to enable fee structure versioning.",
+            self.school_id
+        )
 
-    # Classes with active structure
-    self.cursor.execute("""
-        SELECT COUNT(DISTINCT class_id) as configured
-        FROM fee_structures
-        WHERE academic_year_id = %s AND status = 'ACTIVE' AND class_id IS NOT NULL AND class_id > 0 AND school_id = %s
-    """, (year_id, self.school_id))
-    configured_classes = self.cursor.fetchone()['configured'] or 0
+    if has_status:
+        # Counts by status
+        self.cursor.execute("""
+            SELECT
+                SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) as active_count,
+                SUM(CASE WHEN status = 'DRAFT' THEN 1 ELSE 0 END) as draft_count,
+                SUM(CASE WHEN status = 'ARCHIVED' THEN 1 ELSE 0 END) as archived_count
+            FROM fee_structures
+            WHERE academic_year_id = %s AND school_id = %s
+        """, (year_id, self.school_id))
+        status_row = self.cursor.fetchone() or {}
+        active_structures = status_row.get('active_count') or 0
+        draft_structures = status_row.get('draft_count') or 0
+        archived_structures = status_row.get('archived_count') or 0
+
+        # Classes with active structure
+        self.cursor.execute("""
+            SELECT COUNT(DISTINCT class_id) as configured
+            FROM fee_structures
+            WHERE academic_year_id = %s AND status = 'ACTIVE' AND class_id IS NOT NULL AND class_id > 0 AND school_id = %s
+        """, (year_id, self.school_id))
+        configured_classes = self.cursor.fetchone()['configured'] or 0
+    else:
+        # Fallback when status column has not been added yet
+        self.cursor.execute("""
+            SELECT COUNT(*) as total_count, COUNT(DISTINCT class_id) as configured
+            FROM fee_structures
+            WHERE academic_year_id = %s AND school_id = %s
+        """, (year_id, self.school_id))
+        status_row = self.cursor.fetchone() or {}
+        active_structures = status_row.get('total_count') or 0
+        draft_structures = 0
+        archived_structures = 0
+        configured_classes = status_row.get('configured') or 0
 
     missing_classes_count = max(0, total_classes - configured_classes)
 
@@ -4481,16 +4502,36 @@ def get_fee_structure_dashboard_metrics(self, year_id: Optional[int] = None) -> 
 
 def get_missing_fee_structures(self, year_id: int) -> List[Dict]:
     """Identify active classes/groups in an academic year that lack an active fee structure."""
-    self.cursor.execute("""
-        SELECT c.classID, c.display_name, c.class_group_code, c.stream_code
-        FROM classes c
-        WHERE c.academic_year_id = %s AND c.is_active = TRUE AND c.school_id = %s
-          AND c.classID NOT IN (
-              SELECT class_id FROM fee_structures
-              WHERE academic_year_id = %s AND status = 'ACTIVE' AND class_id IS NOT NULL AND class_id > 0 AND school_id = %s
-          )
-        ORDER BY c.display_name ASC
-    """, (year_id, self.school_id, year_id, self.school_id))
+    has_status = self._table_has_column('fee_structures', 'status')
+    if not has_status:
+        logger.warning(
+            "Column 'status' is missing from 'fee_structures' table for school_id %s. "
+            "Please run migration 057_add_fee_structure_versioning_columns.sql to enable fee structure versioning.",
+            self.school_id
+        )
+
+    if has_status:
+        self.cursor.execute("""
+            SELECT c.classID, c.display_name, c.class_group_code, c.stream_code
+            FROM classes c
+            WHERE c.academic_year_id = %s AND c.is_active = TRUE AND c.school_id = %s
+              AND c.classID NOT IN (
+                  SELECT class_id FROM fee_structures
+                  WHERE academic_year_id = %s AND status = 'ACTIVE' AND class_id IS NOT NULL AND class_id > 0 AND school_id = %s
+              )
+            ORDER BY c.display_name ASC
+        """, (year_id, self.school_id, year_id, self.school_id))
+    else:
+        self.cursor.execute("""
+            SELECT c.classID, c.display_name, c.class_group_code, c.stream_code
+            FROM classes c
+            WHERE c.academic_year_id = %s AND c.is_active = TRUE AND c.school_id = %s
+              AND c.classID NOT IN (
+                  SELECT class_id FROM fee_structures
+                  WHERE academic_year_id = %s AND class_id IS NOT NULL AND class_id > 0 AND school_id = %s
+              )
+            ORDER BY c.display_name ASC
+        """, (year_id, self.school_id, year_id, self.school_id))
     return self.cursor.fetchall()
 
 
