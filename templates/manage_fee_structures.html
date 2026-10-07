@@ -60,7 +60,7 @@
             <span class="text-[10px] font-bold text-indigo-200 uppercase tracking-widest">Action</span>
             {% if structures %}
             <a href="{{ url_for('fees.fee_structure_card', year_id=structures[0].academic_year_id, group_code=structures[0].class_group_code, class_id=structures[0].class_id or '', category=structures[0].student_category) }}" target="_blank" class="mt-2 text-xs font-black bg-white text-indigo-900 py-2 px-3 rounded-xl hover:bg-blue-50 transition text-center uppercase tracking-wider flex items-center justify-center gap-1">
-                <i class="fas fa-print"></i> Print Fee Card
+                <i class="fas fa-print"></i> Print Fee Structure
             </a>
             {% else %}
             <span class="mt-2 text-[10px] text-indigo-200 italic">No structure selected</span>
