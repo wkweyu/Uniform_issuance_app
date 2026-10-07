@@ -523,17 +523,66 @@ class FeesService:
                         results['errors'].append(f"{group}/{cat}: {str(e)}")
         return results
 
-    def delete_fee_structure(self, structure_id: int) -> bool:
-        """Delete a fee structure. Only allowed if not yet invoiced (optional safety)."""
+    def is_fee_structure_used_for_billing(self, structure_id: int) -> bool:
+        """Check if a fee structure version or its scope/year/term has been referenced in student billing or posted ledger entries."""
+        self._assert_structure_belongs_to_school(structure_id)
+        self.cursor.execute("SELECT * FROM fee_structures WHERE id = %s AND school_id = %s", (structure_id, self.school_id))
+        struct = self.cursor.fetchone()
+        if not struct:
+            return False
+
+        # 1. Check student_billing_profiles table if fee_structure_version_id is set
+        if self._table_has_column('student_billing_profiles', 'fee_structure_version_id'):
+            self.cursor.execute(
+                "SELECT id FROM student_billing_profiles WHERE fee_structure_version_id = %s AND school_id = %s LIMIT 1",
+                (structure_id, self.school_id)
+            )
+            if self.cursor.fetchone():
+                return True
+
+        # 2. Check fee_ledger for posted charges or payments for this academic year & term
+        self.cursor.execute("""
+            SELECT id FROM fee_ledger
+            WHERE academic_year_id = %s AND term_id = %s AND school_id = %s
+            LIMIT 1
+        """, (struct['academic_year_id'], struct['term_id'], self.school_id))
+        if self.cursor.fetchone():
+            return True
+
+        return False
+
+    def archive_fee_structure(self, structure_id: int) -> bool:
+        """Archive a fee structure version to prevent future billing while keeping historical data intact."""
         try:
             self._assert_structure_belongs_to_school(structure_id)
-            # Check if invoiced (optional but recommended for ERP standards)
-            # self.cursor.execute("SELECT id FROM fee_ledger WHERE reference_no LIKE %s AND school_id = %s", (f"INV-%-{structure_id}", self.school_id))
-            
-            self.cursor.execute("DELETE FROM fee_structures WHERE id = %s AND school_id = %s", (structure_id, self.school_id))
+            has_status = self._table_has_column('fee_structures', 'status')
+            if has_status:
+                self.cursor.execute("UPDATE fee_structures SET status = 'ARCHIVED' WHERE id = %s AND school_id = %s", (structure_id, self.school_id))
+            else:
+                self.cursor.execute("UPDATE fee_structures SET is_locked = 1 WHERE id = %s AND school_id = %s", (structure_id, self.school_id))
             self.connection.commit()
             return True
         except Exception as e:
+            self.connection.rollback()
+            raise FeesError(f"Archiving failed: {str(e)}")
+
+    def delete_fee_structure(self, structure_id: int) -> bool:
+        """Delete a fee structure version. Strictly rejected if structure has been used for billing."""
+        try:
+            self._assert_structure_belongs_to_school(structure_id)
+            if self.is_fee_structure_used_for_billing(structure_id):
+                raise FeesError("This structure has been used for billing. It cannot be deleted. Would you like to Archive it instead?")
+
+            self.connection.begin()
+            self.cursor.execute("DELETE FROM fee_structure_items WHERE fee_structure_id = %s AND school_id = %s", (structure_id, self.school_id))
+            self.cursor.execute("DELETE FROM fee_structures WHERE id = %s AND school_id = %s", (structure_id, self.school_id))
+            self.connection.commit()
+            return True
+        except FeesError:
+            self.connection.rollback()
+            raise
+        except Exception as e:
+            self.connection.rollback()
             raise FeesError(f"Deletion failed: {str(e)}")
 
     def get_fee_structures(self, year_id: Optional[int] = None) -> List[Dict]:
@@ -4453,12 +4502,12 @@ def get_fee_structure_dashboard_metrics(self, year_id: Optional[int] = None) -> 
         )
 
     if has_status:
-        # Counts by status
+        # Count unique annual structure versions by status (grouping terms per version)
         self.cursor.execute("""
             SELECT
-                SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) as active_count,
-                SUM(CASE WHEN status = 'DRAFT' THEN 1 ELSE 0 END) as draft_count,
-                SUM(CASE WHEN status = 'ARCHIVED' THEN 1 ELSE 0 END) as archived_count
+                COUNT(DISTINCT CASE WHEN status = 'ACTIVE' THEN CONCAT(COALESCE(class_id, 0), '-', class_group_code, '-', student_category, '-', COALESCE(version_number, 1)) END) as active_count,
+                COUNT(DISTINCT CASE WHEN status = 'DRAFT' THEN CONCAT(COALESCE(class_id, 0), '-', class_group_code, '-', student_category, '-', COALESCE(version_number, 1)) END) as draft_count,
+                COUNT(DISTINCT CASE WHEN status = 'ARCHIVED' THEN CONCAT(COALESCE(class_id, 0), '-', class_group_code, '-', student_category, '-', COALESCE(version_number, 1)) END) as archived_count
             FROM fee_structures
             WHERE academic_year_id = %s AND school_id = %s
         """, (year_id, self.school_id))
