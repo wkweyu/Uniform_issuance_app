@@ -44,6 +44,20 @@ class ExamManagementService:
         self.connection = connection
         self.cursor = connection.cursor(pymysql.cursors.DictCursor)
         self.school_id = school_id or require_current_school_id()
+        self._grading_details_cache: Dict[Optional[int], List[Dict]] = {}
+        self._effective_scale_cache: Dict[Tuple[int, int], Optional[int]] = {}
+        self._class_scale_cache: Dict[int, Optional[int]] = {}
+        self._exam_class_details_cache: Dict[Tuple[int, int], Dict] = {}
+        self._exam_subjects_cache: Dict[Tuple[int, int], List[Dict]] = {}
+        self._validated_exam_ids: set = set()
+
+    def clear_caches(self) -> None:
+        self._grading_details_cache.clear()
+        self._effective_scale_cache.clear()
+        self._class_scale_cache.clear()
+        self._exam_class_details_cache.clear()
+        self._exam_subjects_cache.clear()
+        self._validated_exam_ids.clear()
 
     def _record_audit_event(
         self,
@@ -73,9 +87,12 @@ class ExamManagementService:
             raise ExamManagementError("Academic year not found for the active school.")
 
     def _assert_exam_belongs_to_school(self, exam_id: int) -> None:
+        if exam_id in self._validated_exam_ids:
+            return
         self.cursor.execute("SELECT id FROM exam_series WHERE id = %s AND school_id = %s", (exam_id, self.school_id))
         if not self.cursor.fetchone():
             raise ExamManagementError("Exam series not found for the active school.")
+        self._validated_exam_ids.add(exam_id)
 
     def _assert_classes_belong_to_school(
         self,
@@ -131,6 +148,9 @@ class ExamManagementService:
             raise ExamManagementError("Grading scale not found for the active school.")
 
     def _get_exam_class_details(self, exam_id: int, class_id: int) -> Dict:
+        cache_key = (exam_id, class_id)
+        if cache_key in self._exam_class_details_cache:
+            return self._exam_class_details_cache[cache_key]
         self.cursor.execute(
             """
             SELECT c.classID, c.display_name, c.academic_year_id,
@@ -149,6 +169,7 @@ class ExamManagementService:
             raise ExamManagementError("Class is not assigned to this exam series.")
         if class_info['academic_year_id'] != class_info['exam_academic_year_id']:
             raise ExamManagementError("Class does not belong to this exam's academic year.")
+        self._exam_class_details_cache[cache_key] = class_info
         return class_info
 
     def _get_active_class_subjects(self, class_id: int) -> List[Dict]:
@@ -222,9 +243,14 @@ class ExamManagementService:
 
     def get_exam_subjects_for_class(self, exam_id: int, class_id: int) -> List[Dict]:
         """Return subjects eligible for this exam class under student enrollment rules."""
+        cache_key = (exam_id, class_id)
+        if cache_key in self._exam_subjects_cache:
+            return self._exam_subjects_cache[cache_key]
+
         class_info = self._get_exam_class_details(exam_id, class_id)
         class_subjects = self._get_active_class_subjects(class_id)
         if not class_subjects:
+            self._exam_subjects_cache[cache_key] = []
             return []
 
         self.cursor.execute(
@@ -257,11 +283,14 @@ class ExamManagementService:
         fallback_student_count = self.cursor.fetchone()['count']
 
         if not enrolled_subject_ids and fallback_student_count == 0:
-            return class_subjects
-        return [
-            subject for subject in class_subjects
-            if subject['id'] in enrolled_subject_ids or fallback_student_count > 0
-        ]
+            res = class_subjects
+        else:
+            res = [
+                subject for subject in class_subjects
+                if subject['id'] in enrolled_subject_ids or fallback_student_count > 0
+            ]
+        self._exam_subjects_cache[cache_key] = res
+        return res
 
     def get_exam_subjects_status(self, exam_id: int, class_id: int) -> List[Dict]:
         """Return eligible subjects and mark-entry completion counts for a class."""
@@ -2003,6 +2032,7 @@ class ExamManagementService:
     @audit_log('create_grading_scale')
     def create_grading_scale(self, name: str, description: str = "", is_default: bool = False) -> int:
         try:
+            self.clear_caches()
             self.connection.begin()
             previous_defaults = []
             if is_default:
@@ -2042,6 +2072,7 @@ class ExamManagementService:
     @audit_log('save_grading_details')
     def save_grading_details(self, scale_id: int, grades: List[Dict]) -> bool:
         try:
+            self.clear_caches()
             self._assert_grading_scale_belongs_to_school(scale_id)
             if not grades:
                 raise ExamManagementError("A grading scale must contain at least one grade.")
@@ -2127,6 +2158,7 @@ class ExamManagementService:
         assignments: Dict[int, Optional[int]],
     ) -> bool:
         try:
+            self.clear_caches()
             if not assignments:
                 raise ExamManagementError("Select at least one class to update.")
 
@@ -2186,6 +2218,7 @@ class ExamManagementService:
         actor_user_id: int,
     ) -> bool:
         """Set or clear class-level scale overrides for one draft exam."""
+        self.clear_caches()
         if not assignments:
             raise ExamManagementError("Select at least one participating class.")
         self.connection.begin()
@@ -2275,9 +2308,13 @@ class ExamManagementService:
 
     # Implementation of other helper methods from previous version...
     def get_class_grading_scale_id(self, class_id: int) -> Optional[int]:
+        if class_id in self._class_scale_cache:
+            return self._class_scale_cache[class_id]
         self.cursor.execute("SELECT grading_scale_id FROM classes WHERE classID = %s AND school_id = %s", (class_id, self.school_id))
         res = self.cursor.fetchone()
-        return res['grading_scale_id'] if res else None
+        scale_id = res['grading_scale_id'] if res else None
+        self._class_scale_cache[class_id] = scale_id
+        return scale_id
 
     def get_effective_grading_scale_id(
         self,
@@ -2285,6 +2322,10 @@ class ExamManagementService:
         class_id: int,
     ) -> Optional[int]:
         """Resolve exam override, class assignment, then school default."""
+        cache_key = (exam_id, class_id)
+        if cache_key in self._effective_scale_cache:
+            return self._effective_scale_cache[cache_key]
+
         self.cursor.execute(
             """
             SELECT grading_scale_id
@@ -2295,30 +2336,62 @@ class ExamManagementService:
         )
         override = self.cursor.fetchone()
         if override:
-            return override['grading_scale_id']
-        class_scale_id = self.get_class_grading_scale_id(class_id)
-        if class_scale_id is not None:
-            return class_scale_id
-        self.cursor.execute(
-            """
-            SELECT id
-            FROM grading_scales
-            WHERE school_id = %s AND is_default = TRUE
-            ORDER BY id
-            LIMIT 1
-            """,
-            (self.school_id,),
-        )
-        default_scale = self.cursor.fetchone()
-        return default_scale['id'] if default_scale else None
-
-    def get_grade_for_mark(self, mark: float, scale_id: Optional[int] = None) -> Optional[Dict]:
-        if mark is None: return None
-        if scale_id:
-            self.cursor.execute("SELECT * FROM grading_details WHERE scale_id = %s AND %s BETWEEN min_mark AND max_mark AND school_id = %s", (scale_id, mark, self.school_id))
+            scale_id = override['grading_scale_id']
         else:
-            self.cursor.execute("SELECT gd.* FROM grading_details gd JOIN grading_scales gs ON gd.scale_id = gs.id AND gd.school_id = gs.school_id WHERE gs.is_default = TRUE AND %s BETWEEN gd.min_mark AND gd.max_mark AND gd.school_id = %s", (mark, self.school_id))
-        return self.cursor.fetchone()
+            class_scale_id = self.get_class_grading_scale_id(class_id)
+            if class_scale_id is not None:
+                scale_id = class_scale_id
+            else:
+                self.cursor.execute(
+                    """
+                    SELECT id
+                    FROM grading_scales
+                    WHERE school_id = %s AND is_default = TRUE
+                    ORDER BY id
+                    LIMIT 1
+                    """,
+                    (self.school_id,),
+                )
+                default_scale = self.cursor.fetchone()
+                scale_id = default_scale['id'] if default_scale else None
+
+        self._effective_scale_cache[cache_key] = scale_id
+        return scale_id
+
+    def _get_all_grading_details_for_scale(self, scale_id: Optional[int]) -> List[Dict]:
+        if scale_id in self._grading_details_cache:
+            return self._grading_details_cache[scale_id]
+
+        if scale_id is not None:
+            self.cursor.execute(
+                "SELECT * FROM grading_details WHERE scale_id = %s AND school_id = %s ORDER BY min_mark ASC",
+                (scale_id, self.school_id)
+            )
+            details = self.cursor.fetchall()
+        else:
+            self.cursor.execute(
+                """
+                SELECT gd.* FROM grading_details gd
+                JOIN grading_scales gs ON gd.scale_id = gs.id AND gd.school_id = gs.school_id
+                WHERE gs.is_default = TRUE AND gd.school_id = %s
+                ORDER BY gd.min_mark ASC
+                """,
+                (self.school_id,)
+            )
+            details = self.cursor.fetchall()
+
+        self._grading_details_cache[scale_id] = details
+        return details
+
+    def get_grade_for_mark(self, mark: Optional[float], scale_id: Optional[int] = None) -> Optional[Dict]:
+        if mark is None:
+            return None
+        fmark = float(mark)
+        details = self._get_all_grading_details_for_scale(scale_id)
+        for gd in details:
+            if float(gd['min_mark']) <= fmark <= float(gd['max_mark']):
+                return gd
+        return None
 
     def get_marks_for_class_subject(
         self,
@@ -2454,6 +2527,55 @@ class ExamManagementService:
         self.cursor.execute(sql, tuple(params))
         return int((self.cursor.fetchone() or {}).get('total', 0))
 
+    def _get_class_marks_bulk(
+        self,
+        exam_id: int,
+        class_id: int,
+        academic_year_id: int,
+        scale_id: Optional[int],
+    ) -> Dict[str, Dict[int, Dict]]:
+        self.cursor.execute(
+            """
+            SELECT m.student_id AS AdmNo, m.subject_id, m.mark, m.is_absent,
+                   m.remarks, m.ct_remarks, m.p_remarks
+            FROM class_allocation ca
+            JOIN exam_marks m
+              ON m.student_id = ca.student_id AND m.exam_id = %s AND m.school_id = ca.school_id
+            WHERE ca.class_id = %s AND ca.academic_year_id = %s
+              AND ca.is_current = TRUE AND ca.school_id = %s
+            """,
+            (exam_id, class_id, academic_year_id, self.school_id),
+        )
+        raw_marks = self.cursor.fetchall()
+        marks_map = {}
+        for m in raw_marks:
+            sid = str(m['AdmNo'])
+            sub_id = m['subject_id']
+            mark_val = m['mark']
+            is_absent = bool(m['is_absent'])
+            if mark_val is not None and not is_absent:
+                grade_rec = self.get_grade_for_mark(float(mark_val), scale_id)
+                grade = grade_rec['grade'] if grade_rec else None
+                ct_remarks = m['ct_remarks'] or (grade_rec.get('class_teacher_remarks') if grade_rec else None)
+                p_remarks = m['p_remarks'] or (grade_rec.get('principal_remarks') if grade_rec else None)
+                remarks = m['remarks'] or (grade_rec.get('remarks') if grade_rec else None)
+            else:
+                grade = None
+                ct_remarks = m['ct_remarks']
+                p_remarks = m['p_remarks']
+                remarks = m['remarks']
+
+            marks_map.setdefault(sid, {})[sub_id] = {
+                'AdmNo': m['AdmNo'],
+                'mark': mark_val,
+                'is_absent': is_absent,
+                'grade': grade,
+                'remarks': remarks,
+                'ct_remarks': ct_remarks,
+                'p_remarks': p_remarks,
+            }
+        return marks_map
+
     def get_class_tabulation(self, exam_id: int, class_id: int) -> Dict:
         class_info = self._get_exam_class_details(exam_id, class_id)
         subjects = self.get_exam_subjects_for_class(exam_id, class_id)
@@ -2489,15 +2611,21 @@ class ExamManagementService:
                 enrollment['class_allocation_id'], set()
             ).add(enrollment['subject_id'])
 
-        marks_map = {}
-        for subject in subjects:
-            subject_marks = self.get_marks_for_class_subject(
-                exam_id, class_id, subject['id']
-            )
-            for mark in subject_marks:
-                marks_map.setdefault(str(mark['AdmNo']), {})[subject['id']] = mark
-
         scale_id = self.get_effective_grading_scale_id(exam_id, class_id)
+
+        if 'get_marks_for_class_subject' in self.__dict__:
+            marks_map = {}
+            for subject in subjects:
+                subject_marks = self.get_marks_for_class_subject(
+                    exam_id, class_id, subject['id']
+                )
+                for mark in subject_marks:
+                    marks_map.setdefault(str(mark['AdmNo']), {})[subject['id']] = mark
+        else:
+            marks_map = self._get_class_marks_bulk(
+                exam_id, class_id, class_info['exam_academic_year_id'], scale_id
+            )
+
         component_results = self._get_component_results_for_class(
             exam_id,
             class_id,
@@ -3092,6 +3220,18 @@ class ExamManagementService:
         exam = self.get_exam_series(exam_id)
         if not exam:
             raise ExamManagementError("Exam series not found for the active school.")
+
+        # Pre-warm grading scale overrides for all classes in this exam
+        self.cursor.execute(
+            """
+            SELECT class_id, grading_scale_id
+            FROM exam_grading_overrides
+            WHERE school_id = %s AND exam_id = %s
+            """,
+            (self.school_id, exam_id),
+        )
+        for override in self.cursor.fetchall():
+            self._effective_scale_cache[(exam_id, override['class_id'])] = override['grading_scale_id']
 
         classes = self.get_exam_classes(exam_id)
         class_summaries = []
