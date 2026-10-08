@@ -3,6 +3,8 @@
 -- Author: SkoolTrack Pro ERP
 -- Date: 2026-10-08
 
+SET FOREIGN_KEY_CHECKS = 0;
+
 -- =============================================================================
 -- 1. CONFIGURATION LOOKUP TABLES (No Hardcoded ENUMs)
 -- =============================================================================
@@ -175,11 +177,8 @@ CREATE TABLE IF NOT EXISTS `business_units` (
 -- Safe Migration of Legacy income_activities Table to View
 INSERT IGNORE INTO `business_units` (id, school_id, name, type_id, revenue_gl_account, expense_gl_account, is_active, created_at)
 SELECT id, school_id, name, 1, gl_income_account, gl_expense_account, is_active, created_at
-FROM `income_activities`
-WHERE EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'income_activities' AND table_type = 'BASE TABLE');
+FROM `income_activities`;
 
-DROP TABLE IF EXISTS `income_activities_legacy_backup`;
--- Note: View replaces legacy table for 100% backward compatibility
 DROP TABLE IF EXISTS `income_activities`;
 
 CREATE OR REPLACE VIEW `income_activities` AS
@@ -214,7 +213,9 @@ ALTER TABLE `item_stock`
   ADD CONSTRAINT `fk_stock_loc` FOREIGN KEY (`location_id`) REFERENCES `inventory_locations`(`id`) ON DELETE SET NULL,
   ADD CONSTRAINT `fk_stock_bu` FOREIGN KEY (`business_unit_id`) REFERENCES `business_units`(`id`) ON DELETE SET NULL;
 
+-- Ensure stock_movements supports flexible VARCHAR movement_types
 ALTER TABLE `stock_movements`
+  MODIFY COLUMN `movement_type` VARCHAR(50) NOT NULL,
   ADD COLUMN IF NOT EXISTS `school_id` INT NOT NULL DEFAULT 1,
   ADD COLUMN IF NOT EXISTS `item_master_id` INT NULL,
   ADD COLUMN IF NOT EXISTS `business_unit_id` INT NULL,
@@ -420,3 +421,5 @@ CREATE TABLE IF NOT EXISTS `business_transaction_events` (
   INDEX `idx_bte_status` (`school_id`, `posting_status`),
   UNIQUE KEY `uq_event_source` (`school_id`, `source_table`, `source_id`, `event_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+SET FOREIGN_KEY_CHECKS = 1;
