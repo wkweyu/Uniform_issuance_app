@@ -174,16 +174,10 @@ CREATE TABLE IF NOT EXISTS `business_units` (
   INDEX `idx_bu_type` (`type_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Safe Migration of Legacy income_activities Table to View
+-- Populate business_units from income_activities if present (Safe non-destructive insert)
 INSERT IGNORE INTO `business_units` (id, school_id, name, type_id, revenue_gl_account, expense_gl_account, is_active, created_at)
 SELECT id, school_id, name, 1, gl_income_account, gl_expense_account, is_active, created_at
 FROM `income_activities`;
-
-DROP TABLE IF EXISTS `income_activities`;
-
-CREATE OR REPLACE VIEW `income_activities` AS
-SELECT id, school_id, name, '' AS description, 'units' AS unit_of_measure, revenue_gl_account AS gl_income_account, expense_gl_account AS gl_expense_account, is_active, created_at
-FROM `business_units`;
 
 CREATE TABLE IF NOT EXISTS `inventory_locations` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,

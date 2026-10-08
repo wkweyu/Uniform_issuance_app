@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-800">Commercial Point of Sale (POS)</h1>
+            <p class="text-gray-600">Multi-Item Commercial Invoicing, Tuckshop & Retail Sales</p>
+        </div>
+        <a href="{{ url_for('farm.dashboard') }}" class="text-gray-600 hover:text-gray-800 flex items-center gap-2">
+            <i class="fas fa-arrow-left"></i> Back to Dashboard
+        </a>
+    </div>
+
+    <div class="max-w-2xl mx-auto bg-white p-8 rounded-xl shadow-sm border border-gray-100">
+        <form method="POST" action="{{ url_for('farm.pos_sales') }}" class="space-y-6">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Business Unit Enterprise</label>
+                <select name="business_unit_id" required class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500">
+                    {% for unit in units %}
+                    <option value="{{ unit.id }}">{{ unit.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Customer Type</label>
+                    <select name="customer_type" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500">
+                        <option value="EXTERNAL">External Customer / Cash</option>
+                        <option value="STUDENT">Student Account Debit</option>
+                        <option value="STAFF">Staff Member</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Customer / Buyer Name</label>
+                    <input type="text" name="customer_name" required placeholder="e.g. John Doe, Walk-in" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500">
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Student Adm No (Optional for AR Fee Debit)</label>
+                <input type="text" name="student_adm_no" placeholder="e.g. ADM1001" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500">
+            </div>
+
+            <hr class="my-4">
+
+            <div class="space-y-4">
+                <h3 class="font-bold text-gray-800">Sale Item Details</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Item Name</label>
+                        <input type="text" name="item_name" required placeholder="e.g. Fresh Milk, Bread, Juice" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                        <input type="number" step="0.01" name="quantity" required placeholder="1.00" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Unit Price</label>
+                        <input type="number" step="0.01" name="unit_price" required placeholder="100.00" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500">
+                    </div>
+                </div>
+            </div>
+
+            <button type="submit" class="w-full bg-green-600 text-white py-3 rounded-lg font-bold text-lg hover:bg-green-700 transition flex items-center justify-center gap-2">
+                <i class="fas fa-shopping-cart"></i> Complete POS Sale
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}

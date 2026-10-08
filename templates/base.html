@@ -251,7 +251,7 @@
                             <a href="{{ url_for('uniform_dashboard') }}" class="px-3 py-2 rounded-lg transition hover:bg-blue-700"><i class="fas fa-tshirt"></i> Uniforms</a>
                             <a href="{{ url_for('procurement.procurement_dashboard') }}" class="px-3 py-2 rounded-lg transition hover:bg-blue-700"><i class="fas fa-cart-shopping"></i> Procurement</a>
                             <a href="{{ url_for('fleet_dashboard') }}" class="px-3 py-2 rounded-lg transition hover:bg-blue-700"><i class="fas fa-bus"></i> Fleet</a>
-                            <a href="{{ url_for('farm.dashboard') }}" class="px-3 py-2 rounded-lg transition hover:bg-blue-700"><i class="fas fa-seedling"></i> Farm</a>
+                            <a href="{{ url_for('farm.dashboard') }}" class="px-3 py-2 rounded-lg transition hover:bg-blue-700"><i class="fas fa-briefcase"></i> Business Ops</a>
                             <a href="{{ url_for('payroll.dashboard') }}" class="px-3 py-2 rounded-lg transition hover:bg-blue-700"><i class="fas fa-money-bill-transfer"></i> Payroll</a>
                             {% if session.get('is_admin') and platform_is_saas_user() %}
                             <a href="{{ url_for('platform.index') }}" class="px-3 py-2 rounded-lg text-cyan-300 font-bold hover:bg-blue-700"><i class="fas fa-microchip"></i> Control Plane</a>
