@@ -328,3 +328,250 @@ class InventoryService:
         query += " ORDER BY ur.issued_on DESC"
         self.cursor.execute(query, params)
         return self.cursor.fetchall()
+
+
+class InventoryTransactionService:
+    """
+    Centralized Enterprise Inventory Transaction Engine.
+    All stock balance mutations across all modules MUST pass through this service.
+    Direct updates to item_stock.current_stock are prohibited.
+    """
+    def __init__(self, connection: pymysql.Connection, school_id: Optional[int] = None):
+        self.connection = connection
+        self.cursor = connection.cursor(pymysql.cursors.DictCursor)
+        self.school_id = school_id or require_current_school_id()
+
+    def _get_or_create_item_master(self, item_name: str, classification_code: str = "CONSUMABLE") -> int:
+        """Finds or initializes an item_master record for the given item_name."""
+        self.cursor.execute(
+            "SELECT id FROM item_master WHERE name = %s AND school_id = %s",
+            (item_name, self.school_id)
+        )
+        row = self.cursor.fetchone()
+        if row:
+            return row['id']
+
+        # Find classification_id
+        self.cursor.execute(
+            "SELECT id FROM item_classifications WHERE code = %s",
+            (classification_code,)
+        )
+        class_row = self.cursor.fetchone()
+        class_id = class_row['id'] if class_row else 1
+
+        self.cursor.execute(
+            """INSERT INTO item_master (school_id, classification_id, name, created_at)
+               VALUES (%s, %s, %s, NOW())""",
+            (self.school_id, class_id, item_name)
+        )
+        self.connection.commit()
+        return self.cursor.lastrowid
+
+    def _get_or_create_stock_record(self, item_name: str, location_id: Optional[int] = None, business_unit_id: Optional[int] = None) -> Dict:
+        """Finds or initializes item_stock balance for the given item name and location."""
+        item_master_id = self._get_or_create_item_master(item_name)
+
+        query = "SELECT * FROM item_stock WHERE item_name = %s AND school_id = %s"
+        params = [item_name, self.school_id]
+
+        if location_id is not None:
+            query += " AND location_id = %s"
+            params.append(location_id)
+        else:
+            query += " AND location_id IS NULL"
+
+        self.cursor.execute(query, tuple(params))
+        record = self.cursor.fetchone()
+
+        if not record:
+            self.cursor.execute(
+                """INSERT INTO item_stock (item_name, item_master_id, current_stock, reorder_level, location_id, business_unit_id, school_id, updated_at)
+                   VALUES (%s, %s, 0, 10, %s, %s, %s, NOW())""",
+                (item_name, item_master_id, location_id, business_unit_id, self.school_id)
+            )
+            self.connection.commit()
+            self.cursor.execute(query, tuple(params))
+            record = self.cursor.fetchone()
+
+        return record
+
+    @audit_log('receive_stock')
+    def receive_stock(self, item_name: str, quantity: float, unit_cost: float, user_id: int, location_id: Optional[int] = None, business_unit_id: Optional[int] = None, ref_no: str = "", notes: str = "") -> Dict:
+        """Increases stock balance for goods receipt / purchases."""
+        record = self._get_or_create_stock_record(item_name, location_id, business_unit_id)
+        prev_stock = float(record['current_stock'])
+        new_stock = prev_stock + float(quantity)
+        stock_id = record['item_id']
+        item_master_id = record.get('item_master_id') or self._get_or_create_item_master(item_name)
+
+        self.cursor.execute(
+            "UPDATE item_stock SET current_stock = %s, unit_cost = %s, item_master_id = %s, updated_at = NOW() WHERE item_id = %s AND school_id = %s",
+            (new_stock, unit_cost, item_master_id, stock_id, self.school_id)
+        )
+
+        self.cursor.execute(
+            """INSERT INTO stock_movements (item_id, item_master_id, movement_type, quantity, previous_stock, new_stock, unit_cost, reference_no, notes, user_id, school_id, location_id, business_unit_id)
+               VALUES (%s, %s, 'PURCHASE', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (stock_id, item_master_id, quantity, prev_stock, new_stock, unit_cost, ref_no, notes, user_id, self.school_id, location_id, business_unit_id)
+        )
+        self.connection.commit()
+        return {'item_id': stock_id, 'item_master_id': item_master_id, 'previous_stock': prev_stock, 'new_stock': new_stock}
+
+    @audit_log('issue_stock')
+    def issue_stock(self, item_name: str, quantity: float, user_id: int, location_id: Optional[int] = None, business_unit_id: Optional[int] = None, ref_no: str = "", notes: str = "", student_admno: Optional[str] = None) -> Dict:
+        """Deducts stock balance for sales / uniform issuance."""
+        record = self._get_or_create_stock_record(item_name, location_id, business_unit_id)
+        prev_stock = float(record['current_stock'])
+        new_stock = prev_stock - float(quantity)
+        stock_id = record['item_id']
+        item_master_id = record.get('item_master_id') or self._get_or_create_item_master(item_name)
+
+        self.cursor.execute(
+            "UPDATE item_stock SET current_stock = %s, item_master_id = %s, updated_at = NOW() WHERE item_id = %s AND school_id = %s",
+            (new_stock, item_master_id, stock_id, self.school_id)
+        )
+
+        self.cursor.execute(
+            """INSERT INTO stock_movements (item_id, item_master_id, movement_type, quantity, previous_stock, new_stock, reference_no, student_admno, notes, user_id, school_id, location_id, business_unit_id)
+               VALUES (%s, %s, 'ISSUANCE', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (stock_id, item_master_id, quantity, prev_stock, new_stock, ref_no, student_admno, notes, user_id, self.school_id, location_id, business_unit_id)
+        )
+        self.connection.commit()
+        return {'item_id': stock_id, 'item_master_id': item_master_id, 'previous_stock': prev_stock, 'new_stock': new_stock}
+
+    @audit_log('consume_stock')
+    def consume_stock(self, item_name: str, quantity: float, user_id: int, dept_id: int, location_id: Optional[int] = None, business_unit_id: Optional[int] = None, ref_no: str = "", notes: str = "") -> Dict:
+        """Deducts stock balance for internal department consumption (e.g. kitchen)."""
+        return self.issue_stock(
+            item_name=item_name,
+            quantity=quantity,
+            user_id=user_id,
+            location_id=location_id,
+            business_unit_id=business_unit_id,
+            ref_no=ref_no,
+            notes=f"Department Consumption (Dept ID: {dept_id}). {notes}"
+        )
+
+    @audit_log('produce_stock')
+    def produce_stock(self, batch_id: int, item_name: str, quantity: float, unit_cost: float, user_id: int, location_id: Optional[int] = None, business_unit_id: Optional[int] = None, ref_no: str = "", notes: str = "") -> Dict:
+        """Increases stock balance for agricultural / manufacturing batch production yield."""
+        record = self._get_or_create_stock_record(item_name, location_id, business_unit_id)
+        prev_stock = float(record['current_stock'])
+        new_stock = prev_stock + float(quantity)
+        stock_id = record['item_id']
+        item_master_id = record.get('item_master_id') or self._get_or_create_item_master(item_name)
+
+        self.cursor.execute(
+            "UPDATE item_stock SET current_stock = %s, unit_cost = %s, item_master_id = %s, updated_at = NOW() WHERE item_id = %s AND school_id = %s",
+            (new_stock, unit_cost, item_master_id, stock_id, self.school_id)
+        )
+
+        self.cursor.execute(
+            """INSERT INTO stock_movements (item_id, item_master_id, movement_type, quantity, previous_stock, new_stock, unit_cost, reference_no, notes, user_id, school_id, location_id, business_unit_id)
+               VALUES (%s, %s, 'PRODUCTION', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (stock_id, item_master_id, quantity, prev_stock, new_stock, unit_cost, ref_no or f"BATCH-{batch_id}", notes, user_id, self.school_id, location_id, business_unit_id)
+        )
+        self.connection.commit()
+        return {'item_id': stock_id, 'item_master_id': item_master_id, 'previous_stock': prev_stock, 'new_stock': new_stock}
+
+    @audit_log('transfer_stock')
+    def transfer_stock(self, item_name: str, quantity: float, from_location_id: int, to_location_id: int, user_id: int, ref_no: str = "", notes: str = "") -> Dict:
+        """Transfers stock balance between locations."""
+        from_record = self._get_or_create_stock_record(item_name, from_location_id)
+        to_record = self._get_or_create_stock_record(item_name, to_location_id)
+        item_master_id = from_record.get('item_master_id') or self._get_or_create_item_master(item_name)
+
+        # Deduct from source
+        from_prev = float(from_record['current_stock'])
+        from_new = from_prev - float(quantity)
+        self.cursor.execute(
+            "UPDATE item_stock SET current_stock = %s, item_master_id = %s, updated_at = NOW() WHERE item_id = %s AND school_id = %s",
+            (from_new, item_master_id, from_record['item_id'], self.school_id)
+        )
+        self.cursor.execute(
+            """INSERT INTO stock_movements (item_id, item_master_id, movement_type, quantity, previous_stock, new_stock, reference_no, notes, user_id, school_id, location_id)
+               VALUES (%s, %s, 'TRANSFER', %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (from_record['item_id'], item_master_id, quantity, from_prev, from_new, ref_no, f"Transfer to location {to_location_id}. {notes}", user_id, self.school_id, from_location_id)
+        )
+
+        # Add to destination
+        to_prev = float(to_record['current_stock'])
+        to_new = to_prev + float(quantity)
+        self.cursor.execute(
+            "UPDATE item_stock SET current_stock = %s, item_master_id = %s, updated_at = NOW() WHERE item_id = %s AND school_id = %s",
+            (to_new, item_master_id, to_record['item_id'], self.school_id)
+        )
+        self.cursor.execute(
+            """INSERT INTO stock_movements (item_id, item_master_id, movement_type, quantity, previous_stock, new_stock, reference_no, notes, user_id, school_id, location_id)
+               VALUES (%s, %s, 'TRANSFER', %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (to_record['item_id'], item_master_id, quantity, to_prev, to_new, ref_no, f"Transfer from location {from_location_id}. {notes}", user_id, self.school_id, to_location_id)
+        )
+
+        self.connection.commit()
+        return {'from_new_stock': from_new, 'to_new_stock': to_new}
+
+    @audit_log('adjust_stock')
+    def adjust_stock(self, item_name: str, new_quantity: float, user_id: int, location_id: Optional[int] = None, business_unit_id: Optional[int] = None, reason: str = "", approved_by: Optional[int] = None) -> Dict:
+        """Adjusts stock balance directly to new_quantity following administrative approval."""
+        record = self._get_or_create_stock_record(item_name, location_id, business_unit_id)
+        prev_stock = float(record['current_stock'])
+        stock_id = record['item_id']
+        item_master_id = record.get('item_master_id') or self._get_or_create_item_master(item_name)
+        adj_qty = float(new_quantity) - prev_stock
+
+        self.cursor.execute(
+            "UPDATE item_stock SET current_stock = %s, item_master_id = %s, updated_at = NOW() WHERE item_id = %s AND school_id = %s",
+            (new_quantity, item_master_id, stock_id, self.school_id)
+        )
+
+        self.cursor.execute(
+            """INSERT INTO stock_movements (item_id, item_master_id, movement_type, quantity, previous_stock, new_stock, reference_no, notes, user_id, school_id, location_id, business_unit_id)
+               VALUES (%s, %s, 'ADJUSTMENT', %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (stock_id, item_master_id, adj_qty, prev_stock, new_quantity, f"APP-{approved_by or user_id}", f"Stock adjustment. Reason: {reason}", user_id, self.school_id, location_id, business_unit_id)
+        )
+        self.connection.commit()
+        return {'item_id': stock_id, 'item_master_id': item_master_id, 'previous_stock': prev_stock, 'new_stock': new_quantity}
+
+    @audit_log('writeoff_stock')
+    def writeoff_stock(self, item_name: str, quantity: float, user_id: int, loss_type_id: int, location_id: Optional[int] = None, business_unit_id: Optional[int] = None, reason: str = "", approved_by: Optional[int] = None) -> Dict:
+        """Deducts stock balance for spoilage or damage write-offs following supervisor approval."""
+        record = self._get_or_create_stock_record(item_name, location_id, business_unit_id)
+        prev_stock = float(record['current_stock'])
+        new_stock = prev_stock - float(quantity)
+        stock_id = record['item_id']
+        item_master_id = record.get('item_master_id') or self._get_or_create_item_master(item_name)
+
+        self.cursor.execute(
+            "UPDATE item_stock SET current_stock = %s, item_master_id = %s, updated_at = NOW() WHERE item_id = %s AND school_id = %s",
+            (new_stock, item_master_id, stock_id, self.school_id)
+        )
+
+        self.cursor.execute(
+            """INSERT INTO stock_movements (item_id, item_master_id, movement_type, quantity, previous_stock, new_stock, reference_no, notes, user_id, school_id, location_id, business_unit_id)
+               VALUES (%s, %s, 'SPOILAGE', %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (stock_id, item_master_id, quantity, prev_stock, new_stock, f"WRITEOFF-LOSS-{loss_type_id}", f"Stock writeoff. Reason: {reason}", user_id, self.school_id, location_id, business_unit_id)
+        )
+        self.connection.commit()
+        return {'item_id': stock_id, 'item_master_id': item_master_id, 'previous_stock': prev_stock, 'new_stock': new_stock}
+
+    @audit_log('return_stock')
+    def return_stock(self, item_name: str, quantity: float, user_id: int, location_id: Optional[int] = None, ref_no: str = "", notes: str = "") -> Dict:
+        """Restores stock balance for student uniform returns / exchanges."""
+        record = self._get_or_create_stock_record(item_name, location_id)
+        prev_stock = float(record['current_stock'])
+        new_stock = prev_stock + float(quantity)
+        stock_id = record['item_id']
+        item_master_id = record.get('item_master_id') or self._get_or_create_item_master(item_name)
+
+        self.cursor.execute(
+            "UPDATE item_stock SET current_stock = %s, item_master_id = %s, updated_at = NOW() WHERE item_id = %s AND school_id = %s",
+            (new_stock, item_master_id, stock_id, self.school_id)
+        )
+
+        self.cursor.execute(
+            """INSERT INTO stock_movements (item_id, item_master_id, movement_type, quantity, previous_stock, new_stock, reference_no, notes, user_id, school_id, location_id)
+               VALUES (%s, %s, 'UNIFORM_RETURN', %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (stock_id, item_master_id, quantity, prev_stock, new_stock, ref_no, notes, user_id, self.school_id, location_id)
+        )
+        self.connection.commit()
+        return {'item_id': stock_id, 'item_master_id': item_master_id, 'previous_stock': prev_stock, 'new_stock': new_stock}
