@@ -157,7 +157,7 @@ CREATE TABLE IF NOT EXISTS `business_units` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `school_id` INT NOT NULL,
   `name` VARCHAR(150) NOT NULL,
-  `type_id` INT NOT NULL,
+  `type_id` INT NOT NULL DEFAULT 1,
   `manager_id` INT NULL,
   `cost_center_code` VARCHAR(50) NULL,
   `revenue_gl_account` VARCHAR(50) NULL,
@@ -183,7 +183,7 @@ DROP TABLE IF EXISTS `income_activities_legacy_backup`;
 DROP TABLE IF EXISTS `income_activities`;
 
 CREATE OR REPLACE VIEW `income_activities` AS
-SELECT id, school_id, name, '' AS description, revenue_gl_account AS gl_income_account, expense_gl_account AS gl_expense_account, is_active, created_at
+SELECT id, school_id, name, '' AS description, 'units' AS unit_of_measure, revenue_gl_account AS gl_income_account, expense_gl_account AS gl_expense_account, is_active, created_at
 FROM `business_units`;
 
 CREATE TABLE IF NOT EXISTS `inventory_locations` (
