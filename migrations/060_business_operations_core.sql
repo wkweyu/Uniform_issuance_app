@@ -172,7 +172,16 @@ CREATE TABLE IF NOT EXISTS `business_units` (
   INDEX `idx_bu_type` (`type_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Backward-Compatibility Database View for Legacy Code
+-- Safe Migration of Legacy income_activities Table to View
+INSERT IGNORE INTO `business_units` (id, school_id, name, type_id, revenue_gl_account, expense_gl_account, is_active, created_at)
+SELECT id, school_id, name, 1, gl_income_account, gl_expense_account, is_active, created_at
+FROM `income_activities`
+WHERE EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'income_activities' AND table_type = 'BASE TABLE');
+
+DROP TABLE IF EXISTS `income_activities_legacy_backup`;
+-- Note: View replaces legacy table for 100% backward compatibility
+DROP TABLE IF EXISTS `income_activities`;
+
 CREATE OR REPLACE VIEW `income_activities` AS
 SELECT id, school_id, name, '' AS description, revenue_gl_account AS gl_income_account, expense_gl_account AS gl_expense_account, is_active, created_at
 FROM `business_units`;

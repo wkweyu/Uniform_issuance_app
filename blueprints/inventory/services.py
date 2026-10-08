@@ -364,7 +364,6 @@ class InventoryTransactionService:
                VALUES (%s, %s, %s, NOW())""",
             (self.school_id, class_id, item_name)
         )
-        self.connection.commit()
         return self.cursor.lastrowid
 
     def _get_or_create_stock_record(self, item_name: str, location_id: Optional[int] = None, business_unit_id: Optional[int] = None) -> Dict:
@@ -389,14 +388,13 @@ class InventoryTransactionService:
                    VALUES (%s, %s, 0, 10, %s, %s, %s, NOW())""",
                 (item_name, item_master_id, location_id, business_unit_id, self.school_id)
             )
-            self.connection.commit()
             self.cursor.execute(query, tuple(params))
             record = self.cursor.fetchone()
 
         return record
 
     @audit_log('receive_stock')
-    def receive_stock(self, item_name: str, quantity: float, unit_cost: float, user_id: int, location_id: Optional[int] = None, business_unit_id: Optional[int] = None, ref_no: str = "", notes: str = "") -> Dict:
+    def receive_stock(self, item_name: str, quantity: float, unit_cost: float, user_id: int, location_id: Optional[int] = None, business_unit_id: Optional[int] = None, ref_no: str = "", notes: str = "", autocommit: bool = True) -> Dict:
         """Increases stock balance for goods receipt / purchases."""
         record = self._get_or_create_stock_record(item_name, location_id, business_unit_id)
         prev_stock = float(record['current_stock'])
@@ -414,11 +412,12 @@ class InventoryTransactionService:
                VALUES (%s, %s, 'PURCHASE', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (stock_id, item_master_id, quantity, prev_stock, new_stock, unit_cost, ref_no, notes, user_id, self.school_id, location_id, business_unit_id)
         )
-        self.connection.commit()
+        if autocommit:
+            self.connection.commit()
         return {'item_id': stock_id, 'item_master_id': item_master_id, 'previous_stock': prev_stock, 'new_stock': new_stock}
 
     @audit_log('issue_stock')
-    def issue_stock(self, item_name: str, quantity: float, user_id: int, location_id: Optional[int] = None, business_unit_id: Optional[int] = None, ref_no: str = "", notes: str = "", student_admno: Optional[str] = None) -> Dict:
+    def issue_stock(self, item_name: str, quantity: float, user_id: int, location_id: Optional[int] = None, business_unit_id: Optional[int] = None, ref_no: str = "", notes: str = "", student_admno: Optional[str] = None, autocommit: bool = True) -> Dict:
         """Deducts stock balance for sales / uniform issuance."""
         record = self._get_or_create_stock_record(item_name, location_id, business_unit_id)
         prev_stock = float(record['current_stock'])
@@ -436,11 +435,12 @@ class InventoryTransactionService:
                VALUES (%s, %s, 'ISSUANCE', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (stock_id, item_master_id, quantity, prev_stock, new_stock, ref_no, student_admno, notes, user_id, self.school_id, location_id, business_unit_id)
         )
-        self.connection.commit()
+        if autocommit:
+            self.connection.commit()
         return {'item_id': stock_id, 'item_master_id': item_master_id, 'previous_stock': prev_stock, 'new_stock': new_stock}
 
     @audit_log('consume_stock')
-    def consume_stock(self, item_name: str, quantity: float, user_id: int, dept_id: int, location_id: Optional[int] = None, business_unit_id: Optional[int] = None, ref_no: str = "", notes: str = "") -> Dict:
+    def consume_stock(self, item_name: str, quantity: float, user_id: int, dept_id: int, location_id: Optional[int] = None, business_unit_id: Optional[int] = None, ref_no: str = "", notes: str = "", autocommit: bool = True) -> Dict:
         """Deducts stock balance for internal department consumption (e.g. kitchen)."""
         return self.issue_stock(
             item_name=item_name,
@@ -449,11 +449,12 @@ class InventoryTransactionService:
             location_id=location_id,
             business_unit_id=business_unit_id,
             ref_no=ref_no,
-            notes=f"Department Consumption (Dept ID: {dept_id}). {notes}"
+            notes=f"Department Consumption (Dept ID: {dept_id}). {notes}",
+            autocommit=autocommit
         )
 
     @audit_log('produce_stock')
-    def produce_stock(self, batch_id: int, item_name: str, quantity: float, unit_cost: float, user_id: int, location_id: Optional[int] = None, business_unit_id: Optional[int] = None, ref_no: str = "", notes: str = "") -> Dict:
+    def produce_stock(self, batch_id: int, item_name: str, quantity: float, unit_cost: float, user_id: int, location_id: Optional[int] = None, business_unit_id: Optional[int] = None, ref_no: str = "", notes: str = "", autocommit: bool = True) -> Dict:
         """Increases stock balance for agricultural / manufacturing batch production yield."""
         record = self._get_or_create_stock_record(item_name, location_id, business_unit_id)
         prev_stock = float(record['current_stock'])
@@ -471,11 +472,12 @@ class InventoryTransactionService:
                VALUES (%s, %s, 'PRODUCTION', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (stock_id, item_master_id, quantity, prev_stock, new_stock, unit_cost, ref_no or f"BATCH-{batch_id}", notes, user_id, self.school_id, location_id, business_unit_id)
         )
-        self.connection.commit()
+        if autocommit:
+            self.connection.commit()
         return {'item_id': stock_id, 'item_master_id': item_master_id, 'previous_stock': prev_stock, 'new_stock': new_stock}
 
     @audit_log('transfer_stock')
-    def transfer_stock(self, item_name: str, quantity: float, from_location_id: int, to_location_id: int, user_id: int, ref_no: str = "", notes: str = "") -> Dict:
+    def transfer_stock(self, item_name: str, quantity: float, from_location_id: int, to_location_id: int, user_id: int, ref_no: str = "", notes: str = "", autocommit: bool = True) -> Dict:
         """Transfers stock balance between locations."""
         from_record = self._get_or_create_stock_record(item_name, from_location_id)
         to_record = self._get_or_create_stock_record(item_name, to_location_id)
@@ -507,11 +509,12 @@ class InventoryTransactionService:
             (to_record['item_id'], item_master_id, quantity, to_prev, to_new, ref_no, f"Transfer from location {from_location_id}. {notes}", user_id, self.school_id, to_location_id)
         )
 
-        self.connection.commit()
+        if autocommit:
+            self.connection.commit()
         return {'from_new_stock': from_new, 'to_new_stock': to_new}
 
     @audit_log('adjust_stock')
-    def adjust_stock(self, item_name: str, new_quantity: float, user_id: int, location_id: Optional[int] = None, business_unit_id: Optional[int] = None, reason: str = "", approved_by: Optional[int] = None) -> Dict:
+    def adjust_stock(self, item_name: str, new_quantity: float, user_id: int, location_id: Optional[int] = None, business_unit_id: Optional[int] = None, reason: str = "", approved_by: Optional[int] = None, autocommit: bool = True) -> Dict:
         """Adjusts stock balance directly to new_quantity following administrative approval."""
         record = self._get_or_create_stock_record(item_name, location_id, business_unit_id)
         prev_stock = float(record['current_stock'])
@@ -529,11 +532,12 @@ class InventoryTransactionService:
                VALUES (%s, %s, 'ADJUSTMENT', %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (stock_id, item_master_id, adj_qty, prev_stock, new_quantity, f"APP-{approved_by or user_id}", f"Stock adjustment. Reason: {reason}", user_id, self.school_id, location_id, business_unit_id)
         )
-        self.connection.commit()
+        if autocommit:
+            self.connection.commit()
         return {'item_id': stock_id, 'item_master_id': item_master_id, 'previous_stock': prev_stock, 'new_stock': new_quantity}
 
     @audit_log('writeoff_stock')
-    def writeoff_stock(self, item_name: str, quantity: float, user_id: int, loss_type_id: int, location_id: Optional[int] = None, business_unit_id: Optional[int] = None, reason: str = "", approved_by: Optional[int] = None) -> Dict:
+    def writeoff_stock(self, item_name: str, quantity: float, user_id: int, loss_type_id: int, location_id: Optional[int] = None, business_unit_id: Optional[int] = None, reason: str = "", approved_by: Optional[int] = None, autocommit: bool = True) -> Dict:
         """Deducts stock balance for spoilage or damage write-offs following supervisor approval."""
         record = self._get_or_create_stock_record(item_name, location_id, business_unit_id)
         prev_stock = float(record['current_stock'])
@@ -551,11 +555,12 @@ class InventoryTransactionService:
                VALUES (%s, %s, 'SPOILAGE', %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (stock_id, item_master_id, quantity, prev_stock, new_stock, f"WRITEOFF-LOSS-{loss_type_id}", f"Stock writeoff. Reason: {reason}", user_id, self.school_id, location_id, business_unit_id)
         )
-        self.connection.commit()
+        if autocommit:
+            self.connection.commit()
         return {'item_id': stock_id, 'item_master_id': item_master_id, 'previous_stock': prev_stock, 'new_stock': new_stock}
 
     @audit_log('return_stock')
-    def return_stock(self, item_name: str, quantity: float, user_id: int, location_id: Optional[int] = None, ref_no: str = "", notes: str = "") -> Dict:
+    def return_stock(self, item_name: str, quantity: float, user_id: int, location_id: Optional[int] = None, ref_no: str = "", notes: str = "", autocommit: bool = True) -> Dict:
         """Restores stock balance for student uniform returns / exchanges."""
         record = self._get_or_create_stock_record(item_name, location_id)
         prev_stock = float(record['current_stock'])
@@ -573,5 +578,6 @@ class InventoryTransactionService:
                VALUES (%s, %s, 'UNIFORM_RETURN', %s, %s, %s, %s, %s, %s, %s, %s)""",
             (stock_id, item_master_id, quantity, prev_stock, new_stock, ref_no, notes, user_id, self.school_id, location_id)
         )
-        self.connection.commit()
+        if autocommit:
+            self.connection.commit()
         return {'item_id': stock_id, 'item_master_id': item_master_id, 'previous_stock': prev_stock, 'new_stock': new_stock}
