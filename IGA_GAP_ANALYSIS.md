@@ -1,295 +1,291 @@
-# IGA (Income Generating Activities) Architectural Discovery & Gap Analysis Report
+# Business Operations Architecture Refinement & Implementation Report
 
 ## Executive Summary
 
-This report delivers a comprehensive **Architectural Discovery** and **Strategic Gap Analysis** for evolving the existing **Income Generating Activities (IGA) / Farm Management Module** into an enterprise-grade **Business Operations Module**.
+This report establishes the refined architectural framework for evolving the school's **Income Generating Activities (IGA) / Farm Module** into a unified, enterprise-grade **Business Operations Platform**.
 
-Crucially, this evolution is architected to **preserve existing Uniform Issuance, Transport Management, and Fleet Management modules** in full. Rather than rewriting or duplicating specialized domain features (such as vehicle fuel voucher tracking or student uniform sizing matrices), the system establishes a **Centralized Business Operations Core** (Shared Inventory, POS/Invoicing, Sales & Receivables, Inter-Departmental Transfers, Expense Approvals, and Double-Entry GL Integration) while preserving specialized modules as domain extensions that consume the Business Operations Core.
-
----
-
-## 1. Architectural Discovery: Existing Codebase State
-
-### 1.1 Income Generating Activities (IGA / Farm)
-- **Module Blueprint**: `blueprints/farm` (registered as `farm_bp` at `/farm`)
-- **Routes & Views**: `dashboard`, `record_production`, `record_sale`, `farm_expenses` (`templates/farm/*.html`)
-- **Service Layer**: `FarmManagementService` in `blueprints/farm/services.py`
-- **Database Tables**:
-  - `income_activities` (Cost centers with `gl_income_account`, `gl_expense_account`)
-  - `income_production_log` (Yield, spoilage, internal consumption quantities)
-  - `income_sales` (Sales entries with receipt numbers)
-  - `income_expenses` (Expense requests with `PENDING`, `APPROVED`, `REJECTED`, `PAID` approval workflow)
-- **Permissions**: `login_required`, `admin_required`, `user_module_access` checks.
-
-### 1.2 Uniform Issuance Module
-- **Module Blueprint**: `blueprints/inventory` (registered as `inventory_bp`)
-- **Routes & Views**: `/manage_uniform_items`, `/issue_uniform`, `/submit_issuance`, `/reports/*` (`templates/manage_uniform_items.html`, `templates/student.html`)
-- **Service Layer**: `InventoryService` in `blueprints/inventory/services.py`, integrated with `ProcurementService` for purchase orders.
-- **Database Tables**:
-  - `uniform_prices` (Item names, class groups, prices, linked `item_id`)
-  - `uniform_receipts` (Student issuance receipts linked by `AdmNo`)
-  - `uniform_term_dates` (Term constraints for uniform issuance)
-  - `item_stock` (Central stock levels)
-- **Specialized Capabilities**: Class group pricing matrices, student admission linkage, student receipt issuance, term date validation.
-
-### 1.3 Transport & Fleet Management Module
-- **Module Blueprint**: `blueprints/transport` (registered as `transport_bp`)
-- **Routes & Views**: `/fleet/fleet_dashboard`, `/fleet/buses`, `/fleet/record_service`, `/fleet/issue_fuel`, `/fleet/routes`, `/fleet/transport_assignments`, `/fleet/transport_reports`
-- **Service Layer**: `TransportService` in `blueprints/transport/services.py`
-- **Database Tables**:
-  - `buses` (Vehicle details, driver assignments, registration numbers)
-  - `transport_routes` (Route names, fee amounts, assigned `bus_id`)
-  - `transport_allocations` (Student transport allocations by `AdmNo` & `route_id`)
-  - `service_register` (Vehicle maintenance logs, costs, service dates)
-  - `fuel_vouchers` & `fuel_invoices` (Fuel vouchers, tank capacities, meter readings, fuel efficiency calculations)
-- **Specialized Capabilities**: Vehicle maintenance scheduling, odometer tracking, fuel efficiency analysis, bus-to-driver binding, route-based student transport billing.
+Based on architectural review, this design adopts a **Business Operations Core + Specialized Domain Extensions** topology. It addresses naming conventions, introduces a formal **Business Unit Architecture**, resolves inventory overlap by evolving `item_stock` into a **Single Central Inventory Engine**, and provides a migration-safe implementation strategy that preserves existing Uniform Issuance, Transport Management, and Fleet Management modules with **zero downtime and full backward compatibility**.
 
 ---
 
-## 2. Boundary Recommendations: Centralized Core vs. Specialized Modules
+## 1. Domain Naming & Architecture Re-Evaluation
 
-To maintain architectural purity, zero redundancy, and full backward compatibility, domain boundaries are defined as follows:
+### 1.1 Critique of Legacy `income_*` Naming
+The legacy prefix `income_*` (`income_activities`, `income_sales`, `income_expenses`) originated when the module was conceived strictly as a farm/IGA logging utility. In a comprehensive school Business Operations platform, the `income_*` naming convention is architecturally flawed:
+1. **Misleading Domain Scope**: Operational activities encompass cost centers, inventory stock, procurement expenses, and inter-departmental transfers—none of which are purely "income".
+2. **SaaS Multi-Enterprise Ambiguity**: School enterprises include commercial tuckshops, tailoring workshops, transport services, rental halls, and bakeries. Representing a tuckshop expense or workshop inventory movement under `income_*` causes confusion.
 
-```
-+---------------------------------------------------------------------------------------------------+
-|                               BUSINESS OPERATIONS CENTRAL CORE                                    |
-|                                                                                                   |
-|  * Shared Multi-Enterprise Catalog & Inventory Management (`income_inventory`, `income_stock_movements`)|
-|  * Universal Enterprise Cost Centers (`income_activities`: Farm, Tuckshop, Bakery, Rentals, etc.) |
-|  * Centralized POS, Multi-Item Invoicing & Customer Billing (`income_sales`, `income_sales_items`)|
-|  * Inter-Departmental Transfer & Internal Consumption Engine (`income_transfers`)                |
-|  * Expense Request & Approval Workflow (`income_expenses`)                                       |
-|  * Double-Entry Finance GL Auto-Journaling (`FinanceService.post_journal_entry()`)                |
-+---------------------------------------------------------------------------------------------------+
-                                   ^                               ^
-                                   | (Consumes Stock & AR)         | (Consumes Expenses & GL)
-                                   |                               |
-+----------------------------------+---+   +-----------------------+--------------------------------+
-|    UNIFORM ISSUANCE MODULE           |   |      TRANSPORT & FLEET MANAGEMENT MODULE               |
-|    (Specialized Domain Extension)    |   |      (Specialized Domain Extension)                    |
-|                                      |   |                                                        |
-|  * Student Sizing & Pricing Matrix   |   |  * Fleet / Bus Master (`buses`)                        |
-|  * Student Class Allocation Links    |   |  * Odometer & Fuel Voucher Register (`fuel_vouchers`)  |
-|  * Uniform Issuance Receipts (`AdmNo`)|  * Vehicle Maintenance & Service Register              |
-|  * Term Date Issuance Rules          |   |  * Student Bus Route Allocations (`transport_routes`)  |
-+--------------------------------------+   +--------------------------------------------------------+
+### 1.2 Recommended `business_*` Domain Naming
+
+We recommend standardizing all core entities under the `business_*` domain convention while evolving the existing `item_stock` table into the central inventory engine:
+
+| Legacy Table Name | Proposed Standardized Table Name | Domain & Purpose |
+| :--- | :--- | :--- |
+| `income_activities` | `business_units` | Core enterprise units / Cost centers |
+| `income_inventory` *(Proposed)* | `item_stock` *(Evolved)* | Single Central Inventory Core across all modules |
+| `income_stock_movements` *(Proposed)* | `stock_movements` *(Evolved)* | Universal stock movement ledger & audit log |
+| `income_sales` | `business_sales` | Enterprise POS, invoicing & sales ledger |
+| `income_sales_items` *(New)* | `business_sales_items` | Multi-item sales detail rows |
+| `income_expenses` | `business_expenses` | Enterprise expense requests & approval workflow |
+| `income_transfers` *(New)* | `business_transfers` | Non-cash inter-departmental GL transfer ledger |
+| `income_production_log` | `business_production_log` | Agriculture & manufacturing yield/spoilage logs |
+
+### 1.3 Backward Compatibility & SaaS Scalability Strategy
+To ensure existing code, queries, and reports running against `income_activities`, `income_sales`, or `income_expenses` do not break:
+1. **Database Views for Backward Compatibility**:
+   Create SQL views mapping legacy table names to the new schema:
+   ```sql
+   CREATE OR REPLACE VIEW `income_activities` AS
+   SELECT id, school_id, name, description, revenue_gl_account AS gl_income_account, expense_gl_account AS gl_expense_account, is_active, created_at
+   FROM `business_units`;
+   ```
+2. **Service Layer Alias**:
+   `FarmManagementService` will inherit from or wrap `BusinessOperationsService`, retaining exact method signatures (`get_activities()`, `record_sale()`, `request_expense()`).
+3. **Multi-Tenant Isolation**:
+   Every new and evolved table mandates `school_id` with composite indexes (`idx_bu_school_id`, `idx_stock_school_id`).
+
+---
+
+## 2. Business Unit Architecture
+
+### 2.1 `business_units` Entity Specification
+
+The `business_units` entity replaces the narrow concept of "income activities" with a general cost-center and business enterprise structure.
+
+```sql
+CREATE TABLE IF NOT EXISTS `business_units` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `school_id` INT NOT NULL,
+  `name` VARCHAR(150) NOT NULL,
+  `unit_type` ENUM('AGRICULTURE', 'RETAIL', 'FOOD_BEVERAGE', 'TRANSPORT', 'RENTAL', 'SERVICES', 'PRODUCTION', 'OTHER') NOT NULL DEFAULT 'AGRICULTURE',
+  `manager_id` INT NULL, -- Link to users.userNo
+  `cost_center_code` VARCHAR(50) NULL,
+  `revenue_gl_account` VARCHAR(50) NULL, -- Link to Chart of Accounts (Income)
+  `expense_gl_account` VARCHAR(50) NULL, -- Link to Chart of Accounts (Expense)
+  `inventory_gl_account` VARCHAR(50) NULL, -- Link to Chart of Accounts (Asset/Inventory)
+  `cogs_gl_account` VARCHAR(50) NULL, -- Link to Chart of Accounts (Cost of Goods Sold)
+  `is_active` BOOLEAN DEFAULT TRUE,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_bu_school` (`school_id`),
+  INDEX `idx_bu_type` (`unit_type`),
+  CONSTRAINT `fk_bu_school` FOREIGN KEY (`school_id`) REFERENCES `schools`(`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
-### 2.1 What is Centralized in Business Operations Core
-1. **Multi-Enterprise Cost Center Engine**: Ability to define enterprises (`FARM`, `TUCKSHOP`, `BAKERY`, `RENTAL`, `PRINTING`, `SERVICES`, `OTHER`).
-2. **Unified Inventory & Stock Movements**: Stock tracking (`income_inventory`), reorder levels, cost/selling prices, and immutable stock audit movement logs (`income_stock_movements`).
-3. **Universal Point of Sale (POS) & Invoicing**: Multi-item sales, receipts, external customer billing, and direct student ledger fee debiting.
-4. **Inter-Departmental Non-Cash Transfers**: Transfers of enterprise output (e.g. farm milk to school kitchen, tuckshop items to staff, uniform inventory stock transfers) with automated non-cash GL journal postings.
-5. **Expense Approval Lifecycle**: Standardized requisition, manager approval, and Accounts Payable / Finance transaction linking.
-6. **Automated Double-Entry Finance GL Postings**: Automated posting of revenue, expenses, COGS, and inter-departmental transfer journals to Chart of Accounts (`finance_transactions` & `ledger_entries`).
+### 2.2 Cross-Module Association Mapping
 
-### 2.2 What Remains in Specialized Modules
-1. **Uniform Issuance Module**:
-   - Retains `uniform_prices` matrix by class group.
-   - Retains student-facing uniform issuance forms (`issue_uniform`) and student receipts (`uniform_receipts`).
-   - *Adapter*: Uniform stock levels sync automatically with central `income_inventory` / `item_stock` without altering the issuance UI or receipt format.
-2. **Transport & Fleet Management Module**:
-   - Retains vehicle master (`buses`), driver assignments, fuel vouchers (`fuel_vouchers`), fuel efficiency reports, and vehicle maintenance registers (`service_register`).
-   - Retains route management (`transport_routes`) and student route allocations (`transport_allocations`).
-   - *Adapter*: Fuel invoices and vehicle service expenses auto-submit expense requests into the Business Operations expense pipeline while maintaining transport-specific dashboard views.
+Existing and future modules associate cleanly with `business_units` without losing their domain-specific functionality:
 
----
+```
++----------------------------------------------------------------------------------------------------+
+|                                    BUSINESS UNITS (`business_units`)                               |
++-------------------+-------------------+-------------------+-------------------+--------------------+
+| Dairy Farm        | Uniform Shop      | School Transport  | Canteen / Tuck    | Bakery & Printing  |
+| (AGRICULTURE)     | (RETAIL)          | (TRANSPORT)       | (FOOD_BEVERAGE)   | (PRODUCTION)       |
++---------+---------+---------+---------+---------+---------+---------+---------+---------+----------+
+          |                   |                   |                   |                   |
+          v                   v                   v                   v                   v
++-------------------+ +-------------------+ +-------------------+ +-------------------+ +-------------------+
+| Farm / Production | | Uniform Issuance  | | Transport & Fleet | | Canteen POS &     | | Commercial        |
+| Log & Spoilage    | | & Class Group     | | Vehicles & Fuel   | | Student Account   | | Manufacturing   |
+| Tracking          | | Pricing Matrix    | | Voucher Tracking  | | Fee Debits        | | & Custom Billing  |
++-------------------+ +-------------------+ +-------------------+ +-------------------+ +-------------------+
+```
 
-## 3. Comprehensive Gap Analysis
-
-| Domain | Current State Capability | Target ERP Architecture | Gap Category | Required Action / Extension |
+| Business Unit Name | Unit Type | Associated Domain Module | Specialized Logic Preserved | Central Core Features Consumed |
 | :--- | :--- | :--- | :--- | :--- |
-| **Enterprise Scope** | Farm-oriented (Dairy, Poultry) | Generic Multi-Enterprise (Farm, Tuckshop, Rentals, Bakery, Tailoring, Bookshop) | **Extend** | Expand `income_activities` with `activity_type`, unit metrics, and default GL configs. |
-| **Stock & Inventory** | Quantity totals logged per production entry | Unit-level inventory tracking, stock movements, reorder alerts | **New** | Introduce `income_inventory` & `income_stock_movements` tables. |
-| **Sales & POS** | Single line customer sales entries | Multi-item POS sales, itemized receipts, customer invoicing | **Extend** | Add itemized sales support (`income_sales_items`) and customer credit balances. |
-| **Student Billing** | External sales only | Charge sales or rental fees directly to student billing ledger | **New / Integration** | Integrate with Student Fee Ledger / Accounts Receivable via `FinanceService`. |
-| **Finance GL Posting** | GL account code placeholders stored | Real-time double-entry journal postings on sales, expenses & transfers | **New / Integration** | Connect `record_sale` & `approve_expense` to `FinanceService.post_journal_entry()`. |
-| **Internal Consumption** | Quantity counter in production log | Non-Cash Journal entries transferring value to School Kitchen / Maintenance GL | **New / Integration** | Implement non-cash inter-departmental GL transfer logic. |
-| **Procurement** | Standalone expense request form | Requisition linkage to central Procurement module (`procurement_requisitions`) | **Integration** | Option to route approved expenses to Procurement PO workflow. |
-| **Reporting & P&L** | High-level summary (Revenue, Expense, Profit) | Enterprise P&L statement, Yield trend analysis, Margin analysis | **Extend** | Detailed activity-level P&L breakdown and CSV export. |
-| **Uniform & Fleet Linkage** | Independent standalone queries | Unified stock & expense adapter layer | **Integration** | Sync uniform stock and fleet expenses via BizOps Core APIs. |
-| **Backward Compatibility** | Existing `/farm/*` endpoints | `/farm/*` preserved seamlessly, aliased to `/operations/*` or `/farm/*` | **Reuse / Preserve** | Ensure all legacy routes continue functioning without breaking changes. |
+| **Dairy / Poultry Farm** | `AGRICULTURE` | Farm / IGA (`blueprints/farm`) | Daily yield logging, milk/egg spoilage rates | `item_stock`, `business_sales`, `business_expenses`, GL Journaling |
+| **Uniform Shop** | `RETAIL` | Uniform Issuance (`blueprints/inventory`) | Class-group pricing matrix (`uniform_prices`), student sizing, issuance receipts | `item_stock` (uniform inventory), POS billing, AR debiting |
+| **School Transport** | `TRANSPORT` | Transport/Fleet (`blueprints/transport`) | Bus records (`buses`), fuel vouchers (`fuel_vouchers`), maintenance register, student route allocation | Fleet expense approval pipeline, route revenue tracking |
+| **School Canteen** | `FOOD_BEVERAGE` | Business Operations POS | Student meal cards, tuckshop cash sales | `item_stock`, POS sales invoicing, student account debiting |
+| **Rental Hall / Bus Hire**| `RENTAL` | Business Operations Rentals | Calendar booking, facility rental agreements | `business_sales` (credit customer billing), revenue GL posting |
 
 ---
 
-## 4. Technical Specifications & Database Schema Extensions
+## 3. Inventory Architecture Review & Core Consolidation
 
-### 4.1 Schema Extensions (Migration-Safe SQL)
+### 3.1 Analysis of Inventory Overlap
+A critical evaluation reveals that creating a separate `income_inventory` table would create **fragmented inventory data**:
+- `item_stock` already exists in the database and is consumed by `blueprints/inventory` (Uniform Issuance) and `blueprints/procurement` (Purchase Orders & Stock Ledger).
+- Creating `income_inventory` alongside `item_stock` would force developers to sync two stock tables, risk stock level discrepancies, and duplicate stock movement auditing.
 
-1. **`income_activities`** (Extension):
-   ```sql
-   ALTER TABLE `income_activities`
-     ADD COLUMN IF NOT EXISTS `activity_type` ENUM('FARM', 'TUCKSHOP', 'RENTAL', 'PRODUCTION', 'SERVICES', 'OTHER') DEFAULT 'FARM',
-     ADD COLUMN IF NOT EXISTS `inventory_gl_account` VARCHAR(50) NULL,
-     ADD COLUMN IF NOT EXISTS `cogs_gl_account` VARCHAR(50) NULL;
-   ```
+### 3.2 Evaluation Answers
+1. **Should `item_stock` evolve into a central Inventory Core?**
+   **YES.** `item_stock` must serve as the Single Source of Truth for ALL physical inventory across all school modules (Uniforms, Procurement, Tuckshop, Farm Produce, Maintenance Spare Parts).
+2. **Should `income_inventory` be removed/avoided?**
+   **YES.** We explicitly drop the proposal for `income_inventory` and standardize entirely on `item_stock`.
+3. **Should all modules consume one inventory engine?**
+   **YES.** All modules (Uniforms, Procurement, Farm, Tuckshop, Fleet) will read from and write to `item_stock` and log movements in `stock_movements`.
 
-2. **`income_inventory`** (New Table):
-   ```sql
-   CREATE TABLE IF NOT EXISTS `income_inventory` (
-     `id` INT AUTO_INCREMENT PRIMARY KEY,
-     `school_id` INT NOT NULL,
-     `activity_id` INT NOT NULL,
-     `item_name` VARCHAR(150) NOT NULL,
-     `unit_of_measure` VARCHAR(30) DEFAULT 'units',
-     `unit_cost` DECIMAL(12,2) DEFAULT 0.00,
-     `selling_price` DECIMAL(12,2) DEFAULT 0.00,
-     `quantity_on_hand` DECIMAL(12,2) DEFAULT 0.00,
-     `reorder_level` DECIMAL(12,2) DEFAULT 0.00,
-     `is_active` BOOLEAN DEFAULT TRUE,
-     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-     FOREIGN KEY (`activity_id`) REFERENCES `income_activities`(`id`) ON DELETE CASCADE,
-     INDEX (`school_id`),
-     INDEX (`activity_id`)
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-   ```
+### 3.3 Target Central Inventory Architecture
 
-3. **`income_stock_movements`** (New Table):
-   ```sql
-   CREATE TABLE IF NOT EXISTS `income_stock_movements` (
-     `id` INT AUTO_INCREMENT PRIMARY KEY,
-     `school_id` INT NOT NULL,
-     `inventory_id` INT NOT NULL,
-     `movement_type` ENUM('PRODUCTION', 'SALE', 'TRANSFER', 'SPOILAGE', 'ADJUSTMENT') NOT NULL,
-     `quantity` DECIMAL(12,2) NOT NULL,
-     `unit_cost` DECIMAL(12,2) DEFAULT 0.00,
-     `reference_no` VARCHAR(100) NULL,
-     `notes` TEXT NULL,
-     `recorded_by` INT NOT NULL,
-     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-     FOREIGN KEY (`inventory_id`) REFERENCES `income_inventory`(`id`) ON DELETE CASCADE,
-     INDEX (`school_id`),
-     INDEX (`movement_type`)
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-   ```
+`item_stock` and `stock_movements` will be enhanced with multi-tenant and business unit linkage:
 
-4. **`income_sales_items`** (New Table):
-   ```sql
-   CREATE TABLE IF NOT EXISTS `income_sales_items` (
-     `id` INT AUTO_INCREMENT PRIMARY KEY,
-     `school_id` INT NOT NULL,
-     `sale_id` INT NOT NULL,
-     `inventory_id` INT NULL,
-     `item_name` VARCHAR(150) NOT NULL,
-     `quantity` DECIMAL(12,2) NOT NULL,
-     `unit_price` DECIMAL(12,2) NOT NULL,
-     `total_price` DECIMAL(12,2) NOT NULL,
-     FOREIGN KEY (`sale_id`) REFERENCES `income_sales`(`id`) ON DELETE CASCADE,
-     INDEX (`school_id`),
-     INDEX (`sale_id`)
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-   ```
+```sql
+-- 1. Evolving Central Inventory Catalog (`item_stock`)
+ALTER TABLE `item_stock`
+  ADD COLUMN IF NOT EXISTS `business_unit_id` INT NULL,
+  ADD COLUMN IF NOT EXISTS `unit_cost` DECIMAL(12,2) DEFAULT 0.00,
+  ADD COLUMN IF NOT EXISTS `selling_price` DECIMAL(12,2) DEFAULT 0.00,
+  ADD COLUMN IF NOT EXISTS `category` VARCHAR(50) DEFAULT 'General',
+  ADD COLUMN IF NOT EXISTS `unit_of_measure` VARCHAR(30) DEFAULT 'units',
+  ADD COLUMN IF NOT EXISTS `sku` VARCHAR(50) NULL,
+  ADD KEY IF NOT EXISTS `idx_stock_bu` (`business_unit_id`),
+  ADD CONSTRAINT `fk_stock_bu` FOREIGN KEY (`business_unit_id`) REFERENCES `business_units`(`id`) ON DELETE SET NULL;
 
-5. **`income_transfers`** (New Table for Internal Consumption):
-   ```sql
-   CREATE TABLE IF NOT EXISTS `income_transfers` (
-     `id` INT AUTO_INCREMENT PRIMARY KEY,
-     `school_id` INT NOT NULL,
-     `activity_id` INT NOT NULL,
-     `target_department` ENUM('KITCHEN', 'BOARDING', 'MAINTENANCE', 'ADMINISTRATION', 'OTHER') NOT NULL,
-     `inventory_id` INT NULL,
-     `quantity` DECIMAL(12,2) NOT NULL,
-     `unit_cost` DECIMAL(12,2) NOT NULL,
-     `total_value` DECIMAL(12,2) NOT NULL,
-     `gl_journal_id` INT NULL,
-     `transfer_date` DATE NOT NULL,
-     `recorded_by` INT NOT NULL,
-     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-     FOREIGN KEY (`activity_id`) REFERENCES `income_activities`(`id`) ON DELETE CASCADE,
-     INDEX (`school_id`),
-     INDEX (`transfer_date`)
-   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-   ```
+-- 2. Evolving Central Stock Movement Audit Log (`stock_movements`)
+ALTER TABLE `stock_movements`
+  ADD COLUMN IF NOT EXISTS `school_id` INT NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS `business_unit_id` INT NULL,
+  ADD COLUMN IF NOT EXISTS `movement_type` ENUM('PURCHASE', 'PRODUCTION', 'SALE', 'TRANSFER', 'SPOILAGE', 'ADJUSTMENT', 'ISSUANCE') NOT NULL DEFAULT 'ADJUSTMENT',
+  ADD COLUMN IF NOT EXISTS `unit_cost` DECIMAL(12,2) DEFAULT 0.00,
+  ADD COLUMN IF NOT EXISTS `reference_no` VARCHAR(100) NULL,
+  ADD KEY IF NOT EXISTS `idx_sm_school` (`school_id`),
+  ADD KEY IF NOT EXISTS `idx_sm_bu` (`business_unit_id`);
+```
 
 ---
 
-## 5. Migration-Safe Implementation Roadmap
+## 4. Sales, Expenses, & Inter-Departmental Transfer Architecture
 
-To guarantee zero system downtime, data integrity, and complete backward compatibility, the rollout is structured into five distinct phases:
+### 4.1 POS & Multi-Item Sales (`business_sales` & `business_sales_items`)
+Supports both cash/credit customer sales and direct student fee ledger debits:
+
+```sql
+CREATE TABLE IF NOT EXISTS `business_sales` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `school_id` INT NOT NULL,
+  `business_unit_id` INT NOT NULL,
+  `sale_date` DATE NOT NULL,
+  `customer_type` ENUM('EXTERNAL', 'STUDENT', 'STAFF') DEFAULT 'EXTERNAL',
+  `customer_name` VARCHAR(150) NULL,
+  `student_adm_no` VARCHAR(30) NULL, -- Optional link for direct fee ledger debit
+  `total_amount` DECIMAL(12,2) NOT NULL,
+  `payment_status` ENUM('PAID', 'PENDING', 'CANCELLED') DEFAULT 'PAID',
+  `payment_method` ENUM('CASH', 'MOBILE_MONEY', 'BANK', 'STUDENT_ACCOUNT') DEFAULT 'CASH',
+  `receipt_no` VARCHAR(50) NOT NULL,
+  `recorded_by` INT NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`business_unit_id`) REFERENCES `business_units`(`id`),
+  INDEX `idx_sales_school` (`school_id`),
+  INDEX `idx_sales_bu` (`business_unit_id`),
+  INDEX `idx_sales_receipt` (`receipt_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `business_sales_items` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `school_id` INT NOT NULL,
+  `sale_id` INT NOT NULL,
+  `item_id` INT NULL, -- Link to item_stock
+  `item_name` VARCHAR(150) NOT NULL,
+  `quantity` DECIMAL(12,2) NOT NULL,
+  `unit_price` DECIMAL(12,2) NOT NULL,
+  `total_price` DECIMAL(12,2) NOT NULL,
+  FOREIGN KEY (`sale_id`) REFERENCES `business_sales`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`item_id`) REFERENCES `item_stock`(`item_id`) ON DELETE SET NULL,
+  INDEX `idx_bsi_school` (`school_id`),
+  INDEX `idx_bsi_sale` (`sale_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+### 4.2 Non-Cash Inter-Departmental Transfers (`business_transfers`)
+Solves the requirement for non-cash transfers (e.g., Farm milk transferred to School Kitchen, Tuckshop stock transferred to Staff Common Room) with automated GL debit/credit entries:
+
+```sql
+CREATE TABLE IF NOT EXISTS `business_transfers` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `school_id` INT NOT NULL,
+  `business_unit_id` INT NOT NULL,
+  `target_department` ENUM('KITCHEN', 'BOARDING', 'MAINTENANCE', 'ADMINISTRATION', 'OTHER') NOT NULL,
+  `item_id` INT NOT NULL, -- Link to item_stock
+  `quantity` DECIMAL(12,2) NOT NULL,
+  `unit_cost` DECIMAL(12,2) NOT NULL,
+  `total_value` DECIMAL(12,2) NOT NULL,
+  `gl_journal_id` INT NULL, -- Created via FinanceService.post_journal_entry()
+  `transfer_date` DATE NOT NULL,
+  `recorded_by` INT NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`business_unit_id`) REFERENCES `business_units`(`id`),
+  FOREIGN KEY (`item_id`) REFERENCES `item_stock`(`item_id`),
+  INDEX `idx_bt_school` (`school_id`),
+  INDEX `idx_bt_date` (`transfer_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+---
+
+## 5. Automated Double-Entry Finance GL Integration Matrix
+
+Every operational event in the Business Operations Core generates balanced double-entry accounting transactions via `FinanceService.post_journal_entry()`:
+
+| Transaction Event | Debit GL Account | Credit GL Account | Non-Cash / Cash |
+| :--- | :--- | :--- | :--- |
+| **Cash POS Sale** | Cash / Bank Account | Business Unit `revenue_gl_account` | Cash |
+| **Student Billed Sale** | Student Accounts Receivable (AR) | Business Unit `revenue_gl_account` | Credit |
+| **Cost of Goods Sold (Sale)** | Business Unit `cogs_gl_account` | Business Unit `inventory_gl_account` | Non-Cash |
+| **Approved Expense** | Business Unit `expense_gl_account` | Accounts Payable / Cash GL | Cash / Credit |
+| **Kitchen Transfer** | School Kitchen Expense GL (Food/Boarding) | Business Unit `inventory_gl_account` / Revenue | Non-Cash Journal |
+| **Stock Spoilage / Write-off**| Spoilage Expense GL | Business Unit `inventory_gl_account` | Non-Cash Journal |
+
+---
+
+## 6. Migration-Safe Phased Implementation Roadmap
+
+To ensure zero downtime, data integrity, and complete backward compatibility, implementation follows five strict phases:
 
 ```
 +-----------------------------------------------------------------------------------+
-|                     PHASE-BY-PHASE IMPLEMENTATION ROADMAP                        |
+|                     MIGRATION-SAFE IMPLEMENTATION ROADMAP                         |
 +-----------------------------------------------------------------------------------+
-| PHASE 1: Database Schema Expansion & Backward-Compatible Service Foundation        |
-| - Apply non-breaking migrations (060_business_operations_core.sql)                |
-| - Extend `FarmManagementService` / `BusinessOperationsService` with legacy aliases|
-+-----------------------------------------------------------------------------------+
-                                       |
-                                       v
-| PHASE 2: Centralized Inventory & Inter-Departmental Transfer Engine               |
-| - Implement stock management, movement logging, and reorder alerts                |
-| - Implement Non-Cash Kitchen / Internal Consumption Transfer Engine               |
+| PHASE 1: Core Schema Evolution & Service Layer Foundation                         |
+| - Execute migration 060_business_operations_core.sql                              |
+| - Create `business_units`, evolve `item_stock` and `stock_movements`               |
+| - Add backward-compatibility database views (`income_activities`)                 |
 +-----------------------------------------------------------------------------------+
                                        |
                                        v
-| PHASE 3: Double-Entry Finance GL & Student Billing Integration                    |
-| - Implement automated journal postings via `FinanceService.post_journal_entry()`  |
-| - Enable direct student fee account debiting for POS credit sales                 |
+| PHASE 2: Single Source of Truth Inventory & Transfer Engine                       |
+| - Implement `item_stock` management API in `BusinessOperationsService`             |
+| - Implement non-cash inter-departmental transfers (`business_transfers`)          |
 +-----------------------------------------------------------------------------------+
                                        |
                                        v
-| PHASE 4: Specialized Module Integration Adapters (Uniform & Fleet)                 |
-| - Connect Uniform Issuance stock adjustments to central `income_inventory`        |
-| - Connect Fleet fuel/service expense requests into Business Operations pipeline   |
+| PHASE 3: Universal POS, Student Billing, & Double-Entry GL Journaling             |
+| - Implement multi-item sales (`business_sales_items`) with stock deduction        |
+| - Connect sales & expenses to `FinanceService.post_journal_entry()`               |
+| - Enable direct student fee ledger debits for student account sales               |
 +-----------------------------------------------------------------------------------+
                                        |
                                        v
-| PHASE 5: UI/UX Expansion, Enterprise Analytics, & Verification                   |
-| - Enhance UI templates with enterprise selection, POS billing, & P&L reports     |
-| - Execute unit, integration, and regression test suites                           |
+| PHASE 4: Specialized Module Adapters (Uniform & Fleet Integration)                |
+| - Connect Uniform Issuance stock deductions to central `item_stock`               |
+| - Route Fleet fuel & maintenance expenses into central `business_expenses`        |
++-----------------------------------------------------------------------------------+
+                                       |
+                                       v
+| PHASE 5: UI Enhancement, Multi-Enterprise Dashboard, & Verification              |
+| - Update UI templates (`templates/farm/*` or `templates/operations/*`)             |
+| - Enterprise P&L reporting & CSV export                                           |
+| - Run test suites to verify multi-tenant isolation and zero regressions          |
 +-----------------------------------------------------------------------------------+
 ```
 
-### Phase 1: Database Schema Expansion & Service Foundation
-- **Goal**: Apply schema extensions and prepare core service layer while preserving existing methods.
-- **Actions**:
-  - Run migration script `060_business_operations_core.sql` adding `income_inventory`, `income_stock_movements`, `income_sales_items`, and `income_transfers`.
-  - Maintain all legacy signatures in `FarmManagementService` (`get_activities`, `record_production`, `record_sale`, `request_expense`, `get_financial_summary`).
-
-### Phase 2: Centralized Inventory & Inter-Departmental Transfers
-- **Goal**: Enable stock movements and inter-departmental transfers.
-- **Actions**:
-  - Add methods `add_inventory_item()`, `get_inventory()`, `record_stock_movement()`, and `record_transfer()`.
-  - Automatically update `income_inventory.quantity_on_hand` upon production, sales, or transfers.
-
-### Phase 3: Double-Entry Finance GL & Student Billing Integration
-- **Goal**: Connect sales, expenses, and non-cash transfers to core finance ledgers.
-- **Actions**:
-  - Cash Sales: Debit Cash/Bank GL, Credit Activity Income GL.
-  - Student Billed Sales: Debit Student AR Ledger, Credit Activity Income GL.
-  - Non-Cash Transfers: Debit Target Department GL (e.g. Kitchen Food Expense), Credit Enterprise Asset/Income GL.
-  - Approved Expenses: Debit Activity Expense GL, Credit Accounts Payable / Cash GL.
-
-### Phase 4: Specialized Module Integration Adapters
-- **Goal**: Seamlessly connect Uniform and Transport modules to BizOps Core without altering their domain workflows.
-- **Actions**:
-  - Uniform Issuance: Trigger stock deduction in `income_inventory` whenever uniforms are issued.
-  - Fleet Management: Route fuel invoice and vehicle maintenance entries to `income_expenses` for centralized authorization.
-
-### Phase 5: UI/UX Expansion, Reporting, & Verification
-- **Goal**: Expose new capabilities in UI, offer multi-enterprise filtering, and verify stability.
-- **Actions**:
-  - Update `templates/farm/dashboard.html`, `sales_form.html`, and `expense_form.html`.
-  - Provide enterprise profit & loss reports and inventory valuation export.
-  - Run regression test suites (`tests/test_procurement_inventory_isolation.py`) to confirm zero regressions.
-
 ---
 
-## 6. Verification & Test Plan
+## 7. Verification & Testing Strategy
 
 1. **Schema & Multi-Tenant Verification**:
    - Verify every new table enforces `school_id` and foreign key constraints.
-   - Confirm unmigrated or missing optional values do not break legacy queries.
+   - Confirm legacy view `income_activities` returns exact query results for existing farm methods.
 2. **Double-Entry Balance Verification**:
    - Verify that all automated journal entries maintain equal debits and credits (`sum(debit) == sum(credit)`).
-3. **Domain Isolation Verification**:
-   - Confirm Uniform Issuance forms (`/issue_uniform`) and Fleet management dashboards (`/fleet/fleet_dashboard`) operate without breaking changes.
+3. **Inventory Isolation & Consistency Verification**:
+   - Verify uniform issuance stock deductions correctly decrement `item_stock.current_stock` and insert `stock_movements` record.
 4. **Regression Verification**:
-   - Ensure all existing unit tests in `tests/` pass cleanly.
+   - Execute existing test suite (`tests/test_procurement_inventory_isolation.py`) to confirm zero regressions.
 
 ---
 
-## 7. Conclusion
+## 8. Conclusion
 
-This report provides a clear architectural vision and migration-safe roadmap for transforming the IGA module into an enterprise Business Operations Core. By centralizing inventory, POS invoicing, inter-departmental transfers, and GL journaling while preserving Uniform and Transport domain modules, the ERP achieves full enterprise scalability with zero operational risk.
+This refined architecture solves naming limitations, establishes a formal `business_units` entity structure, and unifies inventory under `item_stock`. By implementing a single inventory engine and automated double-entry GL journaling while preserving Uniform and Transport domain modules, the system achieves enterprise scalability with zero operational risk.
