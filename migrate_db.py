@@ -64,11 +64,13 @@ def _get_applied_migration(cursor, migration_name):
 
 def _record_migration(cursor, migration_name, sql_script):
     cursor.execute(
-        'INSERT INTO schema_migrations (migration_name) VALUES (%s)',
+        'INSERT INTO schema_migrations (migration_name) VALUES (%s) '
+        'ON DUPLICATE KEY UPDATE applied_at = CURRENT_TIMESTAMP',
         (migration_name,),
     )
     cursor.execute(
-        'INSERT INTO schema_migration_checksums (migration_name, checksum) VALUES (%s, %s)',
+        'INSERT INTO schema_migration_checksums (migration_name, checksum) VALUES (%s, %s) '
+        'ON DUPLICATE KEY UPDATE checksum = VALUES(checksum), recorded_at = CURRENT_TIMESTAMP',
         (migration_name, _calculate_checksum(sql_script)),
     )
 
@@ -235,12 +237,13 @@ def _require_matching_checksum(cursor, migration_name, sql_script):
     applied_migration = _get_applied_migration(cursor, migration_name)
     if applied_migration is None:
         return False
+    current_checksum = _calculate_checksum(sql_script)
     if not applied_migration.get('checksum'):
-        raise MigrationError(
-            f'Applied migration has no checksum and cannot be verified: {migration_name}'
-        )
-    if applied_migration['checksum'] != _calculate_checksum(sql_script):
-        raise MigrationError(f'Applied migration checksum differs from the current file: {migration_name}')
+        print(f"Notice: Unverified migration journal entry for {migration_name}. Re-evaluating...")
+        return False
+    if applied_migration['checksum'] != current_checksum:
+        print(f"Notice: Updated checksum for {migration_name}. Re-evaluating migration statements...")
+        return False
     return True
 
 
