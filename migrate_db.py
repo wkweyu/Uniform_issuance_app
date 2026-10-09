@@ -457,7 +457,8 @@ def migrate_db(continue_on_error=False):
                         cursor.execute(statement)
                         # print(f"  ✔️ Executed statement.")
                     except pymysql.err.InternalError as exc:
-                        if 'Duplicate column name' in str(exc) or 'already exists' in str(exc) or 'Duplicate key name' in str(exc) or 'Duplicate entry' in str(exc):
+                        exc_str = str(exc)
+                        if 'Duplicate column name' in exc_str or 'already exists' in exc_str or 'Duplicate key name' in exc_str or 'Duplicate entry' in exc_str or 'Duplicate FOREIGN KEY' in exc_str or 'Duplicate constraint' in exc_str or (len(exc.args) > 0 and exc.args[0] == 1826):
                             # print(f"  ⏭️ Skipping statement (already applied).")
                             pass
                         else:
@@ -467,7 +468,8 @@ def migrate_db(continue_on_error=False):
                             if not continue_on_error:
                                 raise MigrationError(f'Migration failed: {mig_file}') from exc
                     except pymysql.err.OperationalError as exc:
-                        if 'Duplicate column name' in str(exc) or 'already exists' in str(exc) or 'Duplicate key name' in str(exc):
+                        exc_str = str(exc)
+                        if 'Duplicate column name' in exc_str or 'already exists' in exc_str or 'Duplicate key name' in exc_str or 'Duplicate FOREIGN KEY' in exc_str or 'Duplicate constraint' in exc_str or (len(exc.args) > 0 and exc.args[0] == 1826):
                              # print(f"  ⏭️ Skipping statement (already applied).")
                              pass
                         else:
