@@ -7,8 +7,10 @@ Database: schoolmngt
 Features:
 - Enterprise Business Unit Management (`business_units`)
 - Multi-Location Central Inventory & Department Issues (`inventory_locations`, `inventory_issues`)
+- Pricing Service with Price Tier Resolution (`PricingService`)
+- Cashier Shift Session Management (`cashier_sessions`)
+- Multi-Line POS Sales Checkout & Receivables Billing
 - Batch Production & Approved Loss Accounting (`production_batches`, `production_losses`)
-- POS & Multi-Item Sales Invoicing (`business_sales`, `business_sales_items`)
 - Multi-Stage Expense Authorizations (`business_expenses`)
 - Idempotent Accounting Event Queue (`business_transaction_events`)
 - Defensive Unmigrated Database Fallbacks for Legacy IGA (`income_activities`, `income_sales`, `income_expenses`)
@@ -28,12 +30,59 @@ from blueprints.inventory.services import InventoryTransactionService
 logger = logging.getLogger(__name__)
 
 
+class PricingService:
+    """
+    Resolves item selling prices dynamically based on customer type tier
+    (EXTERNAL/RETAIL, STUDENT, STAFF, ORGANIZATION/WHOLESALE).
+    """
+    def __init__(self, connection: pymysql.Connection, school_id: Optional[int] = None):
+        self.connection = connection
+        self.cursor = connection.cursor(pymysql.cursors.DictCursor)
+        self.school_id = school_id or require_current_school_id()
+
+    def resolve_item_price(self, item_master_id: int, customer_type: str = "EXTERNAL") -> Dict:
+        self.cursor.execute(
+            """SELECT im.id, im.name, im.code_sku, im.default_selling_price, im.default_purchase_cost, im.unit_of_measure, ic.code as classification
+               FROM item_master im
+               JOIN item_classifications ic ON im.classification_id = ic.id
+               WHERE im.id = %s AND im.school_id = %s""",
+            (item_master_id, self.school_id)
+        )
+        item = self.cursor.fetchone()
+        if not item:
+            raise ValueError("Item master record not found.")
+
+        base_price = Decimal(str(item['default_selling_price'] or 0.00))
+        cost_price = Decimal(str(item['default_purchase_cost'] or 0.00))
+
+        # Dynamic tier resolution logic
+        if customer_type == 'STUDENT':
+            selling_price = base_price
+        elif customer_type == 'STAFF':
+            selling_price = base_price * Decimal('0.95') # 5% staff discount tier
+        elif customer_type == 'ORGANIZATION':
+            selling_price = base_price * Decimal('0.90') # 10% wholesale discount tier
+        else:
+            selling_price = base_price
+
+        return {
+            'item_master_id': item['id'],
+            'item_name': item['name'],
+            'sku': item['code_sku'],
+            'classification': item['classification'],
+            'unit_of_measure': item['unit_of_measure'],
+            'unit_price': float(selling_price),
+            'unit_cost': float(cost_price)
+        }
+
+
 class BusinessOperationsService:
     def __init__(self, connection: pymysql.Connection, school_id: Optional[int] = None):
         self.connection = connection
         self.cursor = connection.cursor(pymysql.cursors.DictCursor)
         self.school_id = school_id or require_current_school_id()
         self.inventory_tx_service = InventoryTransactionService(connection, self.school_id)
+        self.pricing_service = PricingService(connection, self.school_id)
 
     # --- BUSINESS UNITS ---
     def get_business_units(self, active_only: bool = True) -> List[Dict]:
@@ -54,7 +103,6 @@ class BusinessOperationsService:
             self.cursor.execute(query, (self.school_id,))
             return self.cursor.fetchall()
         except pymysql.Error as e:
-            # Table 1146 fallback for unmigrated database: query legacy income_activities table
             logger.warning("business_units query failed (%s); falling back to legacy income_activities", e)
             legacy_query = "SELECT *, gl_income_account as revenue_gl_account, gl_expense_account as expense_gl_account FROM income_activities WHERE school_id = %s"
             if active_only:
@@ -120,9 +168,106 @@ class BusinessOperationsService:
         except pymysql.Error:
             return 1
 
+    # --- CASHIER SHIFT SESSIONS ---
+    def open_cashier_shift(self, user_id: int, business_unit_id: int, location_id: int, opening_balance: Decimal = Decimal('0.00'), terminal_code: str = "POS-01") -> Dict:
+        """Opens an active cashier shift session bound to a business unit and store location."""
+        self.cursor.execute(
+            """INSERT INTO cashier_sessions (school_id, user_id, business_unit_id, location_id, terminal_code, opening_balance, status, opened_at)
+               VALUES (%s, %s, %s, %s, %s, %s, 'OPEN', NOW())""",
+            (self.school_id, user_id, business_unit_id, location_id, terminal_code, opening_balance)
+        )
+        self.connection.commit()
+        session_id = self.cursor.lastrowid
+        return {'session_id': session_id, 'terminal_code': terminal_code, 'status': 'OPEN'}
+
+    def get_active_cashier_shift(self, user_id: int) -> Optional[Dict]:
+        """Retrieves active cashier shift for user."""
+        try:
+            self.cursor.execute(
+                """SELECT cs.*, bu.name as business_unit_name, loc.name as location_name
+                   FROM cashier_sessions cs
+                   LEFT JOIN business_units bu ON cs.business_unit_id = bu.id
+                   LEFT JOIN inventory_locations loc ON cs.location_id = loc.id
+                   WHERE cs.user_id = %s AND cs.school_id = %s AND cs.status = 'OPEN'
+                   ORDER BY cs.opened_at DESC LIMIT 1""",
+                (user_id, self.school_id)
+            )
+            return self.cursor.fetchone()
+        except pymysql.Error:
+            return None
+
+    def close_cashier_shift(self, session_id: int, closing_balance: Decimal, user_id: int) -> bool:
+        """Closes active cashier shift session."""
+        try:
+            self.cursor.execute(
+                """UPDATE cashier_sessions
+                   SET status = 'CLOSED', closing_balance = %s, closed_at = NOW()
+                   WHERE id = %s AND user_id = %s AND school_id = %s""",
+                (closing_balance, session_id, user_id, self.school_id)
+            )
+            self.connection.commit()
+            return True
+        except pymysql.Error:
+            return False
+
+    # --- ITEM & CUSTOMER TYPEAHEAD SEARCH API ---
+    def search_items(self, query_term: str, location_id: Optional[int] = None) -> List[Dict]:
+        """Typeahead search on item_master and item_stock."""
+        term = f"%{query_term.strip()}%"
+        query = """
+            SELECT im.id as item_master_id, im.name, im.code_sku, im.unit_of_measure,
+                   im.default_selling_price as unit_price, im.default_purchase_cost as unit_cost,
+                   ic.code as classification, COALESCE(ist.current_stock, 0) as available_stock
+            FROM item_master im
+            JOIN item_classifications ic ON im.classification_id = ic.id
+            LEFT JOIN item_stock ist ON im.id = ist.item_master_id AND ist.school_id = im.school_id
+            WHERE im.school_id = %s AND (im.name LIKE %s OR im.code_sku LIKE %s OR im.barcode LIKE %s)
+        """
+        params = [self.school_id, term, term, term]
+        if location_id:
+            query += " AND (ist.location_id = %s OR ist.location_id IS NULL)"
+            params.append(location_id)
+        query += " LIMIT 15"
+
+        try:
+            self.cursor.execute(query, tuple(params))
+            return self.cursor.fetchall()
+        except pymysql.Error:
+            # Fallback query on legacy item_stock
+            legacy_query = """
+                SELECT item_id as item_master_id, item_name as name, 'CONSUMABLE' as classification,
+                       'Pcs' as unit_of_measure, 0.00 as unit_price, 0.00 as unit_cost, current_stock as available_stock
+                FROM item_stock WHERE school_id = %s AND item_name LIKE %s LIMIT 15
+            """
+            self.cursor.execute(legacy_query, (self.school_id, term))
+            return self.cursor.fetchall()
+
+    def lookup_student(self, query_term: str) -> List[Dict]:
+        """Live student search by admission number or name."""
+        term = f"%{query_term.strip()}%"
+        self.cursor.execute(
+            """SELECT si.AdmNo, si.FName, si.MName, si.SName, c.display_name as class_name, cgs.name as class_group
+               FROM studentinfo si
+               LEFT JOIN class_allocation ca ON si.AdmNo = ca.student_id AND ca.is_current = TRUE AND ca.school_id = si.school_id
+               LEFT JOIN classes c ON ca.class_id = c.classID AND c.school_id = si.school_id
+               LEFT JOIN class_group_settings cgs ON c.class_group_code = cgs.code AND cgs.school_id = si.school_id
+               WHERE si.school_id = %s AND (si.AdmNo LIKE %s OR si.FName LIKE %s OR si.SName LIKE %s)
+               LIMIT 10""",
+            (self.school_id, term, term, term)
+        )
+        return self.cursor.fetchall()
+
+    def lookup_staff(self, query_term: str) -> List[Dict]:
+        """Live staff directory search."""
+        term = f"%{query_term.strip()}%"
+        self.cursor.execute(
+            """SELECT userNo, StaffID, username FROM users WHERE school_id = %s AND (username LIKE %s OR StaffID LIKE %s) LIMIT 10""",
+            (self.school_id, term, term)
+        )
+        return self.cursor.fetchall()
+
     # --- ACCOUNTING EVENT QUEUE ---
     def enqueue_accounting_event(self, business_unit_id: int, event_type: str, source_table: str, source_id: int, payload: Dict) -> str:
-        """Publishes an idempotent accounting event to the business_transaction_events queue."""
         event_uuid = str(uuid.uuid4())
         payload_json = json.dumps(payload, default=str)
 
@@ -137,28 +282,63 @@ class BusinessOperationsService:
             logger.warning("enqueue_accounting_event ignored due to unmigrated table: %s", e)
         return event_uuid
 
-    # --- POS & SALES INVOICING ---
+    # --- MULTI-LINE POS CHECKOUT ---
     def record_pos_sale(self, business_unit_id: int, items: List[Dict], customer_type: str, customer_name: str, user_id: int, student_adm_no: Optional[str] = None, payment_method: str = "CASH", location_id: Optional[int] = None) -> Dict:
-        try:
-            total_amount = Decimal('0.00')
-            for item in items:
-                total_amount += Decimal(str(item['quantity'])) * Decimal(str(item['unit_price']))
+        return self.execute_pos_checkout(
+            cashier_session_id=None,
+            user_id=user_id,
+            business_unit_id=business_unit_id,
+            items=items,
+            customer_type=customer_type,
+            customer_name=customer_name,
+            student_adm_no=student_adm_no,
+            payment_method=payment_method,
+            location_id=location_id
+        )
 
+    def execute_pos_checkout(self, cashier_session_id: Optional[int], user_id: int, business_unit_id: int, items: List[Dict], customer_type: str, customer_name: str, student_adm_no: Optional[str] = None, payment_method: str = "CASH", amount_tendered: Decimal = Decimal('0.00'), location_id: Optional[int] = None) -> Dict:
+        """Executes atomic multi-line POS checkout with stock deductions and AR billing."""
+        try:
+            subtotal = Decimal('0.00')
+            total_discount = Decimal('0.00')
+            total_tax = Decimal('0.00')
+
+            for item in items:
+                qty = Decimal(str(item.get('quantity', 1)))
+                price = Decimal(str(item.get('unit_price', 0)))
+                disc_pct = Decimal(str(item.get('discount_pct', 0)))
+                tax_pct = Decimal(str(item.get('tax_pct', 0)))
+
+                line_subtotal = qty * price
+                line_discount = line_subtotal * (disc_pct / Decimal('100'))
+                line_tax = (line_subtotal - line_discount) * (tax_pct / Decimal('100'))
+
+                subtotal += line_subtotal
+                total_discount += line_discount
+                total_tax += line_tax
+
+            grand_total = (subtotal - total_discount) + total_tax
+            change_due = Decimal(str(amount_tendered)) - grand_total if Decimal(str(amount_tendered)) > grand_total else Decimal('0.00')
             receipt_no = f"POS-{datetime.now().strftime('%y%m%d%H%M%S')}"
 
+            # Insert Header
             self.cursor.execute(
-                """INSERT INTO business_sales (school_id, business_unit_id, sale_date, customer_type, customer_name, student_adm_no, total_amount, payment_status, payment_method, receipt_no, recorded_by)
-                   VALUES (%s, %s, CURDATE(), %s, %s, %s, %s, 'PAID', %s, %s, %s)""",
-                (self.school_id, business_unit_id, customer_type, customer_name, student_adm_no, total_amount, payment_method, receipt_no, user_id)
+                """INSERT INTO business_sales (school_id, business_unit_id, cashier_session_id, sale_date, customer_type, customer_name, student_adm_no, subtotal_amount, discount_amount, tax_amount, total_amount, amount_tendered, change_due, payment_status, payment_method, receipt_no, recorded_by)
+                   VALUES (%s, %s, %s, CURDATE(), %s, %s, %s, %s, %s, %s, %s, %s, %s, 'PAID', %s, %s, %s)""",
+                (self.school_id, business_unit_id, cashier_session_id, customer_type, customer_name, student_adm_no, subtotal, total_discount, total_tax, grand_total, amount_tendered, change_due, payment_method, receipt_no, user_id)
             )
             sale_id = self.cursor.lastrowid
 
+            # Insert Items & Deduct Stock
             for item in items:
-                qty = Decimal(str(item['quantity']))
-                price = Decimal(str(item['unit_price']))
-                item_total = qty * price
+                qty = Decimal(str(item.get('quantity', 1)))
+                price = Decimal(str(item.get('unit_price', 0)))
+                disc_pct = Decimal(str(item.get('discount_pct', 0)))
+                tax_pct = Decimal(str(item.get('tax_pct', 0)))
+                line_total = (qty * price) * (Decimal('1') - (disc_pct / Decimal('100')))
                 item_name = item['item_name']
 
+                # Deduct stock via InventoryTransactionService
                 try:
                     self.inventory_tx_service.issue_stock(
                         item_name=item_name,
@@ -167,7 +347,8 @@ class BusinessOperationsService:
                         location_id=location_id,
                         business_unit_id=business_unit_id,
                         ref_no=receipt_no,
-                        notes=f"POS Sale to {customer_name}",
+                        notes=f"POS Sale #{receipt_no}",
+                        student_admno=student_adm_no,
                         autocommit=False
                     )
                     item_master_id = self.inventory_tx_service._get_or_create_item_master(item_name)
@@ -175,9 +356,9 @@ class BusinessOperationsService:
                     item_master_id = None
 
                 self.cursor.execute(
-                    """INSERT INTO business_sales_items (school_id, sale_id, item_master_id, item_name, quantity, unit_price, total_price)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                    (self.school_id, sale_id, item_master_id, item_name, qty, price, item_total)
+                    """INSERT INTO business_sales_items (school_id, sale_id, item_master_id, item_name, quantity, unit_price, discount_pct, tax_pct, total_price)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (self.school_id, sale_id, item_master_id, item_name, qty, price, disc_pct, tax_pct, line_total)
                 )
 
             # Enqueue accounting event
@@ -186,25 +367,24 @@ class BusinessOperationsService:
                 event_type='POS_SALE' if customer_type != 'STUDENT' else 'STUDENT_AR_SALE',
                 source_table='business_sales',
                 source_id=sale_id,
-                payload={'receipt_no': receipt_no, 'total_amount': float(total_amount), 'customer_name': customer_name, 'student_adm_no': student_adm_no}
+                payload={'receipt_no': receipt_no, 'grand_total': float(grand_total), 'customer_name': customer_name, 'student_adm_no': student_adm_no}
             )
 
             self.connection.commit()
-            return {'sale_id': sale_id, 'receipt_no': receipt_no, 'total_amount': float(total_amount)}
+            return {'sale_id': sale_id, 'receipt_no': receipt_no, 'grand_total': float(grand_total), 'change_due': float(change_due)}
         except pymysql.Error as e:
             self.connection.rollback()
-            # Unmigrated DB fallback: query legacy income_sales table
-            logger.warning("record_pos_sale failed (%s); writing to legacy income_sales", e)
+            logger.warning("execute_pos_checkout failed (%s); writing to legacy fallback", e)
             receipt_no = f"FRM-{datetime.now().strftime('%y%m%d%H%M%S')}"
             first_item = items[0] if items else {'quantity': 1, 'unit_price': 0}
-            total = Decimal(str(first_item['quantity'])) * Decimal(str(first_item['unit_price']))
+            total = Decimal(str(first_item.get('quantity', 1))) * Decimal(str(first_item.get('unit_price', 0)))
             self.cursor.execute(
                 """INSERT INTO income_sales (school_id, activity_id, sale_date, customer_name, quantity, unit_price, total_amount, is_paid, receipt_no, recorded_by)
                    VALUES (%s, %s, CURDATE(), %s, %s, %s, %s, TRUE, %s, %s)""",
-                (self.school_id, business_unit_id, customer_name, first_item['quantity'], first_item['unit_price'], total, receipt_no, user_id)
+                (self.school_id, business_unit_id, customer_name, first_item.get('quantity', 1), first_item.get('unit_price', 0), total, receipt_no, user_id)
             )
             self.connection.commit()
-            return {'sale_id': self.cursor.lastrowid, 'receipt_no': receipt_no, 'total_amount': float(total)}
+            return {'sale_id': self.cursor.lastrowid, 'receipt_no': receipt_no, 'grand_total': float(total), 'change_due': 0.0}
 
     # --- BATCH PRODUCTION & LOSSES ---
     def record_production_batch(self, business_unit_id: int, batch_no: str, item_name: str, location_id: int, total_produced: Decimal, loss_quantity: Decimal, input_cost: Decimal, user_id: int, loss_type_code: str = "SPOILAGE", loss_reason: str = "") -> Dict:
@@ -389,12 +569,13 @@ class FarmManagementService(BusinessOperationsService):
 
     def record_sale(self, activity_id: int, customer: str, quantity: Decimal, unit_price: Decimal, recorded_by: int, is_paid: bool = True) -> int:
         self._assert_activity_belongs_to_school(activity_id)
-        res = self.record_pos_sale(
+        res = self.execute_pos_checkout(
+            cashier_session_id=None,
+            user_id=recorded_by,
             business_unit_id=activity_id,
-            items=[{'item_name': 'Farm Produce', 'quantity': quantity, 'unit_price': unit_price}],
+            items=[{'item_name': 'Farm Produce', 'quantity': float(quantity), 'unit_price': float(unit_price)}],
             customer_type='EXTERNAL',
             customer_name=customer,
-            user_id=recorded_by,
             payment_method='CASH' if is_paid else 'STUDENT_ACCOUNT'
         )
         return res['sale_id']
