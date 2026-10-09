@@ -3,7 +3,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from core.permissions import admin_required, login_required
 from core.db import get_db_connection
 from core.tenancy import require_current_school_id
-from blueprints.farm.services import FarmManagementService, BusinessOperationsService
+from blueprints.farm.services import FarmManagementService, BusinessOperationsService, PricingService
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
@@ -142,7 +142,156 @@ def pos_sales():
             return redirect(url_for('farm.pos_sales'))
 
         units = service.get_business_units()
-        return render_template('farm/pos.html', units=units)
+        locations = service.get_locations()
+        active_shift = service.get_active_cashier_shift(session['userNo'])
+        return render_template('farm/pos.html', units=units, locations=locations, active_shift=active_shift)
+    finally:
+        connection.close()
+
+
+# --- BACKEND REST APIs FOR POS GRID & SHIFT MANAGEMENT ---
+
+@farm_bp.route('/api/shift/open', methods=['POST'])
+@login_required
+def api_open_shift():
+    data = request.get_json() or request.form
+    connection = get_db_connection()
+    try:
+        service = BusinessOperationsService(connection)
+        unit_id = _required_int(data.get('business_unit_id'), 'Business Unit')
+        location_id = _required_int(data.get('location_id'), 'Location')
+        opening_bal = _parse_decimal(data.get('opening_balance', 0), 'Opening Balance', default=0)
+        terminal = data.get('terminal_code', 'POS-01')
+
+        res = service.open_cashier_shift(
+            user_id=session['userNo'],
+            business_unit_id=unit_id,
+            location_id=location_id,
+            opening_balance=opening_bal,
+            terminal_code=terminal
+        )
+        return jsonify({'status': 'success', 'data': res})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 400
+    finally:
+        connection.close()
+
+
+@farm_bp.route('/api/shift/close', methods=['POST'])
+@login_required
+def api_close_shift():
+    data = request.get_json() or request.form
+    connection = get_db_connection()
+    try:
+        service = BusinessOperationsService(connection)
+        session_id = _required_int(data.get('cashier_session_id'), 'Shift Session ID')
+        closing_bal = _parse_decimal(data.get('closing_balance', 0), 'Closing Balance', default=0)
+
+        if service.close_cashier_shift(session_id, closing_bal, session['userNo']):
+            return jsonify({'status': 'success', 'message': 'Shift closed.'})
+        return jsonify({'status': 'error', 'message': 'Failed to close shift.'}), 400
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 400
+    finally:
+        connection.close()
+
+
+@farm_bp.route('/api/shift/current', methods=['GET'])
+@login_required
+def api_current_shift():
+    connection = get_db_connection()
+    try:
+        service = BusinessOperationsService(connection)
+        shift = service.get_active_cashier_shift(session['userNo'])
+        return jsonify({'status': 'success', 'shift': shift})
+    finally:
+        connection.close()
+
+
+@farm_bp.route('/api/items/search', methods=['GET'])
+@login_required
+def api_search_items():
+    query_term = request.args.get('q', '').strip()
+    location_id = request.args.get('location_id', type=int)
+    if not query_term:
+        return jsonify({'status': 'success', 'items': []})
+
+    connection = get_db_connection()
+    try:
+        service = BusinessOperationsService(connection)
+        items = service.search_items(query_term, location_id)
+        return jsonify({'status': 'success', 'items': items})
+    finally:
+        connection.close()
+
+
+@farm_bp.route('/api/customers/student', methods=['GET'])
+@login_required
+def api_search_student():
+    query_term = request.args.get('q', '').strip()
+    if not query_term:
+        return jsonify({'status': 'success', 'students': []})
+
+    connection = get_db_connection()
+    try:
+        service = BusinessOperationsService(connection)
+        students = service.lookup_student(query_term)
+        return jsonify({'status': 'success', 'students': students})
+    finally:
+        connection.close()
+
+
+@farm_bp.route('/api/customers/staff', methods=['GET'])
+@login_required
+def api_search_staff():
+    query_term = request.args.get('q', '').strip()
+    if not query_term:
+        return jsonify({'status': 'success', 'staff': []})
+
+    connection = get_db_connection()
+    try:
+        service = BusinessOperationsService(connection)
+        staff = service.lookup_staff(query_term)
+        return jsonify({'status': 'success', 'staff': staff})
+    finally:
+        connection.close()
+
+
+@farm_bp.route('/api/pos/checkout', methods=['POST'])
+@login_required
+def api_pos_checkout():
+    data = request.get_json() or {}
+    connection = get_db_connection()
+    try:
+        service = BusinessOperationsService(connection)
+        unit_id = _required_int(data.get('business_unit_id'), 'Business Unit')
+        location_id = data.get('location_id')
+        session_id = data.get('cashier_session_id')
+        customer_type = data.get('customer_type', 'EXTERNAL')
+        customer_name = _required_text(data.get('customer_name'), 'Customer Name')
+        student_adm = data.get('student_adm_no')
+        payment_method = data.get('payment_method', 'CASH')
+        amount_tendered = _parse_decimal(data.get('amount_tendered', 0), 'Amount Tendered', default=0)
+        items = data.get('items', [])
+
+        if not isinstance(items, list) or not items:
+            return jsonify({'status': 'error', 'message': 'Sales cart is empty.'}), 400
+
+        res = service.execute_pos_checkout(
+            cashier_session_id=session_id,
+            user_id=session['userNo'],
+            business_unit_id=unit_id,
+            items=items,
+            customer_type=customer_type,
+            customer_name=customer_name,
+            student_adm_no=student_adm,
+            payment_method=payment_method,
+            amount_tendered=amount_tendered,
+            location_id=location_id
+        )
+        return jsonify({'status': 'success', 'data': res})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 400
     finally:
         connection.close()
 
