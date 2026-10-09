@@ -240,7 +240,7 @@ def approve_expenses():
         cursor.execute("SELECT be.*, bu.name as unit_name FROM business_expenses be JOIN business_units bu ON be.business_unit_id = bu.id WHERE be.status = 'REQUESTED' AND be.school_id = %s", (school_id,))
         pending = cursor.fetchall()
     except pymysql.Error:
-        cursor.execute("SELECT *, name as unit_name FROM income_expenses WHERE status = 'PENDING' AND school_id = %s", (school_id,))
+        cursor.execute("SELECT ie.*, ia.name as unit_name FROM income_expenses ie JOIN income_activities ia ON ie.activity_id = ia.id WHERE ie.status = 'PENDING' AND ie.school_id = %s", (school_id,))
         pending = cursor.fetchall()
 
     connection.close()
